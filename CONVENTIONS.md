@@ -136,3 +136,19 @@ Known-MISSING in gcc-10.2 (implement in C++, do NOT use the builtin):
 `__is_unbounded_array`, `__array_extent`, `__array_rank`,
 `__builtin_bit_cast` (gcc-11+), `__type_pack_element`. (Probed and verified
 against gcc-10.2.)
+
+### No duplication of std vocabulary or detail helpers (ODR)
+
+All headers live in one `namespace std` and frequently meet in a single
+translation unit. Therefore:
+
+- NEVER redefine `move`, `forward`, `swap`, `exchange`, `declval`, etc. — include
+  the owning user header (`<utility>`, `<type_traits>`) and use them.
+- Before inventing a `namespace std::detail` (or `std::ranges::...`) helper,
+  assume it may already exist in another header. Reuse the existing one by
+  including its header. Do not create a second definition with the same name.
+- If you hit a redefinition/ambiguity conflict between two headers, that is a
+  REAL bug to report (or fix at its single source) — do NOT work around it by
+  copying the definition locally or adding `#ifndef` guard macros. Duplicated
+  definitions of the same template in one TU are an ODR violation and a latent
+  build break.
