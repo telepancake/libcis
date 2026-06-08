@@ -1,0 +1,471 @@
+// <numeric> — mechanically ported from libc++ include/__numeric/*.h
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Folded sources (all __numeric/*.h except pstl.h, ranges_iota.h,
+//   saturation_arithmetic.h which are C++26 / parallel extensions):
+//   accumulate.h           -> accumulate
+//   reduce.h               -> reduce
+//   transform_reduce.h     -> transform_reduce
+//   inner_product.h        -> inner_product
+//   partial_sum.h          -> partial_sum
+//   adjacent_difference.h  -> adjacent_difference
+//   iota.h                 -> iota
+//   exclusive_scan.h       -> exclusive_scan
+//   inclusive_scan.h       -> inclusive_scan
+//   transform_exclusive_scan.h  -> transform_exclusive_scan
+//   transform_inclusive_scan.h  -> transform_inclusive_scan
+//   gcd_lcm.h              -> gcd, lcm
+//   midpoint.h             -> midpoint
+#pragma once
+
+#include <utility>      // move, forward
+#include <functional>   // plus<>, multiplies<>
+#include <iterator>     // iterator_traits
+#include <type_traits>  // common_type_t, make_unsigned_t, is_integral_v, etc.
+#include <limits>       // numeric_limits (midpoint, gcd)
+#include <bit>          // countr_zero (gcd binary algorithm)
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// accumulate
+// (from __numeric/accumulate.h)
+//===----------------------------------------------------------------------===//
+
+template<class InputIterator, class T>
+constexpr T
+accumulate(InputIterator first, InputIterator last, T init) {
+    for (; first != last; ++first)
+        init = move(init) + *first;
+    return init;
+}
+
+template<class InputIterator, class T, class BinaryOperation>
+constexpr T
+accumulate(InputIterator first, InputIterator last, T init, BinaryOperation binary_op) {
+    for (; first != last; ++first)
+        init = binary_op(move(init), *first);
+    return init;
+}
+
+//===----------------------------------------------------------------------===//
+// reduce (C++17)
+// (from __numeric/reduce.h)
+//===----------------------------------------------------------------------===//
+
+template<class InputIterator, class T, class BinaryOp>
+constexpr T
+reduce(InputIterator first, InputIterator last, T init, BinaryOp b) {
+    for (; first != last; ++first)
+        init = b(move(init), *first);
+    return init;
+}
+
+template<class InputIterator, class T>
+constexpr T
+reduce(InputIterator first, InputIterator last, T init) {
+    return reduce(first, last, init, plus<>());
+}
+
+template<class InputIterator>
+constexpr typename iterator_traits<InputIterator>::value_type
+reduce(InputIterator first, InputIterator last) {
+    return reduce(first, last,
+                  typename iterator_traits<InputIterator>::value_type{});
+}
+
+//===----------------------------------------------------------------------===//
+// transform_reduce (C++17)
+// (from __numeric/transform_reduce.h)
+//===----------------------------------------------------------------------===//
+
+template<class InputIterator, class T, class BinaryOp, class UnaryOp>
+constexpr T
+transform_reduce(InputIterator first, InputIterator last, T init,
+                 BinaryOp b, UnaryOp u) {
+    for (; first != last; ++first)
+        init = b(move(init), u(*first));
+    return init;
+}
+
+template<class InputIterator1, class InputIterator2, class T,
+         class BinaryOp1, class BinaryOp2>
+constexpr T
+transform_reduce(InputIterator1 first1, InputIterator1 last1,
+                 InputIterator2 first2, T init,
+                 BinaryOp1 b1, BinaryOp2 b2) {
+    for (; first1 != last1; ++first1, (void)++first2)
+        init = b1(move(init), b2(*first1, *first2));
+    return init;
+}
+
+template<class InputIterator1, class InputIterator2, class T>
+constexpr T
+transform_reduce(InputIterator1 first1, InputIterator1 last1,
+                 InputIterator2 first2, T init) {
+    return transform_reduce(first1, last1, first2, move(init),
+                            plus<>(), multiplies<>());
+}
+
+//===----------------------------------------------------------------------===//
+// inner_product
+// (from __numeric/inner_product.h)
+//===----------------------------------------------------------------------===//
+
+template<class InputIterator1, class InputIterator2, class T>
+constexpr T
+inner_product(InputIterator1 first1, InputIterator1 last1,
+              InputIterator2 first2, T init) {
+    for (; first1 != last1; ++first1, (void)++first2)
+        init = move(init) + *first1 * *first2;
+    return init;
+}
+
+template<class InputIterator1, class InputIterator2, class T,
+         class BinaryOperation1, class BinaryOperation2>
+constexpr T
+inner_product(InputIterator1 first1, InputIterator1 last1,
+              InputIterator2 first2, T init,
+              BinaryOperation1 binary_op1, BinaryOperation2 binary_op2) {
+    for (; first1 != last1; ++first1, (void)++first2)
+        init = binary_op1(move(init), binary_op2(*first1, *first2));
+    return init;
+}
+
+//===----------------------------------------------------------------------===//
+// partial_sum
+// (from __numeric/partial_sum.h)
+//===----------------------------------------------------------------------===//
+
+template<class InputIterator, class OutputIterator>
+constexpr OutputIterator
+partial_sum(InputIterator first, InputIterator last, OutputIterator result) {
+    if (first != last) {
+        typename iterator_traits<InputIterator>::value_type t(*first);
+        *result = t;
+        for (++first, (void)++result; first != last; ++first, (void)++result) {
+            t = move(t) + *first;
+            *result = t;
+        }
+    }
+    return result;
+}
+
+template<class InputIterator, class OutputIterator, class BinaryOperation>
+constexpr OutputIterator
+partial_sum(InputIterator first, InputIterator last, OutputIterator result,
+            BinaryOperation binary_op) {
+    if (first != last) {
+        typename iterator_traits<InputIterator>::value_type t(*first);
+        *result = t;
+        for (++first, (void)++result; first != last; ++first, (void)++result) {
+            t = binary_op(move(t), *first);
+            *result = t;
+        }
+    }
+    return result;
+}
+
+//===----------------------------------------------------------------------===//
+// adjacent_difference
+// (from __numeric/adjacent_difference.h)
+//===----------------------------------------------------------------------===//
+
+template<class InputIterator, class OutputIterator>
+constexpr OutputIterator
+adjacent_difference(InputIterator first, InputIterator last,
+                    OutputIterator result) {
+    if (first != last) {
+        typename iterator_traits<InputIterator>::value_type acc(*first);
+        *result = acc;
+        for (++first, (void)++result; first != last; ++first, (void)++result) {
+            typename iterator_traits<InputIterator>::value_type val(*first);
+            *result = val - move(acc);
+            acc = move(val);
+        }
+    }
+    return result;
+}
+
+template<class InputIterator, class OutputIterator, class BinaryOperation>
+constexpr OutputIterator
+adjacent_difference(InputIterator first, InputIterator last,
+                    OutputIterator result, BinaryOperation binary_op) {
+    if (first != last) {
+        typename iterator_traits<InputIterator>::value_type acc(*first);
+        *result = acc;
+        for (++first, (void)++result; first != last; ++first, (void)++result) {
+            typename iterator_traits<InputIterator>::value_type val(*first);
+            *result = binary_op(val, move(acc));
+            acc = move(val);
+        }
+    }
+    return result;
+}
+
+//===----------------------------------------------------------------------===//
+// iota
+// (from __numeric/iota.h)
+//===----------------------------------------------------------------------===//
+
+template<class ForwardIterator, class T>
+constexpr void
+iota(ForwardIterator first, ForwardIterator last, T value) {
+    for (; first != last; ++first, (void)++value)
+        *first = value;
+}
+
+//===----------------------------------------------------------------------===//
+// exclusive_scan (C++17)
+// (from __numeric/exclusive_scan.h)
+//===----------------------------------------------------------------------===//
+
+template<class InputIterator, class OutputIterator, class T, class BinaryOp>
+constexpr OutputIterator
+exclusive_scan(InputIterator first, InputIterator last,
+               OutputIterator result, T init, BinaryOp b) {
+    if (first != last) {
+        T tmp(b(init, *first));
+        while (true) {
+            *result = move(init);
+            ++result;
+            ++first;
+            if (first == last)
+                break;
+            init = move(tmp);
+            tmp  = b(init, *first);
+        }
+    }
+    return result;
+}
+
+template<class InputIterator, class OutputIterator, class T>
+constexpr OutputIterator
+exclusive_scan(InputIterator first, InputIterator last,
+               OutputIterator result, T init) {
+    return exclusive_scan(first, last, result, init, plus<>());
+}
+
+//===----------------------------------------------------------------------===//
+// inclusive_scan (C++17)
+// (from __numeric/inclusive_scan.h)
+//===----------------------------------------------------------------------===//
+
+template<class InputIterator, class OutputIterator, class T, class BinaryOp>
+constexpr OutputIterator
+inclusive_scan(InputIterator first, InputIterator last,
+               OutputIterator result, BinaryOp b, T init) {
+    for (; first != last; ++first, (void)++result) {
+        init    = b(init, *first);
+        *result = init;
+    }
+    return result;
+}
+
+template<class InputIterator, class OutputIterator, class BinaryOp>
+constexpr OutputIterator
+inclusive_scan(InputIterator first, InputIterator last,
+               OutputIterator result, BinaryOp b) {
+    if (first != last) {
+        typename iterator_traits<InputIterator>::value_type init = *first;
+        *result++ = init;
+        if (++first != last)
+            return inclusive_scan(first, last, result, b, init);
+    }
+    return result;
+}
+
+template<class InputIterator, class OutputIterator>
+constexpr OutputIterator
+inclusive_scan(InputIterator first, InputIterator last,
+               OutputIterator result) {
+    return inclusive_scan(first, last, result, plus<>());
+}
+
+//===----------------------------------------------------------------------===//
+// transform_exclusive_scan (C++17)
+// (from __numeric/transform_exclusive_scan.h)
+//===----------------------------------------------------------------------===//
+
+template<class InputIterator, class OutputIterator, class T,
+         class BinaryOp, class UnaryOp>
+constexpr OutputIterator
+transform_exclusive_scan(InputIterator first, InputIterator last,
+                         OutputIterator result, T init,
+                         BinaryOp b, UnaryOp u) {
+    if (first != last) {
+        T saved = init;
+        do {
+            init    = b(init, u(*first));
+            *result = saved;
+            saved   = init;
+            ++result;
+        } while (++first != last);
+    }
+    return result;
+}
+
+//===----------------------------------------------------------------------===//
+// transform_inclusive_scan (C++17)
+// (from __numeric/transform_inclusive_scan.h)
+//===----------------------------------------------------------------------===//
+
+template<class InputIterator, class OutputIterator, class T,
+         class BinaryOp, class UnaryOp>
+constexpr OutputIterator
+transform_inclusive_scan(InputIterator first, InputIterator last,
+                         OutputIterator result, BinaryOp b, UnaryOp u,
+                         T init) {
+    for (; first != last; ++first, (void)++result) {
+        init    = b(init, u(*first));
+        *result = init;
+    }
+    return result;
+}
+
+template<class InputIterator, class OutputIterator,
+         class BinaryOp, class UnaryOp>
+constexpr OutputIterator
+transform_inclusive_scan(InputIterator first, InputIterator last,
+                         OutputIterator result, BinaryOp b, UnaryOp u) {
+    if (first != last) {
+        typename iterator_traits<InputIterator>::value_type init = u(*first);
+        *result++ = init;
+        if (++first != last)
+            return transform_inclusive_scan(first, last, result, b, u, init);
+    }
+    return result;
+}
+
+//===----------------------------------------------------------------------===//
+// gcd, lcm (C++17)
+// (from __numeric/gcd_lcm.h)
+// Uses binary GCD algorithm with countr_zero from <bit>.
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+template<class Result, class Source>
+constexpr Result abs_in_type(Source t) noexcept {
+    if constexpr (is_signed_v<Source>) {
+        if (t >= 0)
+            return static_cast<Result>(t);
+        // Handle min() edge case: -min overflows signed, cast to Result first
+        return static_cast<Result>(-(static_cast<Result>(t)));
+    } else {
+        return static_cast<Result>(t);
+    }
+}
+
+} // namespace detail
+
+template<class T, class U>
+constexpr common_type_t<T, U> gcd(T m, U n) {
+    static_assert(is_integral_v<T> && is_integral_v<U>,
+                  "Arguments to gcd must be integer types");
+    static_assert(!is_same_v<remove_cv_t<T>, bool>,
+                  "First argument to gcd cannot be bool");
+    static_assert(!is_same_v<remove_cv_t<U>, bool>,
+                  "Second argument to gcd cannot be bool");
+
+    using R = common_type_t<T, U>;
+    using W = make_unsigned_t<R>;
+
+    auto a = static_cast<W>(detail::abs_in_type<R>(m));
+    auto b = static_cast<W>(detail::abs_in_type<R>(n));
+
+    if (a < b) {
+        W tmp = b;
+        b = a;
+        a = tmp;
+    }
+    if (b == 0)
+        return static_cast<R>(a);
+    a %= b;
+    if (a == 0)
+        return static_cast<R>(b);
+
+    W c     = a | b;
+    int shift = countr_zero(c);
+    a >>= countr_zero(a);
+    do {
+        W t = b >> countr_zero(b);
+        if (a > t) {
+            b = a - t;
+            a = t;
+        } else {
+            b = t - a;
+        }
+    } while (b != 0);
+    return static_cast<R>(a << shift);
+}
+
+template<class T, class U>
+constexpr common_type_t<T, U> lcm(T m, U n) {
+    static_assert(is_integral_v<T> && is_integral_v<U>,
+                  "Arguments to lcm must be integer types");
+    static_assert(!is_same_v<remove_cv_t<T>, bool>,
+                  "First argument to lcm cannot be bool");
+    static_assert(!is_same_v<remove_cv_t<U>, bool>,
+                  "Second argument to lcm cannot be bool");
+
+    if (m == 0 || n == 0)
+        return 0;
+
+    using R = common_type_t<T, U>;
+    R val1 = detail::abs_in_type<R>(m) / gcd(m, n);
+    R val2 = detail::abs_in_type<R>(n);
+    R res;
+    [[maybe_unused]] bool overflow = __builtin_mul_overflow(val1, val2, &res);
+    // In -fno-exceptions mode we just assert; overflow is UB anyway
+    return res;
+}
+
+//===----------------------------------------------------------------------===//
+// midpoint (C++20)
+// (from __numeric/midpoint.h)
+//===----------------------------------------------------------------------===//
+
+template<class T>
+    requires (is_integral_v<T> && !is_same_v<remove_cv_t<T>, bool>)
+[[nodiscard]] constexpr T midpoint(T a, T b) noexcept {
+    using U = make_unsigned_t<T>;
+    constexpr U bitshift = numeric_limits<U>::digits - 1;
+
+    U diff     = U(b) - U(a);
+    U sign_bit = b < a;
+
+    U half_diff = (diff / 2) + (sign_bit << bitshift) + (sign_bit & diff);
+
+    return a + half_diff;
+}
+
+template<class T>
+    requires (is_object_v<T> && (sizeof(T) > 0))
+[[nodiscard]] constexpr T* midpoint(T* a, T* b) noexcept {
+    return a + midpoint(ptrdiff_t(0), b - a);
+}
+
+namespace detail {
+    template<class F>
+    constexpr F fp_abs(F f) noexcept {
+        return f >= 0 ? f : -f;
+    }
+} // namespace detail
+
+template<class F>
+    requires is_floating_point_v<F>
+[[nodiscard]] constexpr F midpoint(F a, F b) noexcept {
+    constexpr F lo = numeric_limits<F>::min() * 2;
+    constexpr F hi = numeric_limits<F>::max() / 2;
+
+    if (detail::fp_abs(a) <= hi && detail::fp_abs(b) <= hi)
+        return (a + b) / 2;
+    if (detail::fp_abs(a) < lo)
+        return a + b / 2;
+    if (detail::fp_abs(b) < lo)
+        return a / 2 + b;
+    return a / 2 + b / 2;
+}
+
+} // namespace std
