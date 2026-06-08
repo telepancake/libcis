@@ -1,0 +1,885 @@
+// <list> — doubly-linked list
+// Mechanically ported from libc++ include/list
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+#pragma once
+
+#include <memory>
+#include <iterator>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+#include <initializer_list>
+#include <compare>
+#include <limits>
+#include <functional>
+
+namespace std {
+
+// ============================================================
+// Node types
+// ============================================================
+
+template<class T>
+struct list_node_base {
+    list_node_base* prev;
+    list_node_base* next;
+
+    list_node_base() noexcept : prev(this), next(this) {}
+    list_node_base(list_node_base* p, list_node_base* n) noexcept : prev(p), next(n) {}
+};
+
+template<class T>
+struct list_node : public list_node_base<T> {
+private:
+    union { T value; };
+public:
+    T& get_value() noexcept { return value; }
+    const T& get_value() const noexcept { return value; }
+
+    explicit list_node(list_node_base<T>* p, list_node_base<T>* n)
+        : list_node_base<T>(p, n) {}
+    ~list_node() {}
+
+    list_node_base<T>* as_link() noexcept { return this; }
+};
+
+// ============================================================
+// Iterators
+// ============================================================
+
+template<class T>
+class list_const_iterator;
+
+template<class T>
+class list_iterator {
+public:
+    using iterator_category = bidirectional_iterator_tag;
+    using value_type        = T;
+    using reference         = T&;
+    using pointer           = T*;
+    using difference_type   = ptrdiff_t;
+
+private:
+    list_node_base<T>* ptr;
+
+    explicit list_iterator(list_node_base<T>* p) noexcept : ptr(p) {}
+
+    template<class, class> friend class list;
+    friend class list_const_iterator<T>;
+
+public:
+    list_iterator() noexcept : ptr(nullptr) {}
+
+    reference operator*() const noexcept {
+        return static_cast<list_node<T>*>(ptr)->get_value();
+    }
+    pointer operator->() const noexcept {
+        return &static_cast<list_node<T>*>(ptr)->get_value();
+    }
+
+    list_iterator& operator++() noexcept { ptr = ptr->next; return *this; }
+    list_iterator  operator++(int) noexcept {
+        list_iterator t(*this); ++(*this); return t;
+    }
+    list_iterator& operator--() noexcept { ptr = ptr->prev; return *this; }
+    list_iterator  operator--(int) noexcept {
+        list_iterator t(*this); --(*this); return t;
+    }
+
+    friend bool operator==(const list_iterator& x, const list_iterator& y) noexcept {
+        return x.ptr == y.ptr;
+    }
+    friend bool operator!=(const list_iterator& x, const list_iterator& y) noexcept {
+        return !(x == y);
+    }
+};
+
+template<class T>
+class list_const_iterator {
+public:
+    using iterator_category = bidirectional_iterator_tag;
+    using value_type        = T;
+    using reference         = const T&;
+    using pointer           = const T*;
+    using difference_type   = ptrdiff_t;
+
+private:
+    const list_node_base<T>* ptr;
+
+    explicit list_const_iterator(const list_node_base<T>* p) noexcept : ptr(p) {}
+
+    template<class, class> friend class list;
+
+public:
+    list_const_iterator() noexcept : ptr(nullptr) {}
+    list_const_iterator(const list_iterator<T>& i) noexcept : ptr(i.ptr) {}
+
+    reference operator*() const noexcept {
+        return static_cast<const list_node<T>*>(ptr)->get_value();
+    }
+    pointer operator->() const noexcept {
+        return &static_cast<const list_node<T>*>(ptr)->get_value();
+    }
+
+    list_const_iterator& operator++() noexcept { ptr = ptr->next; return *this; }
+    list_const_iterator  operator++(int) noexcept {
+        list_const_iterator t(*this); ++(*this); return t;
+    }
+    list_const_iterator& operator--() noexcept { ptr = ptr->prev; return *this; }
+    list_const_iterator  operator--(int) noexcept {
+        list_const_iterator t(*this); --(*this); return t;
+    }
+
+    friend bool operator==(const list_const_iterator& x, const list_const_iterator& y) noexcept {
+        return x.ptr == y.ptr;
+    }
+    friend bool operator!=(const list_const_iterator& x, const list_const_iterator& y) noexcept {
+        return !(x == y);
+    }
+};
+
+// ============================================================
+// list<T, Allocator>
+// ============================================================
+
+template<class T, class Allocator = allocator<T>>
+class list {
+public:
+    using value_type             = T;
+    using allocator_type         = Allocator;
+    using reference              = value_type&;
+    using const_reference        = const value_type&;
+    using size_type              = size_t;
+    using difference_type        = ptrdiff_t;
+    using iterator               = list_iterator<T>;
+    using const_iterator         = list_const_iterator<T>;
+    using reverse_iterator       = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+private:
+    using node_type      = list_node<T>;
+    using node_base_type = list_node_base<T>;
+    using node_alloc_type = typename allocator_traits<Allocator>::template rebind_alloc<node_type>;
+    using node_alloc_traits = allocator_traits<node_alloc_type>;
+
+    node_base_type end_node;
+    size_type sz;
+    node_alloc_type node_alloc;
+
+    // --- allocator helpers ---
+    static void swap_alloc(node_alloc_type& a, node_alloc_type& b, true_type) noexcept {
+        using std::swap;
+        swap(a, b);
+    }
+    static void swap_alloc(node_alloc_type&, node_alloc_type&, false_type) noexcept {}
+
+    node_base_type* end_link() noexcept { return &end_node; }
+    const node_base_type* end_link() const noexcept { return &end_node; }
+
+    node_type* create_node(node_base_type* prev_ptr, node_base_type* next_ptr) {
+        node_type* n = node_alloc_traits::allocate(node_alloc, 1);
+        ::new(static_cast<void*>(n)) node_type(prev_ptr, next_ptr);
+        node_alloc_traits::construct(node_alloc, &n->get_value());
+        return n;
+    }
+
+    template<class... Args>
+    node_type* create_node(node_base_type* prev_ptr, node_base_type* next_ptr, Args&&... args) {
+        node_type* n = node_alloc_traits::allocate(node_alloc, 1);
+        ::new(static_cast<void*>(n)) node_type(prev_ptr, next_ptr);
+        node_alloc_traits::construct(node_alloc, &n->get_value(), forward<Args>(args)...);
+        return n;
+    }
+
+    void delete_node(node_type* n) noexcept {
+        node_alloc_traits::destroy(node_alloc, &n->get_value());
+        n->~node_type();
+        node_alloc_traits::deallocate(node_alloc, n, 1);
+    }
+
+    // Link [f,l] just prior to p
+    static void link_nodes(node_base_type* p, node_base_type* f, node_base_type* l) noexcept {
+        p->prev->next = f;
+        f->prev       = p->prev;
+        p->prev       = l;
+        l->next       = p;
+    }
+
+    static void unlink_nodes(node_base_type* f, node_base_type* l) noexcept {
+        f->prev->next = l->next;
+        l->next->prev = f->prev;
+    }
+
+    void link_at_front(node_base_type* f, node_base_type* l) noexcept {
+        f->prev       = end_link();
+        l->next       = end_node.next;
+        l->next->prev = l;
+        end_node.next = f;
+    }
+
+    void link_at_back(node_base_type* f, node_base_type* l) noexcept {
+        l->next       = end_link();
+        f->prev       = end_node.prev;
+        f->prev->next = f;
+        end_node.prev = l;
+    }
+
+    iterator iter_at(size_type n) {
+        return n <= sz / 2
+            ? std::next(begin(), static_cast<difference_type>(n))
+            : std::prev(end(),   static_cast<difference_type>(sz - n));
+    }
+
+    template<class Iterator, class Sentinel>
+    void assign_with_sentinel(Iterator f, Sentinel l) {
+        iterator i = begin(), e = end();
+        for (; f != l && i != e; ++f, (void)++i)
+            *i = *f;
+        if (i == e)
+            insert_with_sentinel(e, move(f), move(l));
+        else
+            erase(i, e);
+    }
+
+    template<class Iterator, class Sentinel>
+    iterator insert_with_sentinel(const_iterator pos, Iterator f, Sentinel l) {
+        iterator r(const_cast<node_base_type*>(pos.ptr));
+        if (f != l) {
+            size_type ds = 0;
+            node_type* node = create_node(nullptr, nullptr, *f);
+            ++ds;
+            iterator first(node->as_link());
+            iterator last = first;
+            for (++f; f != l; ++f, (void)++last, ++ds) {
+                last.ptr->next = create_node(last.ptr, nullptr, *f)->as_link();
+            }
+            link_nodes(const_cast<node_base_type*>(pos.ptr), first.ptr, last.ptr);
+            sz += ds;
+            r = first;
+        }
+        return r;
+    }
+
+    void copy_assign_alloc(const list& c) {
+        if constexpr (node_alloc_traits::propagate_on_container_copy_assignment::value) {
+            if (node_alloc != c.node_alloc) clear();
+            node_alloc = c.node_alloc;
+        }
+    }
+
+    void move_assign_alloc(list& c) noexcept {
+        if constexpr (node_alloc_traits::propagate_on_container_move_assignment::value)
+            node_alloc = move(c.node_alloc);
+    }
+
+    void move_assign(list& c, true_type)
+        noexcept(is_nothrow_move_assignable<node_alloc_type>::value) {
+        clear();
+        move_assign_alloc(c);
+        splice(end(), c);
+    }
+
+    void move_assign(list& c, false_type) {
+        if (node_alloc != c.node_alloc) {
+            using Ip = move_iterator<iterator>;
+            assign(Ip(c.begin()), Ip(c.end()));
+        } else {
+            move_assign(c, true_type{});
+        }
+    }
+
+public:
+    // --- constructors ---
+    list() noexcept(is_nothrow_default_constructible<node_alloc_type>::value)
+        : sz(0) {}
+
+    explicit list(const allocator_type& a)
+        : sz(0), node_alloc(node_alloc_type(a)) {}
+
+    explicit list(size_type n) : sz(0) {
+        for (; n > 0; --n) emplace_back();
+    }
+
+    explicit list(size_type n, const allocator_type& a) : sz(0), node_alloc(node_alloc_type(a)) {
+        for (; n > 0; --n) emplace_back();
+    }
+
+    list(size_type n, const value_type& x) : sz(0) {
+        for (; n > 0; --n) push_back(x);
+    }
+
+    template<class Alloc2 = Allocator>
+        requires is_same_v<Alloc2, Allocator>
+    list(size_type n, const value_type& x, const allocator_type& a)
+        : sz(0), node_alloc(node_alloc_type(a)) {
+        for (; n > 0; --n) push_back(x);
+    }
+
+    template<class InputIter>
+        requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    list(InputIter f, InputIter l) : sz(0) {
+        for (; f != l; ++f) emplace_back(*f);
+    }
+
+    template<class InputIter>
+        requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    list(InputIter f, InputIter l, const allocator_type& a)
+        : sz(0), node_alloc(node_alloc_type(a)) {
+        for (; f != l; ++f) emplace_back(*f);
+    }
+
+    list(const list& c)
+        : sz(0),
+          node_alloc(node_alloc_traits::select_on_container_copy_construction(c.node_alloc)) {
+        for (auto i = c.begin(), e = c.end(); i != e; ++i)
+            push_back(*i);
+    }
+
+    list(const list& c, const allocator_type& a) : sz(0), node_alloc(node_alloc_type(a)) {
+        for (auto i = c.begin(), e = c.end(); i != e; ++i)
+            push_back(*i);
+    }
+
+    list(list&& c) noexcept(is_nothrow_move_constructible<node_alloc_type>::value)
+        : sz(0), node_alloc(move(c.node_alloc)) {
+        splice(end(), c);
+    }
+
+    list(list&& c, const allocator_type& a) : sz(0), node_alloc(node_alloc_type(a)) {
+        if (a == c.get_allocator()) {
+            splice(end(), c);
+        } else {
+            using Ip = move_iterator<iterator>;
+            assign(Ip(c.begin()), Ip(c.end()));
+        }
+    }
+
+    list(initializer_list<value_type> il) : sz(0) {
+        for (auto i = il.begin(), e = il.end(); i != e; ++i)
+            push_back(*i);
+    }
+
+    list(initializer_list<value_type> il, const allocator_type& a)
+        : sz(0), node_alloc(node_alloc_type(a)) {
+        for (auto i = il.begin(), e = il.end(); i != e; ++i)
+            push_back(*i);
+    }
+
+    ~list() { clear(); }
+
+    // --- assignment ---
+    list& operator=(const list& c) {
+        if (this != addressof(c)) {
+            copy_assign_alloc(c);
+            assign(c.begin(), c.end());
+        }
+        return *this;
+    }
+
+    list& operator=(list&& c) noexcept(
+        (node_alloc_traits::propagate_on_container_move_assignment::value &&
+         is_nothrow_move_assignable<node_alloc_type>::value) ||
+        allocator_traits<allocator_type>::is_always_equal::value) {
+        move_assign(c, bool_constant<node_alloc_traits::propagate_on_container_move_assignment::value>{});
+        return *this;
+    }
+
+    list& operator=(initializer_list<value_type> il) {
+        assign(il.begin(), il.end());
+        return *this;
+    }
+
+    template<class InputIter>
+        requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    void assign(InputIter f, InputIter l) {
+        assign_with_sentinel(f, l);
+    }
+
+    void assign(size_type n, const value_type& x) {
+        iterator i = begin(), e = end();
+        for (; n > 0 && i != e; --n, (void)++i)
+            *i = x;
+        if (i == e)
+            insert(e, n, x);
+        else
+            erase(i, e);
+    }
+
+    void assign(initializer_list<value_type> il) {
+        assign(il.begin(), il.end());
+    }
+
+    allocator_type get_allocator() const noexcept {
+        return allocator_type(node_alloc);
+    }
+
+    // --- iterators ---
+    iterator begin() noexcept { return iterator(end_node.next); }
+    const_iterator begin() const noexcept { return const_iterator(end_node.next); }
+    iterator end() noexcept { return iterator(end_link()); }
+    const_iterator end() const noexcept { return const_iterator(end_link()); }
+    const_iterator cbegin() const noexcept { return begin(); }
+    const_iterator cend() const noexcept { return end(); }
+    reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
+    const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
+    reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
+    const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
+    const_reverse_iterator crbegin() const noexcept { return const_reverse_iterator(end()); }
+    const_reverse_iterator crend() const noexcept { return const_reverse_iterator(begin()); }
+
+    // --- capacity ---
+    [[nodiscard]] bool empty() const noexcept { return sz == 0; }
+    size_type size() const noexcept { return sz; }
+    size_type max_size() const noexcept {
+        return min<size_type>(node_alloc_traits::max_size(node_alloc),
+                              numeric_limits<difference_type>::max());
+    }
+
+    // --- element access ---
+    reference front() { return static_cast<node_type*>(end_node.next)->get_value(); }
+    const_reference front() const { return static_cast<const node_type*>(end_node.next)->get_value(); }
+    reference back() { return static_cast<node_type*>(end_node.prev)->get_value(); }
+    const_reference back() const { return static_cast<const node_type*>(end_node.prev)->get_value(); }
+
+    // --- modifiers ---
+    void push_front(const value_type& x) {
+        node_type* node = create_node(nullptr, nullptr, x);
+        link_at_front(node->as_link(), node->as_link());
+        ++sz;
+    }
+
+    void push_front(value_type&& x) {
+        node_type* node = create_node(nullptr, nullptr, move(x));
+        link_at_front(node->as_link(), node->as_link());
+        ++sz;
+    }
+
+    template<class... Args>
+    reference emplace_front(Args&&... args) {
+        node_type* node = create_node(nullptr, nullptr, forward<Args>(args)...);
+        link_at_front(node->as_link(), node->as_link());
+        ++sz;
+        return node->get_value();
+    }
+
+    void pop_front() {
+        node_base_type* n = end_node.next;
+        unlink_nodes(n, n);
+        --sz;
+        delete_node(static_cast<node_type*>(n));
+    }
+
+    void push_back(const value_type& x) {
+        node_type* node = create_node(nullptr, nullptr, x);
+        link_at_back(node->as_link(), node->as_link());
+        ++sz;
+    }
+
+    void push_back(value_type&& x) {
+        node_type* node = create_node(nullptr, nullptr, move(x));
+        link_at_back(node->as_link(), node->as_link());
+        ++sz;
+    }
+
+    template<class... Args>
+    reference emplace_back(Args&&... args) {
+        node_type* node = create_node(nullptr, nullptr, forward<Args>(args)...);
+        link_at_back(node->as_link(), node->as_link());
+        ++sz;
+        return node->get_value();
+    }
+
+    void pop_back() {
+        node_base_type* n = end_node.prev;
+        unlink_nodes(n, n);
+        --sz;
+        delete_node(static_cast<node_type*>(n));
+    }
+
+    iterator insert(const_iterator pos, const value_type& x) {
+        node_type* node = create_node(nullptr, nullptr, x);
+        node_base_type* nl = node->as_link();
+        link_nodes(const_cast<node_base_type*>(pos.ptr), nl, nl);
+        ++sz;
+        return iterator(nl);
+    }
+
+    iterator insert(const_iterator pos, value_type&& x) {
+        node_type* node = create_node(nullptr, nullptr, move(x));
+        node_base_type* nl = node->as_link();
+        link_nodes(const_cast<node_base_type*>(pos.ptr), nl, nl);
+        ++sz;
+        return iterator(nl);
+    }
+
+    iterator insert(const_iterator pos, size_type n, const value_type& x) {
+        iterator r(const_cast<node_base_type*>(pos.ptr));
+        if (n > 0) {
+            size_type ds = 0;
+            node_type* node = create_node(nullptr, nullptr, x);
+            ++ds;
+            iterator first(node->as_link());
+            iterator last = first;
+            for (--n; n != 0; --n, (void)++last, ++ds) {
+                last.ptr->next = create_node(last.ptr, nullptr, x)->as_link();
+            }
+            link_nodes(const_cast<node_base_type*>(pos.ptr), first.ptr, last.ptr);
+            sz += ds;
+            r = first;
+        }
+        return r;
+    }
+
+    template<class InputIter>
+        requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    iterator insert(const_iterator pos, InputIter f, InputIter l) {
+        return insert_with_sentinel(pos, f, l);
+    }
+
+    iterator insert(const_iterator pos, initializer_list<value_type> il) {
+        return insert_with_sentinel(pos, il.begin(), il.end());
+    }
+
+    template<class... Args>
+    iterator emplace(const_iterator pos, Args&&... args) {
+        node_type* node = create_node(nullptr, nullptr, forward<Args>(args)...);
+        node_base_type* nl = node->as_link();
+        link_nodes(const_cast<node_base_type*>(pos.ptr), nl, nl);
+        ++sz;
+        return iterator(nl);
+    }
+
+    iterator erase(const_iterator pos) {
+        node_base_type* n = const_cast<node_base_type*>(pos.ptr);
+        node_base_type* r = n->next;
+        unlink_nodes(n, n);
+        --sz;
+        delete_node(static_cast<node_type*>(n));
+        return iterator(r);
+    }
+
+    iterator erase(const_iterator f, const_iterator l) {
+        if (f != l) {
+            unlink_nodes(const_cast<node_base_type*>(f.ptr),
+                         const_cast<node_base_type*>(l.ptr)->prev);
+            while (f != l) {
+                node_base_type* n = const_cast<node_base_type*>(f.ptr);
+                ++f;
+                --sz;
+                delete_node(static_cast<node_type*>(n));
+            }
+        }
+        return iterator(const_cast<node_base_type*>(l.ptr));
+    }
+
+    void resize(size_type n) {
+        if (n < sz)
+            erase(iter_at(n), end());
+        else if (n > sz) {
+            n -= sz;
+            for (; n != 0; --n) emplace_back();
+        }
+    }
+
+    void resize(size_type n, const value_type& x) {
+        if (n < sz)
+            erase(iter_at(n), end());
+        else if (n > sz) {
+            n -= sz;
+            for (; n != 0; --n) push_back(x);
+        }
+    }
+
+    void clear() noexcept {
+        node_base_type* f = end_node.next;
+        node_base_type* l = end_link();
+        if (f != l) {
+            unlink_nodes(f, l->prev);
+            sz = 0;
+            while (f != l) {
+                node_type* np = static_cast<node_type*>(f);
+                f = f->next;
+                delete_node(np);
+            }
+        }
+    }
+
+    void swap(list& c) noexcept {
+        swap_alloc(node_alloc, c.node_alloc,
+            bool_constant<node_alloc_traits::propagate_on_container_swap::value>{});
+        using std::swap;
+        swap(sz, c.sz);
+        swap(end_node, c.end_node);
+        // Fix up sentinel pointers
+        if (sz == 0)
+            end_node.next = end_node.prev = end_link();
+        else {
+            end_node.prev->next = end_link();
+            end_node.next->prev = end_link();
+        }
+        if (c.sz == 0)
+            c.end_node.next = c.end_node.prev = c.end_link();
+        else {
+            c.end_node.prev->next = c.end_link();
+            c.end_node.next->prev = c.end_link();
+        }
+    }
+
+    // --- splice ---
+    void splice(const_iterator pos, list& c) {
+        if (!c.empty()) {
+            node_base_type* f = c.end_node.next;
+            node_base_type* l = c.end_node.prev;
+            unlink_nodes(f, l);
+            link_nodes(const_cast<node_base_type*>(pos.ptr), f, l);
+            sz += c.sz;
+            c.sz = 0;
+        }
+    }
+
+    void splice(const_iterator pos, list&& c) { splice(pos, c); }
+
+    void splice(const_iterator pos, list& c, const_iterator i) {
+        if (pos.ptr != i.ptr && pos.ptr != i.ptr->next) {
+            node_base_type* f = const_cast<node_base_type*>(i.ptr);
+            unlink_nodes(f, f);
+            link_nodes(const_cast<node_base_type*>(pos.ptr), f, f);
+            --c.sz;
+            ++sz;
+        }
+    }
+
+    void splice(const_iterator pos, list&& c, const_iterator i) { splice(pos, c, i); }
+
+    void splice(const_iterator pos, list& c, const_iterator f, const_iterator l) {
+        if (f != l) {
+            node_base_type* first = const_cast<node_base_type*>(f.ptr);
+            auto lm1 = l; --lm1;
+            node_base_type* last = const_cast<node_base_type*>(lm1.ptr);
+            if (this != addressof(c)) {
+                size_type s = static_cast<size_type>(distance(f, l));
+                c.sz -= s;
+                sz   += s;
+            }
+            unlink_nodes(first, last);
+            link_nodes(const_cast<node_base_type*>(pos.ptr), first, last);
+        }
+    }
+
+    void splice(const_iterator pos, list&& c, const_iterator f, const_iterator l) {
+        splice(pos, c, f, l);
+    }
+
+    // --- remove / remove_if ---
+    size_type remove(const value_type& x) {
+        list deleted_nodes(get_allocator());
+        for (const_iterator i = begin(), e = end(); i != e;) {
+            if (*i == x) {
+                const_iterator j = next(i);
+                for (; j != e && *j == x; ++j) ;
+                deleted_nodes.splice(deleted_nodes.end(), *this, i, j);
+                i = j;
+                if (i != e) ++i;
+            } else {
+                ++i;
+            }
+        }
+        return deleted_nodes.size();
+    }
+
+    template<class Pred>
+    size_type remove_if(Pred pred) {
+        list deleted_nodes(get_allocator());
+        for (iterator i = begin(), e = end(); i != e;) {
+            if (pred(*i)) {
+                iterator j = next(i);
+                for (; j != e && pred(*j); ++j) ;
+                deleted_nodes.splice(deleted_nodes.end(), *this, i, j);
+                i = j;
+                if (i != e) ++i;
+            } else {
+                ++i;
+            }
+        }
+        return deleted_nodes.size();
+    }
+
+    // --- unique ---
+    size_type unique() { return unique(equal_to<>{}); }
+
+    template<class BinaryPred>
+    size_type unique(BinaryPred pred) {
+        list deleted_nodes(get_allocator());
+        for (iterator i = begin(), e = end(); i != e;) {
+            iterator j = next(i);
+            for (; j != e && pred(*i, *j); ++j) ;
+            if (++i != j) {
+                deleted_nodes.splice(deleted_nodes.end(), *this, i, j);
+                i = j;
+            }
+        }
+        return deleted_nodes.size();
+    }
+
+    // --- merge ---
+    void merge(list& c) { merge(c, less<>{}); }
+    void merge(list&& c) { merge(c); }
+
+    template<class Comp>
+    void merge(list&& c, Comp comp) { merge(c, comp); }
+
+    template<class Comp>
+    void merge(list& c, Comp comp) {
+        if (this != addressof(c)) {
+            iterator f1 = begin(), e1 = end();
+            iterator f2 = c.begin(), e2 = c.end();
+            while (f1 != e1 && f2 != e2) {
+                if (comp(*f2, *f1)) {
+                    size_type ds = 1;
+                    iterator m2 = next(f2);
+                    for (; m2 != e2 && comp(*m2, *f1); ++m2, (void)++ds) ;
+                    sz += ds;
+                    c.sz -= ds;
+                    node_base_type* f = f2.ptr;
+                    node_base_type* l = m2.ptr->prev;
+                    f2 = m2;
+                    unlink_nodes(f, l);
+                    m2 = next(f1);
+                    link_nodes(f1.ptr, f, l);
+                    f1 = m2;
+                } else {
+                    ++f1;
+                }
+            }
+            splice(e1, c);
+        }
+    }
+
+    // --- sort ---
+    void sort() { sort(less<>{}); }
+
+    template<class Comp>
+    void sort(Comp comp) {
+        do_sort(begin(), end(), sz, comp);
+    }
+
+private:
+    template<class Comp>
+    static iterator do_sort(iterator f1, iterator e2, size_type n, Comp& comp) {
+        switch (n) {
+        case 0:
+        case 1:
+            return f1;
+        case 2: {
+            iterator lm1 = prev(e2);
+            if (comp(*lm1, *f1)) {
+                node_base_type* f = lm1.ptr;
+                unlink_nodes(f, f);
+                link_nodes(f1.ptr, f, f);
+                return lm1;
+            }
+            return f1;
+        }
+        }
+        size_type n2   = n / 2;
+        iterator e1    = std::next(f1, static_cast<difference_type>(n2));
+        iterator r = f1 = do_sort(f1, e1, n2, comp);
+        iterator f2 = e1 = do_sort(e1, e2, n - n2, comp);
+        if (comp(*f2, *f1)) {
+            iterator m2 = std::next(f2);
+            for (; m2 != e2 && comp(*m2, *f1); ++m2) ;
+            node_base_type* ff = f2.ptr;
+            node_base_type* ll = m2.ptr->prev;
+            r = f2;
+            e1 = f2 = m2;
+            unlink_nodes(ff, ll);
+            m2 = std::next(f1);
+            link_nodes(f1.ptr, ff, ll);
+            f1 = m2;
+        } else {
+            ++f1;
+        }
+        while (f1 != e1 && f2 != e2) {
+            if (comp(*f2, *f1)) {
+                iterator m2 = std::next(f2);
+                for (; m2 != e2 && comp(*m2, *f1); ++m2) ;
+                node_base_type* ff = f2.ptr;
+                node_base_type* ll = m2.ptr->prev;
+                if (e1 == f2) e1 = m2;
+                f2 = m2;
+                unlink_nodes(ff, ll);
+                m2 = std::next(f1);
+                link_nodes(f1.ptr, ff, ll);
+                f1 = m2;
+            } else {
+                ++f1;
+            }
+        }
+        return r;
+    }
+
+public:
+    void reverse() noexcept {
+        if (sz > 1) {
+            iterator e = end();
+            for (iterator i = begin(); i.ptr != e.ptr;) {
+                using std::swap;
+                swap(i.ptr->prev, i.ptr->next);
+                i.ptr = i.ptr->prev;
+            }
+            using std::swap;
+            swap(e.ptr->prev, e.ptr->next);
+        }
+    }
+};
+
+// ============================================================
+// Deduction guides
+// ============================================================
+
+template<class InputIter,
+         class Alloc = allocator<typename iterator_traits<InputIter>::value_type>>
+    requires requires { typename iterator_traits<InputIter>::iterator_category; }
+list(InputIter, InputIter) -> list<typename iterator_traits<InputIter>::value_type, Alloc>;
+
+template<class InputIter, class Alloc>
+    requires requires { typename iterator_traits<InputIter>::iterator_category; }
+list(InputIter, InputIter, Alloc) -> list<typename iterator_traits<InputIter>::value_type, Alloc>;
+
+// ============================================================
+// Comparison operators
+// ============================================================
+
+template<class T, class Alloc>
+inline bool operator==(const list<T, Alloc>& x, const list<T, Alloc>& y) {
+    return x.size() == y.size() && equal(x.begin(), x.end(), y.begin());
+}
+
+template<class T, class Alloc>
+inline auto operator<=>(const list<T, Alloc>& x, const list<T, Alloc>& y) {
+    return lexicographical_compare_three_way(x.begin(), x.end(), y.begin(), y.end(),
+                                             synth_three_way);
+}
+
+// ============================================================
+// Non-member swap, erase, erase_if
+// ============================================================
+
+template<class T, class Alloc>
+inline void swap(list<T, Alloc>& x, list<T, Alloc>& y) noexcept(noexcept(x.swap(y))) {
+    x.swap(y);
+}
+
+template<class T, class Alloc, class U>
+inline typename list<T, Alloc>::size_type
+erase(list<T, Alloc>& c, const U& value) {
+    return erase_if(c, [&](const auto& elem) -> bool { return elem == value; });
+}
+
+template<class T, class Alloc, class Predicate>
+inline typename list<T, Alloc>::size_type
+erase_if(list<T, Alloc>& c, Predicate pred) {
+    return c.remove_if(pred);
+}
+
+} // namespace std
