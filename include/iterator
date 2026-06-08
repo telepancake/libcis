@@ -17,6 +17,8 @@
 #include <utility>
 #include <cstddef>
 #include <initializer_list>
+#include <bits/pointer.h>
+#include <bits/identity.h>
 
 namespace std {
 
@@ -682,12 +684,6 @@ concept random_access_iterator =
 // [iterator.concept.contiguous] — contiguous_iterator
 //===----------------------------------------------------------------------===//
 
-// to_address forward declaration (defined fully below)
-template<class T>
-constexpr T* to_address(T* p) noexcept;
-template<class Ptr>
-constexpr auto to_address(const Ptr& p) noexcept;
-
 template<class I>
 concept contiguous_iterator =
     random_access_iterator<I> &&
@@ -697,25 +693,6 @@ concept contiguous_iterator =
     requires(const I& i) {
         { to_address(i) } -> same_as<add_pointer_t<iter_reference_t<I>>>;
     };
-
-//===----------------------------------------------------------------------===//
-// to_address (from <memory>, minimal version needed for contiguous_iterator)
-//===----------------------------------------------------------------------===//
-
-template<class T>
-constexpr T* to_address(T* p) noexcept {
-    static_assert(!is_function_v<T>, "to_address: argument must not be a function pointer");
-    return p;
-}
-
-template<class Ptr>
-constexpr auto to_address(const Ptr& p) noexcept {
-    if constexpr (requires { Ptr::pointer_traits_to_address(p); }) {
-        return Ptr::pointer_traits_to_address(p);
-    } else {
-        return to_address(p.operator->());
-    }
-}
 
 //===----------------------------------------------------------------------===//
 // ranges::iter_swap CPO (from __iterator/iter_swap.h)
@@ -831,16 +808,8 @@ concept indirectly_copyable_storable =
     assignable_from<iter_value_t<In>&, iter_reference_t<In>>;
 
 //===----------------------------------------------------------------------===//
-// identity + ranges::less (needed for projected / sortable / mergeable)
+// ranges comparison functors (needed for projected / sortable / mergeable)
 //===----------------------------------------------------------------------===//
-
-struct identity {
-    template<class T>
-    [[nodiscard]] constexpr T&& operator()(T&& t) const noexcept {
-        return forward<T>(t);
-    }
-    using is_transparent = void;
-};
 
 namespace ranges {
 
@@ -1549,17 +1518,6 @@ template<class Iter>
 make_move_iterator(Iter i) {
     return move_iterator<Iter>(move(i));
 }
-
-//===----------------------------------------------------------------------===//
-// addressof (minimal, needed for insert iterators)
-//===----------------------------------------------------------------------===//
-
-template<class T>
-constexpr T* addressof(T& r) noexcept {
-    return __builtin_addressof(r);
-}
-template<class T>
-const T* addressof(const T&&) = delete;
 
 //===----------------------------------------------------------------------===//
 // [back.insert.iter] — back_insert_iterator, back_inserter
