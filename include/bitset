@@ -1,0 +1,617 @@
+// <bitset> — mechanically ported from LLVM libc++ include/bitset
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Folded sources:
+//   libcxx/include/bitset  (bitset<N> with __bitset<N_words,Size> base)
+//
+// DEFERRED (noted):
+//   basic_string ctor / to_string returning std::string — <string> not yet
+//     ported.  A char-only to_string_buf helper writing into a caller-supplied
+//     buffer is provided instead.
+//   Stream operators operator>>/<< — need <iostream> (not ported).
+//
+// Exceptions -> __builtin_trap():
+//   out_of_range   (test/set/reset/flip with bad pos, string ctor bad pos)
+//   overflow_error (to_ulong/to_ullong when high bits set)
+//   invalid_argument (string ctor with bad char)
+#pragma once
+
+#include <string_view>   // basic_string_view, char_traits
+#include <functional>    // hash
+#include <climits>       // CHAR_BIT
+
+namespace std {
+
+// ============================================================
+// bitset_base<N_words, Size>  (replaces libc++ __bitset)
+//
+// Three specialisations:
+//   general (N_words > 1),  single-word (N_words == 1),  empty (N_words == 0).
+// ============================================================
+
+template<size_t N_words, size_t Size>
+class bitset_base {
+public:
+    using storage_type = size_t;
+
+protected:
+    static constexpr unsigned bits_per_word =
+        static_cast<unsigned>(sizeof(storage_type) * CHAR_BIT);
+
+    storage_type words[N_words];
+
+    // --- constructors ---
+    constexpr bitset_base() noexcept : words{} {}
+
+    // Helper: initialise from ull using an index sequence
+    template<size_t... Idx>
+    constexpr bitset_base(unsigned long long v,
+                          index_sequence<Idx...>) noexcept
+        : words{ static_cast<storage_type>(v >> (Idx * bits_per_word))... } {}
+
+    explicit constexpr bitset_base(unsigned long long v) noexcept
+        : bitset_base(v,
+              make_index_sequence<
+                  (N_words < (sizeof(unsigned long long) - 1) / sizeof(storage_type) + 1)
+                  ? N_words
+                  : (sizeof(unsigned long long) - 1) / sizeof(storage_type) + 1
+              >{}) {}
+
+    // --- compound bit ops (avoid 'and_eq' etc. which are C++ keywords) ---
+    constexpr void do_and(const bitset_base& v) noexcept {
+        for (size_t i = 0; i < N_words; ++i) words[i] &= v.words[i];
+    }
+    constexpr void do_or(const bitset_base& v) noexcept {
+        for (size_t i = 0; i < N_words; ++i) words[i] |= v.words[i];
+    }
+    constexpr void do_xor(const bitset_base& v) noexcept {
+        for (size_t i = 0; i < N_words; ++i) words[i] ^= v.words[i];
+    }
+
+    constexpr void flip_all() noexcept {
+        size_t n = Size;
+        storage_type* p = words;
+        for (; n >= bits_per_word; ++p, n -= bits_per_word)
+            *p = ~*p;
+        // last partial word — zero the padding bits
+        if (n > 0)
+            *p ^= (storage_type(1) << n) - 1;
+    }
+
+    // --- to_ulong / to_ullong ---
+    constexpr unsigned long to_ulong() const {
+        if constexpr (Size > sizeof(unsigned long) * CHAR_BIT) {
+            // check high bits
+            for (size_t i = sizeof(unsigned long) * CHAR_BIT; i < Size; ++i) {
+                size_t w = i / bits_per_word;
+                size_t b = i % bits_per_word;
+                if (words[w] & (storage_type(1) << b)) {
+                    __builtin_trap(); // would throw overflow_error
+                }
+            }
+        }
+        static_assert(sizeof(storage_type) >= sizeof(unsigned long),
+            "size_t must be >= unsigned long");
+        return static_cast<unsigned long>(words[0]);
+    }
+
+    constexpr unsigned long long to_ullong() const {
+        if constexpr (Size > sizeof(unsigned long long) * CHAR_BIT) {
+            for (size_t i = sizeof(unsigned long long) * CHAR_BIT; i < Size; ++i) {
+                size_t w = i / bits_per_word;
+                size_t b = i % bits_per_word;
+                if (words[w] & (storage_type(1) << b)) {
+                    __builtin_trap(); // would throw overflow_error
+                }
+            }
+        }
+        if constexpr (sizeof(storage_type) >= sizeof(unsigned long long)) {
+            return static_cast<unsigned long long>(words[0]);
+        } else {
+            constexpr size_t ull_words =
+                (sizeof(unsigned long long) - 1) / sizeof(storage_type) + 1;
+            constexpr size_t n = N_words < ull_words ? N_words : ull_words;
+            unsigned long long r = static_cast<unsigned long long>(words[0]);
+            for (size_t i = 1; i < n; ++i)
+                r |= static_cast<unsigned long long>(words[i]) << (bits_per_word * i);
+            return r;
+        }
+    }
+
+    // --- all / any ---
+    constexpr bool all() const noexcept {
+        size_t n = Size;
+        const storage_type* p = words;
+        for (; n >= bits_per_word; ++p, n -= bits_per_word)
+            if (~(*p)) return false;
+        if (n > 0) {
+            storage_type m = ~storage_type(0) >> (bits_per_word - n);
+            if (~(*p) & m) return false;
+        }
+        return true;
+    }
+
+    constexpr bool any() const noexcept {
+        size_t n = Size;
+        const storage_type* p = words;
+        for (; n >= bits_per_word; ++p, n -= bits_per_word)
+            if (*p) return true;
+        if (n > 0) {
+            storage_type m = ~storage_type(0) >> (bits_per_word - n);
+            if (*p & m) return true;
+        }
+        return false;
+    }
+
+    // --- hash support ---
+    size_t hash_code() const noexcept {
+        size_t h = 0;
+        for (size_t i = 0; i < N_words; ++i) h ^= words[i];
+        return h;
+    }
+
+    // --- bit access helpers ---
+    constexpr bool get_bit(size_t pos) const noexcept {
+        return !!(words[pos / bits_per_word] &
+                  (storage_type(1) << (pos % bits_per_word)));
+    }
+    constexpr void set_bit(size_t pos) noexcept {
+        words[pos / bits_per_word] |= storage_type(1) << (pos % bits_per_word);
+    }
+    constexpr void clear_bit(size_t pos) noexcept {
+        words[pos / bits_per_word] &= ~(storage_type(1) << (pos % bits_per_word));
+    }
+    constexpr void assign_bit(size_t pos, bool v) noexcept {
+        if (v) set_bit(pos); else clear_bit(pos);
+    }
+    constexpr void flip_bit(size_t pos) noexcept {
+        words[pos / bits_per_word] ^= storage_type(1) << (pos % bits_per_word);
+    }
+};
+
+// ---- single-word specialisation ----
+template<size_t Size>
+class bitset_base<1, Size> {
+public:
+    using storage_type = size_t;
+
+protected:
+    static constexpr unsigned bits_per_word =
+        static_cast<unsigned>(sizeof(storage_type) * CHAR_BIT);
+
+    storage_type words[1];
+
+    constexpr bitset_base() noexcept : words{0} {}
+    explicit constexpr bitset_base(unsigned long long v) noexcept
+        : words{ static_cast<storage_type>(v) } {}
+
+    constexpr void do_and(const bitset_base& v) noexcept { words[0] &= v.words[0]; }
+    constexpr void do_or (const bitset_base& v) noexcept { words[0] |= v.words[0]; }
+    constexpr void do_xor(const bitset_base& v) noexcept { words[0] ^= v.words[0]; }
+
+    constexpr void flip_all() noexcept {
+        // XOR with a mask covering exactly Size bits; clears padding
+        if constexpr (Size == bits_per_word)
+            words[0] = ~words[0];
+        else
+            words[0] ^= (storage_type(1) << Size) - 1;
+    }
+
+    constexpr unsigned long to_ulong() const {
+        if constexpr (Size > sizeof(unsigned long) * CHAR_BIT) {
+            storage_type m = ~storage_type(0) << (sizeof(unsigned long) * CHAR_BIT);
+            if (words[0] & m) __builtin_trap(); // overflow
+        }
+        return static_cast<unsigned long>(words[0]);
+    }
+
+    constexpr unsigned long long to_ullong() const {
+        if constexpr (Size > sizeof(unsigned long long) * CHAR_BIT) {
+            storage_type m = ~storage_type(0) << (sizeof(unsigned long long) * CHAR_BIT);
+            if (words[0] & m) __builtin_trap(); // overflow
+        }
+        return static_cast<unsigned long long>(words[0]);
+    }
+
+    constexpr bool all() const noexcept {
+        if constexpr (Size == bits_per_word)
+            return words[0] == ~storage_type(0);
+        else {
+            storage_type m = (storage_type(1) << Size) - 1;
+            return (words[0] & m) == m;
+        }
+    }
+    constexpr bool any() const noexcept {
+        if constexpr (Size == bits_per_word)
+            return words[0] != 0;
+        else {
+            storage_type m = (storage_type(1) << Size) - 1;
+            return (words[0] & m) != 0;
+        }
+    }
+
+    size_t hash_code() const noexcept { return words[0]; }
+
+    constexpr bool get_bit(size_t pos) const noexcept {
+        return !!(words[0] & (storage_type(1) << pos));
+    }
+    constexpr void set_bit(size_t pos) noexcept {
+        words[0] |= storage_type(1) << pos;
+    }
+    constexpr void clear_bit(size_t pos) noexcept {
+        words[0] &= ~(storage_type(1) << pos);
+    }
+    constexpr void assign_bit(size_t pos, bool v) noexcept {
+        if (v) set_bit(pos); else clear_bit(pos);
+    }
+    constexpr void flip_bit(size_t pos) noexcept {
+        words[0] ^= storage_type(1) << pos;
+    }
+};
+
+// ---- zero-size specialisation ----
+template<>
+class bitset_base<0, 0> {
+public:
+    using storage_type = size_t;
+
+protected:
+    static constexpr unsigned bits_per_word =
+        static_cast<unsigned>(sizeof(storage_type) * CHAR_BIT);
+
+    constexpr bitset_base() noexcept {}
+    explicit constexpr bitset_base(unsigned long long) noexcept {}
+
+    constexpr void do_and(const bitset_base&) noexcept {}
+    constexpr void do_or (const bitset_base&) noexcept {}
+    constexpr void do_xor(const bitset_base&) noexcept {}
+    constexpr void flip_all() noexcept {}
+
+    constexpr unsigned long      to_ulong()  const noexcept { return 0UL; }
+    constexpr unsigned long long to_ullong() const noexcept { return 0ULL; }
+
+    constexpr bool all() const noexcept { return true; }
+    constexpr bool any() const noexcept { return false; }
+
+    size_t hash_code() const noexcept { return 0; }
+
+    constexpr bool get_bit(size_t) const noexcept { return false; }
+    constexpr void set_bit(size_t) noexcept {}
+    constexpr void clear_bit(size_t) noexcept {}
+    constexpr void assign_bit(size_t, bool) noexcept {}
+    constexpr void flip_bit(size_t) noexcept {}
+};
+
+
+// ============================================================
+// bitset<N>
+// ============================================================
+
+template<size_t N>
+class bitset;
+
+template<size_t N>
+struct hash<bitset<N>>;
+
+template<size_t N>
+class bitset
+    : private bitset_base<
+          N == 0 ? 0 : (N - 1) / (sizeof(size_t) * CHAR_BIT) + 1,
+          N>
+{
+public:
+    static constexpr size_t n_words =
+        N == 0 ? 0 : (N - 1) / (sizeof(size_t) * CHAR_BIT) + 1;
+
+private:
+    using Base = bitset_base<n_words, N>;
+    using storage_type = typename Base::storage_type;
+    static constexpr unsigned bits_per_word = Base::bits_per_word;
+
+    friend struct hash<bitset<N>>;
+
+    // ---------------------------------------------------------------
+    // reference — proxy object for a single mutable bit
+    // ---------------------------------------------------------------
+public:
+    class reference {
+        friend class bitset;
+        bitset* bs_;
+        size_t  pos_;
+
+        constexpr reference(bitset& b, size_t pos) noexcept
+            : bs_(&b), pos_(pos) {}
+
+    public:
+        reference(const reference&) noexcept = default;
+        ~reference() noexcept = default;
+
+        constexpr reference& operator=(bool x) noexcept {
+            bs_->Base::assign_bit(pos_, x);
+            return *this;
+        }
+        constexpr reference& operator=(const reference& rhs) noexcept {
+            bs_->Base::assign_bit(pos_, static_cast<bool>(rhs));
+            return *this;
+        }
+        [[nodiscard]] constexpr bool operator~() const noexcept {
+            return !bs_->Base::get_bit(pos_);
+        }
+        [[nodiscard]] constexpr operator bool() const noexcept {
+            return bs_->Base::get_bit(pos_);
+        }
+        constexpr reference& flip() noexcept {
+            bs_->Base::flip_bit(pos_);
+            return *this;
+        }
+    };
+
+    // ---------------------------------------------------------------
+    // Constructors
+    // ---------------------------------------------------------------
+
+    // default
+    constexpr bitset() noexcept : Base() {}
+
+    // from unsigned long long — mask off bits above N
+    constexpr bitset(unsigned long long v) noexcept
+        : Base(sizeof(unsigned long long) * CHAR_BIT <= N
+               ? v
+               : v & ((N == 0) ? 0ULL : ((N >= 64) ? ~0ULL : (1ULL << N) - 1ULL)))
+    {}
+
+    // from const CharT* (char-like type, detected via char_traits)
+    // n == npos means use the full NUL-terminated string
+    template<class CharT>
+        requires requires { typename char_traits<CharT>::char_type; }
+    explicit bitset(const CharT* str,
+                    size_t n     = basic_string_view<CharT>::npos,
+                    CharT  zero  = CharT('0'),
+                    CharT  one   = CharT('1'))
+    {
+        if (n == basic_string_view<CharT>::npos)
+            init_from_sv(basic_string_view<CharT>(str), zero, one);
+        else
+            init_from_sv(basic_string_view<CharT>(str, n), zero, one);
+    }
+
+    // from basic_string_view
+    template<class CharT, class Traits>
+    explicit bitset(basic_string_view<CharT, Traits> str,
+                    typename basic_string_view<CharT, Traits>::size_type pos = 0,
+                    typename basic_string_view<CharT, Traits>::size_type n   =
+                        basic_string_view<CharT, Traits>::npos,
+                    CharT zero = CharT('0'),
+                    CharT one  = CharT('1'))
+    {
+        if (pos > str.size())
+            __builtin_trap(); // would throw out_of_range
+        size_t rlen = (n == basic_string_view<CharT, Traits>::npos)
+                      ? str.size() - pos
+                      : (n < str.size() - pos ? n : str.size() - pos);
+        init_from_sv(basic_string_view<CharT, Traits>(str.data() + pos, rlen),
+                     zero, one);
+    }
+
+    // NOTE: basic_string ctor is DEFERRED — <string> not yet ported.
+
+    // ---------------------------------------------------------------
+    // Bitwise assignment operators
+    // ---------------------------------------------------------------
+    bitset& operator&=(const bitset& rhs) noexcept {
+        Base::do_and(rhs); return *this;
+    }
+    bitset& operator|=(const bitset& rhs) noexcept {
+        Base::do_or(rhs); return *this;
+    }
+    bitset& operator^=(const bitset& rhs) noexcept {
+        Base::do_xor(rhs); return *this;
+    }
+
+    // ---------------------------------------------------------------
+    // Shift operators
+    // ---------------------------------------------------------------
+    bitset& operator<<=(size_t pos) noexcept {
+        if (pos >= N) { reset(); return *this; }
+        // shift bits upward (towards MSB): bit[i] <- bit[i - pos]
+        for (size_t i = N; i-- > pos;)
+            Base::assign_bit(i, Base::get_bit(i - pos));
+        for (size_t i = 0; i < pos; ++i)
+            Base::clear_bit(i);
+        return *this;
+    }
+
+    bitset& operator>>=(size_t pos) noexcept {
+        if (pos >= N) { reset(); return *this; }
+        // shift bits downward (towards LSB): bit[i] <- bit[i + pos]
+        for (size_t i = 0; i + pos < N; ++i)
+            Base::assign_bit(i, Base::get_bit(i + pos));
+        for (size_t i = N - pos; i < N; ++i)
+            Base::clear_bit(i);
+        return *this;
+    }
+
+    // ---------------------------------------------------------------
+    // set / reset / flip
+    // ---------------------------------------------------------------
+    bitset& set() noexcept {
+        if constexpr (N > 0)
+            for (size_t i = 0; i < N; ++i) Base::set_bit(i);
+        return *this;
+    }
+    bitset& set(size_t pos, bool val = true) {
+        if (pos >= N) __builtin_trap(); // would throw out_of_range
+        Base::assign_bit(pos, val);
+        return *this;
+    }
+
+    bitset& reset() noexcept {
+        if constexpr (n_words > 0) {
+            // zero all words; zero-size base has no words array
+            for (size_t i = 0; i < N; ++i) Base::clear_bit(i);
+        }
+        return *this;
+    }
+    bitset& reset(size_t pos) {
+        if (pos >= N) __builtin_trap(); // would throw out_of_range
+        Base::clear_bit(pos);
+        return *this;
+    }
+
+    [[nodiscard]] bitset operator~() const noexcept {
+        bitset x(*this);
+        x.flip();
+        return x;
+    }
+
+    bitset& flip() noexcept {
+        Base::flip_all();
+        return *this;
+    }
+    bitset& flip(size_t pos) {
+        if (pos >= N) __builtin_trap(); // would throw out_of_range
+        Base::flip_bit(pos);
+        return *this;
+    }
+
+    // ---------------------------------------------------------------
+    // Element access
+    // ---------------------------------------------------------------
+    [[nodiscard]] constexpr bool operator[](size_t pos) const {
+        return Base::get_bit(pos);
+    }
+    [[nodiscard]] reference operator[](size_t pos) {
+        return reference(*this, pos);
+    }
+
+    // ---------------------------------------------------------------
+    // Conversion
+    // ---------------------------------------------------------------
+    [[nodiscard]] unsigned long to_ulong() const {
+        return Base::to_ulong();
+    }
+    [[nodiscard]] unsigned long long to_ullong() const {
+        return Base::to_ullong();
+    }
+
+    // to_string: DEFERRED (needs basic_string from <string>).
+    // Provide a char-only helper writing into a caller-supplied buffer.
+    // to_string_buf(buf, buf_size, zero, one): writes N chars + NUL into buf.
+    // Returns the number of chars written (== N).
+    size_t to_string_buf(char* buf, size_t buf_size,
+                         char zero = '0', char one = '1') const noexcept {
+        if (buf_size < N + 1) __builtin_trap(); // caller must provide enough space
+        if constexpr (N > 0)
+            for (size_t i = 0; i < N; ++i)
+                buf[i] = Base::get_bit(N - 1 - i) ? one : zero;
+        buf[N] = '\0';
+        return N;
+    }
+
+    // ---------------------------------------------------------------
+    // Observers
+    // ---------------------------------------------------------------
+    [[nodiscard]] size_t count() const noexcept {
+        size_t c = 0;
+        if constexpr (n_words > 0) {
+            // Access words via the base — cast through Base* to get words array
+            // Use bit scanning for correctness on partial last word
+            for (size_t i = 0; i < N; ++i)
+                if (Base::get_bit(i)) ++c;
+        }
+        return c;
+    }
+
+    [[nodiscard]] constexpr size_t size() const noexcept { return N; }
+
+    [[nodiscard]] constexpr bool operator==(const bitset& rhs) const noexcept {
+        for (size_t i = 0; i < N; ++i)
+            if (Base::get_bit(i) != rhs.Base::get_bit(i)) return false;
+        return true;
+    }
+
+    [[nodiscard]] bool test(size_t pos) const {
+        if (pos >= N) __builtin_trap(); // would throw out_of_range
+        return Base::get_bit(pos);
+    }
+
+    [[nodiscard]] constexpr bool all()  const noexcept { return Base::all(); }
+    [[nodiscard]] constexpr bool any()  const noexcept { return Base::any(); }
+    [[nodiscard]] constexpr bool none() const noexcept { return !Base::any(); }
+
+    [[nodiscard]] bitset operator<<(size_t pos) const noexcept {
+        bitset r = *this;
+        r <<= pos;
+        return r;
+    }
+    [[nodiscard]] bitset operator>>(size_t pos) const noexcept {
+        bitset r = *this;
+        r >>= pos;
+        return r;
+    }
+
+private:
+    // init_from_sv: shared logic for all string-based constructors
+    template<class CharT, class Traits>
+    void init_from_sv(basic_string_view<CharT, Traits> sv,
+                      CharT zero, CharT one)
+    {
+        // Validate all chars
+        for (size_t i = 0; i < sv.size(); ++i)
+            if (!Traits::eq(sv[i], zero) && !Traits::eq(sv[i], one))
+                __builtin_trap(); // would throw invalid_argument
+
+        size_t mp = sv.size() < N ? sv.size() : N;
+        for (size_t i = 0; i < mp; ++i) {
+            CharT c = sv[mp - 1 - i];
+            Base::assign_bit(i, Traits::eq(c, one));
+        }
+    }
+};
+
+// ----------------------------------------------------------------
+// Non-member bitwise operators
+// ----------------------------------------------------------------
+
+template<size_t N>
+[[nodiscard]] inline bitset<N>
+operator&(const bitset<N>& x, const bitset<N>& y) noexcept {
+    bitset<N> r = x;
+    r &= y;
+    return r;
+}
+
+template<size_t N>
+[[nodiscard]] inline bitset<N>
+operator|(const bitset<N>& x, const bitset<N>& y) noexcept {
+    bitset<N> r = x;
+    r |= y;
+    return r;
+}
+
+template<size_t N>
+[[nodiscard]] inline bitset<N>
+operator^(const bitset<N>& x, const bitset<N>& y) noexcept {
+    bitset<N> r = x;
+    r ^= y;
+    return r;
+}
+
+// ----------------------------------------------------------------
+// hash<bitset<N>>
+// ----------------------------------------------------------------
+
+template<size_t N>
+struct hash<bitset<N>> {
+    [[nodiscard]] size_t operator()(const bitset<N>& bs) const noexcept {
+        return bs.hash_code();
+    }
+};
+
+// ----------------------------------------------------------------
+// Stream operators — DEFERRED (need <iostream>)
+// ----------------------------------------------------------------
+// operator>> and operator<< for basic_istream/basic_ostream are
+// not defined here; they require <iostream> which is not yet ported.
+
+} // namespace std
