@@ -112,20 +112,27 @@ provides a non-builtin `#else` fallback, and the builtin is unavailable in
 gcc-10.2, **keep the fallback**. Verify every builtin you use by compiling a
 probe with `g++-10 -std=gnu++20`.
 
-Known-available in gcc-10.2 (use freely): `__is_class`, `__is_union`,
-`__is_enum`, `__is_base_of`, `__is_abstract`, `__is_polymorphic`, `__is_final`,
-`__is_empty`, `__is_aggregate`, `__is_standard_layout`, `__is_trivial`,
-`__is_trivially_copyable`, `__is_pod`, `__has_virtual_destructor`,
-`__has_unique_object_representations`, `__underlying_type`, `__is_constructible`,
-`__is_assignable`, `__is_trivially_constructible`, `__is_trivially_assignable`,
-`__builtin_*` runtime helpers.
+Known-available in gcc-10.2 (use freely): `__is_same` (CONFIRMED available),
+`__is_class`, `__is_union`, `__is_enum`, `__is_base_of`, `__is_abstract`,
+`__is_polymorphic`, `__is_final`, `__is_empty`, `__is_aggregate`,
+`__is_standard_layout`, `__is_trivial`, `__is_trivially_copyable`, `__is_pod`,
+`__has_virtual_destructor`, `__has_unique_object_representations`,
+`__underlying_type`, `__is_constructible`, `__is_assignable`,
+`__is_trivially_constructible`, `__is_trivially_assignable`,
+`__has_trivial_destructor`, `__builtin_*` runtime helpers.
 
 Known-MISSING in gcc-10.2 (implement in C++, do NOT use the builtin):
-`__is_same`, `__is_convertible`, `__is_nothrow_convertible`,
+`__is_convertible`, `__is_nothrow_convertible`,
 `__is_nothrow_constructible`, `__is_nothrow_assignable`, `__is_function`,
 `__is_pointer`, `__is_array`, `__is_reference`, `__is_const`, `__is_volatile`,
 `__is_integral`, `__is_arithmetic`, `__remove_cv`, `__remove_reference`,
-`__remove_cvref`, `__remove_pointer`, `__remove_all_extents`, `__add_pointer`,
-`__add_lvalue_reference`, `__decay`, `__make_signed`, `__make_unsigned`,
-`__builtin_bit_cast` (gcc-11+), `__type_pack_element`. (Verify; correct this
-list if a probe shows otherwise.)
+`__remove_cvref`, `__remove_pointer`, `__remove_all_extents`,
+`__remove_extent`, `__add_pointer`, `__add_lvalue_reference`,
+`__add_rvalue_reference`, `__decay`, `__make_signed`, `__make_unsigned`,
+`__is_destructible`, `__is_nothrow_destructible`, `__is_scalar`, `__is_object`,
+`__is_fundamental`, `__is_compound`, `__is_null_pointer`, `__is_signed`,
+`__is_unsigned`, `__is_member_pointer`, `__is_member_object_pointer`,
+`__is_member_function_pointer`, `__is_scoped_enum`, `__is_bounded_array`,
+`__is_unbounded_array`, `__array_extent`, `__array_rank`,
+`__builtin_bit_cast` (gcc-11+), `__type_pack_element`. (Probed and verified
+against gcc-10.2.)
