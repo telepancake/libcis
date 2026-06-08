@@ -1,0 +1,9 @@
+// <climits> -- C integer limit macros.
+// Mechanically ported from libc++ include/climits.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// All macros (CHAR_BIT, INT_MAX, LLONG_MIN, ...) live in the global namespace
+// as provided by <limits.h>; the standard requires no namespace-std names here.
+#pragma once
+
+#include <limits.h>

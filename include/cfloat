@@ -1,0 +1,9 @@
+// <cfloat> -- C floating-point limit macros.
+// Mechanically ported from libc++ include/cfloat.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// All macros (FLT_MAX, DBL_EPSILON, ...) live in the global namespace as
+// provided by <float.h>; the standard requires no namespace-std names here.
+#pragma once
+
+#include <float.h>
