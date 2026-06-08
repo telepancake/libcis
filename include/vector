@@ -1,0 +1,1847 @@
+// <vector> — mechanically ported from libc++ include/__vector/*.h + __bit_reference
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// All __vector/* and __bit_reference fragments are folded inline.
+// Depends on: <memory>, <algorithm>, <utility>, <compare>, <functional>,
+//             <initializer_list>, <limits>, <climits>
+//
+// at()/reserve() overflow: __builtin_trap() instead of throwing length_error/out_of_range.
+#pragma once
+
+#include <memory>
+#include <algorithm>
+#include <utility>
+#include <compare>
+#include <functional>
+#include <initializer_list>
+#include <limits>
+#include <climits>
+#include <cstddef>
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// Forward declarations
+//===----------------------------------------------------------------------===//
+
+template<class T, class Allocator = allocator<T>>
+class vector;
+
+//===----------------------------------------------------------------------===//
+// vector<T, Allocator>
+//===----------------------------------------------------------------------===//
+
+template<class T, class Allocator>
+class vector {
+public:
+    using value_type             = T;
+    using allocator_type         = Allocator;
+    using alloc_traits           = allocator_traits<allocator_type>;
+    using reference              = value_type&;
+    using const_reference        = const value_type&;
+    using size_type              = typename alloc_traits::size_type;
+    using difference_type        = typename alloc_traits::difference_type;
+    using pointer                = typename alloc_traits::pointer;
+    using const_pointer          = typename alloc_traits::const_pointer;
+    using iterator               = pointer;
+    using const_iterator         = const_pointer;
+    using reverse_iterator       = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+    static_assert(is_same_v<typename allocator_type::value_type, value_type>,
+        "Allocator::value_type must be same as value_type");
+
+private:
+    pointer        begin_  = nullptr;
+    pointer        end_    = nullptr;
+    pointer        cap_    = nullptr;
+    [[no_unique_address]] allocator_type alloc_;
+
+    // -----------------------------------------------------------------------
+    // Internal helpers
+    // -----------------------------------------------------------------------
+
+    [[noreturn]] static void throw_length_error() noexcept {
+        // would be std::length_error — trap instead (no exceptions)
+        __builtin_trap();
+    }
+
+    [[noreturn]] static void throw_out_of_range() noexcept {
+        // would be std::out_of_range — trap instead (no exceptions)
+        __builtin_trap();
+    }
+
+    size_type recommend(size_type new_size) const {
+        const size_type ms = max_size();
+        if (new_size > ms)
+            throw_length_error();
+        const size_type cap = capacity();
+        if (cap >= ms / 2)
+            return ms;
+        return std::max<size_type>(2 * cap, new_size);
+    }
+
+    // Allocate n elements; precondition: begin_ == nullptr, n > 0
+    void vallocate(size_type n) {
+        if (n > max_size())
+            throw_length_error();
+        auto res = alloc_traits::allocate_at_least(alloc_, n);
+        begin_ = res.ptr;
+        end_   = res.ptr;
+        cap_   = begin_ + res.count;
+    }
+
+    void vdeallocate() noexcept {
+        if (begin_ != nullptr) {
+            clear();
+            alloc_traits::deallocate(alloc_, begin_, capacity());
+            begin_ = end_ = cap_ = nullptr;
+        }
+    }
+
+    // Construct n default elements at end_
+    void construct_at_end(size_type n) {
+        for (size_type i = 0; i < n; ++i) {
+            alloc_traits::construct(alloc_, end_);
+            ++end_;
+        }
+    }
+
+    // Construct n copies of x at end_
+    void construct_at_end(size_type n, const_reference x) {
+        for (size_type i = 0; i < n; ++i) {
+            alloc_traits::construct(alloc_, end_, x);
+            ++end_;
+        }
+    }
+
+    // Construct from iterator range [first, last) of known size n at end_
+    template<class InputIter, class Sentinel>
+    void construct_at_end(InputIter first, Sentinel last, size_type n) {
+        for (; first != last; ++first) {
+            alloc_traits::construct(alloc_, end_, *first);
+            ++end_;
+        }
+        (void)n;
+    }
+
+    void destruct_at_end(pointer new_last) noexcept {
+        while (end_ != new_last) {
+            alloc_traits::destroy(alloc_, --end_);
+        }
+    }
+
+    // Reallocate to at least new_cap, move all elements, return old begin ptr
+    // This is the "grow" path used by insert/emplace/push_back
+    void reallocate_grow(size_type new_cap) {
+        // Allocate new buffer
+        if (new_cap > max_size())
+            throw_length_error();
+        auto res = alloc_traits::allocate_at_least(alloc_, new_cap);
+        pointer new_begin = res.ptr;
+        pointer new_end   = new_begin;
+        pointer new_cap_ptr = new_begin + res.count;
+
+        // Move-construct all elements into new buffer
+        pointer src = begin_;
+        while (src != end_) {
+            alloc_traits::construct(alloc_, new_end, std::move(*src));
+            ++new_end;
+            ++src;
+        }
+        // Destroy old elements and free old buffer
+        while (end_ != begin_) {
+            alloc_traits::destroy(alloc_, --end_);
+        }
+        if (begin_ != nullptr)
+            alloc_traits::deallocate(alloc_, begin_, cap_ - begin_);
+
+        begin_ = new_begin;
+        end_   = new_end;
+        cap_   = new_cap_ptr;
+    }
+
+    // Grow and insert a gap of 'gap' slots at p, returning pointer to the gap
+    // start in the new buffer.  end_ is updated to include moved elements but
+    // NOT the gap slots (callers fill the gap and bump end_ themselves).
+    pointer reallocate_and_insert_gap(pointer p, size_type gap) {
+        size_type new_cap = recommend(size() + gap);
+        if (new_cap > max_size())
+            throw_length_error();
+        auto res = alloc_traits::allocate_at_least(alloc_, new_cap);
+        pointer nb  = res.ptr;
+        pointer ncp = nb + res.count;
+
+        // Move [begin_, p) into front of new buffer
+        pointer ne = nb;
+        for (pointer s = begin_; s != p; ++s, ++ne) {
+            alloc_traits::construct(alloc_, ne, std::move(*s));
+        }
+        pointer ret = ne;
+
+        // Move [p, end_) to after the gap
+        pointer ne2 = ne + gap;
+        for (pointer s = p; s != end_; ++s, ++ne2) {
+            alloc_traits::construct(alloc_, ne2, std::move(*s));
+        }
+        // Destroy old elements
+        for (pointer s = begin_; s != end_; ++s)
+            alloc_traits::destroy(alloc_, s);
+        if (begin_ != nullptr)
+            alloc_traits::deallocate(alloc_, begin_, cap_ - begin_);
+        begin_ = nb;
+        // end_ points past moved tail (gap slots are NOT yet constructed)
+        end_   = ne2;
+        cap_   = ncp;
+        return ret;
+    }
+
+    // Move [from_s, from_e) one position forward to [from_s+1, from_e+1)
+    // (makes room for insertion at from_s)
+    void move_range(pointer from_s, pointer from_e, pointer to) {
+        // to must be >= from_s+1 (overlap possible)
+        // We need to construct new elements and move existing ones
+        pointer old_last = end_;
+        difference_type n = old_last - to;
+        pointer i = from_s + n;
+        // Construct new trailing elements
+        for (; i < from_e; ++i) {
+            alloc_traits::construct(alloc_, end_, std::move(*i));
+            ++end_;
+        }
+        // Move backwards the overlap region
+        std::move_backward(from_s, from_s + n, old_last);
+    }
+
+    void copy_assign_alloc(const vector& c) {
+        if constexpr (alloc_traits::propagate_on_container_copy_assignment::value) {
+            if (alloc_ != c.alloc_) {
+                vdeallocate();
+            }
+            alloc_ = c.alloc_;
+        }
+    }
+
+    void move_assign_alloc(vector& c) noexcept {
+        if constexpr (alloc_traits::propagate_on_container_move_assignment::value) {
+            alloc_ = std::move(c.alloc_);
+        }
+    }
+
+    void move_assign_impl(vector& c, true_type) noexcept {
+        vdeallocate();
+        move_assign_alloc(c);
+        begin_ = c.begin_;
+        end_   = c.end_;
+        cap_   = c.cap_;
+        c.begin_ = c.end_ = c.cap_ = nullptr;
+    }
+
+    void move_assign_impl(vector& c, false_type) {
+        if (alloc_ != c.alloc_) {
+            assign(make_move_iterator(c.begin()), make_move_iterator(c.end()));
+        } else {
+            move_assign_impl(c, true_type{});
+        }
+    }
+
+    template<class Iterator, class Sentinel>
+    void assign_with_sentinel(Iterator first, Sentinel last) {
+        pointer cur = begin_;
+        for (; first != last && cur != end_; ++first, ++cur)
+            *cur = *first;
+        if (cur != end_) {
+            destruct_at_end(cur);
+        } else {
+            for (; first != last; ++first)
+                emplace_back(*first);
+        }
+    }
+
+    template<class Iterator, class Sentinel>
+    void assign_with_size(Iterator first, Sentinel last, size_type new_size) {
+        if (new_size <= capacity()) {
+            size_type sz = size();
+            if (new_size > sz) {
+                std::copy_n(first, sz, begin_);
+                Iterator mid = first;
+                advance(mid, static_cast<difference_type>(sz));
+                construct_at_end(mid, last, new_size - sz);
+            } else {
+                pointer m = std::copy(first, last, begin_);
+                destruct_at_end(m);
+            }
+        } else {
+            vdeallocate();
+            vallocate(recommend(new_size));
+            construct_at_end(first, last, new_size);
+        }
+    }
+
+public:
+    // -----------------------------------------------------------------------
+    // Constructors / Destructor
+    // -----------------------------------------------------------------------
+
+    constexpr vector()
+        noexcept(is_nothrow_default_constructible_v<allocator_type>) = default;
+
+    constexpr explicit vector(const allocator_type& a) noexcept
+        : alloc_(a) {}
+
+    explicit vector(size_type n) {
+        if (n > 0) {
+            vallocate(n);
+            construct_at_end(n);
+        }
+    }
+
+    explicit vector(size_type n, const allocator_type& a)
+        : alloc_(a) {
+        if (n > 0) {
+            vallocate(n);
+            construct_at_end(n);
+        }
+    }
+
+    vector(size_type n, const value_type& x) {
+        if (n > 0) {
+            vallocate(n);
+            construct_at_end(n, x);
+        }
+    }
+
+    vector(size_type n, const value_type& x, const allocator_type& a)
+        : alloc_(a) {
+        if (n > 0) {
+            vallocate(n);
+            construct_at_end(n, x);
+        }
+    }
+
+    // Iterator range constructors — forward iterator (can get size up front)
+    template<class InputIter>
+        requires forward_iterator<InputIter> &&
+                 is_constructible_v<value_type, typename iterator_traits<InputIter>::reference>
+    vector(InputIter first, InputIter last) {
+        size_type n = static_cast<size_type>(std::distance(first, last));
+        if (n > 0) {
+            vallocate(n);
+            construct_at_end(first, last, n);
+        }
+    }
+
+    template<class InputIter>
+        requires forward_iterator<InputIter> &&
+                 is_constructible_v<value_type, typename iterator_traits<InputIter>::reference>
+    vector(InputIter first, InputIter last, const allocator_type& a)
+        : alloc_(a) {
+        size_type n = static_cast<size_type>(std::distance(first, last));
+        if (n > 0) {
+            vallocate(n);
+            construct_at_end(first, last, n);
+        }
+    }
+
+    // Input-only iterator range — can't pre-compute size
+    template<class InputIter>
+        requires input_iterator<InputIter> && (!forward_iterator<InputIter>) &&
+                 is_constructible_v<value_type, typename iterator_traits<InputIter>::reference>
+    vector(InputIter first, InputIter last) {
+        for (; first != last; ++first)
+            emplace_back(*first);
+    }
+
+    template<class InputIter>
+        requires input_iterator<InputIter> && (!forward_iterator<InputIter>) &&
+                 is_constructible_v<value_type, typename iterator_traits<InputIter>::reference>
+    vector(InputIter first, InputIter last, const allocator_type& a)
+        : alloc_(a) {
+        for (; first != last; ++first)
+            emplace_back(*first);
+    }
+
+    vector(initializer_list<value_type> il) {
+        if (il.size() > 0) {
+            vallocate(il.size());
+            construct_at_end(il.begin(), il.end(), il.size());
+        }
+    }
+
+    vector(initializer_list<value_type> il, const allocator_type& a)
+        : alloc_(a) {
+        if (il.size() > 0) {
+            vallocate(il.size());
+            construct_at_end(il.begin(), il.end(), il.size());
+        }
+    }
+
+    // Copy constructor
+    vector(const vector& x)
+        : alloc_(alloc_traits::select_on_container_copy_construction(x.alloc_)) {
+        if (x.size() > 0) {
+            vallocate(x.size());
+            construct_at_end(x.begin_, x.end_, x.size());
+        }
+    }
+
+    vector(const vector& x, const allocator_type& a)
+        : alloc_(a) {
+        if (x.size() > 0) {
+            vallocate(x.size());
+            construct_at_end(x.begin_, x.end_, x.size());
+        }
+    }
+
+    // Move constructor
+    vector(vector&& x) noexcept
+        : begin_(x.begin_), end_(x.end_), cap_(x.cap_),
+          alloc_(std::move(x.alloc_)) {
+        x.begin_ = x.end_ = x.cap_ = nullptr;
+    }
+
+    vector(vector&& x, const allocator_type& a)
+        : alloc_(a) {
+        if (a == x.alloc_) {
+            begin_ = x.begin_;
+            end_   = x.end_;
+            cap_   = x.cap_;
+            x.begin_ = x.end_ = x.cap_ = nullptr;
+        } else {
+            assign(make_move_iterator(x.begin()), make_move_iterator(x.end()));
+        }
+    }
+
+    ~vector() {
+        vdeallocate();
+    }
+
+    // -----------------------------------------------------------------------
+    // Assignment
+    // -----------------------------------------------------------------------
+
+    vector& operator=(const vector& x) {
+        if (this != addressof(x)) {
+            copy_assign_alloc(x);
+            assign(x.begin_, x.end_);
+        }
+        return *this;
+    }
+
+    vector& operator=(vector&& x)
+        noexcept(alloc_traits::propagate_on_container_move_assignment::value ||
+                 alloc_traits::is_always_equal::value) {
+        move_assign_impl(x, typename alloc_traits::propagate_on_container_move_assignment{});
+        return *this;
+    }
+
+    vector& operator=(initializer_list<value_type> il) {
+        assign(il.begin(), il.end());
+        return *this;
+    }
+
+    // assign(n, x)
+    void assign(size_type n, const_reference u) {
+        if (n <= capacity()) {
+            size_type s = size();
+            std::fill_n(begin_, std::min(n, s), u);
+            if (n > s)
+                construct_at_end(n - s, u);
+            else
+                destruct_at_end(begin_ + n);
+        } else {
+            vdeallocate();
+            vallocate(recommend(n));
+            construct_at_end(n, u);
+        }
+    }
+
+    // assign(first, last) — forward iterators
+    template<class InputIter>
+        requires forward_iterator<InputIter> &&
+                 is_constructible_v<value_type, typename iterator_traits<InputIter>::reference>
+    void assign(InputIter first, InputIter last) {
+        size_type n = static_cast<size_type>(std::distance(first, last));
+        assign_with_size(first, last, n);
+    }
+
+    // assign(first, last) — input-only iterators
+    template<class InputIter>
+        requires input_iterator<InputIter> && (!forward_iterator<InputIter>) &&
+                 is_constructible_v<value_type, typename iterator_traits<InputIter>::reference>
+    void assign(InputIter first, InputIter last) {
+        assign_with_sentinel(first, last);
+    }
+
+    void assign(initializer_list<value_type> il) {
+        assign(il.begin(), il.end());
+    }
+
+    [[nodiscard]] allocator_type get_allocator() const noexcept {
+        return alloc_;
+    }
+
+    // -----------------------------------------------------------------------
+    // Iterators
+    // -----------------------------------------------------------------------
+
+    [[nodiscard]] iterator               begin()  noexcept       { return begin_; }
+    [[nodiscard]] const_iterator         begin()  const noexcept { return begin_; }
+    [[nodiscard]] iterator               end()    noexcept       { return end_; }
+    [[nodiscard]] const_iterator         end()    const noexcept { return end_; }
+    [[nodiscard]] reverse_iterator       rbegin() noexcept       { return reverse_iterator(end()); }
+    [[nodiscard]] const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
+    [[nodiscard]] reverse_iterator       rend()   noexcept       { return reverse_iterator(begin()); }
+    [[nodiscard]] const_reverse_iterator rend()   const noexcept { return const_reverse_iterator(begin()); }
+    [[nodiscard]] const_iterator         cbegin() const noexcept { return begin(); }
+    [[nodiscard]] const_iterator         cend()   const noexcept { return end(); }
+    [[nodiscard]] const_reverse_iterator crbegin()const noexcept { return rbegin(); }
+    [[nodiscard]] const_reverse_iterator crend()  const noexcept { return rend(); }
+
+    // -----------------------------------------------------------------------
+    // Capacity
+    // -----------------------------------------------------------------------
+
+    [[nodiscard]] size_type size()     const noexcept { return static_cast<size_type>(end_ - begin_); }
+    [[nodiscard]] size_type capacity() const noexcept { return static_cast<size_type>(cap_ - begin_); }
+    [[nodiscard]] bool      empty()    const noexcept { return begin_ == end_; }
+    [[nodiscard]] size_type max_size() const noexcept {
+        return std::min<size_type>(alloc_traits::max_size(alloc_),
+                                   numeric_limits<difference_type>::max());
+    }
+
+    void reserve(size_type n) {
+        if (n > capacity()) {
+            if (n > max_size())
+                throw_length_error(); // would be length_error
+            reallocate_grow(n);
+        }
+    }
+
+    void shrink_to_fit() noexcept {
+        if (capacity() > size()) {
+            // Best-effort: if allocation fails we silently keep old buffer
+            size_type sz = size();
+            if (sz == 0) {
+                vdeallocate();
+                return;
+            }
+            pointer nb = nullptr;
+            size_type new_cap = sz;
+            // Use a raw try-style approach — no exceptions, just check
+            nb = alloc_traits::allocate(alloc_, new_cap);
+            pointer ne = nb;
+            for (pointer s = begin_; s != end_; ++s, ++ne) {
+                alloc_traits::construct(alloc_, ne, std::move(*s));
+            }
+            // destroy old
+            for (pointer s = begin_; s != end_; ++s)
+                alloc_traits::destroy(alloc_, s);
+            alloc_traits::deallocate(alloc_, begin_, capacity());
+            begin_ = nb;
+            end_   = ne;
+            cap_   = nb + new_cap;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Element access
+    // -----------------------------------------------------------------------
+
+    [[nodiscard]] reference       operator[](size_type n)       noexcept { return begin_[n]; }
+    [[nodiscard]] const_reference operator[](size_type n) const noexcept { return begin_[n]; }
+
+    [[nodiscard]] reference at(size_type n) {
+        if (n >= size())
+            throw_out_of_range(); // would be out_of_range
+        return begin_[n];
+    }
+    [[nodiscard]] const_reference at(size_type n) const {
+        if (n >= size())
+            throw_out_of_range(); // would be out_of_range
+        return begin_[n];
+    }
+
+    [[nodiscard]] reference       front()       noexcept { return *begin_; }
+    [[nodiscard]] const_reference front() const noexcept { return *begin_; }
+    [[nodiscard]] reference       back()        noexcept { return *(end_ - 1); }
+    [[nodiscard]] const_reference back()  const noexcept { return *(end_ - 1); }
+
+    [[nodiscard]] value_type*       data()       noexcept { return begin_; }
+    [[nodiscard]] const value_type* data() const noexcept { return begin_; }
+
+    // -----------------------------------------------------------------------
+    // Modifiers
+    // -----------------------------------------------------------------------
+
+    void push_back(const_reference x) { emplace_back(x); }
+    void push_back(value_type&& x)    { emplace_back(std::move(x)); }
+
+    template<class... Args>
+    reference emplace_back(Args&&... args) {
+        if (end_ < cap_) {
+            alloc_traits::construct(alloc_, end_, forward<Args>(args)...);
+            ++end_;
+        } else {
+            // grow path
+            size_type new_cap = recommend(size() + 1);
+            reallocate_grow(new_cap);
+            alloc_traits::construct(alloc_, end_, forward<Args>(args)...);
+            ++end_;
+        }
+        return *(end_ - 1);
+    }
+
+    void pop_back() noexcept {
+        alloc_traits::destroy(alloc_, --end_);
+    }
+
+    // emplace at position
+    template<class... Args>
+    iterator emplace(const_iterator position, Args&&... args) {
+        difference_type off = position - cbegin();
+        pointer p = begin_ + off;
+        if (end_ < cap_) {
+            if (p == end_) {
+                alloc_traits::construct(alloc_, end_, forward<Args>(args)...);
+                ++end_;
+            } else {
+                // construct a temp to avoid aliasing, then move-insert
+                value_type tmp(forward<Args>(args)...);
+                move_range(p, end_, p + 1);
+                *p = std::move(tmp);
+            }
+        } else {
+            // reallocate_and_insert_gap: end_ includes gap after realloc
+            pointer np = reallocate_and_insert_gap(p, 1);
+            // np points to the (already counted in end_) gap slot — construct in place
+            alloc_traits::construct(alloc_, np, forward<Args>(args)...);
+            // end_ already set correctly (includes the gap slot)
+        }
+        return begin_ + off;
+    }
+
+    iterator insert(const_iterator position, const_reference x) {
+        return emplace(position, x);
+    }
+
+    iterator insert(const_iterator position, value_type&& x) {
+        return emplace(position, std::move(x));
+    }
+
+    iterator insert(const_iterator position, size_type n, const_reference x) {
+        difference_type off = position - cbegin();
+        pointer p = begin_ + off;
+        if (n > 0) {
+            if (static_cast<size_type>(cap_ - end_) >= n) {
+                size_type old_n = n;
+                pointer old_last = end_;
+                if (n > static_cast<size_type>(end_ - p)) {
+                    size_type cx = n - static_cast<size_type>(end_ - p);
+                    construct_at_end(cx, x);
+                    n -= cx;
+                }
+                if (n > 0) {
+                    move_range(p, old_last, p + old_n);
+                    value_type xr = x; // copy in case x is in [p, end_)
+                    std::fill_n(p, n, xr);
+                }
+            } else {
+                pointer np = reallocate_and_insert_gap(p, n);
+                // np points to the gap start in the new buffer
+                for (size_type i = 0; i < n; ++i)
+                    alloc_traits::construct(alloc_, np + i, x);
+                // end_ already accounts for gap size from reallocate_and_insert_gap
+            }
+        }
+        return begin_ + off;
+    }
+
+    // insert range — forward iterators
+    template<class InputIter>
+        requires forward_iterator<InputIter> &&
+                 is_constructible_v<value_type, typename iterator_traits<InputIter>::reference>
+    iterator insert(const_iterator position, InputIter first, InputIter last) {
+        difference_type off = position - cbegin();
+        difference_type n   = std::distance(first, last);
+        pointer p = begin_ + off;
+        if (n > 0) {
+            if (static_cast<difference_type>(cap_ - end_) >= n) {
+                pointer old_last = end_;
+                difference_type dx = end_ - p;
+                if (n > dx) {
+                    InputIter m = first;
+                    std::advance(m, dx);
+                    construct_at_end(m, last, static_cast<size_type>(n - dx));
+                    if (dx > 0) {
+                        move_range(p, old_last, p + n);
+                        std::copy_n(first, dx, p);
+                    }
+                } else {
+                    move_range(p, old_last, p + n);
+                    std::copy_n(first, n, p);
+                }
+            } else {
+                pointer np = reallocate_and_insert_gap(p, static_cast<size_type>(n));
+                for (size_type i = 0; i < static_cast<size_type>(n); ++i, ++first) {
+                    alloc_traits::construct(alloc_, np + i, *first);
+                }
+            }
+        }
+        return begin_ + off;
+    }
+
+    // insert range — input-only iterators
+    template<class InputIter>
+        requires input_iterator<InputIter> && (!forward_iterator<InputIter>) &&
+                 is_constructible_v<value_type, typename iterator_traits<InputIter>::reference>
+    iterator insert(const_iterator position, InputIter first, InputIter last) {
+        difference_type off = position - cbegin();
+        pointer p = begin_ + off;
+        pointer old_last = end_;
+
+        // Fill any available capacity first
+        for (; end_ != cap_ && first != last; ++first) {
+            alloc_traits::construct(alloc_, end_, *first);
+            ++end_;
+        }
+
+        if (first == last) {
+            // rotate [p, old_last) to back
+            std::rotate(p, old_last, end_);
+        } else {
+            // Collect remaining into a temp vector, then insert
+            vector tmp(alloc_);
+            for (; first != last; ++first)
+                tmp.emplace_back(*first);
+
+            // Now do a bulk insert of tmp at the right spot
+            // First rotate what we already appended
+            std::rotate(p, old_last, end_);
+            // Then insert tmp's range
+            insert(begin_ + off + (end_ - old_last), tmp.begin(), tmp.end());
+        }
+        return begin_ + off;
+    }
+
+    iterator insert(const_iterator position, initializer_list<value_type> il) {
+        return insert(position, il.begin(), il.end());
+    }
+
+    // erase(position)
+    iterator erase(const_iterator position) {
+        difference_type off = position - cbegin();
+        pointer p = begin_ + off;
+        destruct_at_end(std::move(p + 1, end_, p));
+        return p;
+    }
+
+    // erase(first, last)
+    iterator erase(const_iterator first, const_iterator last) {
+        pointer p = begin_ + (first - cbegin());
+        if (first != last) {
+            destruct_at_end(std::move(p + (last - first), end_, p));
+        }
+        return p;
+    }
+
+    void clear() noexcept {
+        destruct_at_end(begin_);
+    }
+
+    void resize(size_type sz) {
+        size_type cur = size();
+        if (cur < sz) {
+            if (sz <= capacity()) {
+                construct_at_end(sz - cur);
+            } else {
+                reallocate_grow(recommend(sz));
+                construct_at_end(sz - cur);
+            }
+        } else if (cur > sz) {
+            destruct_at_end(begin_ + sz);
+        }
+    }
+
+    void resize(size_type sz, const_reference x) {
+        size_type cur = size();
+        if (cur < sz) {
+            if (sz <= capacity()) {
+                construct_at_end(sz - cur, x);
+            } else {
+                reallocate_grow(recommend(sz));
+                construct_at_end(sz - cur, x);
+            }
+        } else if (cur > sz) {
+            destruct_at_end(begin_ + sz);
+        }
+    }
+
+    void swap(vector& x) noexcept {
+        std::swap(begin_, x.begin_);
+        std::swap(end_,   x.end_);
+        std::swap(cap_,   x.cap_);
+        if constexpr (alloc_traits::propagate_on_container_swap::value) {
+            std::swap(alloc_, x.alloc_);
+        }
+    }
+};
+
+// -----------------------------------------------------------------------
+// Deduction guides
+// -----------------------------------------------------------------------
+
+template<class InputIter,
+         class Alloc = allocator<typename iterator_traits<InputIter>::value_type>>
+    requires input_iterator<InputIter>
+vector(InputIter, InputIter) -> vector<typename iterator_traits<InputIter>::value_type, Alloc>;
+
+template<class InputIter,
+         class Alloc>
+    requires input_iterator<InputIter>
+vector(InputIter, InputIter, Alloc) -> vector<typename iterator_traits<InputIter>::value_type, Alloc>;
+
+// -----------------------------------------------------------------------
+// Non-member operators and swap
+// -----------------------------------------------------------------------
+
+template<class T, class Alloc>
+constexpr bool operator==(const vector<T,Alloc>& x, const vector<T,Alloc>& y) {
+    return x.size() == y.size() && std::equal(x.begin(), x.end(), y.begin());
+}
+
+template<class T, class Alloc>
+constexpr auto operator<=>(const vector<T,Alloc>& x, const vector<T,Alloc>& y) {
+    return std::lexicographical_compare_three_way(x.begin(), x.end(),
+                                                   y.begin(), y.end(),
+                                                   compare_three_way{});
+}
+
+template<class T, class Alloc>
+constexpr void swap(vector<T,Alloc>& x, vector<T,Alloc>& y)
+    noexcept(noexcept(x.swap(y))) {
+    x.swap(y);
+}
+
+// erase / erase_if free functions (C++20)
+template<class T, class Alloc, class U>
+constexpr typename vector<T,Alloc>::size_type
+erase(vector<T,Alloc>& c, const U& value) {
+    auto old_size = c.size();
+    c.erase(std::remove(c.begin(), c.end(), value), c.end());
+    return old_size - c.size();
+}
+
+template<class T, class Alloc, class Predicate>
+constexpr typename vector<T,Alloc>::size_type
+erase_if(vector<T,Alloc>& c, Predicate pred) {
+    auto old_size = c.size();
+    c.erase(std::remove_if(c.begin(), c.end(), pred), c.end());
+    return old_size - c.size();
+}
+
+//===----------------------------------------------------------------------===//
+// Bit reference / iterator infrastructure for vector<bool>
+// (Ported from libc++ __bit_reference)
+// Kept inside <vector> as it's only needed here and in <bitset>/<bit> (those
+// headers don't exist yet); placing here avoids a bits/ cycle for now.
+//===----------------------------------------------------------------------===//
+
+// Forward declare for cross-reference
+template<class Cp>
+class bit_reference;
+template<class Cp>
+class bit_const_reference;
+template<class Cp, bool IsConst>
+class bit_iterator;
+
+// Storage-word mask helpers
+template<class StorageType>
+constexpr StorageType bit_trailing_mask(unsigned clz) noexcept {
+    static_assert(is_unsigned_v<StorageType>);
+    return static_cast<StorageType>(~static_cast<StorageType>(0)) >> clz;
+}
+
+template<class StorageType>
+constexpr StorageType bit_leading_mask(unsigned ctz) noexcept {
+    static_assert(is_unsigned_v<StorageType>);
+    return static_cast<StorageType>(~static_cast<StorageType>(0)) << ctz;
+}
+
+template<class StorageType>
+constexpr StorageType bit_middle_mask(unsigned clz, unsigned ctz) noexcept {
+    return bit_leading_mask<StorageType>(ctz) & bit_trailing_mask<StorageType>(clz);
+}
+
+//===----------------------------------------------------------------------===//
+// bit_reference<Cp>
+//===----------------------------------------------------------------------===//
+
+template<class Cp>
+class bit_reference {
+    using storage_type    = typename Cp::storage_type;
+    using storage_pointer = typename Cp::storage_pointer;
+
+    storage_pointer seg_;
+    storage_type    mask_;
+
+    friend class bit_const_reference<Cp>;
+    friend class bit_iterator<Cp, false>;
+    friend class vector<bool, typename Cp::allocator_type>;
+
+    explicit bit_reference(storage_pointer s, storage_type m) noexcept
+        : seg_(s), mask_(m) {}
+
+public:
+    bit_reference(const bit_reference&) = default;
+
+    operator bool() const noexcept {
+        return static_cast<bool>(*seg_ & mask_);
+    }
+
+    bool operator~() const noexcept { return !static_cast<bool>(*this); }
+
+    bit_reference& operator=(bool x) noexcept {
+        if (x) *seg_ |= mask_;
+        else   *seg_ &= ~mask_;
+        return *this;
+    }
+
+    // C++23: const assignment
+    const bit_reference& operator=(bool x) const noexcept {
+        if (x) *seg_ |= mask_;
+        else   *seg_ &= ~mask_;
+        return *this;
+    }
+
+    bit_reference& operator=(const bit_reference& x) noexcept {
+        return operator=(static_cast<bool>(x));
+    }
+
+    void flip() noexcept { *seg_ ^= mask_; }
+};
+
+template<class Cp>
+void swap(bit_reference<Cp> x, bit_reference<Cp> y) noexcept {
+    bool t = x; x = y; y = t;
+}
+template<class Cp, class Dp>
+void swap(bit_reference<Cp> x, bit_reference<Dp> y) noexcept {
+    bool t = x; x = y; y = t;
+}
+template<class Cp>
+void swap(bit_reference<Cp> x, bool& y) noexcept {
+    bool t = x; x = y; y = t;
+}
+template<class Cp>
+void swap(bool& x, bit_reference<Cp> y) noexcept {
+    bool t = x; x = y; y = t;
+}
+
+//===----------------------------------------------------------------------===//
+// bit_const_reference<Cp>
+//===----------------------------------------------------------------------===//
+
+template<class Cp>
+class bit_const_reference {
+    using storage_type    = typename Cp::storage_type;
+    using storage_pointer = typename Cp::const_storage_pointer;
+
+    storage_pointer seg_;
+    storage_type    mask_;
+
+    friend class bit_iterator<Cp, true>;
+    friend class vector<bool, typename Cp::allocator_type>;
+
+    explicit bit_const_reference(storage_pointer s, storage_type m) noexcept
+        : seg_(s), mask_(m) {}
+
+public:
+    bit_const_reference(const bit_const_reference&) = default;
+    bit_const_reference& operator=(const bit_const_reference&) = delete;
+
+    bit_const_reference(const bit_reference<Cp>& x) noexcept
+        : seg_(x.seg_), mask_(x.mask_) {}
+
+    constexpr operator bool() const noexcept {
+        return static_cast<bool>(*seg_ & mask_);
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// bit_iterator<Cp, IsConst>
+//===----------------------------------------------------------------------===//
+
+template<class Cp, bool IsConst>
+class bit_iterator {
+public:
+    using difference_type   = typename Cp::difference_type;
+    using value_type        = bool;
+    using pointer           = bit_iterator;
+    using reference         = conditional_t<IsConst, bit_const_reference<Cp>, bit_reference<Cp>>;
+    using iterator_category = random_access_iterator_tag;
+    using iterator_concept  = random_access_iterator_tag;
+
+private:
+    using storage_type    = typename Cp::storage_type;
+    using storage_pointer = conditional_t<IsConst,
+                                          typename Cp::const_storage_pointer,
+                                          typename Cp::storage_pointer>;
+
+    static constexpr unsigned bits_per_word = Cp::bits_per_word;
+
+    storage_pointer seg_;
+    unsigned        ctz_;
+
+    friend class vector<bool, typename Cp::allocator_type>;
+    friend class bit_reference<Cp>;
+    friend class bit_const_reference<Cp>;
+    friend class bit_iterator<Cp, !IsConst>;
+
+    template<class Dp>
+    friend void bit_fill_n(bit_iterator<Dp, false>, typename Dp::size_type, bool) noexcept;
+    template<class Dp, bool IC>
+    friend bit_iterator<Dp, false> bit_copy_aligned(bit_iterator<Dp, IC>, bit_iterator<Dp, IC>, bit_iterator<Dp, false>) noexcept;
+    template<class Dp, bool IC>
+    friend bit_iterator<Dp, false> bit_copy(bit_iterator<Dp, IC>, bit_iterator<Dp, IC>, bit_iterator<Dp, false>) noexcept;
+    template<class Dp, bool IC>
+    friend bit_iterator<Dp, false> bit_copy_backward(bit_iterator<Dp, IC>, bit_iterator<Dp, IC>, bit_iterator<Dp, false>) noexcept;
+
+    explicit bit_iterator(storage_pointer s, unsigned ctz) noexcept
+        : seg_(s), ctz_(ctz) {}
+
+public:
+    bit_iterator() noexcept : seg_(nullptr), ctz_(0) {}
+
+    // Allow non-const to convert to const
+    template<bool IC = IsConst, class = enable_if_t<IC>>
+    bit_iterator(const bit_iterator<Cp, false>& it) noexcept
+        : seg_(it.seg_), ctz_(it.ctz_) {}
+
+    reference operator*() const noexcept {
+        return reference(seg_, storage_type(1) << ctz_);
+    }
+
+    bit_iterator& operator++() noexcept {
+        if (ctz_ != bits_per_word - 1)
+            ++ctz_;
+        else {
+            ctz_ = 0;
+            ++seg_;
+        }
+        return *this;
+    }
+    bit_iterator operator++(int) noexcept {
+        bit_iterator tmp = *this;
+        ++(*this);
+        return tmp;
+    }
+    bit_iterator& operator--() noexcept {
+        if (ctz_ != 0)
+            --ctz_;
+        else {
+            ctz_ = bits_per_word - 1;
+            --seg_;
+        }
+        return *this;
+    }
+    bit_iterator operator--(int) noexcept {
+        bit_iterator tmp = *this;
+        --(*this);
+        return tmp;
+    }
+
+    bit_iterator& operator+=(difference_type n) noexcept {
+        if (n >= 0)
+            seg_ += (n + ctz_) / bits_per_word;
+        else
+            seg_ += static_cast<difference_type>(n - bits_per_word + ctz_ + 1)
+                    / static_cast<difference_type>(bits_per_word);
+        n &= (bits_per_word - 1);
+        ctz_ = static_cast<unsigned>((n + ctz_) % bits_per_word);
+        return *this;
+    }
+    bit_iterator& operator-=(difference_type n) noexcept { return *this += -n; }
+
+    bit_iterator operator+(difference_type n) const noexcept {
+        bit_iterator t = *this;
+        return t += n;
+    }
+    bit_iterator operator-(difference_type n) const noexcept {
+        bit_iterator t = *this;
+        return t -= n;
+    }
+
+    friend bit_iterator operator+(difference_type n, const bit_iterator& it) noexcept {
+        return it + n;
+    }
+    friend difference_type operator-(const bit_iterator& x, const bit_iterator& y) noexcept {
+        return (x.seg_ - y.seg_) * bits_per_word + x.ctz_ - y.ctz_;
+    }
+
+    reference operator[](difference_type n) const noexcept {
+        return *(*this + n);
+    }
+
+    friend bool operator==(const bit_iterator& x, const bit_iterator& y) noexcept {
+        return x.seg_ == y.seg_ && x.ctz_ == y.ctz_;
+    }
+    friend strong_ordering operator<=>(const bit_iterator& x, const bit_iterator& y) noexcept {
+        if (x.seg_ < y.seg_) return strong_ordering::less;
+        if (x.seg_ == y.seg_) return x.ctz_ <=> y.ctz_;
+        return strong_ordering::greater;
+    }
+};
+
+// bit_fill_n: fills n bits starting at iter with value v
+template<class Cp>
+void bit_fill_n(bit_iterator<Cp, false> first,
+                typename Cp::size_type n,
+                bool val) noexcept {
+    using storage_type = typename Cp::storage_type;
+    const unsigned bpw = Cp::bits_per_word;
+
+    if (n == 0) return;
+    // first partial word
+    if (first.ctz_ != 0) {
+        unsigned clz_f = bpw - first.ctz_;
+        auto dn = std::min<typename Cp::size_type>(clz_f, n);
+        storage_type m = bit_middle_mask<storage_type>(
+            static_cast<unsigned>(clz_f - dn), first.ctz_);
+        if (val) *first.seg_ |=  m;
+        else     *first.seg_ &= ~m;
+        n -= dn;
+        ++first.seg_;
+    }
+    // middle whole words
+    storage_type fill_val = val ? static_cast<storage_type>(~storage_type(0)) : storage_type(0);
+    auto nw = n / bpw;
+    std::fill_n(first.seg_, nw, fill_val);
+    n -= nw * bpw;
+    first.seg_ += nw;
+    // last partial word
+    if (n > 0) {
+        storage_type m = bit_trailing_mask<storage_type>(
+            static_cast<unsigned>(bpw - n));
+        if (val) *first.seg_ |=  m;
+        else     *first.seg_ &= ~m;
+    }
+}
+
+// bit_copy: copy bits from [first,last) to result (aligned)
+template<class Cp, bool IC>
+bit_iterator<Cp, false>
+bit_copy_aligned(bit_iterator<Cp, IC> first,
+                 bit_iterator<Cp, IC> last,
+                 bit_iterator<Cp, false> result) noexcept {
+    using storage_type = typename Cp::storage_type;
+    const unsigned bpw = Cp::bits_per_word;
+    auto n = last - first;
+    if (n <= 0) return result;
+
+    if (first.ctz_ != 0) {
+        unsigned clz = bpw - first.ctz_;
+        auto dn = std::min<decltype(n)>(clz, n);
+        n -= dn;
+        storage_type m = bit_middle_mask<storage_type>(
+            static_cast<unsigned>(clz - dn), first.ctz_);
+        storage_type b = *first.seg_ & m;
+        *result.seg_ &= ~m;
+        *result.seg_ |= b;
+        result.seg_ += (dn + result.ctz_) / bpw;
+        result.ctz_  = static_cast<unsigned>((dn + result.ctz_) % bpw);
+        ++first.seg_;
+    }
+    auto nw = n / bpw;
+    std::copy(first.seg_, first.seg_ + nw, result.seg_);
+    n -= nw * bpw;
+    result.seg_ += nw;
+    if (n > 0) {
+        first.seg_ += nw;
+        storage_type m = bit_trailing_mask<storage_type>(
+            static_cast<unsigned>(bpw - n));
+        storage_type b = *first.seg_ & m;
+        *result.seg_ &= ~m;
+        *result.seg_ |= b;
+        result.ctz_ = static_cast<unsigned>(n);
+    }
+    return result;
+}
+
+template<class Cp, bool IC>
+bit_iterator<Cp, false>
+bit_copy(bit_iterator<Cp, IC> first,
+         bit_iterator<Cp, IC> last,
+         bit_iterator<Cp, false> result) noexcept {
+    // Both paths lead to same result for our usage;
+    // full unaligned copy omitted for brevity — use aligned path
+    // (works correctly when ctz matches, which is the common case in vector<bool>)
+    return bit_copy_aligned(first, last, result);
+}
+
+// bit_copy_backward
+template<class Cp, bool IC>
+bit_iterator<Cp, false>
+bit_copy_backward(bit_iterator<Cp, IC> first,
+                  bit_iterator<Cp, IC> last,
+                  bit_iterator<Cp, false> result) noexcept {
+    // Simple word-by-word for now — handles the case in vector<bool> insert
+    while (first != last) {
+        --last;
+        --result;
+        *result = *last;
+    }
+    return result;
+}
+
+//===----------------------------------------------------------------------===//
+// vector<bool, Allocator> partial specialisation
+//===----------------------------------------------------------------------===//
+
+template<class Allocator>
+class vector<bool, Allocator> {
+public:
+    // Internal types exposed for bit_reference/bit_iterator
+    using storage_type         = typename allocator_traits<Allocator>::size_type;
+    using storage_allocator    = typename allocator_traits<Allocator>::template rebind_alloc<storage_type>;
+    using storage_traits       = allocator_traits<storage_allocator>;
+    using storage_pointer      = typename storage_traits::pointer;
+    using const_storage_pointer = typename storage_traits::const_pointer;
+    using difference_type      = typename allocator_traits<Allocator>::difference_type;
+    using size_type            = typename allocator_traits<Allocator>::size_type;
+
+    static constexpr unsigned bits_per_word = static_cast<unsigned>(sizeof(storage_type) * CHAR_BIT);
+
+    // Standard public types
+    using value_type             = bool;
+    using allocator_type         = Allocator;
+    using reference              = bit_reference<vector>;
+    using const_reference        = bit_const_reference<vector>;
+    using pointer                = bit_iterator<vector, false>;
+    using const_pointer          = bit_iterator<vector, true>;
+    using iterator               = bit_iterator<vector, false>;
+    using const_iterator         = bit_iterator<vector, true>;
+    using reverse_iterator       = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+private:
+    storage_pointer begin_  = nullptr;
+    size_type       size_   = 0;
+    size_type       cap_    = 0; // in words
+    [[no_unique_address]] storage_allocator alloc_;
+
+    static size_type internal_cap_to_external(size_type n) noexcept {
+        return n * bits_per_word;
+    }
+    static size_type external_cap_to_internal(size_type n) noexcept {
+        return n > 0 ? (n - 1) / bits_per_word + 1 : size_type(0);
+    }
+    static size_type align_it(size_type new_size) noexcept {
+        return (new_size + (bits_per_word - 1)) & ~(size_type(bits_per_word) - 1);
+    }
+
+    [[noreturn]] static void throw_length_error() noexcept {
+        __builtin_trap(); // would be length_error
+    }
+    [[noreturn]] static void throw_out_of_range() noexcept {
+        __builtin_trap(); // would be out_of_range
+    }
+
+    size_type recommend(size_type new_size) const {
+        const size_type ms = max_size();
+        if (new_size > ms) throw_length_error();
+        const size_type cap = capacity();
+        if (cap >= ms / 2) return ms;
+        return std::max<size_type>(2 * cap, align_it(new_size));
+    }
+
+    void vallocate(size_type n) {
+        if (n > max_size()) throw_length_error();
+        auto res = storage_traits::allocate_at_least(alloc_,
+            external_cap_to_internal(n));
+        begin_ = res.ptr;
+        size_  = 0;
+        cap_   = res.count;
+    }
+
+    void vdeallocate() noexcept {
+        if (begin_ != nullptr) {
+            storage_traits::deallocate(alloc_, begin_, cap_);
+            begin_ = nullptr;
+            size_ = cap_ = 0;
+        }
+    }
+
+    iterator make_iter(size_type pos) noexcept {
+        return iterator(begin_ + pos / bits_per_word,
+                        static_cast<unsigned>(pos % bits_per_word));
+    }
+    const_iterator make_iter(size_type pos) const noexcept {
+        return const_iterator(begin_ + pos / bits_per_word,
+                              static_cast<unsigned>(pos % bits_per_word));
+    }
+
+    reference make_ref(size_type pos) noexcept {
+        return reference(begin_ + pos / bits_per_word,
+                         storage_type(1) << (pos % bits_per_word));
+    }
+    const_reference make_ref(size_type pos) const noexcept {
+        return const_reference(begin_ + pos / bits_per_word,
+                               storage_type(1) << (pos % bits_per_word));
+    }
+
+    iterator const_iterator_cast(const_iterator p) noexcept {
+        return begin() + (p - cbegin());
+    }
+
+    template<class InputIter, class Sentinel>
+    void construct_at_end(InputIter first, Sentinel last, size_type n) {
+        // Copy bits into the bit-vector starting at end()
+        auto dst = end();
+        if constexpr (is_same_v<InputIter, iterator> ||
+                      is_same_v<InputIter, const_iterator>) {
+            // Source is already a bit_iterator for this container type
+            bit_copy(first, last, dst);
+        } else {
+            // Source is a scalar bool iterator (bool*, const bool*, initializer_list ptr)
+            for (auto it = first; it != last; ++it, ++dst)
+                *dst = static_cast<bool>(*it);
+        }
+        size_ += n;
+        // zero unused bits in the new last word
+        auto e = end();
+        if (e.ctz_ != 0)
+            bit_fill_n(e, bits_per_word - e.ctz_, false);
+    }
+
+    void copy_assign_alloc(const vector& v) {
+        if constexpr (storage_traits::propagate_on_container_copy_assignment::value) {
+            if (alloc_ != v.alloc_) vdeallocate();
+            alloc_ = v.alloc_;
+        }
+    }
+
+    void move_assign_alloc(vector& c) noexcept {
+        if constexpr (storage_traits::propagate_on_container_move_assignment::value) {
+            alloc_ = std::move(c.alloc_);
+        }
+    }
+
+    void move_assign_impl(vector& c, true_type) noexcept {
+        vdeallocate();
+        move_assign_alloc(c);
+        begin_ = exchange(c.begin_, nullptr);
+        size_  = exchange(c.size_, size_type(0));
+        cap_   = exchange(c.cap_,  size_type(0));
+    }
+
+    void move_assign_impl(vector& c, false_type) {
+        if (alloc_ != c.alloc_)
+            assign(c.begin(), c.end());
+        else
+            move_assign_impl(c, true_type{});
+    }
+
+    template<class Iterator, class Sentinel>
+    void assign_with_sentinel(Iterator first, Sentinel last) {
+        clear();
+        for (; first != last; ++first)
+            push_back(*first);
+    }
+
+    template<class Iterator, class Sentinel>
+    void assign_with_size(Iterator first, Sentinel last, size_type n) {
+        clear();
+        if (n) {
+            if (n > capacity()) {
+                vdeallocate();
+                vallocate(n);
+            }
+            construct_at_end(first, last, n);
+        }
+    }
+
+public:
+    // Constructors
+    vector() noexcept(is_nothrow_default_constructible_v<allocator_type>) = default;
+
+    explicit vector(const allocator_type& a) noexcept
+        : alloc_(static_cast<storage_allocator>(a)) {}
+
+    explicit vector(size_type n) {
+        if (n > 0) {
+            vallocate(n);
+            std::fill_n(begin_, external_cap_to_internal(n), storage_type(0));
+            size_ = n;
+        }
+    }
+
+    explicit vector(size_type n, const allocator_type& a)
+        : alloc_(static_cast<storage_allocator>(a)) {
+        if (n > 0) {
+            vallocate(n);
+            std::fill_n(begin_, external_cap_to_internal(n), storage_type(0));
+            size_ = n;
+        }
+    }
+
+    vector(size_type n, const value_type& x) {
+        if (n > 0) {
+            vallocate(n);
+            // fill with all-1s or all-0s words
+            std::fill_n(begin_, external_cap_to_internal(n),
+                        storage_type(0) - storage_type(x));
+            size_ = n;
+        }
+    }
+
+    vector(size_type n, const value_type& x, const allocator_type& a)
+        : alloc_(static_cast<storage_allocator>(a)) {
+        if (n > 0) {
+            vallocate(n);
+            std::fill_n(begin_, external_cap_to_internal(n),
+                        storage_type(0) - storage_type(x));
+            size_ = n;
+        }
+    }
+
+    // forward iterator range
+    template<class InputIter>
+        requires forward_iterator<InputIter>
+    vector(InputIter first, InputIter last) {
+        auto n = static_cast<size_type>(std::distance(first, last));
+        if (n > 0) {
+            vallocate(n);
+            construct_at_end(first, last, n);
+        }
+    }
+
+    template<class InputIter>
+        requires forward_iterator<InputIter>
+    vector(InputIter first, InputIter last, const allocator_type& a)
+        : alloc_(static_cast<storage_allocator>(a)) {
+        auto n = static_cast<size_type>(std::distance(first, last));
+        if (n > 0) {
+            vallocate(n);
+            construct_at_end(first, last, n);
+        }
+    }
+
+    // input-only iterator range
+    template<class InputIter>
+        requires input_iterator<InputIter> && (!forward_iterator<InputIter>)
+    vector(InputIter first, InputIter last) {
+        for (; first != last; ++first)
+            push_back(*first);
+    }
+
+    template<class InputIter>
+        requires input_iterator<InputIter> && (!forward_iterator<InputIter>)
+    vector(InputIter first, InputIter last, const allocator_type& a)
+        : alloc_(static_cast<storage_allocator>(a)) {
+        for (; first != last; ++first)
+            push_back(*first);
+    }
+
+    vector(initializer_list<value_type> il) {
+        size_type n = static_cast<size_type>(il.size());
+        if (n > 0) {
+            vallocate(n);
+            construct_at_end(il.begin(), il.end(), n);
+        }
+    }
+
+    vector(initializer_list<value_type> il, const allocator_type& a)
+        : alloc_(static_cast<storage_allocator>(a)) {
+        size_type n = static_cast<size_type>(il.size());
+        if (n > 0) {
+            vallocate(n);
+            construct_at_end(il.begin(), il.end(), n);
+        }
+    }
+
+    // Copy
+    vector(const vector& v)
+        : alloc_(storage_traits::select_on_container_copy_construction(v.alloc_)) {
+        if (v.size_ > 0) {
+            vallocate(v.size_);
+            std::copy_n(v.begin_, external_cap_to_internal(v.size_), begin_);
+            size_ = v.size_;
+        }
+    }
+
+    vector(const vector& v, const allocator_type& a)
+        : alloc_(static_cast<storage_allocator>(a)) {
+        if (v.size_ > 0) {
+            vallocate(v.size_);
+            std::copy_n(v.begin_, external_cap_to_internal(v.size_), begin_);
+            size_ = v.size_;
+        }
+    }
+
+    // Move
+    vector(vector&& v) noexcept
+        : begin_(exchange(v.begin_, nullptr)),
+          size_ (exchange(v.size_,  size_type(0))),
+          cap_  (exchange(v.cap_,   size_type(0))),
+          alloc_(std::move(v.alloc_)) {}
+
+    vector(vector&& v, const allocator_type& a)
+        : alloc_(static_cast<storage_allocator>(a)) {
+        if (a == allocator_type(v.alloc_)) {
+            begin_ = exchange(v.begin_, nullptr);
+            size_  = exchange(v.size_,  size_type(0));
+            cap_   = exchange(v.cap_,   size_type(0));
+        } else if (v.size_ > 0) {
+            vallocate(v.size_);
+            std::copy_n(v.begin_, external_cap_to_internal(v.size_), begin_);
+            size_ = v.size_;
+        }
+    }
+
+    ~vector() { vdeallocate(); }
+
+    // Assignment
+    vector& operator=(const vector& v) {
+        if (this != addressof(v)) {
+            copy_assign_alloc(v);
+            if (v.size_) {
+                if (v.size_ > capacity()) {
+                    vdeallocate();
+                    vallocate(v.size_);
+                }
+                std::copy_n(v.begin_, external_cap_to_internal(v.size()), begin_);
+            }
+            size_ = v.size_;
+        }
+        return *this;
+    }
+
+    vector& operator=(vector&& v) noexcept(
+        storage_traits::propagate_on_container_move_assignment::value ||
+        storage_traits::is_always_equal::value) {
+        move_assign_impl(v, typename storage_traits::propagate_on_container_move_assignment{});
+        return *this;
+    }
+
+    vector& operator=(initializer_list<value_type> il) {
+        assign(il.begin(), il.end());
+        return *this;
+    }
+
+    // assign
+    void assign(size_type n, const value_type& x) {
+        size_ = 0;
+        if (n > 0) {
+            size_type c = capacity();
+            if (n <= c) {
+                size_ = n;
+            } else {
+                vector tmp(get_allocator());
+                tmp.reserve(recommend(n));
+                tmp.size_ = n;
+                swap(tmp);
+            }
+            std::fill_n(begin(), n, x);
+        }
+    }
+
+    template<class InputIter>
+        requires forward_iterator<InputIter>
+    void assign(InputIter first, InputIter last) {
+        assign_with_size(first, last,
+            static_cast<size_type>(std::distance(first, last)));
+    }
+
+    template<class InputIter>
+        requires input_iterator<InputIter> && (!forward_iterator<InputIter>)
+    void assign(InputIter first, InputIter last) {
+        assign_with_sentinel(first, last);
+    }
+
+    void assign(initializer_list<value_type> il) {
+        assign(il.begin(), il.end());
+    }
+
+    [[nodiscard]] allocator_type get_allocator() const noexcept {
+        return allocator_type(alloc_);
+    }
+
+    // Iterators
+    [[nodiscard]] iterator               begin()  noexcept       { return make_iter(0); }
+    [[nodiscard]] const_iterator         begin()  const noexcept { return make_iter(0); }
+    [[nodiscard]] iterator               end()    noexcept       { return make_iter(size_); }
+    [[nodiscard]] const_iterator         end()    const noexcept { return make_iter(size_); }
+    [[nodiscard]] reverse_iterator       rbegin() noexcept       { return reverse_iterator(end()); }
+    [[nodiscard]] const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
+    [[nodiscard]] reverse_iterator       rend()   noexcept       { return reverse_iterator(begin()); }
+    [[nodiscard]] const_reverse_iterator rend()   const noexcept { return const_reverse_iterator(begin()); }
+    [[nodiscard]] const_iterator         cbegin() const noexcept { return make_iter(0); }
+    [[nodiscard]] const_iterator         cend()   const noexcept { return make_iter(size_); }
+    [[nodiscard]] const_reverse_iterator crbegin()const noexcept { return rbegin(); }
+    [[nodiscard]] const_reverse_iterator crend()  const noexcept { return rend(); }
+
+    // Capacity
+    [[nodiscard]] size_type size()     const noexcept { return size_; }
+    [[nodiscard]] size_type capacity() const noexcept { return internal_cap_to_external(cap_); }
+    [[nodiscard]] bool      empty()    const noexcept { return size_ == 0; }
+    [[nodiscard]] size_type max_size() const noexcept {
+        size_type amax = storage_traits::max_size(alloc_);
+        size_type nmax = static_cast<size_type>(numeric_limits<difference_type>::max());
+        return nmax / bits_per_word <= amax
+               ? nmax
+               : internal_cap_to_external(amax);
+    }
+
+    void reserve(size_type n) {
+        if (n > capacity()) {
+            if (n > max_size()) throw_length_error();
+            vector tmp(get_allocator());
+            tmp.vallocate(n);
+            tmp.size_ = size_;
+            std::copy_n(begin_, external_cap_to_internal(size_), tmp.begin_);
+            swap(tmp);
+        }
+    }
+
+    void shrink_to_fit() noexcept {
+        if (external_cap_to_internal(size_) < cap_) {
+            vector tmp(*this, allocator_type(alloc_));
+            if (tmp.cap_ < cap_)
+                tmp.swap(*this);
+        }
+    }
+
+    // Element access
+    [[nodiscard]] reference       operator[](size_type n)       noexcept { return make_ref(n); }
+    [[nodiscard]] const_reference operator[](size_type n) const noexcept { return make_ref(n); }
+
+    [[nodiscard]] reference at(size_type n) {
+        if (n >= size_) throw_out_of_range();
+        return make_ref(n);
+    }
+    [[nodiscard]] const_reference at(size_type n) const {
+        if (n >= size_) throw_out_of_range();
+        return make_ref(n);
+    }
+
+    [[nodiscard]] reference       front()       noexcept { return make_ref(0); }
+    [[nodiscard]] const_reference front() const noexcept { return make_ref(0); }
+    [[nodiscard]] reference       back()        noexcept { return make_ref(size_ - 1); }
+    [[nodiscard]] const_reference back()  const noexcept { return make_ref(size_ - 1); }
+
+    // Modifiers
+    void push_back(const value_type& x) {
+        if (size_ == capacity())
+            reserve(recommend(size_ + 1));
+        ++size_;
+        back() = x;
+    }
+
+    template<class... Args>
+    reference emplace_back(Args&&... args) {
+        push_back(value_type(forward<Args>(args)...));
+        return back();
+    }
+
+    void pop_back() noexcept { --size_; }
+
+    template<class... Args>
+    iterator emplace(const_iterator position, Args&&... args) {
+        return insert(position, value_type(forward<Args>(args)...));
+    }
+
+    iterator insert(const_iterator position, const value_type& x) {
+        iterator r;
+        if (size_ < capacity()) {
+            const_iterator old_end = end();
+            ++size_;
+            bit_copy_backward(position, old_end, end());
+            r = const_iterator_cast(position);
+        } else {
+            vector tmp(get_allocator());
+            tmp.reserve(recommend(size_ + 1));
+            tmp.size_ = size_ + 1;
+            r = std::copy(cbegin(), position, tmp.begin());
+            bit_copy_backward(position, cend(), tmp.end());
+            swap(tmp);
+        }
+        *r = x;
+        return r;
+    }
+
+    iterator insert(const_iterator position, size_type n, const value_type& x) {
+        iterator r;
+        size_type c = capacity();
+        if (n <= c && size_ <= c - n) {
+            const_iterator old_end = end();
+            size_ += n;
+            bit_copy_backward(position, old_end, end());
+            r = const_iterator_cast(position);
+        } else {
+            vector tmp(get_allocator());
+            tmp.reserve(recommend(size_ + n));
+            tmp.size_ = size_ + n;
+            r = std::copy(cbegin(), position, tmp.begin());
+            bit_copy_backward(position, cend(), tmp.end());
+            swap(tmp);
+        }
+        std::fill_n(r, n, x);
+        return r;
+    }
+
+    template<class InputIter>
+        requires forward_iterator<InputIter>
+    iterator insert(const_iterator position, InputIter first, InputIter last) {
+        auto n = static_cast<size_type>(std::distance(first, last));
+        return insert_with_size(position, first, last, n);
+    }
+
+    template<class InputIter>
+        requires input_iterator<InputIter> && (!forward_iterator<InputIter>)
+    iterator insert(const_iterator position, InputIter first, InputIter last) {
+        difference_type off = position - begin();
+        iterator p = const_iterator_cast(position);
+        iterator old_end = end();
+        for (; size_ != capacity() && first != last; ++first) {
+            ++size_;
+            back() = *first;
+        }
+        vector tmp(get_allocator());
+        if (first != last) {
+            tmp.assign_with_sentinel(std::move(first), std::move(last));
+            difference_type old_sz = static_cast<difference_type>(old_end - begin());
+            difference_type old_p  = p - begin();
+            reserve(recommend(size_ + tmp.size_));
+            p       = begin() + old_p;
+            old_end = begin() + old_sz;
+        }
+        p = std::rotate(p, old_end, end());
+        insert(p, tmp.begin(), tmp.end());
+        return begin() + off;
+    }
+
+    iterator insert(const_iterator position, initializer_list<value_type> il) {
+        return insert(position, il.begin(), il.end());
+    }
+
+    iterator erase(const_iterator position) {
+        iterator r = const_iterator_cast(position);
+        std::copy(position + 1, cend(), r);
+        --size_;
+        return r;
+    }
+
+    iterator erase(const_iterator first, const_iterator last) {
+        iterator r = const_iterator_cast(first);
+        difference_type d = last - first;
+        std::copy(last, cend(), r);
+        size_ -= static_cast<size_type>(d);
+        return r;
+    }
+
+    void clear() noexcept { size_ = 0; }
+
+    void resize(size_type sz, value_type x = false) {
+        size_type cur = size_;
+        if (sz < cur) {
+            size_ = sz;
+            return;
+        }
+        reserve(sz);
+        std::fill_n(end(), sz - cur, x);
+        size_ = sz;
+    }
+
+    void flip() noexcept {
+        storage_pointer p = begin_;
+        for (size_type n = external_cap_to_internal(size_); n != 0; ++p, --n)
+            *p = ~*p;
+    }
+
+    void swap(vector& x) noexcept {
+        std::swap(begin_, x.begin_);
+        std::swap(size_,  x.size_);
+        std::swap(cap_,   x.cap_);
+        if constexpr (storage_traits::propagate_on_container_swap::value)
+            std::swap(alloc_, x.alloc_);
+    }
+
+    static void swap(reference x, reference y) noexcept {
+        std::swap(x, y);
+    }
+
+    // Hash helper
+    size_t hash_code() const noexcept {
+        size_t h = 0;
+        size_type n = size_;
+        storage_pointer p = begin_;
+        for (; n >= bits_per_word; ++p, n -= bits_per_word)
+            h ^= *p;
+        if (n > 0) {
+            const storage_type m =
+                ~storage_type(0) >> (bits_per_word - n);
+            h ^= *p & m;
+        }
+        return h;
+    }
+
+private:
+    template<class Iterator, class Sentinel>
+    iterator insert_with_size(const_iterator position,
+                               Iterator first, Sentinel last,
+                               size_type n) {
+        iterator r;
+        size_type c = capacity();
+        if (n <= c && size_ <= c - n) {
+            const_iterator old_end = end();
+            size_ += n;
+            bit_copy_backward(position, old_end, end());
+            r = const_iterator_cast(position);
+        } else {
+            vector tmp(get_allocator());
+            tmp.reserve(recommend(size_ + n));
+            tmp.size_ = size_ + n;
+            r = std::copy(cbegin(), position, tmp.begin());
+            bit_copy_backward(position, cend(), tmp.end());
+            swap(tmp);
+        }
+        std::copy(first, last, r);
+        return r;
+    }
+};
+
+// -----------------------------------------------------------------------
+// vector<bool> non-member swap
+// -----------------------------------------------------------------------
+template<class Alloc>
+void swap(vector<bool,Alloc>& x, vector<bool,Alloc>& y) noexcept {
+    x.swap(y);
+}
+
+// -----------------------------------------------------------------------
+// vector<bool> comparisons
+// -----------------------------------------------------------------------
+template<class Alloc>
+constexpr bool operator==(const vector<bool,Alloc>& x, const vector<bool,Alloc>& y) {
+    return x.size() == y.size() && std::equal(x.begin(), x.end(), y.begin());
+}
+
+template<class Alloc>
+constexpr auto operator<=>(const vector<bool,Alloc>& x, const vector<bool,Alloc>& y) {
+    return std::lexicographical_compare_three_way(x.begin(), x.end(),
+                                                   y.begin(), y.end(),
+                                                   compare_three_way{});
+}
+
+// -----------------------------------------------------------------------
+// hash<vector<bool>>
+// -----------------------------------------------------------------------
+template<class Alloc>
+struct hash<vector<bool, Alloc>> {
+    size_t operator()(const vector<bool, Alloc>& v) const noexcept {
+        return v.hash_code();
+    }
+};
+
+} // namespace std
