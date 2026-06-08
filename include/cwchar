@@ -1,0 +1,102 @@
+// <cwchar> -- C wide-character functions in namespace std.
+// Mechanically ported from libc++ include/cwchar.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+#pragma once
+
+#include <cwctype>
+#include <wchar.h>
+
+namespace std {
+
+using ::mbstate_t;
+using ::tm;
+using ::wint_t;
+using ::FILE;
+using ::fwprintf;
+using ::fwscanf;
+using ::swprintf;
+using ::vfwprintf;
+using ::vswprintf;
+using ::swscanf;
+using ::vfwscanf;
+using ::vswscanf;
+using ::fgetwc;
+using ::fgetws;
+using ::fputwc;
+using ::fputws;
+using ::fwide;
+using ::getwc;
+using ::putwc;
+using ::ungetwc;
+using ::wcstod;
+using ::wcstof;
+using ::wcstold;
+using ::wcstol;
+using ::wcstoll;
+using ::wcstoul;
+using ::wcstoull;
+using ::wcscpy;
+using ::wcsncpy;
+using ::wcscat;
+using ::wcsncat;
+using ::wcscmp;
+using ::wcscoll;
+using ::wcsncmp;
+using ::wcsxfrm;
+using ::wcschr;
+using ::wcspbrk;
+using ::wcsrchr;
+using ::wcsstr;
+using ::wmemchr;
+using ::wcscspn;
+using ::wcslen;
+using ::wcsspn;
+using ::wcstok;
+using ::wmemcmp;
+using ::wmemcpy;
+using ::wmemmove;
+using ::wmemset;
+using ::wcsftime;
+using ::btowc;
+using ::wctob;
+using ::mbsinit;
+using ::mbrlen;
+using ::mbrtowc;
+using ::wcrtomb;
+using ::mbsrtowcs;
+using ::wcsrtombs;
+using ::getwchar;
+using ::vwscanf;
+using ::wscanf;
+using ::putwchar;
+using ::vwprintf;
+using ::wprintf;
+
+// constexpr wcslen helper (C++14 constexpr-since)
+inline constexpr size_t constexpr_wcslen(const wchar_t* str) {
+#if __has_builtin(__builtin_wcslen)
+    return __builtin_wcslen(str);
+#else
+    size_t len = 0;
+    for (; *str != L'\0'; ++str)
+        ++len;
+    return len;
+#endif
+}
+
+// constexpr wmemcmp helper
+inline constexpr int constexpr_wmemcmp(const wchar_t* lhs, const wchar_t* rhs, size_t count) {
+#if __has_builtin(__builtin_wmemcmp)
+    return __builtin_wmemcmp(lhs, rhs, count);
+#else
+    for (; count; --count, ++lhs, ++rhs) {
+        if (*lhs < *rhs)
+            return -1;
+        if (*rhs < *lhs)
+            return 1;
+    }
+    return 0;
+#endif
+}
+
+} // namespace std

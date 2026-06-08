@@ -1,0 +1,33 @@
+// <cstring> -- C string functions in namespace std.
+// Mechanically ported from libc++ include/cstring.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+#pragma once
+
+#include <string.h>
+
+namespace std {
+
+using ::memcpy;
+using ::memmove;
+using ::strcpy;
+using ::strncpy;
+using ::strcat;
+using ::strncat;
+using ::memcmp;
+using ::strcmp;
+using ::strncmp;
+using ::strcoll;
+using ::strxfrm;
+using ::memchr;
+using ::strchr;
+using ::strcspn;
+using ::strpbrk;
+using ::strrchr;
+using ::strspn;
+using ::strstr;
+using ::strtok;
+using ::memset;
+using ::strerror;
+using ::strlen;
+
+} // namespace std

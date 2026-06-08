@@ -1,0 +1,14 @@
+// <cstdarg> -- C variable argument lists in namespace std.
+// Mechanically ported from libc++ include/cstdarg.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// va_arg, va_copy, va_end, va_start are macros and stay in global namespace.
+#pragma once
+
+#include <stdarg.h>
+
+namespace std {
+
+using ::va_list;
+
+} // namespace std

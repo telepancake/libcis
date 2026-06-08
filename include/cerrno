@@ -1,0 +1,9 @@
+// <cerrno> -- C errno macro passthrough.
+// Mechanically ported from libc++ include/cerrno.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// errno is a macro and stays in the global namespace.
+// EDOM, EILSEQ, ERANGE are macros defined by <errno.h>.
+#pragma once
+
+#include <errno.h>

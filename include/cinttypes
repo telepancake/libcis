@@ -1,0 +1,22 @@
+// <cinttypes> -- C integer format macros and functions in namespace std.
+// Mechanically ported from libc++ include/cinttypes.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// PRId8, PRIu32, SCNx64, etc. are macros and stay in global namespace.
+// [cinttypes.syn] requires that <cinttypes> includes <cstdint>.
+#pragma once
+
+#include <cstdint>
+#include <inttypes.h>
+
+namespace std {
+
+using ::imaxdiv_t;
+using ::imaxabs;
+using ::imaxdiv;
+using ::strtoimax;
+using ::strtoumax;
+using ::wcstoimax;
+using ::wcstoumax;
+
+} // namespace std
