@@ -580,3 +580,345 @@ void test_memory_static_checks() {
     static_assert(std::is_same_v<std::unique_ptr<int[]>::element_type, int>);
     static_assert(std::is_same_v<std::unique_ptr<int[]>::pointer, int*>);
 }
+
+//===----------------------------------------------------------------------===//
+// shared_ptr tests
+//===----------------------------------------------------------------------===//
+
+void test_memory_shared_ptr_basic() {
+    // Default construction (null)
+    std::shared_ptr<int> p;
+    CHECK(!p);
+    CHECK(p.get() == nullptr);
+    CHECK(p.use_count() == 0);
+
+    // nullptr construction
+    std::shared_ptr<int> q(nullptr);
+    CHECK(!q);
+    CHECK(q.use_count() == 0);
+
+    // Construction from raw pointer
+    std::shared_ptr<int> r(new int(42));
+    CHECK(r);
+    CHECK(*r == 42);
+    CHECK(r.use_count() == 1);
+
+    // Copy construction — increments count
+    std::shared_ptr<int> s(r);
+    CHECK(r.use_count() == 2);
+    CHECK(s.use_count() == 2);
+    CHECK(s.get() == r.get());
+
+    // Move construction — count stays same
+    std::shared_ptr<int> t(std::move(s));
+    CHECK(!s);
+    CHECK(s.use_count() == 0);
+    CHECK(t.use_count() == 2);
+    CHECK(*t == 42);
+
+    // Destructor decrements count
+    {
+        std::shared_ptr<int> u(r);
+        CHECK(r.use_count() == 3);
+    }
+    CHECK(r.use_count() == 2);
+}
+
+void test_memory_shared_ptr_assignment() {
+    std::shared_ptr<int> a(new int(1));
+    std::shared_ptr<int> b(new int(2));
+
+    // Copy assignment
+    a = b;
+    CHECK(*a == 2);
+    CHECK(a.use_count() == 2);
+
+    // Move assignment
+    std::shared_ptr<int> c(new int(3));
+    a = std::move(c);
+    CHECK(*a == 3);
+    CHECK(!c);
+    CHECK(a.use_count() == 1);
+
+    // nullptr reset via reset()
+    a.reset();
+    CHECK(!a);
+    CHECK(a.use_count() == 0);
+}
+
+void test_memory_shared_ptr_deleter() {
+    int del_count = 0;
+    auto del = [&](int* p) { ++del_count; delete p; };
+    {
+        std::shared_ptr<int> p(new int(99), del);
+        CHECK(*p == 99);
+        CHECK(p.use_count() == 1);
+    }
+    CHECK(del_count == 1);
+}
+
+void test_memory_shared_ptr_make_shared() {
+    auto p = std::make_shared<int>(42);
+    CHECK(p);
+    CHECK(*p == 42);
+    CHECK(p.use_count() == 1);
+
+    struct Point { int x, y; };
+    auto q = std::make_shared<Point>(Point{3, 4});
+    CHECK(q->x == 3);
+    CHECK(q->y == 4);
+}
+
+void test_memory_shared_ptr_reset() {
+    std::shared_ptr<int> p(new int(1));
+    p.reset(new int(2));
+    CHECK(*p == 2);
+    CHECK(p.use_count() == 1);
+
+    p.reset();
+    CHECK(!p);
+}
+
+void test_memory_shared_ptr_comparisons() {
+    std::shared_ptr<int> a(new int(1));
+    std::shared_ptr<int> b(new int(2));
+    std::shared_ptr<int> c(a);  // same as a
+    std::shared_ptr<int> n;     // null
+
+    CHECK(a == c);
+    CHECK(a != b);
+    CHECK(n == nullptr);
+    CHECK(a != nullptr);
+
+    // operator<=> — pointer ordering
+    auto ord = (a <=> b);
+    (void)ord;  // just check it compiles and returns a strong_ordering
+}
+
+void test_memory_shared_ptr_owner_before() {
+    std::shared_ptr<int> a(new int(1));
+    std::shared_ptr<int> b(new int(2));
+    std::shared_ptr<int> c(a);  // same control block as a
+
+    // a and c have the same owner (same cntrl_)
+    CHECK(!a.owner_before(c));
+    CHECK(!c.owner_before(a));
+
+    // a and b have different control blocks: one is before the other
+    bool either = a.owner_before(b) || b.owner_before(a);
+    CHECK(either);
+}
+
+void test_memory_shared_ptr_swap() {
+    std::shared_ptr<int> a(new int(1));
+    std::shared_ptr<int> b(new int(2));
+    a.swap(b);
+    CHECK(*a == 2);
+    CHECK(*b == 1);
+    std::swap(a, b);
+    CHECK(*a == 1);
+    CHECK(*b == 2);
+}
+
+void test_memory_shared_ptr_aliasing() {
+    struct Pair { int x, y; };
+    auto p = std::make_shared<Pair>(Pair{10, 20});
+    // Aliasing constructor: share ownership with p, but point at p->x
+    std::shared_ptr<int> q(p, &p->x);
+    CHECK(*q == 10);
+    CHECK(q.use_count() == 2);
+    CHECK(p.use_count() == 2);
+
+    // Move aliasing (C++20)
+    auto p2 = std::make_shared<Pair>(Pair{30, 40});
+    int* raw = &p2->y;
+    std::shared_ptr<int> r(std::move(p2), raw);
+    CHECK(!p2);
+    CHECK(*r == 40);
+    CHECK(r.use_count() == 1);
+}
+
+void test_memory_shared_ptr_static_casts() {
+    struct Base { int v = 1; };
+    struct Derived : Base { int d = 2; };
+
+    std::shared_ptr<Derived> pd(new Derived);
+    std::shared_ptr<Base> pb = std::static_pointer_cast<Base>(pd);
+    CHECK(pb);
+    CHECK(pb.get() == static_cast<Base*>(pd.get()));
+    CHECK(pd.use_count() == 2);
+
+    // const_pointer_cast
+    std::shared_ptr<const int> ci = std::make_shared<int>(7);
+    std::shared_ptr<int> mi = std::const_pointer_cast<int>(ci);
+    CHECK(*mi == 7);
+    CHECK(mi.use_count() == 2);
+
+    // reinterpret_pointer_cast
+    std::shared_ptr<int> si(new int(42));
+    std::shared_ptr<void> vp = std::reinterpret_pointer_cast<void>(si);
+    CHECK(vp.get() == si.get());
+    CHECK(si.use_count() == 2);
+}
+
+void test_memory_shared_ptr_from_unique() {
+    std::unique_ptr<int> u(new int(55));
+    std::shared_ptr<int> s(std::move(u));
+    CHECK(!u);
+    CHECK(*s == 55);
+    CHECK(s.use_count() == 1);
+}
+
+void test_memory_shared_ptr_array() {
+    // shared_ptr<T[]> via unique_ptr conversion
+    std::unique_ptr<int[]> up(new int[3]{1, 2, 3});
+    std::shared_ptr<int[]> arr(std::move(up));
+    CHECK(arr[0] == 1);
+    CHECK(arr[2] == 3);
+    CHECK(arr.use_count() == 1);
+}
+
+void test_memory_shared_ptr_hash() {
+    std::shared_ptr<int> p = std::make_shared<int>(42);
+    std::hash<std::shared_ptr<int>> h;
+    size_t hv = h(p);
+    // Same pointer hashes to the same value
+    CHECK(hv == h(p));
+
+    // Null pointer has a hash
+    std::shared_ptr<int> null;
+    size_t hn = h(null);
+    (void)hn;
+}
+
+//===----------------------------------------------------------------------===//
+// weak_ptr tests
+//===----------------------------------------------------------------------===//
+
+void test_memory_weak_ptr_basic() {
+    std::weak_ptr<int> w;
+    CHECK(w.expired());
+    CHECK(w.use_count() == 0);
+
+    // Construct from shared_ptr
+    auto p = std::make_shared<int>(10);
+    std::weak_ptr<int> wp(p);
+    CHECK(!wp.expired());
+    CHECK(wp.use_count() == 1);
+
+    // Lock gives back a shared_ptr
+    auto locked = wp.lock();
+    CHECK(locked);
+    CHECK(*locked == 10);
+    CHECK(p.use_count() == 2);  // p + locked
+
+    // After p is destroyed, wp expires
+    p.reset();
+    locked.reset();
+    CHECK(wp.expired());
+    CHECK(wp.use_count() == 0);
+
+    // lock() on expired returns null
+    auto dead = wp.lock();
+    CHECK(!dead);
+}
+
+void test_memory_weak_ptr_copy_move() {
+    auto p = std::make_shared<int>(5);
+    std::weak_ptr<int> w1(p);
+    std::weak_ptr<int> w2(w1);  // copy
+    CHECK(w2.use_count() == 1);
+
+    std::weak_ptr<int> w3(std::move(w1));  // move
+    CHECK(w1.expired());  // moved-from is expired (null)
+    CHECK(!w3.expired());
+    CHECK(w3.use_count() == 1);
+}
+
+void test_memory_weak_ptr_reset() {
+    auto p = std::make_shared<int>(7);
+    std::weak_ptr<int> w(p);
+    CHECK(!w.expired());
+    w.reset();
+    CHECK(w.expired());
+}
+
+void test_memory_weak_ptr_owner_before() {
+    auto p1 = std::make_shared<int>(1);
+    auto p2 = std::make_shared<int>(2);
+    std::weak_ptr<int> w1(p1);
+    std::weak_ptr<int> w2(p2);
+    std::weak_ptr<int> w1b(p1);
+
+    // Same control block → not before each other
+    CHECK(!w1.owner_before(w1b));
+    CHECK(!w1b.owner_before(w1));
+
+    // Different control blocks → one must be before the other
+    bool either = w1.owner_before(w2) || w2.owner_before(w1);
+    CHECK(either);
+}
+
+//===----------------------------------------------------------------------===//
+// enable_shared_from_this tests
+//===----------------------------------------------------------------------===//
+
+namespace {
+    struct Widget : std::enable_shared_from_this<Widget> {
+        int value;
+        explicit Widget(int v) : value(v) {}
+        std::shared_ptr<Widget> get_self() { return shared_from_this(); }
+    };
+}
+
+void test_memory_enable_shared_from_this() {
+    auto p = std::make_shared<Widget>(42);
+    auto q = p->get_self();
+
+    CHECK(p.get() == q.get());
+    CHECK(p.use_count() == 2);
+    CHECK(q->value == 42);
+
+    // weak_from_this
+    auto w = p->weak_from_this();
+    CHECK(!w.expired());
+    CHECK(w.lock().get() == p.get());
+}
+
+//===----------------------------------------------------------------------===//
+// allocate_shared / make_shared_for_overwrite tests
+//===----------------------------------------------------------------------===//
+
+void test_memory_allocate_shared() {
+    auto p = std::allocate_shared<int>(std::allocator<int>(), 99);
+    CHECK(p);
+    CHECK(*p == 99);
+    CHECK(p.use_count() == 1);
+
+    struct Point { int x, y; };
+    auto q = std::allocate_shared<Point>(std::allocator<Point>(), Point{3, 4});
+    CHECK(q->x == 3);
+    CHECK(q->y == 4);
+}
+
+void test_memory_make_shared_for_overwrite() {
+    auto p = std::make_shared_for_overwrite<int>();
+    CHECK(p);
+    // Value is unspecified (default-init for int = indeterminate), just check non-null
+    CHECK(p.get() != nullptr);
+}
+
+//===----------------------------------------------------------------------===//
+// hash<unique_ptr<T,D>> test
+//===----------------------------------------------------------------------===//
+
+void test_memory_unique_ptr_hash() {
+    std::unique_ptr<int> p(new int(7));
+    std::hash<std::unique_ptr<int>> h;
+    size_t hv = h(p);
+    CHECK(hv == h(p));
+
+    std::unique_ptr<int> null;
+    size_t hn = h(null);
+    (void)hn;
+}
