@@ -921,6 +921,28 @@ namespace detail {
 }
 
 //===----------------------------------------------------------------------===//
+// copy_cvref (copy_cvref.h — internal helper for common_reference)
+// XREF(A) = a unary alias template T such that T<U> is U with A's cv+ref quals.
+//===----------------------------------------------------------------------===//
+namespace detail {
+    // copy_cvref: apply From's cv AND reference qualifiers to To.
+    template<class From>
+    struct copy_cvref_sel {
+        template<class To> using apply = copy_cv_t<From, To>;
+    };
+    template<class From>
+    struct copy_cvref_sel<From&> {
+        template<class To> using apply = add_lvalue_reference_t<copy_cv_t<From, To>>;
+    };
+    template<class From>
+    struct copy_cvref_sel<From&&> {
+        template<class To> using apply = add_rvalue_reference_t<copy_cv_t<From, To>>;
+    };
+    template<class From, class To>
+    using copy_cvref_t = typename copy_cvref_sel<From>::template apply<To>;
+}
+
+//===----------------------------------------------------------------------===//
 // make_signed, make_unsigned (make_signed.h, make_unsigned.h)
 // __make_signed, __make_unsigned NOT in gcc-10.2.
 //===----------------------------------------------------------------------===//
@@ -1110,6 +1132,151 @@ template<class... Ts>
 using common_type_t = typename common_type<Ts...>::type;
 
 //===----------------------------------------------------------------------===//
+// common_reference / basic_common_reference (common_reference.h) — C++20
+// Ported from libc++ __type_traits/common_reference.h.
+//===----------------------------------------------------------------------===//
+
+// Forward-declare common_reference.
+template<class...>
+struct common_reference;
+
+template<class... Ts>
+using common_reference_t = typename common_reference<Ts...>::type;
+
+// basic_common_reference — user-specialisable hook (empty primary).
+template<class, class, template<class> class, template<class> class>
+struct basic_common_reference {};
+
+namespace detail {
+    // COND-RES(X, Y): the type of the ternary (false ? declval<X(*)()>()() : declval<Y(*)()>()())
+    // Using function-pointer form to avoid issues with declval in conditional.
+    template<class X, class Y>
+    using cond_res_cr = decltype(false ? declval<X(&)()>()() : declval<Y(&)()>()());
+
+    // XREF(A): a template T such that T<U> = copy_cvref_t<A, U>.
+    template<class A>
+    struct xref {
+        template<class U> using apply = copy_cvref_t<A, U>;
+    };
+
+    // COMMON-REF(A, B) helper struct; X = remove_reference_t<A>, Y = remove_reference_t<B>.
+    template<class A, class B,
+             class X = remove_reference_t<A>,
+             class Y = remove_reference_t<B>>
+    struct common_ref_impl {};
+
+    // cv_cond_res: COND-RES(copy_cv(X,Y)&, copy_cv(Y,X)&)
+    template<class X, class Y>
+    using cv_cond_res = cond_res_cr<copy_cv_t<X,Y>&, copy_cv_t<Y,X>&>;
+
+    // (1) Both lvalue refs: COMMON-REF(A&, B&) = cv_cond_res<X,Y> if it exists and is a reference.
+    template<class A, class B, class X, class Y>
+        requires requires { typename cv_cond_res<X,Y>; } &&
+                 is_reference_v<cv_cond_res<X,Y>>
+    struct common_ref_impl<A&, B&, X, Y> {
+        using type = cv_cond_res<X,Y>;
+    };
+
+    // Helper: C = remove_reference_t<COMMON-REF(X&, Y&)>&&
+    template<class X, class Y>
+    using common_ref_C = remove_reference_t<typename common_ref_impl<X&,Y&>::type>&&;
+
+    // (2) Both rvalue refs: C well-formed, convertible<A&&,C> && convertible<B&&,C> → C.
+    template<class A, class B, class X, class Y>
+        requires requires { typename common_ref_C<X,Y>; } &&
+                 is_convertible_v<A&&, common_ref_C<X,Y>> &&
+                 is_convertible_v<B&&, common_ref_C<X,Y>>
+    struct common_ref_impl<A&&, B&&, X, Y> {
+        using type = common_ref_C<X,Y>;
+    };
+
+    // Helper: D = COMMON-REF(const X&, Y&)
+    template<class X, class Y>
+    using common_ref_D = typename common_ref_impl<const X&, Y&>::type;
+
+    // (3) A&&, B&: D well-formed and convertible<A&&, D> → D.
+    template<class A, class B, class X, class Y>
+        requires requires { typename common_ref_D<X,Y>; } &&
+                 is_convertible_v<A&&, common_ref_D<X,Y>>
+    struct common_ref_impl<A&&, B&, X, Y> {
+        using type = common_ref_D<X,Y>;
+    };
+
+    // (4) A&, B&&: symmetric — swap.
+    template<class A, class B, class X, class Y>
+    struct common_ref_impl<A&, B&&, X, Y> : common_ref_impl<B&&, A&> {};
+
+    template<class A, class B>
+    using common_ref_t = typename common_ref_impl<A, B>::type;
+
+    // basic_common_reference_t: helper to detect basic_common_reference::type
+    template<class T, class U>
+    using basic_common_reference_t =
+        typename basic_common_reference<remove_cvref_t<T>,
+                                        remove_cvref_t<U>,
+                                        xref<T>::template apply,
+                                        xref<U>::template apply>::type;
+
+    // common_reference sub-bullets for the 2-type case (chain of fallbacks)
+    template<class T, class U>
+    struct common_reference_sub3;
+
+    template<class T, class U>
+    struct common_reference_sub2 : common_reference_sub3<T, U> {};
+
+    template<class T, class U>
+    struct common_reference_sub1 : common_reference_sub2<T, U> {};
+
+    // sub-bullet 1: both reference types, COMMON-REF exists, pointer convertibility
+    template<class T, class U>
+        requires is_reference_v<T> && is_reference_v<U> &&
+                 requires { typename common_ref_t<T,U>; } &&
+                 is_convertible_v<add_pointer_t<T>, add_pointer_t<common_ref_t<T,U>>> &&
+                 is_convertible_v<add_pointer_t<U>, add_pointer_t<common_ref_t<T,U>>>
+    struct common_reference_sub1<T, U> {
+        using type = common_ref_t<T,U>;
+    };
+
+    // sub-bullet 2: basic_common_reference::type well-formed
+    template<class T, class U>
+        requires requires { typename basic_common_reference_t<T,U>; }
+    struct common_reference_sub2<T, U> {
+        using type = basic_common_reference_t<T,U>;
+    };
+
+    // sub-bullet 3: COND-RES(T, U) well-formed
+    template<class T, class U>
+        requires requires { typename cond_res_cr<T,U>; }
+    struct common_reference_sub3<T, U> {
+        using type = cond_res_cr<T,U>;
+    };
+
+    // sub-bullet 4 & 5: fall back to common_type or no type
+    template<class T, class U>
+    struct common_reference_sub3 : common_type<T, U> {};
+} // namespace detail
+
+// bullet 1: 0 types → no member type
+template<>
+struct common_reference<> {};
+
+// bullet 2: 1 type → identity
+template<class T>
+struct common_reference<T> { using type = T; };
+
+// bullet 3: 2 types → chain of sub-bullets
+template<class T, class U>
+struct common_reference<T, U> : detail::common_reference_sub1<T, U> {};
+
+// bullet 4: 3+ types → fold left
+template<class T, class U, class V, class... Rest>
+    requires requires { typename common_reference_t<T, U>; }
+struct common_reference<T, U, V, Rest...>
+    : common_reference<common_reference_t<T, U>, V, Rest...> {};
+
+// bullet 5: no fold possible → no member type (empty primary handles it)
+
+//===----------------------------------------------------------------------===//
 // Forward-declare reference_wrapper for unwrap_reference
 //===----------------------------------------------------------------------===//
 template<class T>
@@ -1124,5 +1291,187 @@ template<class T> using unwrap_reference_t = typename unwrap_reference<T>::type;
 
 template<class T> struct unwrap_ref_decay : unwrap_reference<decay_t<T>> {};
 template<class T> using unwrap_ref_decay_t = typename unwrap_ref_decay<T>::type;
+
+//===----------------------------------------------------------------------===//
+// INVOKE machinery (invoke.h — internal) — trait-level only.
+// std::invoke (the public function) lives in <functional>, not here.
+//
+// Implements the INVOKE expression as a set of constrained overloads in
+// detail::invoke_impl (NOT in std directly — no public std::invoke here).
+//
+// NOTE: reference_wrapper bullets (bullets 2 and 5 of the INVOKE definition)
+// are intentionally omitted.  They will be added when <functional> lands and
+// reference_wrapper is fully defined.
+//
+// Ported from libc++ __type_traits/invoke.h (the non-__builtin_invoke branch).
+// __builtin_invoke is gcc-13+; we use pure C++ here.
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+    // Helper: extract the class type from a member pointer type.
+    template<class DecayedFp>
+    struct member_pointer_class_type {};
+    template<class Ret, class ClassType>
+    struct member_pointer_class_type<Ret ClassType::*> { using type = ClassType; };
+
+    // "nat" (not-a-type): a sentinel returned by the fallback overload.
+    struct nat {};
+
+    // Bullet enablers — use requires on the invoke overloads directly.
+
+    // invoke: fallback (returns nat) — must be declared before the constrained
+    // overloads so argument-dependent lookup finds them all.
+    template<class... Args>
+    nat invoke_impl(Args&&...);
+
+    // bullet 1: member function pointer, t1 is T or derived from T (object/ref)
+    template<class Fp, class A0, class... Args,
+             class DecayFp = decay_t<Fp>,
+             class DecayA0 = decay_t<A0>,
+             class ClassT = typename member_pointer_class_type<DecayFp>::type>
+        requires is_member_function_pointer_v<DecayFp> &&
+                 (is_same_v<ClassT, DecayA0> || is_base_of_v<ClassT, DecayA0>)
+    constexpr decltype((declval<A0>().*declval<Fp>())(declval<Args>()...))
+    invoke_impl(Fp&& f, A0&& a0, Args&&... args)
+        noexcept(noexcept((static_cast<A0&&>(a0).*f)(static_cast<Args&&>(args)...)))
+    { return (static_cast<A0&&>(a0).*f)(static_cast<Args&&>(args)...); }
+
+    // bullet 2 (reference_wrapper): omitted — added when <functional> lands.
+
+    // bullet 3: member function pointer, t1 is neither T/derived nor reference_wrapper
+    // (i.e., a pointer or smart pointer — deref first)
+    template<class Fp, class A0, class... Args,
+             class DecayFp = decay_t<Fp>,
+             class DecayA0 = decay_t<A0>,
+             class ClassT = typename member_pointer_class_type<DecayFp>::type>
+        requires is_member_function_pointer_v<DecayFp> &&
+                 (!(is_same_v<ClassT, DecayA0> || is_base_of_v<ClassT, DecayA0>))
+    constexpr decltype(((*declval<A0>()).*declval<Fp>())(declval<Args>()...))
+    invoke_impl(Fp&& f, A0&& a0, Args&&... args)
+        noexcept(noexcept(((*static_cast<A0&&>(a0)).*f)(static_cast<Args&&>(args)...)))
+    { return ((*static_cast<A0&&>(a0)).*f)(static_cast<Args&&>(args)...); }
+
+    // bullet 4: member object pointer, t1 is T or derived from T
+    template<class Fp, class A0,
+             class DecayFp = decay_t<Fp>,
+             class DecayA0 = decay_t<A0>,
+             class ClassT = typename member_pointer_class_type<DecayFp>::type>
+        requires is_member_object_pointer_v<DecayFp> &&
+                 (is_same_v<ClassT, DecayA0> || is_base_of_v<ClassT, DecayA0>)
+    constexpr decltype(declval<A0>().*declval<Fp>())
+    invoke_impl(Fp&& f, A0&& a0)
+        noexcept(noexcept(static_cast<A0&&>(a0).*f))
+    { return static_cast<A0&&>(a0).*f; }
+
+    // bullet 5 (reference_wrapper): omitted — added when <functional> lands.
+
+    // bullet 6: member object pointer, t1 is pointer/smart-pointer (deref)
+    template<class Fp, class A0,
+             class DecayFp = decay_t<Fp>,
+             class DecayA0 = decay_t<A0>,
+             class ClassT = typename member_pointer_class_type<DecayFp>::type>
+        requires is_member_object_pointer_v<DecayFp> &&
+                 (!(is_same_v<ClassT, DecayA0> || is_base_of_v<ClassT, DecayA0>))
+    constexpr decltype((*declval<A0>()).*declval<Fp>())
+    invoke_impl(Fp&& f, A0&& a0)
+        noexcept(noexcept((*static_cast<A0&&>(a0)).*f))
+    { return (*static_cast<A0&&>(a0)).*f; }
+
+    // bullet 7: ordinary callable
+    template<class Fp, class... Args>
+    constexpr decltype(declval<Fp>()(declval<Args>()...))
+    invoke_impl(Fp&& f, Args&&... args)
+        noexcept(noexcept(static_cast<Fp&&>(f)(static_cast<Args&&>(args)...)))
+    { return static_cast<Fp&&>(f)(static_cast<Args&&>(args)...); }
+
+    // invokable_r: detect whether INVOKE(f, args...) is well-formed
+    // and (optionally) convertible to Ret.
+    // _Result is nat when the fallback overload is selected.
+    template<class Ret, class Fp, class... Args>
+    struct invokable_r {
+        template<class XFp, class... XArgs>
+        static decltype(invoke_impl(declval<XFp>(), declval<XArgs>()...))
+        try_call(int);
+        template<class XFp, class... XArgs>
+        static nat try_call(...);
+
+        using result = decltype(try_call<Fp, Args...>(0));
+        static constexpr bool invokable = !is_same_v<result, nat>;
+        // For is_invocable_r: result must also be convertible to Ret (or Ret is void)
+        static constexpr bool value =
+            invokable && (is_void_v<Ret> || is_convertible_v<result, Ret>);
+    };
+
+    // nothrow_invokable_r: also check noexcept.
+    // The noexcept() operator is an unevaluated context, so declval is safe there.
+    // We specialise on invokable and is_void<Ret> at compile-time.
+    template<bool Invokable, bool RetVoid, class Ret, class Fp, class... Args>
+    struct nothrow_invokable_r_impl {
+        static constexpr bool value = false;
+    };
+    // Ret is void: just check noexcept on the call
+    template<class Ret, class Fp, class... Args>
+    struct nothrow_invokable_r_impl<true, true, Ret, Fp, Args...> {
+        static constexpr bool value =
+            noexcept(invoke_impl(declval<Fp>(), declval<Args>()...));
+    };
+    // Ret is non-void: call must be noexcept AND result nothrow-convertible to Ret
+    template<class Ret, class Fp, class... Args>
+    struct nothrow_invokable_r_impl<true, false, Ret, Fp, Args...> {
+        static constexpr bool value =
+            noexcept(invoke_impl(declval<Fp>(), declval<Args>()...)) &&
+            is_nothrow_convertible_v<typename invokable_r<Ret, Fp, Args...>::result, Ret>;
+    };
+
+    template<class Ret, class Fp, class... Args>
+    using nothrow_invokable_r =
+        nothrow_invokable_r_impl<invokable_r<Ret, Fp, Args...>::invokable,
+                                  is_void_v<Ret>,
+                                  Ret, Fp, Args...>;
+
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
+// invoke_result (C++17, but part of type_traits in C++20)
+// SFINAE-friendly: ::type is present only when invocable.
+//===----------------------------------------------------------------------===//
+template<class Fn, class... Args>
+struct invoke_result
+    : enable_if<detail::invokable_r<void, Fn, Args...>::invokable,
+                typename detail::invokable_r<void, Fn, Args...>::result> {};
+
+template<class Fn, class... Args>
+using invoke_result_t = typename invoke_result<Fn, Args...>::type;
+
+//===----------------------------------------------------------------------===//
+// is_invocable, is_invocable_r (C++17)
+//===----------------------------------------------------------------------===//
+template<class Fn, class... Args>
+inline constexpr bool is_invocable_v =
+    detail::invokable_r<void, Fn, Args...>::invokable;
+template<class Fn, class... Args>
+struct is_invocable : bool_constant<is_invocable_v<Fn, Args...>> {};
+
+template<class Ret, class Fn, class... Args>
+inline constexpr bool is_invocable_r_v =
+    detail::invokable_r<Ret, Fn, Args...>::value;
+template<class Ret, class Fn, class... Args>
+struct is_invocable_r : bool_constant<is_invocable_r_v<Ret, Fn, Args...>> {};
+
+//===----------------------------------------------------------------------===//
+// is_nothrow_invocable, is_nothrow_invocable_r (C++17)
+//===----------------------------------------------------------------------===//
+template<class Fn, class... Args>
+inline constexpr bool is_nothrow_invocable_v =
+    detail::nothrow_invokable_r<void, Fn, Args...>::value;
+template<class Fn, class... Args>
+struct is_nothrow_invocable : bool_constant<is_nothrow_invocable_v<Fn, Args...>> {};
+
+template<class Ret, class Fn, class... Args>
+inline constexpr bool is_nothrow_invocable_r_v =
+    detail::nothrow_invokable_r<Ret, Fn, Args...>::value;
+template<class Ret, class Fn, class... Args>
+struct is_nothrow_invocable_r : bool_constant<is_nothrow_invocable_r_v<Ret, Fn, Args...>> {};
 
 } // namespace std

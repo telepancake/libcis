@@ -703,3 +703,240 @@ void test_void_t() {
     static_assert(std::is_same_v<std::void_t<int, float, void>, void>);
     static_assert(std::is_same_v<std::void_t<>, void>);
 }
+
+//===----------------------------------------------------------------------===//
+// test_type_traits_common_reference_basic
+// Ported from libc++ test/std/utilities/meta/meta.trans/meta.trans.other/
+//   common_reference.compile.pass.cpp
+//===----------------------------------------------------------------------===//
+struct CRBase {};
+struct CRDerived : CRBase {};
+
+// g++-10: "requires { typename T::type; }" only works as a named template,
+// not inline inside static_assert.  Use this helper for "no type" checks.
+template<class T>
+constexpr bool cr_has_type = requires { typename T::type; };
+
+void test_type_traits_common_reference_basic() {
+    // (6.1) zero types: no ::type
+    static_assert(!cr_has_type<std::common_reference<>>);
+
+    // (6.2) one type: identity
+    static_assert(std::is_same_v<std::common_reference_t<void>, void>);
+    static_assert(std::is_same_v<std::common_reference_t<int>, int>);
+    static_assert(std::is_same_v<std::common_reference_t<int&>, int&>);
+    static_assert(std::is_same_v<std::common_reference_t<int&&>, int&&>);
+    static_assert(std::is_same_v<std::common_reference_t<int const>, int const>);
+    static_assert(std::is_same_v<std::common_reference_t<int const&>, int const&>);
+    static_assert(std::is_same_v<std::common_reference_t<int const&&>, int const&&>);
+    static_assert(std::is_same_v<std::common_reference_t<void (&)()>, void (&)()>);
+    static_assert(std::is_same_v<std::common_reference_t<void (&&)()>, void (&&)()>);
+}
+
+void test_type_traits_common_reference_refs() {
+    // (6.3.1) two lvalue refs with COMMON-REF existing (pointer convertibility)
+    static_assert(std::is_same_v<std::common_reference_t<CRBase&, CRDerived&>, CRBase&>);
+    static_assert(std::is_same_v<std::common_reference_t<CRBase const&, CRDerived&>, CRBase const&>);
+    static_assert(std::is_same_v<std::common_reference_t<CRBase&, CRDerived const&>, CRBase const&>);
+
+    // two rvalue refs
+    static_assert(std::is_same_v<std::common_reference_t<CRBase&&, CRDerived&&>, CRBase&&>);
+    static_assert(std::is_same_v<std::common_reference_t<CRBase const&&, CRDerived&&>, CRBase const&&>);
+    static_assert(std::is_same_v<std::common_reference_t<CRBase&&, CRDerived const&&>, CRBase const&&>);
+
+    // mixed ref categories (rvalue + lvalue → const lvalue)
+    static_assert(std::is_same_v<std::common_reference_t<CRBase&, CRDerived&&>, CRBase const&>);
+    static_assert(std::is_same_v<std::common_reference_t<CRBase&&, CRDerived&>, CRBase const&>);
+    static_assert(std::is_same_v<std::common_reference_t<CRBase const&, CRDerived&&>, CRBase const&>);
+
+    // cv-qualifier merging
+    static_assert(std::is_same_v<std::common_reference_t<int const&, int volatile&>, int const volatile&>);
+    static_assert(std::is_same_v<std::common_reference_t<int const volatile&&, int volatile&&>, int const volatile&&>);
+
+    // array refs
+    static_assert(std::is_same_v<std::common_reference_t<int const (&)[10], int volatile (&)[10]>,
+                                  int const volatile (&)[10]>);
+}
+
+void test_type_traits_common_reference_non_ref() {
+    // (6.3.3) COND-RES fallback for non-reference types
+    static_assert(std::is_same_v<std::common_reference_t<void, void>, void>);
+    static_assert(std::is_same_v<std::common_reference_t<int, short>, int>);
+    static_assert(std::is_same_v<std::common_reference_t<int, short&>, int>);
+    static_assert(std::is_same_v<std::common_reference_t<int&, short&>, int>);
+
+    // tricky volatile reference case → COND-RES falls back to prvalue int
+    static_assert(std::is_same_v<std::common_reference_t<int&&, int volatile&>, int>);
+    static_assert(std::is_same_v<std::common_reference_t<int volatile&, int&&>, int>);
+
+    // array decay
+    static_assert(std::is_same_v<std::common_reference_t<int (&)[10], int (&)[11]>, int*>);
+}
+
+void test_type_traits_common_reference_multi() {
+    // (6.4) 3+ types
+    static_assert(std::is_same_v<std::common_reference_t<int, int, int>, int>);
+    static_assert(std::is_same_v<std::common_reference_t<int&&, int const&, int volatile&>,
+                                  int const volatile&>);
+    static_assert(std::is_same_v<std::common_reference_t<CRBase&, CRDerived const&, CRDerived&>, CRBase const&>);
+
+    // (6.4.2) no common_reference → no type
+    static_assert(!cr_has_type<std::common_reference<int, short, int, char*>>);
+}
+
+//===----------------------------------------------------------------------===//
+// test_type_traits_invoke_result
+// Ported from libc++ meta.trans.other / invoke_result tests.
+//===----------------------------------------------------------------------===//
+struct InvokeTag {};
+struct InvokeDerived : InvokeTag {};
+
+struct InvokeFnObj {
+    int operator()(InvokeTag, int) const { return 0; }
+    double operator()(double) const { return 0.0; }
+};
+
+int invoke_free_fn(InvokeTag, int) { return 0; }
+int invoke_nothrow_fn(int) noexcept { return 0; }
+
+void test_type_traits_invoke_result_basic() {
+    // Free function pointer
+    using Fp = int(*)(InvokeTag, int);
+    static_assert(std::is_same_v<std::invoke_result_t<Fp, InvokeTag, int>, int>);
+    static_assert(std::is_same_v<std::invoke_result_t<Fp, InvokeDerived, int>, int>);
+
+    // Function object
+    static_assert(std::is_same_v<std::invoke_result_t<InvokeFnObj, InvokeTag, int>, int>);
+    static_assert(std::is_same_v<std::invoke_result_t<InvokeFnObj, double>, double>);
+
+    // Member function pointer — bullet 1
+    using Mfp = int(InvokeTag::*)(int);
+    static_assert(std::is_same_v<std::invoke_result_t<Mfp, InvokeTag&, int>, int>);
+    static_assert(std::is_same_v<std::invoke_result_t<Mfp, InvokeDerived&, int>, int>);
+
+    // Member object pointer — bullet 4
+    using Mop = int InvokeTag::*;
+    static_assert(std::is_same_v<std::invoke_result_t<Mop, InvokeTag&>, int&>);
+
+    // invoke_result: no ::type when not invocable
+    static_assert(!cr_has_type<std::invoke_result<int, int>>);
+    static_assert(!cr_has_type<std::invoke_result<void>>);
+}
+
+//===----------------------------------------------------------------------===//
+// test_type_traits_invoke_is_invocable
+// Ported from libc++ meta.rel/is_invocable.pass.cpp
+//===----------------------------------------------------------------------===//
+
+struct InvokeNotCallableWithInt {
+    int operator()(int) = delete;
+    int operator()(InvokeTag) { return 42; }
+};
+
+struct InvokeImplicit { InvokeImplicit(int) {} };
+struct InvokeExplicit { explicit InvokeExplicit(int) {} };
+
+void test_type_traits_invoke_is_invocable_basic() {
+    using AbominableFunc = void(...) const;
+
+    // Non-callable things
+    static_assert(!std::is_invocable_v<void>);
+    static_assert(!std::is_invocable_v<const void>);
+    static_assert(!std::is_invocable_v<std::nullptr_t>);
+    static_assert(!std::is_invocable_v<int>);
+    static_assert(!std::is_invocable_v<double>);
+    static_assert(!std::is_invocable_v<int[]>);
+    static_assert(!std::is_invocable_v<int[3]>);
+    static_assert(!std::is_invocable_v<int*>);
+    static_assert(!std::is_invocable_v<int&>);
+    static_assert(!std::is_invocable_v<int&&>);
+    static_assert(!std::is_invocable_v<AbominableFunc>);
+
+    // With parameters
+    static_assert(!std::is_invocable_v<int, int>);
+    static_assert(!std::is_invocable_v<int, double, float>);
+}
+
+void test_type_traits_invoke_is_invocable_memfn() {
+    // Bullet 1: member function pointer, object/reference
+    using Fn = int (InvokeTag::*)(int);
+    using RFn = int (InvokeTag::*)(int)&&;
+    static_assert(std::is_invocable_v<Fn, InvokeTag&, int>);
+    static_assert(std::is_invocable_v<Fn, InvokeDerived&, int>);
+    static_assert(std::is_invocable_v<RFn, InvokeTag&&, int>);
+    static_assert(!std::is_invocable_v<RFn, InvokeTag&, int>);
+    static_assert(!std::is_invocable_v<Fn, InvokeTag&>);           // too few args
+    static_assert(!std::is_invocable_v<Fn, InvokeTag const&, int>);// wrong cv
+
+    // Bullet 3: member function pointer via pointer
+    using T = InvokeTag*;
+    using DT = InvokeDerived*;
+    static_assert(std::is_invocable_v<Fn, T&, int>);
+    static_assert(std::is_invocable_v<Fn, DT&, int>);
+    static_assert(std::is_invocable_v<Fn, T&&, int>);
+    static_assert(!std::is_invocable_v<Fn, const InvokeTag*, int>);
+}
+
+void test_type_traits_invoke_is_invocable_memobj() {
+    // Bullets 4 and 6: member object pointer
+    using Fn = int(InvokeTag::*);
+    static_assert(!std::is_invocable_v<Fn>);                        // no object arg
+
+    // Bullet 4: direct object
+    static_assert(std::is_invocable_v<Fn, InvokeTag&>);
+    static_assert(std::is_invocable_v<Fn, InvokeDerived&>);
+    static_assert(std::is_invocable_v<Fn, InvokeTag&&>);
+    static_assert(std::is_invocable_v<Fn, InvokeTag const&>);
+
+    // Bullet 6: via pointer
+    static_assert(std::is_invocable_v<Fn, InvokeTag*>);
+    static_assert(std::is_invocable_v<Fn, InvokeDerived*>);
+    static_assert(std::is_invocable_v<Fn, InvokeTag* const>);
+    static_assert(std::is_invocable_v<Fn, const InvokeTag*>);
+}
+
+void test_type_traits_invoke_is_invocable_callable() {
+    // Bullet 7: plain callable
+    using Fp = void(*)(InvokeTag&, int);
+    static_assert(std::is_invocable_v<Fp, InvokeTag&, int>);
+    static_assert(std::is_invocable_v<Fp, InvokeDerived&, int>);
+    static_assert(!std::is_invocable_v<Fp, InvokeTag const&, int>);
+    static_assert(!std::is_invocable_v<Fp>);
+    static_assert(!std::is_invocable_v<Fp, InvokeTag&>);
+
+    // Function object
+    static_assert(std::is_invocable_v<InvokeNotCallableWithInt, InvokeTag>);
+    static_assert(!std::is_invocable_v<InvokeNotCallableWithInt, int>);
+}
+
+void test_type_traits_invoke_is_invocable_r() {
+    // is_invocable_r: return type convertibility check
+    using Fn = int(*)();
+    static_assert(std::is_invocable_r_v<int, Fn>);
+    static_assert(std::is_invocable_r_v<InvokeImplicit, Fn>);
+    static_assert(std::is_invocable_r_v<double, Fn>);
+    static_assert(std::is_invocable_r_v<const volatile void, Fn>);
+    static_assert(!std::is_invocable_r_v<InvokeExplicit, Fn>);  // explicit ctor
+
+    // _v variants
+    using Fv = void(*)();
+    static_assert(std::is_invocable_v<Fv>);
+    static_assert(!std::is_invocable_v<Fv, int>);
+    static_assert(std::is_invocable_r_v<void, Fv>);
+    static_assert(!std::is_invocable_r_v<int, Fv>);
+}
+
+void test_type_traits_invoke_is_nothrow_invocable() {
+    // is_nothrow_invocable
+    using FnNoexcept = int(*)(int) noexcept;
+    using FnThrows   = int(*)(int);
+    static_assert(std::is_nothrow_invocable_v<FnNoexcept, int>);
+    static_assert(!std::is_nothrow_invocable_v<FnThrows, int>);
+    static_assert(!std::is_nothrow_invocable_v<int>);  // not callable
+
+    // is_nothrow_invocable_r
+    static_assert(std::is_nothrow_invocable_r_v<int, FnNoexcept, int>);
+    static_assert(!std::is_nothrow_invocable_r_v<int, FnThrows, int>);
+    static_assert(std::is_nothrow_invocable_r_v<void, FnNoexcept, int>);
+    static_assert(std::is_nothrow_invocable_r_v<long, FnNoexcept, int>); // int -> long noexcept
+}

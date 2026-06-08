@@ -5,348 +5,35 @@
 // Design decisions:
 //
 // 1. common_reference / common_reference_t:
-//    <type_traits> intentionally omits common_reference (it wasn't needed
-//    there). Since concepts is the only current consumer, the full
-//    common_reference machinery is defined here, inside namespace std, after
-//    the #include <type_traits> pull-in. If a future header also needs it we
-//    can hoist it; for now this keeps <type_traits> clean.
+//    Provided by <type_traits>. No local copy here.
 //
 // 2. std::forward / std::move / std::exchange:
-//    These belong in <utility> which is not yet ported. <type_traits> doesn't
-//    define them. We define minimal versions here, guarded by a
-//    LIBCIS_FORWARD_DEFINED sentinel so <utility> can skip them later.
+//    Provided by <utility>. No local copy here.
 //
 // 3. ranges::swap CPO:
-//    The standard puts it in <utility>/ranges. We put the CPO struct inside
-//    namespace std::ranges here, guarded by LIBCIS_RANGES_SWAP_DEFINED so
-//    <utility> can skip it. The plain std::swap declared in <type_traits> is
-//    kept for is_swappable; ranges::swap uses the CPO mechanism.
+//    Per [utility.swap.range], the CPO lives in std::ranges. We define it here
+//    (matching libc++'s __concepts/swap.h placement) and use std::move /
+//    std::exchange from <utility>.
 //
 // 4. invoke / invoke_result_t:
-//    <functional> is not yet ported. A minimal std::invoke and invoke_result_t
-//    are defined here, guarded by LIBCIS_INVOKE_DEFINED.
+//    The INVOKE expression machinery (detail::invoke_impl) and trait wrappers
+//    (invoke_result_t, is_invocable_v, ...) live in <type_traits>. The concepts
+//    invocable / predicate / relation use detail::invoke_impl directly from there.
+//
+// 5. Shared helpers from <compare>:
+//    <utility> includes <compare>, which already defines in namespace std::detail:
+//      - make_const_lvalue_ref<T>   = const remove_reference_t<T>&
+//      - boolean_testable_impl<T>   (concept)
+//      - boolean_testable<T>        (concept)
+//      - weakly_equality_comparable_with<T,U>  (concept)
+//      - partially_ordered_with<T,U>           (concept)
+//    We use those directly without redefinition.
 #pragma once
 
 #include <type_traits>
+#include <utility>
 
 namespace std {
-
-//===----------------------------------------------------------------------===//
-// Minimal forward / move / exchange (from __utility/)
-// Guarded so <utility> can #include <concepts> without collision.
-//===----------------------------------------------------------------------===//
-#ifndef LIBCIS_FORWARD_DEFINED
-#define LIBCIS_FORWARD_DEFINED
-
-template<class T>
-[[nodiscard]] constexpr T&& forward(remove_reference_t<T>& t) noexcept {
-    return static_cast<T&&>(t);
-}
-template<class T>
-[[nodiscard]] constexpr T&& forward(remove_reference_t<T>&& t) noexcept {
-    static_assert(!is_lvalue_reference_v<T>,
-        "cannot forward an rvalue as an lvalue");
-    return static_cast<T&&>(t);
-}
-
-template<class T>
-[[nodiscard]] constexpr remove_reference_t<T>&& move(T&& t) noexcept {
-    return static_cast<remove_reference_t<T>&&>(t);
-}
-
-template<class T, class U = T>
-constexpr T exchange(T& obj, U&& new_val)
-    noexcept(is_nothrow_move_constructible_v<T> &&
-             is_nothrow_assignable_v<T&, U>) {
-    T old = std::move(obj);
-    obj   = std::forward<U>(new_val);
-    return old;
-}
-
-#endif // LIBCIS_FORWARD_DEFINED
-
-//===----------------------------------------------------------------------===//
-// copy_cvref helper (from __type_traits/copy_cvref.h)
-// Needed by common_reference machinery below.
-// Uses detail::copy_cv_t already in <type_traits>.
-//===----------------------------------------------------------------------===//
-namespace detail {
-    // copy_cvref: copy cv AND ref qualifiers from From to To.
-    template<class From>
-    struct copy_cvref_helper {
-        template<class To> using apply = copy_cv_t<From, To>;
-    };
-    template<class From>
-    struct copy_cvref_helper<From&> {
-        template<class To> using apply = add_lvalue_reference_t<copy_cv_t<From, To>>;
-    };
-    template<class From>
-    struct copy_cvref_helper<From&&> {
-        template<class To> using apply = add_rvalue_reference_t<copy_cv_t<From, To>>;
-    };
-    template<class From, class To>
-    using copy_cvref_t = typename copy_cvref_helper<From>::template apply<To>;
-} // namespace detail
-
-//===----------------------------------------------------------------------===//
-// common_reference (from __type_traits/common_reference.h)
-// C++20 [meta.trans.other] p5
-//===----------------------------------------------------------------------===//
-
-// COND_RES(X, Y)
-namespace detail {
-    template<class X, class Y>
-    using cond_res_t = decltype(false ? declval<X(&)()>()() : declval<Y(&)()>()());
-} // namespace detail
-
-// XREF(A): alias template that applies A's cv+ref qualifiers to another type.
-// detail::copy_cvref_helper<A>::template apply serves as XREF(A).
-
-// __common_ref: COMMON-REF(A,B) per the standard.
-namespace detail {
-    template<class A, class B,
-             class X = remove_reference_t<A>,
-             class Y = remove_reference_t<B>>
-    struct common_ref_impl {};
-
-    template<class X, class Y>
-    using cv_cond_res = cond_res_t<copy_cv_t<X,Y>&, copy_cv_t<Y,X>&>;
-
-    // Both lvalue refs: COND-RES(COPYCV(X,Y)&, COPYCV(Y,X)&) if reference
-    template<class A, class B, class X, class Y>
-        requires requires { typename cv_cond_res<X,Y>; } &&
-                 is_reference_v<cv_cond_res<X,Y>>
-    struct common_ref_impl<A&, B&, X, Y> {
-        using type = cv_cond_res<X,Y>;
-    };
-
-    // Helper C = remove_reference_t<common_ref(X&,Y&)>&&
-    template<class X, class Y>
-    using common_ref_C = remove_reference_t<
-        typename common_ref_impl<X&, Y&>::type>&&;
-
-    // Both rvalue refs
-    template<class A, class B, class X, class Y>
-        requires requires { typename common_ref_C<X,Y>; } &&
-                 is_convertible_v<A&&, common_ref_C<X,Y>> &&
-                 is_convertible_v<B&&, common_ref_C<X,Y>>
-    struct common_ref_impl<A&&, B&&, X, Y> {
-        using type = common_ref_C<X,Y>;
-    };
-
-    // Helper D = common_ref(const X&, Y&)
-    template<class X, class Y>
-    using common_ref_D = typename common_ref_impl<const X&, Y&>::type;
-
-    // rvalue && lvalue
-    template<class A, class B, class X, class Y>
-        requires requires { typename common_ref_D<X,Y>; } &&
-                 is_convertible_v<A&&, common_ref_D<X,Y>>
-    struct common_ref_impl<A&&, B&, X, Y> {
-        using type = common_ref_D<X,Y>;
-    };
-
-    // lvalue && rvalue: swap
-    template<class A, class B, class X, class Y>
-    struct common_ref_impl<A&, B&&, X, Y> : common_ref_impl<B&&, A&> {};
-
-    template<class A, class B>
-    using common_ref_t = typename common_ref_impl<A, B>::type;
-} // namespace detail
-
-// basic_common_reference customization point
-template<class T, class U,
-         template<class> class TQual,
-         template<class> class UQual>
-struct basic_common_reference {};
-
-// Forward declare common_reference
-template<class... Ts>
-struct common_reference;
-
-template<class... Ts>
-using common_reference_t = typename common_reference<Ts...>::type;
-
-// bullet 1: no types
-template<>
-struct common_reference<> {};
-
-// bullet 2: one type
-template<class T>
-struct common_reference<T> { using type = T; };
-
-// bullet 3: two types — chain of sub-bullets
-namespace detail {
-    template<class T, class U>
-    struct common_ref_sub3 {};  // sub-bullet 3 falls through to common_type
-
-    template<class T, class U>
-        requires requires { typename common_type_t<T,U>; }
-    struct common_ref_sub3<T,U> { using type = common_type_t<T,U>; };
-
-    template<class T, class U>
-    struct common_ref_sub2 : common_ref_sub3<T,U> {};
-
-    // sub-bullet 3: COND-RES(T,U) well-formed
-    template<class T, class U>
-        requires requires { typename cond_res_t<T,U>; }
-    struct common_ref_sub2<T,U> { using type = cond_res_t<T,U>; };
-
-    template<class T, class U>
-    struct common_ref_sub1 : common_ref_sub2<T,U> {};
-
-    // sub-bullet 2: basic_common_reference specialisation
-    template<class T, class U>
-    using basic_cr_t = typename basic_common_reference<
-        remove_cvref_t<T>, remove_cvref_t<U>,
-        copy_cvref_helper<T>::template apply,
-        copy_cvref_helper<U>::template apply>::type;
-
-    template<class T, class U>
-        requires requires { typename basic_cr_t<T,U>; }
-    struct common_ref_sub1<T,U> { using type = basic_cr_t<T,U>; };
-
-    // sub-bullet 1: both refs, COMMON-REF(T,U) is a reference, convertible
-    template<class T, class U>
-        requires is_reference_v<T> && is_reference_v<U> &&
-                 requires { typename common_ref_t<T,U>; } &&
-                 is_convertible_v<add_pointer_t<T>, add_pointer_t<common_ref_t<T,U>>> &&
-                 is_convertible_v<add_pointer_t<U>, add_pointer_t<common_ref_t<T,U>>>
-    struct common_ref_sub1<T,U> { using type = common_ref_t<T,U>; };
-} // namespace detail
-
-template<class T, class U>
-struct common_reference<T,U> : detail::common_ref_sub1<T,U> {};
-
-// bullet 4: 3+ types — fold left
-template<class T, class U, class V, class... Rest>
-    requires requires { typename common_reference_t<T,U>; }
-struct common_reference<T, U, V, Rest...>
-    : common_reference<common_reference_t<T,U>, V, Rest...> {};
-
-// bullet 5: no type if fold fails — empty struct (already handled by no
-// specialisation matching)
-
-//===----------------------------------------------------------------------===//
-// invoke / invoke_result (minimal; from __type_traits/invoke.h)
-// Guarded so <functional> can skip it.
-//===----------------------------------------------------------------------===//
-#ifndef LIBCIS_INVOKE_DEFINED
-#define LIBCIS_INVOKE_DEFINED
-
-namespace detail {
-    // Member function pointer helpers
-    template<class DecayedFp>
-    struct mem_ptr_class {};
-    template<class Ret, class C>
-    struct mem_ptr_class<Ret C::*> { using type = C; };
-
-    // Invoke categories
-    // bullet 1: f is mem-fn ptr, a0 is derived from / same as class
-    template<class Fp, class A0,
-             class DFp = decay_t<Fp>,
-             class DA0 = decay_t<A0>,
-             class CT  = typename mem_ptr_class<DFp>::type>
-    using enable_bullet1 = enable_if_t<
-        is_member_function_pointer_v<DFp> &&
-        (is_same_v<CT, DA0> || is_base_of_v<CT, DA0>)>;
-
-    // bullet 2: f is mem-fn ptr, a0 is reference_wrapper — skip (reference_wrapper not yet ported)
-    // bullet 3: f is mem-fn ptr, other
-    template<class Fp, class A0,
-             class DFp = decay_t<Fp>,
-             class DA0 = decay_t<A0>,
-             class CT  = typename mem_ptr_class<DFp>::type>
-    using enable_bullet3 = enable_if_t<
-        is_member_function_pointer_v<DFp> &&
-        !(is_same_v<CT, DA0> || is_base_of_v<CT, DA0>)>;
-
-    // bullet 4: f is mem-obj ptr, a0 is derived from / same as class
-    template<class Fp, class A0,
-             class DFp = decay_t<Fp>,
-             class DA0 = decay_t<A0>,
-             class CT  = typename mem_ptr_class<DFp>::type>
-    using enable_bullet4 = enable_if_t<
-        is_member_object_pointer_v<DFp> &&
-        (is_same_v<CT, DA0> || is_base_of_v<CT, DA0>)>;
-
-    // bullet 6: f is mem-obj ptr, other
-    template<class Fp, class A0,
-             class DFp = decay_t<Fp>,
-             class DA0 = decay_t<A0>,
-             class CT  = typename mem_ptr_class<DFp>::type>
-    using enable_bullet6 = enable_if_t<
-        is_member_object_pointer_v<DFp> &&
-        !(is_same_v<CT, DA0> || is_base_of_v<CT, DA0>)>;
-
-    struct invoke_nat {};
-
-    // Bullets 1, 3: member function pointer
-    template<class Fp, class A0, class... Args, class = enable_bullet1<Fp,A0>>
-    constexpr auto invoke_impl(Fp&& f, A0&& a0, Args&&... args)
-        noexcept(noexcept((static_cast<A0&&>(a0).*f)(static_cast<Args&&>(args)...)))
-        -> decltype((static_cast<A0&&>(a0).*f)(static_cast<Args&&>(args)...))
-    { return (static_cast<A0&&>(a0).*f)(static_cast<Args&&>(args)...); }
-
-    template<class Fp, class A0, class... Args, class = enable_bullet3<Fp,A0>>
-    constexpr auto invoke_impl(Fp&& f, A0&& a0, Args&&... args)
-        noexcept(noexcept(((*static_cast<A0&&>(a0)).*f)(static_cast<Args&&>(args)...)))
-        -> decltype(((*static_cast<A0&&>(a0)).*f)(static_cast<Args&&>(args)...))
-    { return ((*static_cast<A0&&>(a0)).*f)(static_cast<Args&&>(args)...); }
-
-    // Bullets 4, 6: member object pointer
-    template<class Fp, class A0, class = enable_bullet4<Fp,A0>>
-    constexpr auto invoke_impl(Fp&& f, A0&& a0)
-        noexcept(noexcept(static_cast<A0&&>(a0).*f))
-        -> decltype(static_cast<A0&&>(a0).*f)
-    { return static_cast<A0&&>(a0).*f; }
-
-    template<class Fp, class A0, class = enable_bullet6<Fp,A0>>
-    constexpr auto invoke_impl(Fp&& f, A0&& a0)
-        noexcept(noexcept((*static_cast<A0&&>(a0)).*f))
-        -> decltype((*static_cast<A0&&>(a0)).*f)
-    { return (*static_cast<A0&&>(a0)).*f; }
-
-    // Bullet 7: regular callable
-    template<class Fp, class... Args>
-    constexpr auto invoke_impl(Fp&& f, Args&&... args)
-        noexcept(noexcept(static_cast<Fp&&>(f)(static_cast<Args&&>(args)...)))
-        -> decltype(static_cast<Fp&&>(f)(static_cast<Args&&>(args)...))
-    { return static_cast<Fp&&>(f)(static_cast<Args&&>(args)...); }
-
-    template<class Void, class... Args>
-    struct invoke_result_impl {};
-    template<class... Args>
-    struct invoke_result_impl<void_t<decltype(invoke_impl(declval<Args>()...))>, Args...> {
-        using type = decltype(invoke_impl(declval<Args>()...));
-    };
-
-    template<class Fn, class... Args>
-    inline constexpr bool is_invocable_impl_v =
-        !is_same_v<decltype(invoke_impl(declval<Fn>(), declval<Args>()...)), invoke_nat>;
-
-} // namespace detail
-
-template<class Fn, class... Args>
-struct invoke_result : detail::invoke_result_impl<void, Fn, Args...> {};
-template<class Fn, class... Args>
-using invoke_result_t = typename invoke_result<Fn, Args...>::type;
-
-template<class Fn, class... Args>
-inline constexpr bool is_invocable_v =
-    requires { detail::invoke_impl(declval<Fn>(), declval<Args>()...); };
-
-template<class Fn, class... Args>
-struct is_invocable : bool_constant<is_invocable_v<Fn, Args...>> {};
-
-template<class Fn, class... Args>
-constexpr invoke_result_t<Fn, Args...>
-invoke(Fn&& f, Args&&... args)
-    noexcept(noexcept(detail::invoke_impl(forward<Fn>(f), forward<Args>(args)...))) {
-    return detail::invoke_impl(forward<Fn>(f), forward<Args>(args)...);
-}
-
-#endif // LIBCIS_INVOKE_DEFINED
 
 //===----------------------------------------------------------------------===//
 // [concept.same] same_as
@@ -377,6 +64,7 @@ concept convertible_to =
 
 //===----------------------------------------------------------------------===//
 // [concept.commonref] common_reference_with
+// Uses common_reference_t from <type_traits>.
 //===----------------------------------------------------------------------===//
 template<class T, class U>
 concept common_reference_with =
@@ -386,6 +74,7 @@ concept common_reference_with =
 
 //===----------------------------------------------------------------------===//
 // [concept.common] common_with
+// Uses common_reference_t from <type_traits>.
 //===----------------------------------------------------------------------===//
 template<class T, class U>
 concept common_with =
@@ -460,13 +149,14 @@ concept copy_constructible =
 
 //===----------------------------------------------------------------------===//
 // [concept.assignable] assignable_from
+// Uses detail::make_const_lvalue_ref from <compare> (via <utility>):
+//   make_const_lvalue_ref<T> = const remove_reference_t<T>&
 //===----------------------------------------------------------------------===//
 namespace detail {
-    // __make_const_lvalue_ref<T>: const T& if T is not a reference,
-    // otherwise T (reference types pass through).
+    // class_or_enum: needed for ranges::swap ADL test
     template<class T>
-    using make_const_lvalue_ref = conditional_t<is_reference_v<T>, T, const T&>;
-}
+    concept class_or_enum = is_class_v<T> || is_union_v<T> || is_enum_v<T>;
+} // namespace detail
 
 template<class Lhs, class Rhs>
 concept assignable_from =
@@ -478,29 +168,11 @@ concept assignable_from =
     };
 
 //===----------------------------------------------------------------------===//
-// Internal helpers reused by swappable / comparison concepts
-//===----------------------------------------------------------------------===//
-namespace detail {
-    // boolean_testable_impl
-    template<class T>
-    concept boolean_testable_impl = convertible_to<T, bool>;
-
-    template<class T>
-    concept boolean_testable =
-        boolean_testable_impl<T> &&
-        requires(T&& t) { { !forward<T>(t) } -> boolean_testable_impl; };
-
-    // class_or_enum
-    template<class T>
-    concept class_or_enum = is_class_v<T> || is_union_v<T> || is_enum_v<T>;
-} // namespace detail
-
-//===----------------------------------------------------------------------===//
 // [concept.swappable] swappable / swappable_with
-// Uses a ranges::swap CPO (ranges is inside std here, per the standard).
+// ranges::swap CPO lives here (matches libc++'s __concepts/swap.h placement).
+// Uses std::move and std::exchange from <utility>.
+// Uses detail::boolean_testable / detail::class_or_enum defined above / in <compare>.
 //===----------------------------------------------------------------------===//
-#ifndef LIBCIS_RANGES_SWAP_DEFINED
-#define LIBCIS_RANGES_SWAP_DEFINED
 
 namespace ranges {
 namespace swap_detail {
@@ -521,7 +193,7 @@ struct swap_fn;
 // Array swap: element-wise recursion
 template<class T, class U, size_t N>
 concept swappable_arrays =
-    !unqualified_swappable_with<T(&)[N], U(&)[N]> &&
+    (!unqualified_swappable_with<T(&)[N], U(&)[N]>) &&
     extent_v<T> == extent_v<U> &&
     requires(T (&t)[N], U (&u)[N], const swap_fn& sw) {
         sw(t[0], u[0]);
@@ -530,7 +202,7 @@ concept swappable_arrays =
 // Exchangeable: no ADL swap, but move-constructible and assignable
 template<class T>
 concept exchangeable =
-    !unqualified_swappable_with<T&, T&> &&
+    (!unqualified_swappable_with<T&, T&>) &&
     move_constructible<T> &&
     assignable_from<T&, T>;
 
@@ -568,8 +240,6 @@ inline namespace cpo {
 } // namespace cpo
 } // namespace ranges
 
-#endif // LIBCIS_RANGES_SWAP_DEFINED
-
 template<class T>
 concept swappable = requires(T& a, T& b) { ranges::swap(a, b); };
 
@@ -606,17 +276,11 @@ concept semiregular = copyable<T> && default_initializable<T>;
 
 //===----------------------------------------------------------------------===//
 // [concept.equalitycomparable] equality_comparable
+// Uses detail::weakly_equality_comparable_with from <compare> (via <utility>).
+// Uses detail::make_const_lvalue_ref from <compare> (via <utility>).
+// Uses detail::comparison_common_type_with (local — <compare> doesn't define it).
 //===----------------------------------------------------------------------===//
 namespace detail {
-    template<class T, class U>
-    concept weakly_equality_comparable_with =
-        requires(make_const_lvalue_ref<T> t, make_const_lvalue_ref<U> u) {
-            { t == u } -> boolean_testable;
-            { t != u } -> boolean_testable;
-            { u == t } -> boolean_testable;
-            { u != t } -> boolean_testable;
-        };
-
     // comparison_common_type_with helper
     template<class T, class U,
              class CR = common_reference_t<const T&, const U&>>
@@ -649,22 +313,8 @@ concept equality_comparable_with =
 
 //===----------------------------------------------------------------------===//
 // [concept.totallyordered] totally_ordered
+// Uses detail::partially_ordered_with from <compare> (via <utility>).
 //===----------------------------------------------------------------------===//
-namespace detail {
-    template<class T, class U>
-    concept partially_ordered_with =
-        requires(make_const_lvalue_ref<T> t, make_const_lvalue_ref<U> u) {
-            { t <  u } -> boolean_testable;
-            { t >  u } -> boolean_testable;
-            { t <= u } -> boolean_testable;
-            { t >= u } -> boolean_testable;
-            { u <  t } -> boolean_testable;
-            { u >  t } -> boolean_testable;
-            { u <= t } -> boolean_testable;
-            { u >= t } -> boolean_testable;
-        };
-} // namespace detail
-
 template<class T>
 concept totally_ordered =
     equality_comparable<T> && detail::partially_ordered_with<T, T>;
@@ -686,26 +336,22 @@ concept regular = semiregular<T> && equality_comparable<T>;
 
 //===----------------------------------------------------------------------===//
 // [concept.invocable] invocable, regular_invocable
+// Uses is_invocable_v / invoke_result_t from <type_traits>.
 //===----------------------------------------------------------------------===//
 template<class Fn, class... Args>
-concept invocable =
-    requires(Fn&& fn, Args&&... args) {
-        detail::invoke_impl(forward<Fn>(fn), forward<Args>(args)...);
-    };
+concept invocable = is_invocable_v<Fn, Args...>;
 
 template<class Fn, class... Args>
 concept regular_invocable = invocable<Fn, Args...>;
 
 //===----------------------------------------------------------------------===//
 // [concept.predicate] predicate
+// Uses invoke_result_t and detail::boolean_testable from <compare> (via <utility>).
 //===----------------------------------------------------------------------===//
 template<class Fn, class... Args>
 concept predicate =
     regular_invocable<Fn, Args...> &&
-    requires(Fn&& fn, Args&&... args) {
-        { detail::invoke_impl(forward<Fn>(fn), forward<Args>(args)...) }
-            -> detail::boolean_testable;
-    };
+    detail::boolean_testable<invoke_result_t<Fn, Args...>>;
 
 //===----------------------------------------------------------------------===//
 // [concept.relation] relation, equivalence_relation, strict_weak_order

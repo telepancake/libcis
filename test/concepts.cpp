@@ -263,20 +263,13 @@ void test_concepts_runtime() {
     CHECK(a == 20);
     CHECK(b == 10);
 
-    // invoke
-    int r = std::invoke(add, 3, 4);
-    CHECK(r == 7);
-
-    Callable c;
-    CHECK(std::invoke(c, 5) == 10);
-
-    // exchange
+    // exchange (from <utility>, available via <concepts> -> <utility>)
     int x = 1;
     int old = std::exchange(x, 42);
     CHECK(old == 1);
     CHECK(x == 42);
 
-    // forward / move
+    // forward / move (from <utility>)
     int val = 100;
     int&& rv = std::move(val);
     CHECK(rv == 100);
