@@ -1,0 +1,58 @@
+// <exception> -- exception base types and terminate support.
+// Mechanically ported from libc++ include/__exception/*.h
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// OMITTED (require the exception runtime — throw/catch/exception_ptr):
+//   exception_ptr        — needs __cxa_current_exception / unwinder ABI
+//   make_exception_ptr   — needs throw internally
+//   current_exception    — needs __cxa_current_exception
+//   rethrow_exception    — needs throw/catch machinery
+//   nested_exception     — captures via current_exception, rethrows via rethrow_exception
+//   throw_with_nested    — needs throw
+//   rethrow_if_nested    — needs catch / dynamic_cast (RTTI)
+//   uncaught_exceptions  — needs unwinder state
+//
+// The exception *types* (exception, bad_exception) are ordinary classes with
+// virtual functions; defining them is valid under -fno-exceptions -fno-rtti.
+// terminate/set_terminate/get_terminate are declared here and resolved from
+// the system libstdc++/libsupc++ at link time.
+#pragma once
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// class exception  (__exception/exception.h)
+//===----------------------------------------------------------------------===//
+class exception {
+public:
+    exception() noexcept {}
+    exception(const exception&) noexcept            = default;
+    exception& operator=(const exception&) noexcept = default;
+    virtual ~exception() noexcept;
+    [[nodiscard]] virtual const char* what() const noexcept;
+};
+
+//===----------------------------------------------------------------------===//
+// class bad_exception  (__exception/exception.h)
+//===----------------------------------------------------------------------===//
+class bad_exception : public exception {
+public:
+    bad_exception() noexcept {}
+    bad_exception(const bad_exception&) noexcept            = default;
+    bad_exception& operator=(const bad_exception&) noexcept = default;
+    ~bad_exception() noexcept override;
+    [[nodiscard]] const char* what() const noexcept override;
+};
+
+//===----------------------------------------------------------------------===//
+// terminate_handler, set_terminate, get_terminate, terminate
+// (__exception/operations.h, __exception/terminate.h)
+// Declared here; implementations live in libstdc++/libsupc++ (linked normally).
+//===----------------------------------------------------------------------===//
+using terminate_handler = void (*)();
+
+terminate_handler set_terminate(terminate_handler) noexcept;
+[[nodiscard]] terminate_handler get_terminate() noexcept;
+[[noreturn]] void terminate() noexcept;
+
+} // namespace std

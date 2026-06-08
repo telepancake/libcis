@@ -1,0 +1,141 @@
+// <new> -- dynamic memory management support.
+// Mechanically ported from libc++ include/__new/*.h
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// bad_alloc and bad_array_new_length are exception TYPES (ordinary classes
+// deriving from std::exception).  They are kept as types; they are never
+// thrown by this library.  The global operator new/delete declarations are
+// declarations only — the implementations are supplied by the system runtime
+// (libstdc++/libsupc++) at link time, exactly as with a normal C++ program.
+#pragma once
+
+#include <exception>
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// size_t (pulled from type_traits / compiler built-in, avoid <cstddef> pull)
+//===----------------------------------------------------------------------===//
+using size_t = decltype(sizeof(int));
+
+//===----------------------------------------------------------------------===//
+// align_val_t  (__new/align_val_t.h) — C++17
+//===----------------------------------------------------------------------===//
+enum class align_val_t : size_t {};
+
+//===----------------------------------------------------------------------===//
+// nothrow_t / nothrow  (__new/nothrow_t.h)
+//===----------------------------------------------------------------------===//
+struct nothrow_t {
+    explicit nothrow_t() = default;
+};
+extern const nothrow_t nothrow;
+
+//===----------------------------------------------------------------------===//
+// new_handler, set_new_handler, get_new_handler  (__new/new_handler.h)
+// Declared here; implementations from libstdc++/libsupc++.
+//===----------------------------------------------------------------------===//
+using new_handler = void (*)();
+new_handler set_new_handler(new_handler) noexcept;
+new_handler get_new_handler() noexcept;
+
+//===----------------------------------------------------------------------===//
+// bad_alloc  (__new/exceptions.h)
+// An ordinary exception-type class; never thrown by libcis itself.
+// Definitions are inline so the header is self-contained under -nostdinc++.
+//===----------------------------------------------------------------------===//
+class bad_alloc : public exception {
+public:
+    bad_alloc() noexcept {}
+    bad_alloc(const bad_alloc&) noexcept            = default;
+    bad_alloc& operator=(const bad_alloc&) noexcept = default;
+    ~bad_alloc() noexcept override {}
+    [[nodiscard]] const char* what() const noexcept override { return "std::bad_alloc"; }
+};
+
+//===----------------------------------------------------------------------===//
+// bad_array_new_length  (__new/exceptions.h)
+//===----------------------------------------------------------------------===//
+class bad_array_new_length : public bad_alloc {
+public:
+    bad_array_new_length() noexcept {}
+    bad_array_new_length(const bad_array_new_length&) noexcept            = default;
+    bad_array_new_length& operator=(const bad_array_new_length&) noexcept = default;
+    ~bad_array_new_length() noexcept override {}
+    [[nodiscard]] const char* what() const noexcept override { return "std::bad_array_new_length"; }
+};
+
+//===----------------------------------------------------------------------===//
+// destroying_delete_t / destroying_delete  (__new/destroying_delete_t.h) — C++20
+//===----------------------------------------------------------------------===//
+struct destroying_delete_t {
+    explicit destroying_delete_t() = default;
+};
+inline constexpr destroying_delete_t destroying_delete{};
+
+//===----------------------------------------------------------------------===//
+// launder  (__new/launder.h) — C++17
+// __builtin_launder is available in gcc-10.2.
+//===----------------------------------------------------------------------===//
+template<class T>
+[[nodiscard]] inline constexpr T* launder(T* p) noexcept {
+    return __builtin_launder(p);
+}
+
+//===----------------------------------------------------------------------===//
+// hardware interference sizes  (__new/interference_size.h) — C++17
+// __GCC_DESTRUCTIVE_SIZE / __GCC_CONSTRUCTIVE_SIZE were introduced in gcc-12.
+// gcc-10.2 does not define them; fall back to the typical x86-64 cache line size
+// of 64 bytes, matching the value gcc-12+ emits on this architecture.
+//===----------------------------------------------------------------------===//
+#if defined(__GCC_DESTRUCTIVE_SIZE)
+inline constexpr size_t hardware_destructive_interference_size  = __GCC_DESTRUCTIVE_SIZE;
+inline constexpr size_t hardware_constructive_interference_size = __GCC_CONSTRUCTIVE_SIZE;
+#else
+inline constexpr size_t hardware_destructive_interference_size  = 64;
+inline constexpr size_t hardware_constructive_interference_size = 64;
+#endif
+
+} // namespace std
+
+//===----------------------------------------------------------------------===//
+// Global operator new / delete declarations  (__new/global_new_delete.h)
+// All sized, aligned, nothrow, and placement overloads.
+// Implementations are supplied by the system runtime.
+//===----------------------------------------------------------------------===//
+
+// scalar new
+[[nodiscard]] void* operator new(std::size_t size);
+[[nodiscard]] void* operator new(std::size_t size, std::align_val_t alignment);
+[[nodiscard]] void* operator new(std::size_t size, const std::nothrow_t&) noexcept;
+[[nodiscard]] void* operator new(std::size_t size, std::align_val_t alignment,
+                                 const std::nothrow_t&) noexcept;
+
+// scalar delete
+void operator delete(void* ptr) noexcept;
+void operator delete(void* ptr, std::size_t size) noexcept;
+void operator delete(void* ptr, std::align_val_t alignment) noexcept;
+void operator delete(void* ptr, std::size_t size, std::align_val_t alignment) noexcept;
+void operator delete(void* ptr, const std::nothrow_t&) noexcept;
+void operator delete(void* ptr, std::align_val_t alignment, const std::nothrow_t&) noexcept;
+
+// array new
+[[nodiscard]] void* operator new[](std::size_t size);
+[[nodiscard]] void* operator new[](std::size_t size, std::align_val_t alignment);
+[[nodiscard]] void* operator new[](std::size_t size, const std::nothrow_t&) noexcept;
+[[nodiscard]] void* operator new[](std::size_t size, std::align_val_t alignment,
+                                   const std::nothrow_t&) noexcept;
+
+// array delete
+void operator delete[](void* ptr) noexcept;
+void operator delete[](void* ptr, std::size_t size) noexcept;
+void operator delete[](void* ptr, std::align_val_t alignment) noexcept;
+void operator delete[](void* ptr, std::size_t size, std::align_val_t alignment) noexcept;
+void operator delete[](void* ptr, const std::nothrow_t&) noexcept;
+void operator delete[](void* ptr, std::align_val_t alignment, const std::nothrow_t&) noexcept;
+
+// placement new/delete  (__new/placement_new_delete.h)
+[[nodiscard]] inline void* operator new(std::size_t, void* p) noexcept { return p; }
+[[nodiscard]] inline void* operator new[](std::size_t, void* p) noexcept { return p; }
+inline void operator delete(void*, void*) noexcept {}
+inline void operator delete[](void*, void*) noexcept {}
