@@ -68,3 +68,64 @@ function with `if constexpr` and assign to the `_v` variable.
   backtrace at the failing line. Use `CHECK(expr)` from `test/test.h` (traps) for
   runtime checks and `static_assert` for compile-time checks.
 - Build & run everything with `./build.sh`.
+
+## Porting contract (for agents)
+
+This is **not** a from-scratch implementation. You are mechanically transforming
+the real libc++ source files into libcis. Do not invent code from memory; start
+from the actual source.
+
+- **Input:** `/home/user/llvm-project/libcxx/include/` — the user header and the
+  `__detail/*.h` files it includes.
+- **Output:** `/home/user/libcis/include/<header>` — fold every `__detail`
+  fragment the header pulls in *directly into the user header*. Only put
+  something in `include/bits/` if it genuinely cannot live in a user header
+  (e.g. a true include cycle). User headers `#include` each other directly.
+- **Target:** g++-10.2, `-std=gnu++20 -fno-exceptions -fno-rtti`.
+- **Verify on the real compiler:** build with `CXX=g++-10 ./build.sh`.
+
+### Mechanical substitutions
+
+| libc++ | libcis |
+|---|---|
+| `_LIBCPP_BEGIN_NAMESPACE_STD` / `_LIBCPP_END_NAMESPACE_STD` (and the UNVERSIONED variants) | `namespace std {` / `}` |
+| `_LIBCPP_HIDE_FROM_ABI`, `_LIBCPP_INLINE_VISIBILITY`, `_LIBCPP_TEMPLATE_VIS`, `_LIBCPP_EXPORTED_FROM_ABI`, `_LIBCPP_HIDDEN` | (delete) |
+| `_LIBCPP_CONSTEXPR`, `_LIBCPP_CONSTEXPR_SINCE_CXXNN` | `constexpr` |
+| `_NOEXCEPT`, `_NOEXCEPT_(x)` | `noexcept`, `noexcept(x)` |
+| `_LIBCPP_DEPRECATED*`, `_LIBCPP_NODISCARD*` | (delete, or `[[nodiscard]]`) |
+| `_VSTD::`, `_LIBCPP_STD_VER` checks | `std::`, resolve for C++20 |
+| `__enable_if_t<...>` SFINAE | prefer a `requires` clause |
+| names with leading/trailing underscores (`_Tp`, `__x`, `value_type_`) | strip underscores (`T`, `x`, `value_type`) |
+| `#include <__config>`, `#pragma GCC system_header`, `_LIBCPP_USE_FROZEN_CXX03_HEADERS` blocks, `__has_no_*` guards | (delete) |
+
+- Delete pre-C++20 branches; keep the newest standard's path. Delete
+  exception/RTTI code paths and any optional exception/RTTI support.
+- `_v` is primary (logic in the constexpr variable); the trait struct and `_t`
+  alias wrap it. Prefer `requires`/`if constexpr` over SFINAE.
+- Use `for (T i = n; ...)`, never `for (T __i = __n; ...)`.
+
+### Builtins (CRITICAL — target is gcc-10.2, not gcc-13)
+
+libc++ `main` uses many builtins added in gcc-13/14 that **do not exist in
+gcc-10.2**. Where libc++ guards a builtin with `#if __has_builtin(...)` and
+provides a non-builtin `#else` fallback, and the builtin is unavailable in
+gcc-10.2, **keep the fallback**. Verify every builtin you use by compiling a
+probe with `g++-10 -std=gnu++20`.
+
+Known-available in gcc-10.2 (use freely): `__is_class`, `__is_union`,
+`__is_enum`, `__is_base_of`, `__is_abstract`, `__is_polymorphic`, `__is_final`,
+`__is_empty`, `__is_aggregate`, `__is_standard_layout`, `__is_trivial`,
+`__is_trivially_copyable`, `__is_pod`, `__has_virtual_destructor`,
+`__has_unique_object_representations`, `__underlying_type`, `__is_constructible`,
+`__is_assignable`, `__is_trivially_constructible`, `__is_trivially_assignable`,
+`__builtin_*` runtime helpers.
+
+Known-MISSING in gcc-10.2 (implement in C++, do NOT use the builtin):
+`__is_same`, `__is_convertible`, `__is_nothrow_convertible`,
+`__is_nothrow_constructible`, `__is_nothrow_assignable`, `__is_function`,
+`__is_pointer`, `__is_array`, `__is_reference`, `__is_const`, `__is_volatile`,
+`__is_integral`, `__is_arithmetic`, `__remove_cv`, `__remove_reference`,
+`__remove_cvref`, `__remove_pointer`, `__remove_all_extents`, `__add_pointer`,
+`__add_lvalue_reference`, `__decay`, `__make_signed`, `__make_unsigned`,
+`__builtin_bit_cast` (gcc-11+), `__type_pack_element`. (Verify; correct this
+list if a probe shows otherwise.)
