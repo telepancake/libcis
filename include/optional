@@ -1,0 +1,1013 @@
+// <optional> — mechanically ported from libc++ include/optional
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// All __optional/* fragments are folded inline here.
+// Depends on: <type_traits>, <utility>, <compare>, <exception>, <initializer_list>
+//
+// Deferred: hash<optional<T>> specialization (needs <functional>).
+//
+// bad_optional_access: kept as a type deriving from std::exception (valid even
+// under -fno-exceptions -fno-rtti). value() would normally throw it; instead
+// we call __builtin_trap() with a comment.
+//
+// Note on __sfinae_ctor/assign_base: libc++ uses __sfinae_ctor_base and
+// __sfinae_assign_base (from <__tuple/sfinae_helpers.h>) to conditionally
+// delete copy/move ctors and assignments on optional based on T's traits.
+// We implement equivalent "delete-if-needed" bases inline below.
+#pragma once
+
+#include <type_traits>
+#include <utility>
+#include <compare>
+#include <concepts>
+#include <exception>
+#include <new>
+#include <initializer_list>
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// bad_optional_access
+//===----------------------------------------------------------------------===//
+
+class bad_optional_access : public exception {
+public:
+    bad_optional_access() noexcept                                         = default;
+    bad_optional_access(const bad_optional_access&) noexcept               = default;
+    bad_optional_access& operator=(const bad_optional_access&) noexcept    = default;
+    ~bad_optional_access() noexcept override;
+    [[nodiscard]] const char* what() const noexcept override;
+};
+
+// These definitions need to be in *one* TU but since we have no .cpp for the
+// library itself, they must live here.  Give them inline linkage so they can
+// appear in multiple TUs without an ODR violation.
+inline bad_optional_access::~bad_optional_access() noexcept = default;
+inline const char* bad_optional_access::what() const noexcept {
+    return "bad_optional_access";
+}
+
+//===----------------------------------------------------------------------===//
+// Internal helper: throw_bad_optional_access
+// Under -fno-exceptions we trap instead of throwing.
+//===----------------------------------------------------------------------===//
+[[noreturn]] inline void throw_bad_optional_access() {
+    // Would throw bad_optional_access() under -fexceptions.
+    // Under -fno-exceptions we trap to get a useful backtrace.
+    __builtin_trap();
+}
+
+//===----------------------------------------------------------------------===//
+// nullopt_t / nullopt
+//===----------------------------------------------------------------------===//
+
+struct nullopt_t {
+    struct secret_tag { explicit secret_tag() = default; };
+    constexpr explicit nullopt_t(secret_tag, secret_tag) noexcept {}
+};
+
+inline constexpr nullopt_t nullopt{nullopt_t::secret_tag{}, nullopt_t::secret_tag{}};
+
+//===----------------------------------------------------------------------===//
+// Internal: sfinae control bases (replace __sfinae_ctor_base /
+// __sfinae_assign_base from libc++).
+//
+// These bases selectively =delete copy/move ctors and assignments when T does
+// not support them. They are private bases of optional<T>.
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+    // ctor control: delete copy ctor when !CanCopy, move ctor when !CanMove
+    template<bool CanCopy, bool CanMove>
+    struct opt_sfinae_ctor_base {};
+
+    template<>
+    struct opt_sfinae_ctor_base<false, false> {
+        opt_sfinae_ctor_base()                                       = default;
+        opt_sfinae_ctor_base(const opt_sfinae_ctor_base&)            = delete;
+        opt_sfinae_ctor_base(opt_sfinae_ctor_base&&)                 = delete;
+        opt_sfinae_ctor_base& operator=(const opt_sfinae_ctor_base&) = default;
+        opt_sfinae_ctor_base& operator=(opt_sfinae_ctor_base&&)      = default;
+    };
+    template<>
+    struct opt_sfinae_ctor_base<true, false> {
+        opt_sfinae_ctor_base()                                       = default;
+        opt_sfinae_ctor_base(const opt_sfinae_ctor_base&)            = default;
+        opt_sfinae_ctor_base(opt_sfinae_ctor_base&&)                 = delete;
+        opt_sfinae_ctor_base& operator=(const opt_sfinae_ctor_base&) = default;
+        opt_sfinae_ctor_base& operator=(opt_sfinae_ctor_base&&)      = default;
+    };
+    template<>
+    struct opt_sfinae_ctor_base<false, true> {
+        opt_sfinae_ctor_base()                                       = default;
+        opt_sfinae_ctor_base(const opt_sfinae_ctor_base&)            = delete;
+        opt_sfinae_ctor_base(opt_sfinae_ctor_base&&)                 = default;
+        opt_sfinae_ctor_base& operator=(const opt_sfinae_ctor_base&) = default;
+        opt_sfinae_ctor_base& operator=(opt_sfinae_ctor_base&&)      = default;
+    };
+
+    // assign control: delete copy assign when !CanCopy, move assign when !CanMove
+    template<bool CanCopy, bool CanMove>
+    struct opt_sfinae_assign_base {};
+
+    template<>
+    struct opt_sfinae_assign_base<false, false> {
+        opt_sfinae_assign_base()                                         = default;
+        opt_sfinae_assign_base(const opt_sfinae_assign_base&)            = default;
+        opt_sfinae_assign_base(opt_sfinae_assign_base&&)                 = default;
+        opt_sfinae_assign_base& operator=(const opt_sfinae_assign_base&) = delete;
+        opt_sfinae_assign_base& operator=(opt_sfinae_assign_base&&)      = delete;
+    };
+    template<>
+    struct opt_sfinae_assign_base<true, false> {
+        opt_sfinae_assign_base()                                         = default;
+        opt_sfinae_assign_base(const opt_sfinae_assign_base&)            = default;
+        opt_sfinae_assign_base(opt_sfinae_assign_base&&)                 = default;
+        opt_sfinae_assign_base& operator=(const opt_sfinae_assign_base&) = default;
+        opt_sfinae_assign_base& operator=(opt_sfinae_assign_base&&)      = delete;
+    };
+    template<>
+    struct opt_sfinae_assign_base<false, true> {
+        opt_sfinae_assign_base()                                         = default;
+        opt_sfinae_assign_base(const opt_sfinae_assign_base&)            = default;
+        opt_sfinae_assign_base(opt_sfinae_assign_base&&)                 = default;
+        opt_sfinae_assign_base& operator=(const opt_sfinae_assign_base&) = delete;
+        opt_sfinae_assign_base& operator=(opt_sfinae_assign_base&&)      = default;
+    };
+
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
+// Internal storage bases
+//
+// optional_destruct_base<T, trivially_destructible>
+//   Specialization for trivially destructible T: no user-defined destructor.
+//   Specialization for non-trivially destructible T: destructor calls T::~T.
+//
+// optional_storage_base<T>  — adds has_value(), __get(), __construct(),
+//   __construct_from(), __assign_from(), __swap(), operator->/*, value().
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+    // Non-trivially destructible storage
+    template<class T, bool = is_trivially_destructible_v<T>>
+    struct optional_destruct_base {
+        using value_type = T;
+        static_assert(is_object_v<value_type>,
+            "instantiation of optional with a non-object type is undefined behavior");
+        union {
+            char null_state;
+            remove_cv_t<value_type> val;
+        };
+        bool engaged;
+
+        constexpr ~optional_destruct_base() {
+            if (engaged)
+                val.~value_type();
+        }
+
+        constexpr optional_destruct_base() noexcept
+            : null_state(), engaged(false) {}
+
+        template<class... Args>
+        constexpr explicit optional_destruct_base(in_place_t, Args&&... args)
+            : val(forward<Args>(args)...), engaged(true) {}
+
+        constexpr void reset() noexcept {
+            if (engaged) {
+                val.~value_type();
+                engaged = false;
+            }
+        }
+    };
+
+    // Trivially destructible storage
+    template<class T>
+    struct optional_destruct_base<T, true> {
+        using value_type = T;
+        static_assert(is_object_v<value_type>,
+            "instantiation of optional with a non-object type is undefined behavior");
+        union {
+            char null_state;
+            remove_cv_t<value_type> val;
+        };
+        bool engaged;
+
+        constexpr optional_destruct_base() noexcept
+            : null_state(), engaged(false) {}
+
+        template<class... Args>
+        constexpr explicit optional_destruct_base(in_place_t, Args&&... args)
+            : val(forward<Args>(args)...), engaged(true) {}
+
+        constexpr void reset() noexcept {
+            if (engaged)
+                engaged = false;
+        }
+    };
+
+    // Storage base: builds on destruct base; adds all the access helpers.
+    template<class T>
+    struct optional_storage_base : optional_destruct_base<T> {
+        using base       = optional_destruct_base<T>;
+        using value_type = T;
+        using base::base;
+
+        [[nodiscard]] constexpr bool has_value() const noexcept {
+            return this->engaged;
+        }
+
+        constexpr value_type& get() & noexcept       { return this->val; }
+        constexpr const value_type& get() const& noexcept { return this->val; }
+        constexpr value_type&& get() && noexcept     { return move(this->val); }
+        constexpr const value_type&& get() const&& noexcept { return move(this->val); }
+
+        template<class... Args>
+        constexpr void construct(Args&&... args) {
+            // placement-new into the union member
+            ::new (static_cast<void*>(__builtin_addressof(this->val)))
+                remove_cv_t<value_type>(forward<Args>(args)...);
+            this->engaged = true;
+        }
+
+        template<class That>
+        constexpr void construct_from(That&& opt) {
+            if (opt.has_value())
+                construct(forward<That>(opt).get());
+        }
+
+        template<class That>
+        constexpr void assign_from(That&& opt) {
+            if (this->engaged == opt.has_value()) {
+                if (this->engaged)
+                    static_cast<T&>(this->val) = forward<That>(opt).get();
+            } else {
+                if (this->engaged)
+                    this->reset();
+                else
+                    construct(forward<That>(opt).get());
+            }
+        }
+
+        constexpr void do_swap(optional_storage_base& rhs)
+            noexcept(is_nothrow_move_constructible_v<T> && is_nothrow_swappable_v<T>)
+        {
+            using std::swap;
+            if (this->has_value() == rhs.has_value()) {
+                if (this->has_value())
+                    swap(this->get(), rhs.get());
+            } else {
+                if (this->has_value()) {
+                    rhs.construct(move(this->get()));
+                    this->reset();
+                } else {
+                    this->construct(move(rhs.get()));
+                    rhs.reset();
+                }
+            }
+        }
+
+        // observer: operator->
+        constexpr add_pointer_t<const T> operator->() const noexcept {
+            return __builtin_addressof(this->val);
+        }
+        constexpr add_pointer_t<T> operator->() noexcept {
+            return __builtin_addressof(this->val);
+        }
+
+        // observer: operator*
+        [[nodiscard]] constexpr const T& operator*() const& noexcept {
+            return this->get();
+        }
+        [[nodiscard]] constexpr T& operator*() & noexcept {
+            return this->get();
+        }
+        [[nodiscard]] constexpr T&& operator*() && noexcept {
+            return move(this->get());
+        }
+        [[nodiscard]] constexpr const T&& operator*() const&& noexcept {
+            return move(this->get());
+        }
+
+        // observer: value() — traps instead of throwing (see header comment)
+        [[nodiscard]] constexpr const T& value() const& {
+            if (!this->has_value())
+                throw_bad_optional_access(); // traps under -fno-exceptions
+            return this->get();
+        }
+        [[nodiscard]] constexpr T& value() & {
+            if (!this->has_value())
+                throw_bad_optional_access();
+            return this->get();
+        }
+        [[nodiscard]] constexpr T&& value() && {
+            if (!this->has_value())
+                throw_bad_optional_access();
+            return move(this->get());
+        }
+        [[nodiscard]] constexpr const T&& value() const&& {
+            if (!this->has_value())
+                throw_bad_optional_access();
+            return move(this->get());
+        }
+    };
+
+    // Non-trivially copy-constructible layer
+    template<class T, bool = is_trivially_copy_constructible_v<T>>
+    struct optional_copy_base : optional_storage_base<T> {
+        using optional_storage_base<T>::optional_storage_base;
+    };
+
+    template<class T>
+    struct optional_copy_base<T, false> : optional_storage_base<T> {
+        using optional_storage_base<T>::optional_storage_base;
+
+        optional_copy_base() = default;
+
+        constexpr optional_copy_base(const optional_copy_base& opt) {
+            this->construct_from(opt);
+        }
+
+        optional_copy_base(optional_copy_base&&)                 = default;
+        optional_copy_base& operator=(const optional_copy_base&) = default;
+        optional_copy_base& operator=(optional_copy_base&&)      = default;
+    };
+
+    // Non-trivially move-constructible layer
+    template<class T, bool = is_trivially_move_constructible_v<T>>
+    struct optional_move_base : optional_copy_base<T> {
+        using optional_copy_base<T>::optional_copy_base;
+    };
+
+    template<class T>
+    struct optional_move_base<T, false> : optional_copy_base<T> {
+        using value_type = T;
+        using optional_copy_base<T>::optional_copy_base;
+
+        optional_move_base()                            = default;
+        optional_move_base(const optional_move_base&)   = default;
+
+        constexpr optional_move_base(optional_move_base&& opt)
+            noexcept(is_nothrow_move_constructible_v<value_type>)
+        {
+            this->construct_from(move(opt));
+        }
+
+        optional_move_base& operator=(const optional_move_base&) = default;
+        optional_move_base& operator=(optional_move_base&&)      = default;
+    };
+
+    // Non-trivially copy-assignable layer
+    template<class T,
+             bool = is_trivially_destructible_v<T> &&
+                    is_trivially_copy_constructible_v<T> &&
+                    is_trivially_copy_assignable_v<T>>
+    struct optional_copy_assign_base : optional_move_base<T> {
+        using optional_move_base<T>::optional_move_base;
+    };
+
+    template<class T>
+    struct optional_copy_assign_base<T, false> : optional_move_base<T> {
+        using optional_move_base<T>::optional_move_base;
+
+        optional_copy_assign_base()                                      = default;
+        optional_copy_assign_base(const optional_copy_assign_base&)      = default;
+        optional_copy_assign_base(optional_copy_assign_base&&)           = default;
+
+        constexpr optional_copy_assign_base&
+        operator=(const optional_copy_assign_base& opt) {
+            this->assign_from(opt);
+            return *this;
+        }
+
+        optional_copy_assign_base& operator=(optional_copy_assign_base&&) = default;
+    };
+
+    // Non-trivially move-assignable layer
+    template<class T,
+             bool = is_trivially_destructible_v<T> &&
+                    is_trivially_move_constructible_v<T> &&
+                    is_trivially_move_assignable_v<T>>
+    struct optional_move_assign_base : optional_copy_assign_base<T> {
+        using optional_copy_assign_base<T>::optional_copy_assign_base;
+    };
+
+    template<class T>
+    struct optional_move_assign_base<T, false> : optional_copy_assign_base<T> {
+        using value_type = T;
+        using optional_copy_assign_base<T>::optional_copy_assign_base;
+
+        optional_move_assign_base()                                        = default;
+        optional_move_assign_base(const optional_move_assign_base&)        = default;
+        optional_move_assign_base(optional_move_assign_base&&)             = default;
+        optional_move_assign_base& operator=(const optional_move_assign_base&) = default;
+
+        constexpr optional_move_assign_base&
+        operator=(optional_move_assign_base&& opt)
+            noexcept(is_nothrow_move_assignable_v<value_type> &&
+                     is_nothrow_move_constructible_v<value_type>)
+        {
+            this->assign_from(move(opt));
+            return *this;
+        }
+    };
+
+    // is_std_optional trait (used in and_then / convert ctors)
+    template<class T>
+    struct is_std_optional : false_type {};
+
+} // namespace detail
+
+// Forward declaration (needed for is_std_optional specialization and convert ctors)
+template<class T>
+class optional;
+
+namespace detail {
+    template<class T>
+    struct is_std_optional<optional<T>> : true_type {};
+
+    // Detect whether a type is derived from some optional<U>
+    // (C++20 exposition-only concept is-derived-from-optional)
+    template<class T>
+    concept is_derived_from_optional_concept =
+        requires(const T& t) { []<class U>(const optional<U>&){}(t); };
+
+    // Check: would constructing optional<T> from optional<U> be "too greedy"?
+    // (i.e., T is constructible from any cv/ref qualification of optional<U>)
+    template<class T, class U>
+    inline constexpr bool opt_constructible_from_optional_v =
+        is_constructible_v<T, optional<U>&>         ||
+        is_constructible_v<T, const optional<U>&>   ||
+        is_constructible_v<T, optional<U>&&>        ||
+        is_constructible_v<T, const optional<U>&&>  ||
+        is_convertible_v<optional<U>&, T>           ||
+        is_convertible_v<const optional<U>&, T>     ||
+        is_convertible_v<optional<U>&&, T>          ||
+        is_convertible_v<const optional<U>&&, T>;
+
+    template<class T, class U>
+    inline constexpr bool opt_assignable_from_optional_v =
+        is_assignable_v<T&, optional<U>&>        ||
+        is_assignable_v<T&, const optional<U>&>  ||
+        is_assignable_v<T&, optional<U>&&>       ||
+        is_assignable_v<T&, const optional<U>&&>;
+
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
+// optional<T>
+//===----------------------------------------------------------------------===//
+
+template<class T>
+class optional
+    : private detail::optional_move_assign_base<T>,
+      private detail::opt_sfinae_ctor_base<is_copy_constructible_v<T>,
+                                            is_move_constructible_v<T>>,
+      private detail::opt_sfinae_assign_base<
+          is_copy_constructible_v<T> && is_copy_assignable_v<T>,
+          is_move_constructible_v<T> && is_move_assignable_v<T>>
+{
+    using base = detail::optional_move_assign_base<T>;
+
+    static_assert(!is_same_v<remove_cvref_t<T>, in_place_t>,
+        "instantiation of optional with in_place_t is ill-formed");
+    static_assert(!is_same_v<remove_cvref_t<T>, nullopt_t>,
+        "instantiation of optional with nullopt_t is ill-formed");
+    static_assert(!is_reference_v<T>,
+        "instantiation of optional with a reference type is ill-formed");
+    static_assert(is_destructible_v<T>,
+        "instantiation of optional with a non-destructible type is ill-formed");
+    static_assert(!is_array_v<T>,
+        "instantiation of optional with an array type is ill-formed");
+
+    // ---- internal SFINAE check helpers -----
+
+    // For converting ctor from U&&: exclude in_place_t, optional itself,
+    // and (when T=bool) any std::optional specialization.
+    template<class U>
+    static constexpr bool allow_direct_ctor =
+        !is_same_v<remove_cvref_t<U>, in_place_t> &&
+        !is_same_v<remove_cvref_t<U>, optional> &&
+        (!is_same_v<remove_cv_t<T>, bool> ||
+         !detail::is_std_optional<remove_cvref_t<U>>::value);
+
+    // For converting ctors from optional<U>:
+    template<class U, class QualU>
+    static constexpr bool allow_opt_ctor =
+        !is_same_v<U, T> &&
+        is_constructible_v<T, QualU> &&
+        !detail::opt_constructible_from_optional_v<T, U>;
+
+    template<class U, class QualU>
+    static constexpr bool allow_opt_assign =
+        !is_same_v<U, T> &&
+        is_constructible_v<T, QualU> &&
+        is_assignable_v<T&, QualU> &&
+        !detail::opt_constructible_from_optional_v<T, U> &&
+        !detail::opt_assignable_from_optional_v<T, U>;
+
+public:
+    using value_type = T;
+
+    //=== Constructors ==================================================
+
+    constexpr optional() noexcept {}
+    constexpr optional(const optional&) = default;
+    constexpr optional(optional&&)      = default;
+    constexpr optional(nullopt_t) noexcept {}
+
+    // in_place construction
+    template<class... Args>
+        requires is_constructible_v<T, Args...>
+    constexpr explicit optional(in_place_t, Args&&... args)
+        : base(in_place, forward<Args>(args)...) {}
+
+    template<class U, class... Args>
+        requires is_constructible_v<T, initializer_list<U>&, Args...>
+    constexpr explicit optional(in_place_t, initializer_list<U> il, Args&&... args)
+        : base(in_place, il, forward<Args>(args)...) {}
+
+    // converting ctor from U (implicit)
+    template<class U = remove_cv_t<T>>
+        requires allow_direct_ctor<U> &&
+                 is_constructible_v<T, U&&> && is_convertible_v<U&&, T>
+    constexpr optional(U&& v)
+        : base(in_place, forward<U>(v)) {}
+
+    // converting ctor from U (explicit)
+    template<class U = remove_cv_t<T>>
+        requires allow_direct_ctor<U> &&
+                 is_constructible_v<T, U&&> && (!is_convertible_v<U&&, T>)
+    explicit constexpr optional(U&& v)
+        : base(in_place, forward<U>(v)) {}
+
+    // converting ctor from const optional<U>& (implicit)
+    template<class U>
+        requires allow_opt_ctor<U, const U&> && is_convertible_v<const U&, T>
+    constexpr optional(const optional<U>& v) {
+        this->construct_from(v);
+    }
+    // converting ctor from const optional<U>& (explicit)
+    template<class U>
+        requires allow_opt_ctor<U, const U&> && (!is_convertible_v<const U&, T>)
+    explicit constexpr optional(const optional<U>& v) {
+        this->construct_from(v);
+    }
+
+    // converting ctor from optional<U>&& (implicit)
+    template<class U>
+        requires allow_opt_ctor<U, U&&> && is_convertible_v<U&&, T>
+    constexpr optional(optional<U>&& v) {
+        this->construct_from(move(v));
+    }
+    // converting ctor from optional<U>&& (explicit)
+    template<class U>
+        requires allow_opt_ctor<U, U&&> && (!is_convertible_v<U&&, T>)
+    explicit constexpr optional(optional<U>&& v) {
+        this->construct_from(move(v));
+    }
+
+    //=== Destructor ===================================================
+    // Handled by optional_destruct_base.
+
+    //=== Assignment ===================================================
+
+    constexpr optional& operator=(nullopt_t) noexcept {
+        this->reset();
+        return *this;
+    }
+
+    constexpr optional& operator=(const optional&) = default;
+    constexpr optional& operator=(optional&&)      = default;
+
+    // assign from U (LWG2756)
+    template<class U = remove_cv_t<T>>
+        requires (!is_same_v<remove_cvref_t<U>, optional>) &&
+                 (is_same_v<remove_cvref_t<U>, T> || (!is_scalar_v<T>)) &&
+                 is_constructible_v<T, U> &&
+                 is_assignable_v<T&, U> &&
+                 is_object_v<T>
+    constexpr optional& operator=(U&& v) {
+        if (this->has_value())
+            this->get() = forward<U>(v);
+        else
+            this->construct(forward<U>(v));
+        return *this;
+    }
+
+    // assign from const optional<U>&
+    template<class U>
+        requires allow_opt_assign<U, const U&>
+    constexpr optional& operator=(const optional<U>& v) {
+        this->assign_from(v);
+        return *this;
+    }
+
+    // assign from optional<U>&&
+    template<class U>
+        requires allow_opt_assign<U, U&&>
+    constexpr optional& operator=(optional<U>&& v) {
+        this->assign_from(move(v));
+        return *this;
+    }
+
+    //=== emplace ======================================================
+
+    template<class... Args>
+        requires is_constructible_v<T, Args...>
+    constexpr T& emplace(Args&&... args) {
+        this->reset();
+        this->construct(forward<Args>(args)...);
+        return this->get();
+    }
+
+    template<class U, class... Args>
+        requires is_constructible_v<T, initializer_list<U>&, Args...>
+    constexpr T& emplace(initializer_list<U> il, Args&&... args) {
+        this->reset();
+        this->construct(il, forward<Args>(args)...);
+        return this->get();
+    }
+
+    //=== swap =========================================================
+
+    constexpr void swap(optional& opt)
+        noexcept(is_nothrow_move_constructible_v<T> && is_nothrow_swappable_v<T>)
+    {
+        this->do_swap(opt);
+    }
+
+    //=== Observers ====================================================
+
+    using base::operator->;
+    using base::operator*;
+    using base::has_value;
+    using base::value;
+    using base::reset;
+
+    constexpr explicit operator bool() const noexcept { return has_value(); }
+
+    template<class U = remove_cv_t<T>>
+    [[nodiscard]] constexpr T value_or(U&& v) const& {
+        static_assert(is_copy_constructible_v<T>,
+            "optional<T>::value_or: T must be copy constructible");
+        static_assert(is_convertible_v<U, T>,
+            "optional<T>::value_or: U must be convertible to T");
+        return this->has_value() ? this->get()
+                                 : static_cast<T>(forward<U>(v));
+    }
+
+    template<class U = remove_cv_t<T>>
+    [[nodiscard]] constexpr T value_or(U&& v) && {
+        static_assert(is_move_constructible_v<T>,
+            "optional<T>::value_or: T must be move constructible");
+        static_assert(is_convertible_v<U, T>,
+            "optional<T>::value_or: U must be convertible to T");
+        return this->has_value() ? move(this->get())
+                                 : static_cast<T>(forward<U>(v));
+    }
+
+    //=== Monadic operations (C++23) ===================================
+
+    // and_then &
+    template<class Func>
+    [[nodiscard]] constexpr auto and_then(Func&& f) & {
+        using Up = invoke_result_t<Func, T&>;
+        static_assert(detail::is_std_optional<remove_cvref_t<Up>>::value,
+            "Result of f(value()) must be a specialization of std::optional");
+        if (*this)
+            return detail::invoke_impl(forward<Func>(f), this->get());
+        return remove_cvref_t<Up>();
+    }
+
+    // and_then const&
+    template<class Func>
+    [[nodiscard]] constexpr auto and_then(Func&& f) const& {
+        using Up = invoke_result_t<Func, const T&>;
+        static_assert(detail::is_std_optional<remove_cvref_t<Up>>::value,
+            "Result of f(value()) must be a specialization of std::optional");
+        if (*this)
+            return detail::invoke_impl(forward<Func>(f), this->get());
+        return remove_cvref_t<Up>();
+    }
+
+    // and_then &&
+    template<class Func>
+    [[nodiscard]] constexpr auto and_then(Func&& f) && {
+        using Up = invoke_result_t<Func, T&&>;
+        static_assert(detail::is_std_optional<remove_cvref_t<Up>>::value,
+            "Result of f(std::move(value())) must be a specialization of std::optional");
+        if (*this)
+            return detail::invoke_impl(forward<Func>(f), move(this->get()));
+        return remove_cvref_t<Up>();
+    }
+
+    // and_then const&&
+    template<class Func>
+    [[nodiscard]] constexpr auto and_then(Func&& f) const&& {
+        using Up = invoke_result_t<Func, const T&&>;
+        static_assert(detail::is_std_optional<remove_cvref_t<Up>>::value,
+            "Result of f(std::move(value())) must be a specialization of std::optional");
+        if (*this)
+            return detail::invoke_impl(forward<Func>(f), move(this->get()));
+        return remove_cvref_t<Up>();
+    }
+
+    // transform &
+    template<class Func>
+    [[nodiscard]] constexpr auto transform(Func&& f) & {
+        using Up = remove_cv_t<invoke_result_t<Func, T&>>;
+        static_assert(!is_array_v<Up>,
+            "Result of f(value()) should not be an array");
+        static_assert(!is_same_v<Up, in_place_t>,
+            "Result of f(value()) should not be std::in_place_t");
+        static_assert(!is_same_v<Up, nullopt_t>,
+            "Result of f(value()) should not be std::nullopt_t");
+        static_assert(is_object_v<Up>,
+            "Result of f(value()) should be an object type");
+        if (*this)
+            return optional<Up>(in_place,
+                detail::invoke_impl(forward<Func>(f), this->get()));
+        return optional<Up>();
+    }
+
+    // transform const&
+    template<class Func>
+    [[nodiscard]] constexpr auto transform(Func&& f) const& {
+        using Up = remove_cv_t<invoke_result_t<Func, const T&>>;
+        static_assert(!is_array_v<Up>,
+            "Result of f(value()) should not be an array");
+        static_assert(!is_same_v<Up, in_place_t>,
+            "Result of f(value()) should not be std::in_place_t");
+        static_assert(!is_same_v<Up, nullopt_t>,
+            "Result of f(value()) should not be std::nullopt_t");
+        static_assert(is_object_v<Up>,
+            "Result of f(value()) should be an object type");
+        if (*this)
+            return optional<Up>(in_place,
+                detail::invoke_impl(forward<Func>(f), this->get()));
+        return optional<Up>();
+    }
+
+    // transform &&
+    template<class Func>
+    [[nodiscard]] constexpr auto transform(Func&& f) && {
+        using Up = remove_cv_t<invoke_result_t<Func, T&&>>;
+        static_assert(!is_array_v<Up>,
+            "Result of f(std::move(value())) should not be an array");
+        static_assert(!is_same_v<Up, in_place_t>,
+            "Result of f(std::move(value())) should not be std::in_place_t");
+        static_assert(!is_same_v<Up, nullopt_t>,
+            "Result of f(std::move(value())) should not be std::nullopt_t");
+        static_assert(is_object_v<Up>,
+            "Result of f(std::move(value())) should be an object type");
+        if (*this)
+            return optional<Up>(in_place,
+                detail::invoke_impl(forward<Func>(f), move(this->get())));
+        return optional<Up>();
+    }
+
+    // transform const&&
+    template<class Func>
+    [[nodiscard]] constexpr auto transform(Func&& f) const&& {
+        using Up = remove_cv_t<invoke_result_t<Func, const T&&>>;
+        static_assert(!is_array_v<Up>,
+            "Result of f(std::move(value())) should not be an array");
+        static_assert(!is_same_v<Up, in_place_t>,
+            "Result of f(std::move(value())) should not be std::in_place_t");
+        static_assert(!is_same_v<Up, nullopt_t>,
+            "Result of f(std::move(value())) should not be std::nullopt_t");
+        static_assert(is_object_v<Up>,
+            "Result of f(std::move(value())) should be an object type");
+        if (*this)
+            return optional<Up>(in_place,
+                detail::invoke_impl(forward<Func>(f), move(this->get())));
+        return optional<Up>();
+    }
+
+    // or_else const& (requires copy-constructible T)
+    template<class Func>
+        requires is_invocable_v<Func> && is_copy_constructible_v<T>
+    [[nodiscard]] constexpr optional or_else(Func&& f) const& {
+        static_assert(is_same_v<remove_cvref_t<invoke_result_t<Func>>, optional>,
+            "Result of f() should be the same type as this optional");
+        if (*this) return *this;
+        return forward<Func>(f)();
+    }
+
+    // or_else && (requires move-constructible T)
+    template<class Func>
+        requires is_invocable_v<Func> && is_move_constructible_v<T>
+    [[nodiscard]] constexpr optional or_else(Func&& f) && {
+        static_assert(is_same_v<remove_cvref_t<invoke_result_t<Func>>, optional>,
+            "Result of f() should be the same type as this optional");
+        if (*this) return move(*this);
+        return forward<Func>(f)();
+    }
+
+    //=== Expose internal get() for converting ctors / assign in other
+    //    optional<U> specializations
+    using base::get;
+    using base::construct;
+    using base::construct_from;
+    using base::assign_from;
+};
+
+// Deduction guide
+template<class T>
+optional(T) -> optional<T>;
+
+//===----------------------------------------------------------------------===//
+// [optional.relops] — Relational operators
+//===----------------------------------------------------------------------===//
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t == u }; }
+constexpr bool operator==(const optional<T>& x, const optional<U>& y) {
+    if (static_cast<bool>(x) != static_cast<bool>(y)) return false;
+    if (!static_cast<bool>(x)) return true;
+    return *x == *y;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t != u }; }
+constexpr bool operator!=(const optional<T>& x, const optional<U>& y) {
+    if (static_cast<bool>(x) != static_cast<bool>(y)) return true;
+    if (!static_cast<bool>(x)) return false;
+    return *x != *y;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t < u }; }
+constexpr bool operator<(const optional<T>& x, const optional<U>& y) {
+    if (!static_cast<bool>(y)) return false;
+    if (!static_cast<bool>(x)) return true;
+    return *x < *y;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t > u }; }
+constexpr bool operator>(const optional<T>& x, const optional<U>& y) {
+    if (!static_cast<bool>(x)) return false;
+    if (!static_cast<bool>(y)) return true;
+    return *x > *y;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t <= u }; }
+constexpr bool operator<=(const optional<T>& x, const optional<U>& y) {
+    if (!static_cast<bool>(x)) return true;
+    if (!static_cast<bool>(y)) return false;
+    return *x <= *y;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t >= u }; }
+constexpr bool operator>=(const optional<T>& x, const optional<U>& y) {
+    if (!static_cast<bool>(y)) return true;
+    if (!static_cast<bool>(x)) return false;
+    return *x >= *y;
+}
+
+template<class T, three_way_comparable_with<T> U>
+constexpr compare_three_way_result_t<T, U>
+operator<=>(const optional<T>& x, const optional<U>& y) {
+    if (x && y) return *x <=> *y;
+    return x.has_value() <=> y.has_value();
+}
+
+//===----------------------------------------------------------------------===//
+// [optional.nullops] — Comparison with nullopt (C++20: only <=> needed)
+//===----------------------------------------------------------------------===//
+
+template<class T>
+constexpr bool operator==(const optional<T>& x, nullopt_t) noexcept {
+    return !static_cast<bool>(x);
+}
+
+template<class T>
+constexpr strong_ordering operator<=>(const optional<T>& x, nullopt_t) noexcept {
+    return x.has_value() <=> false;
+}
+
+//===----------------------------------------------------------------------===//
+// [optional.comp.with.t] — Comparison with T
+//===----------------------------------------------------------------------===//
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t == u }; }
+constexpr bool operator==(const optional<T>& x, const U& v) {
+    return x.has_value() ? *x == v : false;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t == u }; }
+constexpr bool operator==(const T& v, const optional<U>& x) {
+    return x.has_value() ? v == *x : false;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t != u }; }
+constexpr bool operator!=(const optional<T>& x, const U& v) {
+    return x.has_value() ? *x != v : true;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t != u }; }
+constexpr bool operator!=(const T& v, const optional<U>& x) {
+    return x.has_value() ? v != *x : true;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t < u }; }
+constexpr bool operator<(const optional<T>& x, const U& v) {
+    return x.has_value() ? *x < v : true;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t < u }; }
+constexpr bool operator<(const T& v, const optional<U>& x) {
+    return x.has_value() ? v < *x : false;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t <= u }; }
+constexpr bool operator<=(const optional<T>& x, const U& v) {
+    return x.has_value() ? *x <= v : true;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t <= u }; }
+constexpr bool operator<=(const T& v, const optional<U>& x) {
+    return x.has_value() ? v <= *x : false;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t > u }; }
+constexpr bool operator>(const optional<T>& x, const U& v) {
+    return x.has_value() ? *x > v : false;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t > u }; }
+constexpr bool operator>(const T& v, const optional<U>& x) {
+    return x.has_value() ? v > *x : true;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t >= u }; }
+constexpr bool operator>=(const optional<T>& x, const U& v) {
+    return x.has_value() ? *x >= v : false;
+}
+
+template<class T, class U>
+    requires requires(const T& t, const U& u) { { t >= u }; }
+constexpr bool operator>=(const T& v, const optional<U>& x) {
+    return x.has_value() ? v >= *x : true;
+}
+
+template<class T, class U>
+    requires (!detail::is_derived_from_optional_concept<U>) &&
+             three_way_comparable_with<T, U>
+constexpr compare_three_way_result_t<T, U>
+operator<=>(const optional<T>& x, const U& v) {
+    return x.has_value() ? *x <=> v : strong_ordering::less;
+}
+
+//===----------------------------------------------------------------------===//
+// [optional.specalg] — swap, make_optional
+//===----------------------------------------------------------------------===//
+
+template<class T>
+    requires is_move_constructible_v<T> && is_swappable_v<T>
+constexpr void swap(optional<T>& x, optional<T>& y)
+    noexcept(noexcept(x.swap(y)))
+{
+    x.swap(y);
+}
+
+template<class T>
+    requires is_constructible_v<decay_t<T>, T>
+[[nodiscard]] constexpr optional<decay_t<T>> make_optional(T&& v) {
+    return optional<decay_t<T>>(forward<T>(v));
+}
+
+template<class T, class... Args>
+    requires is_constructible_v<T, Args...>
+[[nodiscard]] constexpr optional<T> make_optional(Args&&... args) {
+    return optional<T>(in_place, forward<Args>(args)...);
+}
+
+template<class T, class U, class... Args>
+    requires is_constructible_v<T, initializer_list<U>&, Args...>
+[[nodiscard]] constexpr optional<T>
+make_optional(initializer_list<U> il, Args&&... args) {
+    return optional<T>(in_place, il, forward<Args>(args)...);
+}
+
+// [optional.hash] — Deferred: needs <functional>.
+// TODO: add hash<optional<T>> when <functional> (hash) is ported.
+
+} // namespace std
