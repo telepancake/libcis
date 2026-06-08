@@ -2,9 +2,10 @@
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //
 // All __optional/* fragments are folded inline here.
-// Depends on: <type_traits>, <utility>, <compare>, <exception>, <initializer_list>
+// Depends on: <type_traits>, <utility>, <compare>, <exception>, <initializer_list>,
+//             <functional> (hash).
 //
-// Deferred: hash<optional<T>> specialization (needs <functional>).
+// hash<optional<T>>: provided at the bottom of this file.
 //
 // bad_optional_access: kept as a type deriving from std::exception (valid even
 // under -fno-exceptions -fno-rtti). value() would normally throw it; instead
@@ -23,6 +24,7 @@
 #include <exception>
 #include <new>
 #include <initializer_list>
+#include <functional>
 
 namespace std {
 
@@ -1007,7 +1009,28 @@ make_optional(initializer_list<U> il, Args&&... args) {
     return optional<T>(in_place, il, forward<Args>(args)...);
 }
 
-// [optional.hash] — Deferred: needs <functional>.
-// TODO: add hash<optional<T>> when <functional> (hash) is ported.
+//===----------------------------------------------------------------------===//
+// [optional.hash] — hash<optional<T>>
+// (ported from libc++ include/optional, hash<__enable_hash_helper<optional<T>,...>>)
+//
+// Disabled (no operator()) when hash<remove_const_t<T>> is itself disabled
+// (i.e. T has no hash specialisation). This is implemented via a requires
+// clause that checks instantiability of hash<remove_const_t<T>>::operator().
+//
+// When T has a hash, an engaged optional hashes its contained value;
+// a disengaged optional returns 0 (matching the standard sentinel).
+//===----------------------------------------------------------------------===//
+
+template<class T>
+    requires requires(const remove_const_t<T>& v) {
+        { hash<remove_const_t<T>>{}(v) } -> same_as<size_t>;
+    }
+struct hash<optional<T>> {
+    [[nodiscard]] size_t operator()(const optional<T>& opt) const noexcept(
+        noexcept(hash<remove_const_t<T>>{}(*opt)))
+    {
+        return static_cast<bool>(opt) ? hash<remove_const_t<T>>{}(*opt) : 0;
+    }
+};
 
 } // namespace std

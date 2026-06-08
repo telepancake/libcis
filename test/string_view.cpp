@@ -491,3 +491,47 @@ void test_string_view_u32string_view() {
     CHECK(sv.size() == 5);
     CHECK(sv.rfind(U'l') == 3);
 }
+
+//===----------------------------------------------------------------------===//
+// hash<basic_string_view<...>> specialisations
+//===----------------------------------------------------------------------===//
+
+void test_string_view_hash() {
+    // Equal string_views must hash equal.
+    string_view a("hello");
+    string_view b("hello");
+    CHECK(hash<string_view>{}(a) == hash<string_view>{}(b));
+
+    // Different content should (very likely) produce different hashes.
+    string_view c("world");
+    // Not a hard guarantee, but true for any reasonable hash function.
+    CHECK(hash<string_view>{}(a) != hash<string_view>{}(c));
+
+    // Empty string_views hash equal.
+    string_view empty1;
+    string_view empty2;
+    CHECK(hash<string_view>{}(empty1) == hash<string_view>{}(empty2));
+
+    // wstring_view: equal views hash equal.
+    wstring_view wa(L"wide");
+    wstring_view wb(L"wide");
+    CHECK(hash<wstring_view>{}(wa) == hash<wstring_view>{}(wb));
+
+    // u16string_view: equal views hash equal.
+    u16string_view ua(u"u16");
+    u16string_view ub(u"u16");
+    CHECK(hash<u16string_view>{}(ua) == hash<u16string_view>{}(ub));
+
+    // u32string_view: equal views hash equal.
+    u32string_view u32a(U"u32");
+    u32string_view u32b(U"u32");
+    CHECK(hash<u32string_view>{}(u32a) == hash<u32string_view>{}(u32b));
+
+    // u8string_view: equal views hash equal.
+    u8string_view u8a(u8"u8");
+    u8string_view u8b(u8"u8");
+    CHECK(hash<u8string_view>{}(u8a) == hash<u8string_view>{}(u8b));
+
+    // static_assert: hash<string_view> is callable.
+    static_assert(requires { hash<string_view>{}(string_view{"x"}); });
+}

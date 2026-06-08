@@ -447,3 +447,34 @@ void test_optional_deduction_guide() {
     std::optional b(3.14);
     static_assert(std::is_same_v<decltype(b), std::optional<double>>);
 }
+
+void test_optional_hash() {
+    // Two engaged optionals with equal values must hash equal.
+    std::optional<int> a(42);
+    std::optional<int> b(42);
+    CHECK(std::hash<std::optional<int>>{}(a) == std::hash<std::optional<int>>{}(b));
+
+    // Two disengaged optionals must hash equal (both return 0).
+    std::optional<int> empty1;
+    std::optional<int> empty2;
+    CHECK(std::hash<std::optional<int>>{}(empty1) == std::hash<std::optional<int>>{}(empty2));
+
+    // Disengaged optional returns 0.
+    CHECK(std::hash<std::optional<int>>{}(empty1) == 0);
+
+    // An engaged optional with a different value should (very likely) differ.
+    std::optional<int> c(99);
+    CHECK(std::hash<std::optional<int>>{}(a) != std::hash<std::optional<int>>{}(c));
+
+    // Works for other hashable types (double).
+    std::optional<double> d(3.14);
+    std::optional<double> e(3.14);
+    CHECK(std::hash<std::optional<double>>{}(d) == std::hash<std::optional<double>>{}(e));
+
+    // hash<optional<T>> is disabled when hash<T> is disabled.
+    // (Compile-time: optional<optional<int>> is hashable since optional<int> is hashable.)
+    std::optional<std::optional<int>> nested(std::optional<int>(7));
+    std::optional<std::optional<int>> nested2(std::optional<int>(7));
+    CHECK(std::hash<std::optional<std::optional<int>>>{}(nested) ==
+          std::hash<std::optional<std::optional<int>>>{}(nested2));
+}

@@ -9,15 +9,17 @@
 // must exist for the ABI). All throw-paths (get on wrong index, visit on
 // valueless) call __builtin_trap() under -fno-exceptions with a comment.
 //
-// hash: deferred (not implemented — requires <functional> hash infrastructure).
+// hash: provided at the bottom of this file (requires <functional>).
 #pragma once
 
 #include <type_traits>
 #include <utility>
 #include <compare>
+#include <concepts>
 #include <exception>
 #include <initializer_list>
 #include <new>
+#include <functional>
 
 namespace std {
 
@@ -1651,9 +1653,45 @@ auto swap(variant<Types...>& lhs, variant<Types...>& rhs)
 }
 
 // ============================================================================
-// hash: deferred
-// hash<variant<Types...>> and hash<monostate> require <functional> hash
-// infrastructure not yet available in libcis. Not implemented.
+// [variant.hash] — hash<variant<Types...>> and hash<monostate>
+// (ported from libc++ include/variant + __variant/monostate.h)
+//
+// hash<variant<Types...>>:
+//   Enabled only when every remove_const_t<Ti> has an enabled hash.
+//   For a non-valueless variant: hash the active value, then combine with
+//   hash<size_t>{}(v.index()) using detail::hash_combine from <functional>.
+//   For a valueless variant: use sentinel 299792458 (matches libc++).
+//
+// hash<monostate>:
+//   Always enabled; returns a fixed constant (66740831, from libc++).
 // ============================================================================
+
+// hash<monostate> — always enabled, returns a fixed constant.
+template<>
+struct hash<monostate> {
+    [[nodiscard]] size_t operator()(const monostate&) const noexcept {
+        return 66740831; // return a fundamentally attractive random value.
+    }
+};
+
+// hash<variant<Types...>> — enabled only when all remove_const_t<Ti> are hashable.
+template<class... Types>
+    requires (... && requires(const remove_const_t<Types>& v) {
+                  { hash<remove_const_t<Types>>{}(v) } -> same_as<size_t>;
+              })
+struct hash<variant<Types...>> {
+    [[nodiscard]] size_t operator()(const variant<Types...>& v) const {
+        if (v.valueless_by_exception()) {
+            return 299792458; // Random value chosen by the universe upon creation
+        }
+        size_t val_hash = variant_detail::visitation_variant::visit_value(
+            [](const auto& x) -> size_t {
+                using value_type = remove_const_t<remove_reference_t<decltype(x)>>;
+                return hash<value_type>{}(x);
+            },
+            v);
+        return detail::hash_combine(val_hash, hash<size_t>{}(v.index()));
+    }
+};
 
 } // namespace std

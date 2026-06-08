@@ -306,3 +306,41 @@ void test_variant_free_swap() {
     CHECK(v2.index() == 0);
     CHECK(std::get<int>(v2) == 10);
 }
+
+// ============================================================================
+// test_variant_hash
+// ============================================================================
+void test_variant_hash() {
+    // Equal variants (same index, same value) must hash equal.
+    std::variant<int, double> a(42);
+    std::variant<int, double> b(42);
+    CHECK(std::hash<std::variant<int, double>>{}(a) ==
+          std::hash<std::variant<int, double>>{}(b));
+
+    // Equal variants with double alternative must hash equal.
+    std::variant<int, double> c(3.14);
+    std::variant<int, double> d(3.14);
+    CHECK(std::hash<std::variant<int, double>>{}(c) ==
+          std::hash<std::variant<int, double>>{}(d));
+
+    // Different index -> different hash (int 1 vs double 1.0 — very likely different).
+    std::variant<int, double> ia(1);
+    std::variant<int, double> da(1.0);
+    // Index differs (0 vs 1), so hashes should differ.
+    CHECK(std::hash<std::variant<int, double>>{}(ia) !=
+          std::hash<std::variant<int, double>>{}(da));
+
+    // hash<monostate>: all monostates hash equal.
+    CHECK(std::hash<std::monostate>{}(std::monostate{}) ==
+          std::hash<std::monostate>{}(std::monostate{}));
+
+    // hash<variant<monostate>>: equal variants hash equal.
+    std::variant<std::monostate> m1;
+    std::variant<std::monostate> m2;
+    CHECK(std::hash<std::variant<std::monostate>>{}(m1) ==
+          std::hash<std::variant<std::monostate>>{}(m2));
+
+    // Static check: hash<variant<int,double>> is a valid specialisation.
+    static_assert(std::is_default_constructible_v<
+        std::hash<std::variant<int, double>>>);
+}

@@ -15,9 +15,8 @@
 // substr / out_of_range: exceptions are disabled (-fno-exceptions).
 //   Out-of-range on substr/at/copy calls __builtin_trap() instead.
 //
-// Hash specialisations: deferred — needs <functional> (not yet ported).
-//   The specialisations are not provided here; add them when <functional>
-//   is available.
+// Hash specialisations: provided at the bottom of this file.
+//   Uses detail::hash_memory from <functional> (murmur2/cityhash).
 //
 // char_traits lives here (not in bits/) so that <string> can
 //   #include <string_view> to reuse it.
@@ -29,6 +28,7 @@
 #include <limits>
 #include <cstdio>   // EOF
 #include <cwchar>   // WEOF, wint_t, mbstate_t
+#include <functional>
 
 namespace std {
 
@@ -955,13 +955,47 @@ operator""sv(const char32_t* str, size_t len) noexcept {
 
 } // namespace literals
 
-// Hash specialisations: DEFERRED.
-// Requires <functional> (hash template) which is not yet ported.
-// When <functional> is available, add:
-//   template<> struct hash<string_view>    : ...
-//   template<> struct hash<wstring_view>   : ...
-//   template<> struct hash<u8string_view>  : ...
-//   template<> struct hash<u16string_view> : ...
-//   template<> struct hash<u32string_view> : ...
+//===----------------------------------------------------------------------===//
+// [string.view.hash] — hash specialisations for basic_string_view
+// (ported from libc++ include/string_view, __string_view_hash)
+//
+// Uses detail::hash_memory (murmur2/cityhash) from <functional>.
+// Hashes the underlying character bytes, not the pointer/size pair.
+// All five standard character types: char, wchar_t, char8_t, char16_t, char32_t.
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+// string_view_hash_impl: hashes all bytes of a basic_string_view using
+// detail::hash_memory (murmur2_or_cityhash). The CharT width is accounted
+// for by passing the byte count (size * sizeof(CharT)).
+template<class CharT>
+struct string_view_hash_impl {
+    size_t operator()(basic_string_view<CharT, char_traits<CharT>> val) const noexcept {
+        return hash_memory(val.data(), val.size() * sizeof(CharT));
+    }
+};
+
+} // namespace detail
+
+template<>
+struct hash<basic_string_view<char, char_traits<char>>>
+    : detail::string_view_hash_impl<char> {};
+
+template<>
+struct hash<basic_string_view<wchar_t, char_traits<wchar_t>>>
+    : detail::string_view_hash_impl<wchar_t> {};
+
+template<>
+struct hash<basic_string_view<char8_t, char_traits<char8_t>>>
+    : detail::string_view_hash_impl<char8_t> {};
+
+template<>
+struct hash<basic_string_view<char16_t, char_traits<char16_t>>>
+    : detail::string_view_hash_impl<char16_t> {};
+
+template<>
+struct hash<basic_string_view<char32_t, char_traits<char32_t>>>
+    : detail::string_view_hash_impl<char32_t> {};
 
 } // namespace std
