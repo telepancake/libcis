@@ -1,0 +1,1252 @@
+// <algorithm> — C++20 algorithm library (Part 1: classic non-ranges algorithms)
+// Mechanically ported from libc++ include/__algorithm/*.h
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Folded sources:
+//   __algorithm/min.h, max.h, minmax.h, clamp.h
+//   __algorithm/min_element.h, max_element.h, minmax_element.h
+//   __algorithm/all_of.h, any_of.h, none_of.h
+//   __algorithm/for_each.h, for_each_n.h
+//   __algorithm/count.h, count_if.h
+//   __algorithm/mismatch.h, equal.h
+//   __algorithm/find.h, find_if.h, find_if_not.h, find_end.h,
+//     find_first_of.h, adjacent_find.h, search.h, search_n.h
+//   __algorithm/copy.h, copy_if.h, copy_n.h, copy_backward.h
+//   __algorithm/move.h, move_backward.h
+//   __algorithm/fill.h, fill_n.h
+//   __algorithm/transform.h, generate.h, generate_n.h
+//   __algorithm/remove.h, remove_if.h, remove_copy.h, remove_copy_if.h
+//   __algorithm/replace.h, replace_if.h, replace_copy.h, replace_copy_if.h
+//   __algorithm/swap_ranges.h, iter_swap.h
+//   __algorithm/reverse.h, reverse_copy.h
+//   __algorithm/rotate.h, rotate_copy.h
+//   __algorithm/unique.h, unique_copy.h
+//   __algorithm/shift_left.h, shift_right.h
+//   __algorithm/lexicographical_compare.h, lexicographical_compare_three_way.h
+//
+// DEFERRED to Part 2 (sorting/searching/heap/set-ops wave):
+//   sort, stable_sort, partial_sort, partial_sort_copy, nth_element
+//   lower_bound, upper_bound, equal_range, binary_search
+//   merge, inplace_merge
+//   set_union, set_intersection, set_difference, set_symmetric_difference, includes
+//   make_heap, push_heap, pop_heap, sort_heap, is_heap, is_heap_until
+//   partition, stable_partition, partition_copy, is_partitioned, partition_point
+//   is_sorted, is_sorted_until
+//   next_permutation, prev_permutation, is_permutation
+//   sample, shuffle  (require <random>)
+//   All ranges:: algorithm overloads (come with the <ranges> wave)
+//
+// === PART 2 APPEND MARKER ===
+// Part 2 should be appended above the closing `} // namespace std` brace.
+#pragma once
+
+#include <iterator>
+#include <functional>
+#include <utility>
+#include <type_traits>
+#include <initializer_list>
+#include <compare>
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// [alg.min.max] — min, max, minmax, clamp
+// (from __algorithm/min.h, max.h, minmax.h, clamp.h)
+//===----------------------------------------------------------------------===//
+
+// min (comparator)
+template<class T, class Compare>
+[[nodiscard]] constexpr const T&
+min(const T& a, const T& b, Compare comp) {
+    return comp(b, a) ? b : a;
+}
+
+// min (operator<)
+template<class T>
+[[nodiscard]] constexpr const T&
+min(const T& a, const T& b) {
+    return (b < a) ? b : a;
+}
+
+// min (initializer_list, comparator)
+template<class T, class Compare>
+[[nodiscard]] constexpr T
+min(initializer_list<T> t, Compare comp) {
+    auto it = t.begin();
+    T result = *it;
+    for (++it; it != t.end(); ++it)
+        if (comp(*it, result)) result = *it;
+    return result;
+}
+
+// min (initializer_list, operator<)
+template<class T>
+[[nodiscard]] constexpr T
+min(initializer_list<T> t) {
+    auto it = t.begin();
+    T result = *it;
+    for (++it; it != t.end(); ++it)
+        if (*it < result) result = *it;
+    return result;
+}
+
+// max (comparator)
+template<class T, class Compare>
+[[nodiscard]] constexpr const T&
+max(const T& a, const T& b, Compare comp) {
+    return comp(a, b) ? b : a;
+}
+
+// max (operator<)
+template<class T>
+[[nodiscard]] constexpr const T&
+max(const T& a, const T& b) {
+    return (a < b) ? b : a;
+}
+
+// max (initializer_list, comparator)
+template<class T, class Compare>
+[[nodiscard]] constexpr T
+max(initializer_list<T> t, Compare comp) {
+    auto it = t.begin();
+    T result = *it;
+    for (++it; it != t.end(); ++it)
+        if (comp(result, *it)) result = *it;
+    return result;
+}
+
+// max (initializer_list, operator<)
+template<class T>
+[[nodiscard]] constexpr T
+max(initializer_list<T> t) {
+    auto it = t.begin();
+    T result = *it;
+    for (++it; it != t.end(); ++it)
+        if (result < *it) result = *it;
+    return result;
+}
+
+// minmax_result helper
+template<class T>
+struct minmax_result {
+    T min;
+    T max;
+};
+
+// minmax (comparator)
+template<class T, class Compare>
+[[nodiscard]] constexpr pair<const T&, const T&>
+minmax(const T& a, const T& b, Compare comp) {
+    return comp(b, a) ? pair<const T&, const T&>(b, a)
+                      : pair<const T&, const T&>(a, b);
+}
+
+// minmax (operator<)
+template<class T>
+[[nodiscard]] constexpr pair<const T&, const T&>
+minmax(const T& a, const T& b) {
+    return (b < a) ? pair<const T&, const T&>(b, a)
+                   : pair<const T&, const T&>(a, b);
+}
+
+// minmax (initializer_list, comparator)
+template<class T, class Compare>
+[[nodiscard]] constexpr pair<T, T>
+minmax(initializer_list<T> t, Compare comp) {
+    auto it = t.begin();
+    T mn = *it, mx = *it;
+    for (++it; it != t.end(); ++it) {
+        if (comp(*it, mn)) mn = *it;
+        if (comp(mx, *it)) mx = *it;
+    }
+    return {mn, mx};
+}
+
+// minmax (initializer_list, operator<)
+template<class T>
+[[nodiscard]] constexpr pair<T, T>
+minmax(initializer_list<T> t) {
+    auto it = t.begin();
+    T mn = *it, mx = *it;
+    for (++it; it != t.end(); ++it) {
+        if (*it < mn) mn = *it;
+        if (mx < *it) mx = *it;
+    }
+    return {mn, mx};
+}
+
+// clamp (comparator)
+template<class T, class Compare>
+[[nodiscard]] constexpr const T&
+clamp(const T& v, const T& lo, const T& hi, Compare comp) {
+    return comp(v, lo) ? lo : comp(hi, v) ? hi : v;
+}
+
+// clamp (operator<)
+template<class T>
+[[nodiscard]] constexpr const T&
+clamp(const T& v, const T& lo, const T& hi) {
+    return (v < lo) ? lo : (hi < v) ? hi : v;
+}
+
+//===----------------------------------------------------------------------===//
+// [alg.min.max] — min_element, max_element, minmax_element
+// (from __algorithm/min_element.h, max_element.h, minmax_element.h)
+//===----------------------------------------------------------------------===//
+
+// min_element (comparator)
+template<class ForwardIter, class Compare>
+[[nodiscard]] constexpr ForwardIter
+min_element(ForwardIter first, ForwardIter last, Compare comp) {
+    if (first == last) return last;
+    ForwardIter result = first;
+    for (++first; first != last; ++first)
+        if (comp(*first, *result)) result = first;
+    return result;
+}
+
+// min_element (operator<)
+template<class ForwardIter>
+[[nodiscard]] constexpr ForwardIter
+min_element(ForwardIter first, ForwardIter last) {
+    if (first == last) return last;
+    ForwardIter result = first;
+    for (++first; first != last; ++first)
+        if (*first < *result) result = first;
+    return result;
+}
+
+// max_element (comparator)
+template<class ForwardIter, class Compare>
+[[nodiscard]] constexpr ForwardIter
+max_element(ForwardIter first, ForwardIter last, Compare comp) {
+    if (first == last) return last;
+    ForwardIter result = first;
+    for (++first; first != last; ++first)
+        if (comp(*result, *first)) result = first;
+    return result;
+}
+
+// max_element (operator<)
+template<class ForwardIter>
+[[nodiscard]] constexpr ForwardIter
+max_element(ForwardIter first, ForwardIter last) {
+    if (first == last) return last;
+    ForwardIter result = first;
+    for (++first; first != last; ++first)
+        if (*result < *first) result = first;
+    return result;
+}
+
+// minmax_element (comparator)
+template<class ForwardIter, class Compare>
+[[nodiscard]] constexpr pair<ForwardIter, ForwardIter>
+minmax_element(ForwardIter first, ForwardIter last, Compare comp) {
+    pair<ForwardIter, ForwardIter> result(first, first);
+    if (first == last || ++first == last)
+        return result;
+    if (comp(*first, *result.first))
+        result.first = first;
+    else
+        result.second = first;
+    while (++first != last) {
+        ForwardIter i = first;
+        if (++first == last) {
+            if (comp(*i, *result.first)) result.first = i;
+            else if (!comp(*i, *result.second)) result.second = i;
+            break;
+        } else {
+            if (comp(*first, *i)) {
+                if (comp(*first, *result.first)) result.first = first;
+                if (!comp(*i, *result.second)) result.second = i;
+            } else {
+                if (comp(*i, *result.first)) result.first = i;
+                if (!comp(*first, *result.second)) result.second = first;
+            }
+        }
+    }
+    return result;
+}
+
+// minmax_element (operator<)
+template<class ForwardIter>
+[[nodiscard]] constexpr pair<ForwardIter, ForwardIter>
+minmax_element(ForwardIter first, ForwardIter last) {
+    return minmax_element(first, last, less<typename iterator_traits<ForwardIter>::value_type>{});
+}
+
+//===----------------------------------------------------------------------===//
+// [alg.nonmodifying] — Non-modifying sequence operations
+//===----------------------------------------------------------------------===//
+
+// all_of
+template<class InputIter, class Pred>
+[[nodiscard]] constexpr bool
+all_of(InputIter first, InputIter last, Pred pred) {
+    for (; first != last; ++first)
+        if (!pred(*first)) return false;
+    return true;
+}
+
+// any_of
+template<class InputIter, class Pred>
+[[nodiscard]] constexpr bool
+any_of(InputIter first, InputIter last, Pred pred) {
+    for (; first != last; ++first)
+        if (pred(*first)) return true;
+    return false;
+}
+
+// none_of
+template<class InputIter, class Pred>
+[[nodiscard]] constexpr bool
+none_of(InputIter first, InputIter last, Pred pred) {
+    for (; first != last; ++first)
+        if (pred(*first)) return false;
+    return true;
+}
+
+// for_each
+template<class InputIter, class Function>
+constexpr Function
+for_each(InputIter first, InputIter last, Function f) {
+    for (; first != last; ++first)
+        f(*first);
+    return f;
+}
+
+// for_each_n
+template<class InputIter, class Size, class Function>
+constexpr InputIter
+for_each_n(InputIter first, Size n, Function f) {
+    for (Size i = 0; i < n; ++i, ++first)
+        f(*first);
+    return first;
+}
+
+// count
+template<class InputIter, class T>
+[[nodiscard]] constexpr typename iterator_traits<InputIter>::difference_type
+count(InputIter first, InputIter last, const T& value) {
+    typename iterator_traits<InputIter>::difference_type r = 0;
+    for (; first != last; ++first)
+        if (*first == value) ++r;
+    return r;
+}
+
+// count_if
+template<class InputIter, class Pred>
+[[nodiscard]] constexpr typename iterator_traits<InputIter>::difference_type
+count_if(InputIter first, InputIter last, Pred pred) {
+    typename iterator_traits<InputIter>::difference_type r = 0;
+    for (; first != last; ++first)
+        if (pred(*first)) ++r;
+    return r;
+}
+
+// mismatch (4-iter, comparator)
+template<class InputIter1, class InputIter2, class BinaryPred>
+[[nodiscard]] constexpr pair<InputIter1, InputIter2>
+mismatch(InputIter1 first1, InputIter1 last1,
+         InputIter2 first2, InputIter2 last2,
+         BinaryPred pred) {
+    for (; first1 != last1 && first2 != last2 && pred(*first1, *first2); ++first1, ++first2)
+        ;
+    return {first1, first2};
+}
+
+// mismatch (4-iter, operator==)
+template<class InputIter1, class InputIter2>
+[[nodiscard]] constexpr pair<InputIter1, InputIter2>
+mismatch(InputIter1 first1, InputIter1 last1,
+         InputIter2 first2, InputIter2 last2) {
+    return mismatch(first1, last1, first2, last2,
+                    equal_to<>{});
+}
+
+// mismatch (3-iter, comparator)
+template<class InputIter1, class InputIter2, class BinaryPred>
+[[nodiscard]] constexpr pair<InputIter1, InputIter2>
+mismatch(InputIter1 first1, InputIter1 last1,
+         InputIter2 first2,
+         BinaryPred pred) {
+    for (; first1 != last1 && pred(*first1, *first2); ++first1, ++first2)
+        ;
+    return {first1, first2};
+}
+
+// mismatch (3-iter, operator==)
+template<class InputIter1, class InputIter2>
+[[nodiscard]] constexpr pair<InputIter1, InputIter2>
+mismatch(InputIter1 first1, InputIter1 last1, InputIter2 first2) {
+    return mismatch(first1, last1, first2, equal_to<>{});
+}
+
+// equal (4-iter, comparator)
+template<class InputIter1, class InputIter2, class BinaryPred>
+[[nodiscard]] constexpr bool
+equal(InputIter1 first1, InputIter1 last1,
+      InputIter2 first2, InputIter2 last2,
+      BinaryPred pred) {
+    for (; first1 != last1 && first2 != last2; ++first1, ++first2)
+        if (!pred(*first1, *first2)) return false;
+    return first1 == last1 && first2 == last2;
+}
+
+// equal (4-iter, operator==)
+template<class InputIter1, class InputIter2>
+[[nodiscard]] constexpr bool
+equal(InputIter1 first1, InputIter1 last1,
+      InputIter2 first2, InputIter2 last2) {
+    return equal(first1, last1, first2, last2, equal_to<>{});
+}
+
+// equal (3-iter, comparator)
+template<class InputIter1, class InputIter2, class BinaryPred>
+[[nodiscard]] constexpr bool
+equal(InputIter1 first1, InputIter1 last1,
+      InputIter2 first2,
+      BinaryPred pred) {
+    for (; first1 != last1; ++first1, ++first2)
+        if (!pred(*first1, *first2)) return false;
+    return true;
+}
+
+// equal (3-iter, operator==)
+template<class InputIter1, class InputIter2>
+[[nodiscard]] constexpr bool
+equal(InputIter1 first1, InputIter1 last1, InputIter2 first2) {
+    return equal(first1, last1, first2, equal_to<>{});
+}
+
+// find
+template<class InputIter, class T>
+[[nodiscard]] constexpr InputIter
+find(InputIter first, InputIter last, const T& value) {
+    for (; first != last; ++first)
+        if (*first == value) return first;
+    return last;
+}
+
+// find_if
+template<class InputIter, class Pred>
+[[nodiscard]] constexpr InputIter
+find_if(InputIter first, InputIter last, Pred pred) {
+    for (; first != last; ++first)
+        if (pred(*first)) return first;
+    return last;
+}
+
+// find_if_not
+template<class InputIter, class Pred>
+[[nodiscard]] constexpr InputIter
+find_if_not(InputIter first, InputIter last, Pred pred) {
+    for (; first != last; ++first)
+        if (!pred(*first)) return first;
+    return last;
+}
+
+// find_end (with predicate) — uses category dispatch for efficiency
+namespace detail {
+    template<class ForwardIter1, class ForwardIter2, class BinaryPred>
+    constexpr ForwardIter1
+    find_end_impl(ForwardIter1 first1, ForwardIter1 last1,
+                  ForwardIter2 first2, ForwardIter2 last2,
+                  BinaryPred pred,
+                  forward_iterator_tag, forward_iterator_tag) {
+        if (first2 == last2) return last1;
+        ForwardIter1 result = last1;
+        while (true) {
+            ForwardIter1 new_result = search(first1, last1, first2, last2, pred);
+            if (new_result == last1) break;
+            result = new_result;
+            first1 = result;
+            ++first1;
+        }
+        return result;
+    }
+
+    template<class BidiIter1, class BidiIter2, class BinaryPred>
+    constexpr BidiIter1
+    find_end_impl(BidiIter1 first1, BidiIter1 last1,
+                  BidiIter2 first2, BidiIter2 last2,
+                  BinaryPred pred,
+                  bidirectional_iterator_tag, bidirectional_iterator_tag) {
+        if (first2 == last2) return last1;
+        BidiIter1 l1 = last1;
+        BidiIter2 l2 = last2;
+        --l2;
+        while (true) {
+            // Find last element of pattern in source
+            while (true) {
+                if (first1 == l1) return last1;
+                if (pred(*--l1, *l2)) break;
+            }
+                BidiIter1 m1 = l1;
+            BidiIter2 m2 = l2;
+            while (true) {
+                if (m2 == first2) return m1;
+                if (m1 == first1) return last1;
+                if (!pred(*--m1, *--m2)) break;
+            }
+        }
+    }
+} // namespace detail
+
+template<class ForwardIter1, class ForwardIter2, class BinaryPred>
+[[nodiscard]] constexpr ForwardIter1
+find_end(ForwardIter1 first1, ForwardIter1 last1,
+         ForwardIter2 first2, ForwardIter2 last2,
+         BinaryPred pred) {
+    using Cat1 = typename iterator_traits<ForwardIter1>::iterator_category;
+    using Cat2 = typename iterator_traits<ForwardIter2>::iterator_category;
+    return detail::find_end_impl(first1, last1, first2, last2, pred, Cat1{}, Cat2{});
+}
+
+template<class ForwardIter1, class ForwardIter2>
+[[nodiscard]] constexpr ForwardIter1
+find_end(ForwardIter1 first1, ForwardIter1 last1,
+         ForwardIter2 first2, ForwardIter2 last2) {
+    return find_end(first1, last1, first2, last2, equal_to<>{});
+}
+
+// find_first_of (with predicate)
+template<class InputIter, class ForwardIter, class BinaryPred>
+[[nodiscard]] constexpr InputIter
+find_first_of(InputIter first1, InputIter last1,
+              ForwardIter first2, ForwardIter last2,
+              BinaryPred pred) {
+    for (; first1 != last1; ++first1)
+        for (ForwardIter it = first2; it != last2; ++it)
+            if (pred(*first1, *it)) return first1;
+    return last1;
+}
+
+// find_first_of (operator==)
+template<class InputIter, class ForwardIter>
+[[nodiscard]] constexpr InputIter
+find_first_of(InputIter first1, InputIter last1,
+              ForwardIter first2, ForwardIter last2) {
+    return find_first_of(first1, last1, first2, last2, equal_to<>{});
+}
+
+// adjacent_find (with predicate)
+template<class ForwardIter, class BinaryPred>
+[[nodiscard]] constexpr ForwardIter
+adjacent_find(ForwardIter first, ForwardIter last, BinaryPred pred) {
+    if (first != last) {
+        ForwardIter next = first;
+        for (++next; next != last; ++first, ++next)
+            if (pred(*first, *next)) return first;
+    }
+    return last;
+}
+
+// adjacent_find (operator==)
+template<class ForwardIter>
+[[nodiscard]] constexpr ForwardIter
+adjacent_find(ForwardIter first, ForwardIter last) {
+    return adjacent_find(first, last, equal_to<>{});
+}
+
+// search (with predicate)
+namespace detail {
+    template<class ForwardIter1, class ForwardIter2, class BinaryPred>
+    constexpr ForwardIter1
+    search_forward_impl(ForwardIter1 first1, ForwardIter1 last1,
+                        ForwardIter2 first2, ForwardIter2 last2,
+                        BinaryPred pred) {
+        if (first2 == last2) return first1;
+        while (true) {
+            while (true) {
+                if (first1 == last1) return last1;
+                if (pred(*first1, *first2)) break;
+                ++first1;
+            }
+            ForwardIter1 m1 = first1;
+            ForwardIter2 m2 = first2;
+            while (true) {
+                if (++m2 == last2) return first1;
+                if (++m1 == last1) return last1;
+                if (!pred(*m1, *m2)) { ++first1; break; }
+            }
+        }
+    }
+
+    template<class RandomIter1, class RandomIter2, class BinaryPred>
+    constexpr RandomIter1
+    search_random_access_impl(RandomIter1 first1, RandomIter1 last1,
+                              RandomIter2 first2, RandomIter2 last2,
+                              BinaryPred pred) {
+        auto size1 = last1 - first1;
+        auto size2 = last2 - first2;
+        if (size2 == 0) return first1;
+        if (size1 < size2) return last1;
+        auto s = first1 + (size1 - size2 + 1);
+        while (true) {
+            while (true) {
+                if (first1 == s) return last1;
+                if (pred(*first1, *first2)) break;
+                ++first1;
+            }
+            RandomIter1 m1 = first1;
+            RandomIter2 m2 = first2;
+            while (true) {
+                if (++m2 == last2) return first1;
+                ++m1;
+                if (!pred(*m1, *m2)) { ++first1; break; }
+            }
+        }
+    }
+} // namespace detail
+
+template<class ForwardIter1, class ForwardIter2, class BinaryPred>
+[[nodiscard]] constexpr ForwardIter1
+search(ForwardIter1 first1, ForwardIter1 last1,
+       ForwardIter2 first2, ForwardIter2 last2,
+       BinaryPred pred) {
+    if constexpr (is_convertible_v<typename iterator_traits<ForwardIter1>::iterator_category,
+                                   random_access_iterator_tag> &&
+                  is_convertible_v<typename iterator_traits<ForwardIter2>::iterator_category,
+                                   random_access_iterator_tag>) {
+        return detail::search_random_access_impl(first1, last1, first2, last2, pred);
+    } else {
+        return detail::search_forward_impl(first1, last1, first2, last2, pred);
+    }
+}
+
+template<class ForwardIter1, class ForwardIter2>
+[[nodiscard]] constexpr ForwardIter1
+search(ForwardIter1 first1, ForwardIter1 last1,
+       ForwardIter2 first2, ForwardIter2 last2) {
+    return search(first1, last1, first2, last2, equal_to<>{});
+}
+
+// search with searcher object (C++17)
+template<class ForwardIter, class Searcher>
+[[nodiscard]] constexpr ForwardIter
+search(ForwardIter first, ForwardIter last, const Searcher& s) {
+    return s(first, last).first;
+}
+
+// search_n (with predicate)
+namespace detail {
+    template<class ForwardIter, class Size, class T, class BinaryPred>
+    constexpr ForwardIter
+    search_n_forward_impl(ForwardIter first, ForwardIter last,
+                          Size count, const T& value, BinaryPred pred) {
+        if (count <= 0) return first;
+        while (true) {
+            while (true) {
+                if (first == last) return last;
+                if (pred(*first, value)) break;
+                ++first;
+            }
+            ForwardIter m = first;
+            Size c = 0;
+            while (true) {
+                if (++c == count) return first;
+                if (++m == last) return last;
+                if (!pred(*m, value)) { first = m; ++first; break; }
+            }
+        }
+    }
+
+} // namespace detail
+
+template<class ForwardIter, class Size, class T, class BinaryPred>
+[[nodiscard]] constexpr ForwardIter
+search_n(ForwardIter first, ForwardIter last,
+         Size count, const T& value, BinaryPred pred) {
+    return detail::search_n_forward_impl(first, last, count, value, pred);
+}
+
+template<class ForwardIter, class Size, class T>
+[[nodiscard]] constexpr ForwardIter
+search_n(ForwardIter first, ForwardIter last,
+         Size count, const T& value) {
+    return search_n(first, last, count, value, equal_to<>{});
+}
+
+//===----------------------------------------------------------------------===//
+// [alg.modifying.operations] — Modifying sequence operations
+//===----------------------------------------------------------------------===//
+
+// copy
+template<class InputIter, class OutputIter>
+constexpr OutputIter
+copy(InputIter first, InputIter last, OutputIter result) {
+    for (; first != last; ++first, ++result)
+        *result = *first;
+    return result;
+}
+
+// copy_if
+template<class InputIter, class OutputIter, class Pred>
+constexpr OutputIter
+copy_if(InputIter first, InputIter last, OutputIter result, Pred pred) {
+    for (; first != last; ++first)
+        if (pred(*first)) { *result = *first; ++result; }
+    return result;
+}
+
+// copy_n
+template<class InputIter, class Size, class OutputIter>
+constexpr OutputIter
+copy_n(InputIter first, Size n, OutputIter result) {
+    for (Size i = 0; i < n; ++i, ++first, ++result)
+        *result = *first;
+    return result;
+}
+
+// copy_backward
+template<class BidiIter1, class BidiIter2>
+constexpr BidiIter2
+copy_backward(BidiIter1 first, BidiIter1 last, BidiIter2 result) {
+    while (first != last)
+        *--result = *--last;
+    return result;
+}
+
+// move
+template<class InputIter, class OutputIter>
+constexpr OutputIter
+move(InputIter first, InputIter last, OutputIter result) {
+    for (; first != last; ++first, ++result)
+        *result = std::move(*first);
+    return result;
+}
+
+// move_backward
+template<class BidiIter1, class BidiIter2>
+constexpr BidiIter2
+move_backward(BidiIter1 first, BidiIter1 last, BidiIter2 result) {
+    while (first != last)
+        *--result = std::move(*--last);
+    return result;
+}
+
+// fill
+template<class ForwardIter, class T>
+constexpr void
+fill(ForwardIter first, ForwardIter last, const T& value) {
+    for (; first != last; ++first)
+        *first = value;
+}
+
+// fill_n
+template<class OutputIter, class Size, class T>
+constexpr OutputIter
+fill_n(OutputIter first, Size n, const T& value) {
+    for (Size i = 0; i < n; ++i, ++first)
+        *first = value;
+    return first;
+}
+
+// transform (unary)
+template<class InputIter, class OutputIter, class UnaryOp>
+constexpr OutputIter
+transform(InputIter first, InputIter last, OutputIter result, UnaryOp op) {
+    for (; first != last; ++first, ++result)
+        *result = op(*first);
+    return result;
+}
+
+// transform (binary)
+template<class InputIter1, class InputIter2, class OutputIter, class BinaryOp>
+constexpr OutputIter
+transform(InputIter1 first1, InputIter1 last1,
+          InputIter2 first2, OutputIter result, BinaryOp op) {
+    for (; first1 != last1; ++first1, ++first2, ++result)
+        *result = op(*first1, *first2);
+    return result;
+}
+
+// generate
+template<class ForwardIter, class Generator>
+constexpr void
+generate(ForwardIter first, ForwardIter last, Generator gen) {
+    for (; first != last; ++first)
+        *first = gen();
+}
+
+// generate_n
+template<class OutputIter, class Size, class Generator>
+constexpr OutputIter
+generate_n(OutputIter first, Size n, Generator gen) {
+    for (Size i = 0; i < n; ++i, ++first)
+        *first = gen();
+    return first;
+}
+
+// remove_if
+template<class ForwardIter, class Pred>
+[[nodiscard]] constexpr ForwardIter
+remove_if(ForwardIter first, ForwardIter last, Pred pred) {
+    first = find_if(first, last, pred);
+    if (first != last) {
+        ForwardIter i = first;
+        for (++i; i != last; ++i)
+            if (!pred(*i)) { *first = std::move(*i); ++first; }
+    }
+    return first;
+}
+
+// remove
+template<class ForwardIter, class T>
+[[nodiscard]] constexpr ForwardIter
+remove(ForwardIter first, ForwardIter last, const T& value) {
+    return remove_if(first, last, [&](const auto& x) { return x == value; });
+}
+
+// remove_copy_if
+template<class InputIter, class OutputIter, class Pred>
+constexpr OutputIter
+remove_copy_if(InputIter first, InputIter last, OutputIter result, Pred pred) {
+    for (; first != last; ++first)
+        if (!pred(*first)) { *result = *first; ++result; }
+    return result;
+}
+
+// remove_copy
+template<class InputIter, class OutputIter, class T>
+constexpr OutputIter
+remove_copy(InputIter first, InputIter last, OutputIter result, const T& value) {
+    return remove_copy_if(first, last, result,
+                          [&](const auto& x) { return x == value; });
+}
+
+// replace_if
+template<class ForwardIter, class Pred, class T>
+constexpr void
+replace_if(ForwardIter first, ForwardIter last, Pred pred, const T& new_value) {
+    for (; first != last; ++first)
+        if (pred(*first)) *first = new_value;
+}
+
+// replace
+template<class ForwardIter, class T>
+constexpr void
+replace(ForwardIter first, ForwardIter last,
+        const T& old_value, const T& new_value) {
+    return replace_if(first, last,
+                      [&](const auto& x) { return x == old_value; },
+                      new_value);
+}
+
+// replace_copy_if
+template<class InputIter, class OutputIter, class Pred, class T>
+constexpr OutputIter
+replace_copy_if(InputIter first, InputIter last, OutputIter result,
+                Pred pred, const T& new_value) {
+    for (; first != last; ++first, ++result)
+        *result = pred(*first) ? new_value : *first;
+    return result;
+}
+
+// replace_copy
+template<class InputIter, class OutputIter, class T>
+constexpr OutputIter
+replace_copy(InputIter first, InputIter last, OutputIter result,
+             const T& old_value, const T& new_value) {
+    return replace_copy_if(first, last, result,
+                           [&](const auto& x) { return x == old_value; },
+                           new_value);
+}
+
+// swap_ranges
+template<class ForwardIter1, class ForwardIter2>
+constexpr ForwardIter2
+swap_ranges(ForwardIter1 first1, ForwardIter1 last1, ForwardIter2 first2) {
+    for (; first1 != last1; ++first1, ++first2)
+        swap(*first1, *first2);
+    return first2;
+}
+
+// iter_swap
+template<class ForwardIter1, class ForwardIter2>
+constexpr void
+iter_swap(ForwardIter1 a, ForwardIter2 b) {
+    swap(*a, *b);
+}
+
+// reverse
+template<class BidiIter>
+constexpr void
+reverse(BidiIter first, BidiIter last) {
+    while (first != last) {
+        --last;
+        if (first == last) break;
+        swap(*first, *last);
+        ++first;
+    }
+}
+
+// reverse_copy
+template<class BidiIter, class OutputIter>
+constexpr OutputIter
+reverse_copy(BidiIter first, BidiIter last, OutputIter result) {
+    while (first != last) {
+        --last;
+        *result = *last;
+        ++result;
+    }
+    return result;
+}
+
+// rotate — forward iterator (general case using swap)
+namespace detail {
+    template<class ForwardIter>
+    constexpr ForwardIter
+    rotate_forward(ForwardIter first, ForwardIter middle, ForwardIter last) {
+        ForwardIter i = middle;
+        while (true) {
+            swap(*first, *i);
+            ++first;
+            if (++i == last) break;
+            if (first == middle) middle = i;
+        }
+        ForwardIter r = first;
+        if (first != middle) {
+            i = middle;
+            while (true) {
+                swap(*first, *i);
+                ++first;
+                if (++i == last) {
+                    if (first == middle) break;
+                    i = middle;
+                } else if (first == middle) {
+                    middle = i;
+                }
+            }
+        }
+        return r;
+    }
+
+    template<class ForwardIter>
+    constexpr ForwardIter
+    rotate_left(ForwardIter first, ForwardIter last) {
+        typename iterator_traits<ForwardIter>::value_type tmp = std::move(*first);
+        ForwardIter lm1 = move(next(first), last, first);
+        *lm1 = std::move(tmp);
+        return lm1;
+    }
+
+    template<class BidiIter>
+    constexpr BidiIter
+    rotate_right(BidiIter first, BidiIter last) {
+        BidiIter lm1 = prev(last);
+        typename iterator_traits<BidiIter>::value_type tmp = std::move(*lm1);
+        BidiIter fp1 = move_backward(first, lm1, last);
+        *first = std::move(tmp);
+        return fp1;
+    }
+
+    template<class ForwardIter>
+    constexpr ForwardIter
+    rotate_impl(ForwardIter first, ForwardIter middle, ForwardIter last,
+                forward_iterator_tag) {
+        using V = typename iterator_traits<ForwardIter>::value_type;
+        if (is_trivially_move_assignable<V>::value) {
+            if (next(first) == middle)
+                return rotate_left(first, last);
+        }
+        return rotate_forward(first, middle, last);
+    }
+
+    template<class BidiIter>
+    constexpr BidiIter
+    rotate_impl(BidiIter first, BidiIter middle, BidiIter last,
+                bidirectional_iterator_tag) {
+        using V = typename iterator_traits<BidiIter>::value_type;
+        if (is_trivially_move_assignable<V>::value) {
+            if (next(first) == middle) return rotate_left(first, last);
+            if (next(middle) == last) return rotate_right(first, last);
+        }
+        return rotate_forward(first, middle, last);
+    }
+
+    template<class RandomIter>
+    constexpr RandomIter
+    rotate_impl(RandomIter first, RandomIter middle, RandomIter last,
+                random_access_iterator_tag) {
+        using V = typename iterator_traits<RandomIter>::value_type;
+        if (is_trivially_move_assignable<V>::value) {
+            if (next(first) == middle) return rotate_left(first, last);
+            if (next(middle) == last) return rotate_right(first, last);
+        }
+        // General: reduce to forward rotate
+        return rotate_forward(first, middle, last);
+    }
+} // namespace detail
+
+template<class ForwardIter>
+constexpr ForwardIter
+rotate(ForwardIter first, ForwardIter middle, ForwardIter last) {
+    if (first == middle) return last;
+    if (middle == last) return first;
+    using Cat = typename iterator_traits<ForwardIter>::iterator_category;
+    return detail::rotate_impl(first, middle, last, Cat{});
+}
+
+// rotate_copy
+template<class ForwardIter, class OutputIter>
+constexpr OutputIter
+rotate_copy(ForwardIter first, ForwardIter middle, ForwardIter last, OutputIter result) {
+    return copy(first, middle, copy(middle, last, result));
+}
+
+// unique (with predicate)
+template<class ForwardIter, class BinaryPred>
+[[nodiscard]] constexpr ForwardIter
+unique(ForwardIter first, ForwardIter last, BinaryPred pred) {
+    first = adjacent_find(first, last, pred);
+    if (first != last) {
+        ForwardIter i = first;
+        for (++i; ++i != last; )
+            if (!pred(*first, *i))
+                *++first = std::move(*i);
+        ++first;
+    }
+    return first;
+}
+
+// unique (operator==)
+template<class ForwardIter>
+[[nodiscard]] constexpr ForwardIter
+unique(ForwardIter first, ForwardIter last) {
+    return unique(first, last, equal_to<>{});
+}
+
+// unique_copy (with predicate)
+namespace detail {
+    struct unique_copy_reread_from_input {};
+    struct unique_copy_reread_from_output {};
+    struct unique_copy_read_from_tmp {};
+
+    template<class InputIter, class OutputIter, class BinaryPred>
+    constexpr OutputIter
+    unique_copy_impl(InputIter first, InputIter last, OutputIter result,
+                     BinaryPred pred, unique_copy_read_from_tmp) {
+        if (first != last) {
+            typename iterator_traits<InputIter>::value_type t(*first);
+            *result = t;
+            ++result;
+            while (++first != last) {
+                if (!pred(t, *first)) {
+                    t = *first;
+                    *result = t;
+                    ++result;
+                }
+            }
+        }
+        return result;
+    }
+
+    template<class ForwardIter, class OutputIter, class BinaryPred>
+    constexpr OutputIter
+    unique_copy_impl(ForwardIter first, ForwardIter last, OutputIter result,
+                     BinaryPred pred, unique_copy_reread_from_input) {
+        if (first != last) {
+            ForwardIter i = first;
+            *result = *i;
+            ++result;
+            while (++first != last) {
+                if (!pred(*i, *first)) {
+                    *result = *first;
+                    ++result;
+                    i = first;
+                }
+            }
+        }
+        return result;
+    }
+
+    template<class InputIter, class BidiOrFwdOut, class BinaryPred>
+    constexpr BidiOrFwdOut
+    unique_copy_impl(InputIter first, InputIter last, BidiOrFwdOut result,
+                     BinaryPred pred, unique_copy_reread_from_output) {
+        if (first != last) {
+            *result = *first;
+            while (++first != last)
+                if (!pred(*result, *first)) *++result = *first;
+            ++result;
+        }
+        return result;
+    }
+} // namespace detail
+
+template<class InputIter, class OutputIter, class BinaryPred>
+constexpr OutputIter
+unique_copy(InputIter first, InputIter last, OutputIter result, BinaryPred pred) {
+    using InCat  = typename iterator_traits<InputIter>::iterator_category;
+    using OutCat = typename iterator_traits<OutputIter>::iterator_category;
+    using InVal  = typename iterator_traits<InputIter>::value_type;
+    using OutVal = typename iterator_traits<OutputIter>::value_type;
+
+    if constexpr (is_convertible_v<InCat, forward_iterator_tag>) {
+        return detail::unique_copy_impl(first, last, result, pred,
+                                         detail::unique_copy_reread_from_input{});
+    } else if constexpr (is_convertible_v<OutCat, forward_iterator_tag> &&
+                         is_same_v<InVal, OutVal>) {
+        return detail::unique_copy_impl(first, last, result, pred,
+                                         detail::unique_copy_reread_from_output{});
+    } else {
+        return detail::unique_copy_impl(first, last, result, pred,
+                                         detail::unique_copy_read_from_tmp{});
+    }
+}
+
+template<class InputIter, class OutputIter>
+constexpr OutputIter
+unique_copy(InputIter first, InputIter last, OutputIter result) {
+    return unique_copy(first, last, result, equal_to<>{});
+}
+
+// shift_left (C++20)
+template<class ForwardIter>
+constexpr ForwardIter
+shift_left(ForwardIter first, ForwardIter last,
+           typename iterator_traits<ForwardIter>::difference_type n) {
+    if (n <= 0) return last;
+    ForwardIter m = first;
+    if constexpr (is_convertible_v<typename iterator_traits<ForwardIter>::iterator_category,
+                                   random_access_iterator_tag>) {
+        auto size = last - first;
+        if (n >= size) return first;
+        m += n;
+    } else {
+        for (; n > 0; --n) {
+            if (m == last) return first;
+            ++m;
+        }
+    }
+    return move(m, last, first);
+}
+
+// shift_right (C++20)
+template<class ForwardIter>
+constexpr ForwardIter
+shift_right(ForwardIter first, ForwardIter last,
+            typename iterator_traits<ForwardIter>::difference_type n) {
+    if (n <= 0) return first;
+    using Cat = typename iterator_traits<ForwardIter>::iterator_category;
+    if constexpr (is_convertible_v<Cat, random_access_iterator_tag>) {
+        auto size = last - first;
+        if (n >= size) return last;
+        ForwardIter m = first + (size - n);
+        return move_backward(first, m, last);
+    } else if constexpr (is_convertible_v<Cat, bidirectional_iterator_tag>) {
+        ForwardIter end = last;
+        ForwardIter m = last;
+        for (typename iterator_traits<ForwardIter>::difference_type i = 0; i < n; ++i) {
+            if (m == first) return last;
+            --m;
+        }
+        return move_backward(first, m, end);
+    } else {
+        // Forward-only: scratch-space technique
+        ForwardIter ret = first;
+        for (typename iterator_traits<ForwardIter>::difference_type i = 0; i < n; ++i) {
+            if (ret == last) return last;
+            ++ret;
+        }
+        // Swap n-element windows across
+        ForwardIter trail = first, lead = ret;
+        while (trail != ret) {
+            if (lead == last) {
+                move(first, trail, ret);
+                return ret;
+            }
+            ++trail; ++lead;
+        }
+        ForwardIter mid = first;
+        while (true) {
+            if (lead == last) {
+                ForwardIter tmp = move(mid, ret, trail);
+                move(first, mid, tmp);
+                return ret;
+            }
+            swap(*mid, *trail);
+            ++mid; ++trail; ++lead;
+            if (mid == ret) mid = first;
+        }
+    }
+}
+
+//===----------------------------------------------------------------------===//
+// [alg.lex.comparison] — lexicographical_compare, lexicographical_compare_three_way
+//===----------------------------------------------------------------------===//
+
+// lexicographical_compare (with comparator)
+template<class InputIter1, class InputIter2, class Compare>
+[[nodiscard]] constexpr bool
+lexicographical_compare(InputIter1 first1, InputIter1 last1,
+                        InputIter2 first2, InputIter2 last2,
+                        Compare comp) {
+    for (; first2 != last2; ++first1, ++first2) {
+        if (first1 == last1 || comp(*first1, *first2)) return true;
+        if (comp(*first2, *first1)) return false;
+    }
+    return false;
+}
+
+// lexicographical_compare (operator<)
+template<class InputIter1, class InputIter2>
+[[nodiscard]] constexpr bool
+lexicographical_compare(InputIter1 first1, InputIter1 last1,
+                        InputIter2 first2, InputIter2 last2) {
+    return lexicographical_compare(first1, last1, first2, last2, less<>{});
+}
+
+// lexicographical_compare_three_way (with comparator)
+template<class InputIter1, class InputIter2, class Cmp>
+[[nodiscard]] constexpr auto
+lexicographical_compare_three_way(InputIter1 first1, InputIter1 last1,
+                                   InputIter2 first2, InputIter2 last2,
+                                   Cmp comp)
+    -> decltype(comp(*first1, *first2)) {
+    if constexpr (is_convertible_v<typename iterator_traits<InputIter1>::iterator_category,
+                                   random_access_iterator_tag> &&
+                  is_convertible_v<typename iterator_traits<InputIter2>::iterator_category,
+                                   random_access_iterator_tag>) {
+        using DiffT = common_type_t<typename iterator_traits<InputIter1>::difference_type,
+                                    typename iterator_traits<InputIter2>::difference_type>;
+        DiffT len1 = last1 - first1;
+        DiffT len2 = last2 - first2;
+        DiffT min_len = len1 < len2 ? len1 : len2;
+        for (DiffT i = 0; i < min_len; ++i, ++first1, ++first2) {
+            auto c = comp(*first1, *first2);
+            if (c != 0) return c;
+        }
+        return len1 <=> len2;
+    } else {
+        while (true) {
+            bool e1 = first1 == last1;
+            bool e2 = first2 == last2;
+            if (e1 || e2) {
+                if (!e1) return strong_ordering::greater;
+                if (!e2) return strong_ordering::less;
+                return strong_ordering::equal;
+            }
+            auto c = comp(*first1, *first2);
+            if (c != 0) return c;
+            ++first1; ++first2;
+        }
+    }
+}
+
+// lexicographical_compare_three_way (compare_three_way)
+template<class InputIter1, class InputIter2>
+[[nodiscard]] constexpr auto
+lexicographical_compare_three_way(InputIter1 first1, InputIter1 last1,
+                                   InputIter2 first2, InputIter2 last2) {
+    return lexicographical_compare_three_way(first1, last1, first2, last2,
+                                              compare_three_way{});
+}
+
+// === PART 2 APPEND POINT ===
+// Part 2 (sorting/searching/heap/set-operations) should be inserted here,
+// before the closing brace of namespace std.
+
+} // namespace std
