@@ -1,0 +1,1028 @@
+// <memory> — mechanically ported from libc++ include/memory + include/__memory/*.h
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// All __memory/*.h fragments are folded inline.
+// Depends on: <type_traits>, <utility>, <iterator>, <new>, <bits/pointer.h>
+// <compare> (for operator<=>)
+//
+// DEFERRED (separate follow-up task — needs <functional> for hash):
+//   shared_ptr, weak_ptr, make_shared, enable_shared_from_this,
+//   hash<unique_ptr>
+//
+// Over-allocation handling: where libc++ would throw bad_alloc or
+// length_error (allocator::allocate exceeds max_size), we call
+// __builtin_trap() instead since exceptions are disabled.
+#pragma once
+
+#include <type_traits>
+#include <utility>
+#include <iterator>
+#include <new>
+#include <bits/pointer.h>
+#include <compare>
+#include <cstdint>  // uintptr_t
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// Re-export from <bits/pointer.h>
+// addressof, pointer_traits, to_address are already in std:: from
+// <bits/pointer.h>.  They are NOT redefined here (ODR rule).
+//===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
+// allocation_result (C++23) / allocate_at_least
+// (from __memory/allocate_at_least.h, __memory/allocator_traits.h)
+//===----------------------------------------------------------------------===//
+
+template<class Pointer, class SizeType = size_t>
+struct allocation_result {
+    Pointer ptr;
+    SizeType count;
+};
+
+//===----------------------------------------------------------------------===//
+// allocator_arg_t / allocator_arg
+// (from __memory/allocator_arg_t.h)
+//===----------------------------------------------------------------------===//
+
+struct allocator_arg_t {
+    explicit allocator_arg_t() = default;
+};
+
+inline constexpr allocator_arg_t allocator_arg{};
+
+//===----------------------------------------------------------------------===//
+// uses_allocator / uses_allocator_v
+// (from __memory/uses_allocator.h)
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+    template<class T, class Alloc, class = void>
+    struct uses_allocator_impl : false_type {};
+    template<class T, class Alloc>
+    struct uses_allocator_impl<T, Alloc, void_t<typename T::allocator_type>>
+        : bool_constant<is_convertible_v<Alloc, typename T::allocator_type>> {};
+}
+
+template<class T, class Alloc>
+struct uses_allocator : detail::uses_allocator_impl<T, Alloc> {};
+
+template<class T, class Alloc>
+inline constexpr bool uses_allocator_v = uses_allocator<T, Alloc>::value;
+
+//===----------------------------------------------------------------------===//
+// construct_at / destroy_at  (C++20)
+// (from __memory/construct_at.h)
+//===----------------------------------------------------------------------===//
+
+template<class T, class... Args>
+    requires requires { ::new(declval<void*>()) T(declval<Args>()...); }
+constexpr T* construct_at(T* loc, Args&&... args) {
+    return ::new(static_cast<void*>(loc)) T(forward<Args>(args)...);
+}
+
+// Internal helper (used by allocator_traits and uninitialized algorithms)
+namespace detail {
+    template<class T, class... Args>
+        requires requires { ::new(declval<void*>()) T(declval<Args>()...); }
+    constexpr T* construct_at_impl(T* loc, Args&&... args) {
+        return ::new(static_cast<void*>(loc)) T(forward<Args>(args)...);
+    }
+}
+
+template<class T>
+constexpr void destroy_at(T* loc) {
+    if constexpr (is_array_v<T>) {
+        for (auto& elem : *loc)
+            destroy_at(addressof(elem));
+    } else {
+        loc->~T();
+    }
+}
+
+//===----------------------------------------------------------------------===//
+// destroy / destroy_n  (C++17)
+// (from __memory/destroy.h)
+//===----------------------------------------------------------------------===//
+
+template<class ForwardIter>
+constexpr void destroy(ForwardIter first, ForwardIter last) {
+    for (; first != last; ++first)
+        destroy_at(addressof(*first));
+}
+
+template<class ForwardIter, class Size>
+constexpr ForwardIter destroy_n(ForwardIter first, Size n) {
+    for (; n > 0; (void)++first, --n)
+        destroy_at(addressof(*first));
+    return first;
+}
+
+//===----------------------------------------------------------------------===//
+// allocator_traits
+// (from __memory/allocator_traits.h)
+//===----------------------------------------------------------------------===//
+
+// Forward-declare allocator<T>
+template<class T>
+class allocator;
+
+// --- Detection helpers ---
+namespace detail {
+
+    // pointer member
+    template<class Alloc, class = void>
+    struct alloc_pointer { using type = typename Alloc::value_type*; };
+    template<class Alloc>
+    struct alloc_pointer<Alloc, void_t<typename Alloc::pointer>> { using type = typename Alloc::pointer; };
+
+    // const_pointer
+    template<class Alloc, class Ptr, class = void>
+    struct alloc_const_pointer {
+        using type = typename pointer_traits<Ptr>::template rebind<const typename Alloc::value_type>;
+    };
+    template<class Alloc, class Ptr>
+    struct alloc_const_pointer<Alloc, Ptr, void_t<typename Alloc::const_pointer>> {
+        using type = typename Alloc::const_pointer;
+    };
+
+    // void_pointer
+    template<class Alloc, class Ptr, class = void>
+    struct alloc_void_pointer {
+        using type = typename pointer_traits<Ptr>::template rebind<void>;
+    };
+    template<class Alloc, class Ptr>
+    struct alloc_void_pointer<Alloc, Ptr, void_t<typename Alloc::void_pointer>> {
+        using type = typename Alloc::void_pointer;
+    };
+
+    // const_void_pointer
+    template<class Alloc, class Ptr, class = void>
+    struct alloc_const_void_pointer {
+        using type = typename pointer_traits<Ptr>::template rebind<const void>;
+    };
+    template<class Alloc, class Ptr>
+    struct alloc_const_void_pointer<Alloc, Ptr, void_t<typename Alloc::const_void_pointer>> {
+        using type = typename Alloc::const_void_pointer;
+    };
+
+    // difference_type
+    template<class Alloc, class Ptr, class = void>
+    struct alloc_difference_type {
+        using type = typename pointer_traits<Ptr>::difference_type;
+    };
+    template<class Alloc, class Ptr>
+    struct alloc_difference_type<Alloc, Ptr, void_t<typename Alloc::difference_type>> {
+        using type = typename Alloc::difference_type;
+    };
+
+    // size_type
+    template<class Alloc, class Diff, class = void>
+    struct alloc_size_type { using type = make_unsigned_t<Diff>; };
+    template<class Alloc, class Diff>
+    struct alloc_size_type<Alloc, Diff, void_t<typename Alloc::size_type>> {
+        using type = typename Alloc::size_type;
+    };
+
+    // propagate_on_container_copy_assignment
+    template<class Alloc, class = void>
+    struct alloc_pocca { using type = false_type; };
+    template<class Alloc>
+    struct alloc_pocca<Alloc, void_t<typename Alloc::propagate_on_container_copy_assignment>> {
+        using type = typename Alloc::propagate_on_container_copy_assignment;
+    };
+
+    // propagate_on_container_move_assignment
+    template<class Alloc, class = void>
+    struct alloc_pocma { using type = false_type; };
+    template<class Alloc>
+    struct alloc_pocma<Alloc, void_t<typename Alloc::propagate_on_container_move_assignment>> {
+        using type = typename Alloc::propagate_on_container_move_assignment;
+    };
+
+    // propagate_on_container_swap
+    template<class Alloc, class = void>
+    struct alloc_pocs { using type = false_type; };
+    template<class Alloc>
+    struct alloc_pocs<Alloc, void_t<typename Alloc::propagate_on_container_swap>> {
+        using type = typename Alloc::propagate_on_container_swap;
+    };
+
+    // is_always_equal
+    template<class Alloc, class = void>
+    struct alloc_iae { using type = typename is_empty<Alloc>::type; };
+    template<class Alloc>
+    struct alloc_iae<Alloc, void_t<typename Alloc::is_always_equal>> {
+        using type = typename Alloc::is_always_equal;
+    };
+
+    // rebind_alloc
+    template<class Alloc, class U, class = void>
+    struct alloc_rebind_impl {
+        // fallback: replace first template arg
+        // (works for Alloc<T, Args...> → Alloc<U, Args...>)
+    };
+    template<template<class, class...> class AllocTpl, class T, class... Args, class U>
+    struct alloc_rebind_impl<AllocTpl<T, Args...>, U, void> {
+        using type = AllocTpl<U, Args...>;
+    };
+    template<class Alloc, class U>
+    struct alloc_rebind_impl<Alloc, U, void_t<typename Alloc::template rebind<U>::other>> {
+        using type = typename Alloc::template rebind<U>::other;
+    };
+
+    template<class Alloc, class U>
+    using alloc_rebind_t = typename alloc_rebind_impl<Alloc, U>::type;
+
+    // has_construct
+    template<class Alloc, class Ptr, class = void, class... Args>
+    inline constexpr bool has_alloc_construct = false;
+    template<class Alloc, class Ptr, class... Args>
+    inline constexpr bool has_alloc_construct<Alloc, Ptr,
+        void_t<decltype(declval<Alloc&>().construct(declval<Ptr>(), declval<Args>()...))>,
+        Args...> = true;
+
+    // has_destroy
+    template<class Alloc, class Ptr, class = void>
+    inline constexpr bool has_alloc_destroy = false;
+    template<class Alloc, class Ptr>
+    inline constexpr bool has_alloc_destroy<Alloc, Ptr,
+        void_t<decltype(declval<Alloc&>().destroy(declval<Ptr>()))>> = true;
+
+    // has_max_size
+    template<class Alloc, class = void>
+    inline constexpr bool has_alloc_max_size = false;
+    template<class Alloc>
+    inline constexpr bool has_alloc_max_size<Alloc,
+        void_t<decltype(declval<const Alloc&>().max_size())>> = true;
+
+    // has_select_on_container_copy_construction
+    template<class Alloc, class = void>
+    inline constexpr bool has_alloc_soccc = false;
+    template<class Alloc>
+    inline constexpr bool has_alloc_soccc<Alloc,
+        void_t<decltype(declval<const Alloc&>().select_on_container_copy_construction())>> = true;
+
+    // has_allocate_hint
+    template<class Alloc, class SizeType, class ConstVoidPtr, class = void>
+    inline constexpr bool has_alloc_hint = false;
+    template<class Alloc, class SizeType, class ConstVoidPtr>
+    inline constexpr bool has_alloc_hint<Alloc, SizeType, ConstVoidPtr,
+        void_t<decltype(declval<Alloc&>().allocate(declval<SizeType>(), declval<ConstVoidPtr>()))>> = true;
+
+    // has_allocate_at_least (C++23)
+    template<class Alloc, class = void>
+    inline constexpr bool has_alloc_at_least = false;
+    template<class Alloc>
+    inline constexpr bool has_alloc_at_least<Alloc,
+        void_t<decltype(declval<Alloc&>().allocate_at_least(declval<size_t>()))>> = true;
+
+} // namespace detail
+
+template<class Alloc>
+struct allocator_traits {
+    using allocator_type   = Alloc;
+    using value_type       = typename Alloc::value_type;
+    using pointer          = typename detail::alloc_pointer<Alloc>::type;
+    using const_pointer    = typename detail::alloc_const_pointer<Alloc, pointer>::type;
+    using void_pointer     = typename detail::alloc_void_pointer<Alloc, pointer>::type;
+    using const_void_pointer = typename detail::alloc_const_void_pointer<Alloc, pointer>::type;
+    using difference_type  = typename detail::alloc_difference_type<Alloc, pointer>::type;
+    using size_type        = typename detail::alloc_size_type<Alloc, difference_type>::type;
+    using propagate_on_container_copy_assignment = typename detail::alloc_pocca<Alloc>::type;
+    using propagate_on_container_move_assignment = typename detail::alloc_pocma<Alloc>::type;
+    using propagate_on_container_swap            = typename detail::alloc_pocs<Alloc>::type;
+    using is_always_equal                        = typename detail::alloc_iae<Alloc>::type;
+
+    template<class U>
+    using rebind_alloc = detail::alloc_rebind_t<Alloc, U>;
+    template<class U>
+    using rebind_traits = allocator_traits<rebind_alloc<U>>;
+
+    [[nodiscard]] static constexpr pointer
+    allocate(Alloc& a, size_type n) {
+        return a.allocate(n);
+    }
+
+    template<class Ap = Alloc>
+        requires detail::has_alloc_hint<Ap, size_type, const_void_pointer>
+    [[nodiscard]] static constexpr pointer
+    allocate(Alloc& a, size_type n, const_void_pointer hint) {
+        return a.allocate(n, hint);
+    }
+
+    template<class Ap = Alloc>
+        requires (!detail::has_alloc_hint<Ap, size_type, const_void_pointer>)
+    [[nodiscard]] static constexpr pointer
+    allocate(Alloc& a, size_type n, const_void_pointer) {
+        return a.allocate(n);
+    }
+
+    [[nodiscard]] static constexpr allocation_result<pointer, size_type>
+    allocate_at_least(Alloc& a, size_type n) {
+        if constexpr (detail::has_alloc_at_least<Alloc>) {
+            auto res = a.allocate_at_least(n);
+            return {res.ptr, res.count};
+        } else {
+            return {a.allocate(n), n};
+        }
+    }
+
+    static constexpr void
+    deallocate(Alloc& a, pointer p, size_type n) noexcept {
+        a.deallocate(p, n);
+    }
+
+    template<class T, class... Args>
+    static constexpr void
+    construct(Alloc& a, T* p, Args&&... args) {
+        if constexpr (detail::has_alloc_construct<Alloc, T*, Args...>) {
+            a.construct(p, forward<Args>(args)...);
+        } else {
+            detail::construct_at_impl(p, forward<Args>(args)...);
+        }
+    }
+
+    template<class T>
+    static constexpr void
+    destroy(Alloc& a, T* p) {
+        if constexpr (detail::has_alloc_destroy<Alloc, T*>) {
+            a.destroy(p);
+        } else {
+            destroy_at(p);
+        }
+    }
+
+    [[nodiscard]] static constexpr size_type
+    max_size(const Alloc& a) noexcept {
+        if constexpr (detail::has_alloc_max_size<Alloc>) {
+            return a.max_size();
+        } else {
+            return size_type(~size_type(0)) / sizeof(value_type);
+        }
+    }
+
+    [[nodiscard]] static constexpr Alloc
+    select_on_container_copy_construction(const Alloc& a) {
+        if constexpr (detail::has_alloc_soccc<Alloc>) {
+            return a.select_on_container_copy_construction();
+        } else {
+            return a;
+        }
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// allocator<T>
+// (from __memory/allocator.h)
+//===----------------------------------------------------------------------===//
+
+template<class T>
+class allocator {
+    static_assert(!is_const_v<T>, "std::allocator does not support const types");
+    static_assert(!is_volatile_v<T>, "std::allocator does not support volatile types");
+public:
+    using size_type       = size_t;
+    using difference_type = ptrdiff_t;
+    using value_type      = T;
+    using propagate_on_container_move_assignment = true_type;
+    using is_always_equal                        = true_type;
+
+    constexpr allocator() noexcept = default;
+
+    template<class U>
+    constexpr allocator(const allocator<U>&) noexcept {}
+
+    [[nodiscard]] constexpr T* allocate(size_t n) {
+        static_assert(sizeof(T) >= 0, "cannot allocate memory for an incomplete type");
+        // Over-allocation guard: libc++ would throw bad_array_new_length here.
+        // Since exceptions are disabled we trap instead.
+        if (n > allocator_traits<allocator>::max_size(*this))
+            __builtin_trap(); // would be bad_array_new_length
+        return static_cast<T*>(::operator new(n * sizeof(T)));
+    }
+
+    [[nodiscard]] constexpr allocation_result<T*>
+    allocate_at_least(size_t n) {
+        return {allocate(n), n};
+    }
+
+    constexpr void deallocate(T* p, size_t) noexcept {
+        ::operator delete(static_cast<void*>(p));
+    }
+};
+
+template<class T, class U>
+constexpr bool operator==(const allocator<T>&, const allocator<U>&) noexcept {
+    return true;
+}
+
+//===----------------------------------------------------------------------===//
+// allocate_at_least (C++23 free function)
+//===----------------------------------------------------------------------===//
+
+template<class Alloc>
+[[nodiscard]] constexpr allocation_result<
+    typename allocator_traits<Alloc>::pointer,
+    typename allocator_traits<Alloc>::size_type>
+allocate_at_least(Alloc& a, size_t n) {
+    return allocator_traits<Alloc>::allocate_at_least(a, n);
+}
+
+//===----------------------------------------------------------------------===//
+// default_delete<T> and default_delete<T[]>
+// (from __memory/unique_ptr.h)
+//===----------------------------------------------------------------------===//
+
+template<class T>
+struct default_delete {
+    static_assert(!is_function_v<T>,
+        "default_delete cannot be instantiated for function types");
+
+    constexpr default_delete() noexcept = default;
+
+    template<class U>
+        requires is_convertible_v<U*, T*>
+    constexpr default_delete(const default_delete<U>&) noexcept {}
+
+    constexpr void operator()(T* ptr) const noexcept {
+        static_assert(sizeof(T) >= 0, "cannot delete an incomplete type");
+        static_assert(!is_void_v<T>, "cannot delete an incomplete type");
+        delete ptr;
+    }
+};
+
+template<class T>
+struct default_delete<T[]> {
+    constexpr default_delete() noexcept = default;
+
+    template<class U>
+        requires is_convertible_v<U(*)[], T(*)[]>
+    constexpr default_delete(const default_delete<U[]>&) noexcept {}
+
+    template<class U>
+        requires is_convertible_v<U(*)[], T(*)[]>
+    constexpr void operator()(U* ptr) const noexcept {
+        static_assert(sizeof(U) >= 0, "cannot delete an incomplete type");
+        delete[] ptr;
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// unique_ptr<T, D>  — non-array specialisation
+// (from __memory/unique_ptr.h)
+// We use a simple pair of (pointer, deleter) members rather than
+// libc++'s compressed_pair for clarity; EBO is not required by the standard.
+// (We do however apply [[no_unique_address]] for EBO in practice.)
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+    // Detect whether Deleter has a nested pointer typedef
+    template<class T, class D, class = void>
+    struct unique_ptr_pointer { using type = T*; };
+    template<class T, class D>
+    struct unique_ptr_pointer<T, D, void_t<typename D::pointer>> { using type = typename D::pointer; };
+} // namespace detail
+
+template<class T, class D = default_delete<T>>
+class unique_ptr {
+public:
+    using element_type = T;
+    using deleter_type = D;
+    using pointer      = typename detail::unique_ptr_pointer<T, remove_reference_t<D>>::type;
+
+    static_assert(!is_rvalue_reference_v<D>,
+        "the specified deleter type cannot be an rvalue reference");
+
+private:
+    [[no_unique_address]] pointer ptr_{};
+    [[no_unique_address]] deleter_type del_{};
+
+    // Enable-if helpers
+    template<class Up, class Ep>
+    static constexpr bool move_convertible =
+        is_convertible_v<typename unique_ptr<Up,Ep>::pointer, pointer> &&
+        !is_array_v<Up>;
+
+    template<class Dp>
+    static constexpr bool deleter_convertible =
+        (is_reference_v<D> && is_same_v<D, Dp>) ||
+        (!is_reference_v<D> && is_convertible_v<Dp, D>);
+
+    template<class Dp>
+    static constexpr bool deleter_assignable = is_assignable_v<D&, Dp&&>;
+
+public:
+    // Default / nullptr constructors
+    template<class Dx = D>
+        requires (is_default_constructible_v<Dx> && !is_pointer_v<Dx>)
+    constexpr unique_ptr() noexcept : ptr_(), del_() {}
+
+    template<class Dx = D>
+        requires (is_default_constructible_v<Dx> && !is_pointer_v<Dx>)
+    constexpr unique_ptr(nullptr_t) noexcept : ptr_(), del_() {}
+
+    // Pointer constructors
+    template<class Dx = D>
+        requires (is_default_constructible_v<Dx> && !is_pointer_v<Dx>)
+    constexpr explicit unique_ptr(pointer p) noexcept : ptr_(p), del_() {}
+
+    template<class Dx = D>
+        requires is_copy_constructible_v<Dx>
+    constexpr unique_ptr(pointer p, const D& d) noexcept : ptr_(p), del_(d) {}
+
+    template<class Dx = D>
+        requires (!is_reference_v<Dx> && is_move_constructible_v<Dx>)
+    constexpr unique_ptr(pointer p, D&& d) noexcept : ptr_(p), del_(move(d)) {}
+
+    // Delete move-from-rvalue-ref-deleter taking rvalue ref to the ref's target type
+    template<class Dx = D>
+        requires is_reference_v<Dx>
+    unique_ptr(pointer, remove_reference_t<D>&&) = delete;
+
+    // Move constructor
+    constexpr unique_ptr(unique_ptr&& u) noexcept
+        : ptr_(u.release()), del_(forward<D>(u.get_deleter())) {}
+
+    // Converting move constructor
+    template<class Up, class Ep>
+        requires (move_convertible<Up,Ep> && deleter_convertible<Ep>)
+    constexpr unique_ptr(unique_ptr<Up,Ep>&& u) noexcept
+        : ptr_(u.release()), del_(forward<Ep>(u.get_deleter())) {}
+
+    unique_ptr(const unique_ptr&) = delete;
+    unique_ptr& operator=(const unique_ptr&) = delete;
+
+    constexpr ~unique_ptr() { reset(); }
+
+    // Move assignment
+    constexpr unique_ptr& operator=(unique_ptr&& u) noexcept {
+        reset(u.release());
+        del_ = forward<D>(u.get_deleter());
+        return *this;
+    }
+
+    template<class Up, class Ep>
+        requires (move_convertible<Up,Ep> && deleter_assignable<Ep>)
+    constexpr unique_ptr& operator=(unique_ptr<Up,Ep>&& u) noexcept {
+        reset(u.release());
+        del_ = forward<Ep>(u.get_deleter());
+        return *this;
+    }
+
+    constexpr unique_ptr& operator=(nullptr_t) noexcept {
+        reset();
+        return *this;
+    }
+
+    // Observers
+    [[nodiscard]] constexpr add_lvalue_reference_t<T> operator*() const
+        noexcept(noexcept(*declval<pointer>())) {
+        return *ptr_;
+    }
+
+    constexpr pointer operator->() const noexcept { return ptr_; }
+    [[nodiscard]] constexpr pointer get() const noexcept { return ptr_; }
+    [[nodiscard]] constexpr deleter_type& get_deleter() noexcept { return del_; }
+    [[nodiscard]] constexpr const deleter_type& get_deleter() const noexcept { return del_; }
+    constexpr explicit operator bool() const noexcept { return ptr_ != nullptr; }
+
+    // Modifiers
+    constexpr pointer release() noexcept {
+        pointer t = ptr_;
+        ptr_ = pointer();
+        return t;
+    }
+
+    constexpr void reset(pointer p = pointer()) noexcept {
+        pointer tmp = ptr_;
+        ptr_ = p;
+        if (tmp)
+            del_(tmp);
+    }
+
+    constexpr void swap(unique_ptr& u) noexcept {
+        using std::swap;
+        swap(ptr_, u.ptr_);
+        swap(del_, u.del_);
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// unique_ptr<T[], D>  — array specialisation
+// (from __memory/unique_ptr.h)
+//===----------------------------------------------------------------------===//
+
+template<class T, class D>
+class unique_ptr<T[], D> {
+public:
+    using element_type = T;
+    using deleter_type = D;
+    using pointer      = typename detail::unique_ptr_pointer<T, remove_reference_t<D>>::type;
+
+private:
+    [[no_unique_address]] pointer ptr_{};
+    [[no_unique_address]] deleter_type del_{};
+
+    // Allowed pointer types: same as pointer, or T* when pointer == T*
+    template<class From>
+    struct check_array_pointer : is_same<From, pointer> {};
+    template<class FromElem>
+    struct check_array_pointer<FromElem*>
+        : bool_constant<
+            is_same_v<FromElem*, pointer> ||
+            (is_same_v<pointer, element_type*> &&
+             is_convertible_v<FromElem(*)[], element_type(*)[]>)> {};
+
+    template<class Up, class Ep>
+    static constexpr bool move_convertible =
+        is_array_v<Up> &&
+        is_same_v<pointer, element_type*> &&
+        is_same_v<typename unique_ptr<Up,Ep>::pointer,
+                  typename remove_extent<Up>::type*> &&
+        is_convertible_v<typename remove_extent<Up>::type(*)[],
+                         element_type(*)[]>;
+
+    template<class Dp>
+    static constexpr bool deleter_convertible =
+        (is_reference_v<D> && is_same_v<D, Dp>) ||
+        (!is_reference_v<D> && is_convertible_v<Dp, D>);
+
+    template<class Dp>
+    static constexpr bool deleter_assignable = is_assignable_v<D&, Dp&&>;
+
+public:
+    template<class Dx = D>
+        requires (is_default_constructible_v<Dx> && !is_pointer_v<Dx>)
+    constexpr unique_ptr() noexcept : ptr_(), del_() {}
+
+    template<class Dx = D>
+        requires (is_default_constructible_v<Dx> && !is_pointer_v<Dx>)
+    constexpr unique_ptr(nullptr_t) noexcept : ptr_(), del_() {}
+
+    template<class Ptr, class Dx = D>
+        requires (is_default_constructible_v<Dx> && !is_pointer_v<Dx> &&
+                  check_array_pointer<Ptr>::value)
+    constexpr explicit unique_ptr(Ptr p) noexcept : ptr_(p), del_() {}
+
+    template<class Ptr, class Dx = D>
+        requires (is_copy_constructible_v<Dx> && check_array_pointer<Ptr>::value)
+    constexpr unique_ptr(Ptr p, const D& d) noexcept : ptr_(p), del_(d) {}
+
+    template<class Dx = D>
+        requires is_copy_constructible_v<Dx>
+    constexpr unique_ptr(nullptr_t, const D& d) noexcept : ptr_(nullptr), del_(d) {}
+
+    template<class Ptr, class Dx = D>
+        requires (!is_reference_v<Dx> && is_move_constructible_v<Dx> &&
+                  check_array_pointer<Ptr>::value)
+    constexpr unique_ptr(Ptr p, D&& d) noexcept : ptr_(p), del_(move(d)) {}
+
+    template<class Dx = D>
+        requires (!is_reference_v<Dx> && is_move_constructible_v<Dx>)
+    constexpr unique_ptr(nullptr_t, D&& d) noexcept : ptr_(nullptr), del_(move(d)) {}
+
+    // Delete rvalue-ref-to-target of reference deleter
+    template<class Ptr, class Dx = D>
+        requires (is_reference_v<Dx> && check_array_pointer<Ptr>::value)
+    unique_ptr(Ptr, remove_reference_t<D>&&) = delete;
+
+    constexpr unique_ptr(unique_ptr&& u) noexcept
+        : ptr_(u.release()), del_(forward<D>(u.get_deleter())) {}
+
+    constexpr unique_ptr& operator=(unique_ptr&& u) noexcept {
+        reset(u.release());
+        del_ = forward<D>(u.get_deleter());
+        return *this;
+    }
+
+    template<class Up, class Ep>
+        requires (move_convertible<Up,Ep> && deleter_convertible<Ep>)
+    constexpr unique_ptr(unique_ptr<Up,Ep>&& u) noexcept
+        : ptr_(u.release()), del_(forward<Ep>(u.get_deleter())) {}
+
+    template<class Up, class Ep>
+        requires (move_convertible<Up,Ep> && deleter_assignable<Ep>)
+    constexpr unique_ptr& operator=(unique_ptr<Up,Ep>&& u) noexcept {
+        reset(u.release());
+        del_ = forward<Ep>(u.get_deleter());
+        return *this;
+    }
+
+    unique_ptr(const unique_ptr&) = delete;
+    unique_ptr& operator=(const unique_ptr&) = delete;
+
+    constexpr ~unique_ptr() { reset(); }
+
+    constexpr unique_ptr& operator=(nullptr_t) noexcept {
+        reset();
+        return *this;
+    }
+
+    constexpr add_lvalue_reference_t<T> operator[](size_t i) const {
+        return ptr_[i];
+    }
+
+    [[nodiscard]] constexpr pointer get() const noexcept { return ptr_; }
+    [[nodiscard]] constexpr deleter_type& get_deleter() noexcept { return del_; }
+    [[nodiscard]] constexpr const deleter_type& get_deleter() const noexcept { return del_; }
+    constexpr explicit operator bool() const noexcept { return ptr_ != nullptr; }
+
+    constexpr pointer release() noexcept {
+        pointer t = ptr_;
+        ptr_ = pointer();
+        return t;
+    }
+
+    template<class Pp>
+        requires check_array_pointer<Pp>::value
+    constexpr void reset(Pp p) noexcept {
+        pointer tmp = ptr_;
+        ptr_ = p;
+        if (tmp)
+            del_(tmp);
+    }
+
+    constexpr void reset(nullptr_t = nullptr) noexcept {
+        pointer tmp = ptr_;
+        ptr_ = nullptr;
+        if (tmp)
+            del_(tmp);
+    }
+
+    constexpr void swap(unique_ptr& u) noexcept {
+        using std::swap;
+        swap(ptr_, u.ptr_);
+        swap(del_, u.del_);
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// unique_ptr free functions: swap, comparisons, operator<=>
+//===----------------------------------------------------------------------===//
+
+template<class T, class D>
+    requires is_swappable_v<D>
+constexpr void swap(unique_ptr<T,D>& x, unique_ptr<T,D>& y) noexcept {
+    x.swap(y);
+}
+
+// unique_ptr vs unique_ptr
+template<class T1, class D1, class T2, class D2>
+constexpr bool operator==(const unique_ptr<T1,D1>& x, const unique_ptr<T2,D2>& y) {
+    return x.get() == y.get();
+}
+
+template<class T1, class D1, class T2, class D2>
+bool operator<(const unique_ptr<T1,D1>& x, const unique_ptr<T2,D2>& y) {
+    using P1 = typename unique_ptr<T1,D1>::pointer;
+    using P2 = typename unique_ptr<T2,D2>::pointer;
+    using Vp = common_type_t<P1, P2>;
+    return static_cast<Vp>(x.get()) < static_cast<Vp>(y.get());
+}
+
+template<class T1, class D1, class T2, class D2>
+bool operator>(const unique_ptr<T1,D1>& x, const unique_ptr<T2,D2>& y) {
+    return y < x;
+}
+
+template<class T1, class D1, class T2, class D2>
+bool operator<=(const unique_ptr<T1,D1>& x, const unique_ptr<T2,D2>& y) {
+    return !(y < x);
+}
+
+template<class T1, class D1, class T2, class D2>
+bool operator>=(const unique_ptr<T1,D1>& x, const unique_ptr<T2,D2>& y) {
+    return !(x < y);
+}
+
+template<class T1, class D1, class T2, class D2>
+    requires three_way_comparable_with<
+        typename unique_ptr<T1,D1>::pointer,
+        typename unique_ptr<T2,D2>::pointer>
+auto operator<=>(const unique_ptr<T1,D1>& x, const unique_ptr<T2,D2>& y) {
+    return compare_three_way()(x.get(), y.get());
+}
+
+// unique_ptr vs nullptr
+template<class T, class D>
+constexpr bool operator==(const unique_ptr<T,D>& x, nullptr_t) noexcept {
+    return !x;
+}
+
+template<class T, class D>
+constexpr bool operator<(const unique_ptr<T,D>& x, nullptr_t) {
+    using P = typename unique_ptr<T,D>::pointer;
+    return static_cast<P>(x.get()) < static_cast<P>(nullptr);
+}
+
+template<class T, class D>
+constexpr bool operator<(nullptr_t, const unique_ptr<T,D>& x) {
+    using P = typename unique_ptr<T,D>::pointer;
+    return static_cast<P>(nullptr) < static_cast<P>(x.get());
+}
+
+template<class T, class D>
+constexpr bool operator>(const unique_ptr<T,D>& x, nullptr_t) {
+    return nullptr < x;
+}
+
+template<class T, class D>
+constexpr bool operator>(nullptr_t, const unique_ptr<T,D>& x) {
+    return x < nullptr;
+}
+
+template<class T, class D>
+constexpr bool operator<=(const unique_ptr<T,D>& x, nullptr_t) {
+    return !(nullptr < x);
+}
+
+template<class T, class D>
+constexpr bool operator<=(nullptr_t, const unique_ptr<T,D>& x) {
+    return !(x < nullptr);
+}
+
+template<class T, class D>
+constexpr bool operator>=(const unique_ptr<T,D>& x, nullptr_t) {
+    return !(x < nullptr);
+}
+
+template<class T, class D>
+constexpr bool operator>=(nullptr_t, const unique_ptr<T,D>& x) {
+    return !(nullptr < x);
+}
+
+template<class T, class D>
+    requires three_way_comparable<typename unique_ptr<T,D>::pointer>
+constexpr auto operator<=>(const unique_ptr<T,D>& x, nullptr_t) {
+    return compare_three_way()(x.get(),
+        static_cast<typename unique_ptr<T,D>::pointer>(nullptr));
+}
+
+//===----------------------------------------------------------------------===//
+// make_unique / make_unique_for_overwrite
+// (from __memory/unique_ptr.h)
+//===----------------------------------------------------------------------===//
+
+template<class T, class... Args>
+    requires (!is_array_v<T>)
+[[nodiscard]] unique_ptr<T> make_unique(Args&&... args) {
+    return unique_ptr<T>(new T(forward<Args>(args)...));
+}
+
+template<class T>
+    requires is_unbounded_array_v<T>
+[[nodiscard]] unique_ptr<T> make_unique(size_t n) {
+    return unique_ptr<T>(new remove_extent_t<T>[n]());
+}
+
+template<class T, class... Args>
+    requires is_bounded_array_v<T>
+void make_unique(Args&&...) = delete;
+
+template<class T>
+    requires (!is_array_v<T>)
+[[nodiscard]] unique_ptr<T> make_unique_for_overwrite() {
+    return unique_ptr<T>(new T);
+}
+
+template<class T>
+    requires is_unbounded_array_v<T>
+[[nodiscard]] unique_ptr<T> make_unique_for_overwrite(size_t n) {
+    return unique_ptr<T>(new remove_extent_t<T>[n]);
+}
+
+template<class T, class... Args>
+    requires is_bounded_array_v<T>
+void make_unique_for_overwrite(Args&&...) = delete;
+
+//===----------------------------------------------------------------------===//
+// uninitialized algorithms
+// (from __memory/uninitialized_algorithms.h)
+// Note: No exception guard needed under -fno-exceptions; the guard would be
+// a no-op since destructors don't run on paths that can't throw.
+//===----------------------------------------------------------------------===//
+
+// uninitialized_default_construct(_n)
+
+template<class ForwardIter>
+void uninitialized_default_construct(ForwardIter first, ForwardIter last) {
+    using V = typename iterator_traits<ForwardIter>::value_type;
+    for (auto idx = first; idx != last; ++idx)
+        ::new(static_cast<void*>(addressof(*idx))) V;
+}
+
+template<class ForwardIter, class Size>
+ForwardIter uninitialized_default_construct_n(ForwardIter first, Size n) {
+    using V = typename iterator_traits<ForwardIter>::value_type;
+    for (; n > 0; ++first, (void)--n)
+        ::new(static_cast<void*>(addressof(*first))) V;
+    return first;
+}
+
+// uninitialized_value_construct(_n)
+
+template<class ForwardIter>
+void uninitialized_value_construct(ForwardIter first, ForwardIter last) {
+    using V = typename iterator_traits<ForwardIter>::value_type;
+    for (auto idx = first; idx != last; ++idx)
+        ::new(static_cast<void*>(addressof(*idx))) V();
+}
+
+template<class ForwardIter, class Size>
+ForwardIter uninitialized_value_construct_n(ForwardIter first, Size n) {
+    using V = typename iterator_traits<ForwardIter>::value_type;
+    for (; n > 0; ++first, (void)--n)
+        ::new(static_cast<void*>(addressof(*first))) V();
+    return first;
+}
+
+// uninitialized_copy(_n)
+
+template<class InputIter, class ForwardIter>
+ForwardIter uninitialized_copy(InputIter first, InputIter last, ForwardIter dest) {
+    using V = typename iterator_traits<ForwardIter>::value_type;
+    for (; first != last; ++first, (void)++dest)
+        ::new(static_cast<void*>(addressof(*dest))) V(*first);
+    return dest;
+}
+
+template<class InputIter, class Size, class ForwardIter>
+ForwardIter uninitialized_copy_n(InputIter first, Size n, ForwardIter dest) {
+    using V = typename iterator_traits<ForwardIter>::value_type;
+    for (; n > 0; ++first, (void)++dest, (void)--n)
+        ::new(static_cast<void*>(addressof(*dest))) V(*first);
+    return dest;
+}
+
+// uninitialized_move(_n)
+
+template<class InputIter, class ForwardIter>
+ForwardIter uninitialized_move(InputIter first, InputIter last, ForwardIter dest) {
+    using V = typename iterator_traits<ForwardIter>::value_type;
+    for (; first != last; ++first, (void)++dest)
+        ::new(static_cast<void*>(addressof(*dest))) V(move(*first));
+    return dest;
+}
+
+template<class InputIter, class Size, class ForwardIter>
+pair<InputIter, ForwardIter>
+uninitialized_move_n(InputIter first, Size n, ForwardIter dest) {
+    using V = typename iterator_traits<ForwardIter>::value_type;
+    for (; n > 0; ++first, (void)++dest, (void)--n)
+        ::new(static_cast<void*>(addressof(*dest))) V(move(*first));
+    return {first, dest};
+}
+
+// uninitialized_fill(_n)
+
+template<class ForwardIter, class T>
+void uninitialized_fill(ForwardIter first, ForwardIter last, const T& x) {
+    using V = typename iterator_traits<ForwardIter>::value_type;
+    for (auto idx = first; idx != last; ++idx)
+        ::new(static_cast<void*>(addressof(*idx))) V(x);
+}
+
+template<class ForwardIter, class Size, class T>
+ForwardIter uninitialized_fill_n(ForwardIter first, Size n, const T& x) {
+    using V = typename iterator_traits<ForwardIter>::value_type;
+    for (; n > 0; ++first, (void)--n)
+        ::new(static_cast<void*>(addressof(*first))) V(x);
+    return first;
+}
+
+//===----------------------------------------------------------------------===//
+// align
+// (from __memory/align.h)
+//===----------------------------------------------------------------------===//
+
+inline void* align(size_t alignment, size_t sz, void*& ptr, size_t& space) {
+    void* r = nullptr;
+    if (sz <= space) {
+        char* p1 = static_cast<char*>(ptr);
+        char* p2 = reinterpret_cast<char*>(
+            reinterpret_cast<uintptr_t>(p1 + (alignment - 1)) & -alignment);
+        size_t d = static_cast<size_t>(p2 - p1);
+        if (d <= space - sz) {
+            r    = p2;
+            ptr  = r;
+            space -= d;
+        }
+    }
+    return r;
+}
+
+//===----------------------------------------------------------------------===//
+// assume_aligned  (C++20)
+// (from __memory/assume_aligned.h)
+//===----------------------------------------------------------------------===//
+
+template<size_t N, class T>
+[[nodiscard]] constexpr T* assume_aligned(T* ptr) noexcept {
+    static_assert(N != 0 && (N & (N - 1)) == 0,
+        "std::assume_aligned<N>(p) requires N to be a power of two");
+    return static_cast<T*>(__builtin_assume_aligned(ptr, N));
+}
+
+} // namespace std
