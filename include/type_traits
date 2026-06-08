@@ -1337,7 +1337,28 @@ namespace detail {
         noexcept(noexcept((static_cast<A0&&>(a0).*f)(static_cast<Args&&>(args)...)))
     { return (static_cast<A0&&>(a0).*f)(static_cast<Args&&>(args)...); }
 
-    // bullet 2 (reference_wrapper): omitted — added when <functional> lands.
+    // Reference-wrapper detector:
+    // Matches types that have a .get() returning ClassT& (like reference_wrapper<ClassT>).
+    // Used to implement INVOKE bullets 2 and 5 without naming reference_wrapper.
+    template<class A0, class ClassT, class = void>
+    inline constexpr bool is_ref_wrapper_for_v = false;
+    template<class A0, class ClassT>
+    inline constexpr bool is_ref_wrapper_for_v<A0, ClassT,
+        void_t<decltype(declval<const A0&>().get())>> =
+            is_convertible_v<decltype(declval<const A0&>().get()), ClassT&>;
+
+    // bullet 2: member function pointer, t1 is reference_wrapper<ClassT>-like
+    template<class Fp, class A0, class... Args,
+             class DecayFp = decay_t<Fp>,
+             class DecayA0 = decay_t<A0>,
+             class ClassT = typename member_pointer_class_type<DecayFp>::type>
+        requires is_member_function_pointer_v<DecayFp> &&
+                 (!(is_same_v<ClassT, DecayA0> || is_base_of_v<ClassT, DecayA0>)) &&
+                 is_ref_wrapper_for_v<DecayA0, ClassT>
+    constexpr decltype((declval<A0>().get().*declval<Fp>())(declval<Args>()...))
+    invoke_impl(Fp&& f, A0&& a0, Args&&... args)
+        noexcept(noexcept((static_cast<A0&&>(a0).get().*f)(static_cast<Args&&>(args)...)))
+    { return (static_cast<A0&&>(a0).get().*f)(static_cast<Args&&>(args)...); }
 
     // bullet 3: member function pointer, t1 is neither T/derived nor reference_wrapper
     // (i.e., a pointer or smart pointer — deref first)
@@ -1346,7 +1367,8 @@ namespace detail {
              class DecayA0 = decay_t<A0>,
              class ClassT = typename member_pointer_class_type<DecayFp>::type>
         requires is_member_function_pointer_v<DecayFp> &&
-                 (!(is_same_v<ClassT, DecayA0> || is_base_of_v<ClassT, DecayA0>))
+                 (!(is_same_v<ClassT, DecayA0> || is_base_of_v<ClassT, DecayA0>)) &&
+                 (!is_ref_wrapper_for_v<DecayA0, ClassT>)
     constexpr decltype(((*declval<A0>()).*declval<Fp>())(declval<Args>()...))
     invoke_impl(Fp&& f, A0&& a0, Args&&... args)
         noexcept(noexcept(((*static_cast<A0&&>(a0)).*f)(static_cast<Args&&>(args)...)))
@@ -1364,7 +1386,18 @@ namespace detail {
         noexcept(noexcept(static_cast<A0&&>(a0).*f))
     { return static_cast<A0&&>(a0).*f; }
 
-    // bullet 5 (reference_wrapper): omitted — added when <functional> lands.
+    // bullet 5: member object pointer, t1 is reference_wrapper<ClassT>-like
+    template<class Fp, class A0,
+             class DecayFp = decay_t<Fp>,
+             class DecayA0 = decay_t<A0>,
+             class ClassT = typename member_pointer_class_type<DecayFp>::type>
+        requires is_member_object_pointer_v<DecayFp> &&
+                 (!(is_same_v<ClassT, DecayA0> || is_base_of_v<ClassT, DecayA0>)) &&
+                 is_ref_wrapper_for_v<DecayA0, ClassT>
+    constexpr decltype(declval<A0>().get().*declval<Fp>())
+    invoke_impl(Fp&& f, A0&& a0)
+        noexcept(noexcept(static_cast<A0&&>(a0).get().*f))
+    { return static_cast<A0&&>(a0).get().*f; }
 
     // bullet 6: member object pointer, t1 is pointer/smart-pointer (deref)
     template<class Fp, class A0,
@@ -1372,7 +1405,8 @@ namespace detail {
              class DecayA0 = decay_t<A0>,
              class ClassT = typename member_pointer_class_type<DecayFp>::type>
         requires is_member_object_pointer_v<DecayFp> &&
-                 (!(is_same_v<ClassT, DecayA0> || is_base_of_v<ClassT, DecayA0>))
+                 (!(is_same_v<ClassT, DecayA0> || is_base_of_v<ClassT, DecayA0>)) &&
+                 (!is_ref_wrapper_for_v<DecayA0, ClassT>)
     constexpr decltype((*declval<A0>()).*declval<Fp>())
     invoke_impl(Fp&& f, A0&& a0)
         noexcept(noexcept((*static_cast<A0&&>(a0)).*f))
