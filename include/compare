@@ -3,16 +3,15 @@
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //
 // All __compare/*.h fragments are folded inline; no include/bits/ file needed.
-// Depends only on <type_traits> (for is_same_v, decay_t, is_floating_point_v).
-// Provides inline minimal numeric_limits for float/double since <limits> is
-// unavailable under -nostdinc++.
+// Depends on <type_traits>, <bit> (bit_cast), <limits> (numeric_limits).
 // std::bit_cast for floats: non-constexpr memcpy path (gcc-10 lacks
-// __builtin_bit_cast).
+// __builtin_bit_cast); strong_order float path is therefore non-constexpr.
 #pragma once
 
 #include <type_traits>
+#include <bit>         // std::bit_cast (non-constexpr on gcc-10)
+#include <limits>      // std::numeric_limits
 #include <stdint.h>    // int32_t, int64_t
-#include <string.h>    // memcpy (runtime float path)
 #include <math.h>      // __builtin_isnan, __builtin_signbit, __builtin_copysign*
 
 namespace std {
@@ -33,38 +32,8 @@ namespace detail {
     using make_const_lvalue_ref = const remove_reference_t<T>&;
 } // namespace detail
 
-// A non-constexpr bit_cast via memcpy — sufficient for the float/double
-// strong_order runtime path.  gcc-10 lacks __builtin_bit_cast.
-namespace detail {
-    template<class To, class From>
-    To bit_cast_mem(const From& src) noexcept {
-        static_assert(sizeof(To) == sizeof(From));
-        To dst;
-        memcpy(&dst, &src, sizeof(To));
-        return dst;
-    }
-} // namespace detail
-
-// Minimal numeric_limits traits needed only by strong_order floats.
-namespace detail {
-    template<class T> struct fp_limits {};
-    template<> struct fp_limits<float> {
-        static constexpr bool is_iec559 = true;
-        static constexpr int  radix     = 2;
-    };
-    template<> struct fp_limits<double> {
-        static constexpr bool is_iec559 = true;
-        static constexpr int  radix     = 2;
-    };
-    template<> struct fp_limits<long double> {
-        // long double on x86 is 80-bit extended — NOT sizeof(int64_t)==8,
-        // sizeof(long double)==10/12/16.  The IEC559 bit_cast fast path only
-        // handles 32-bit and 64-bit floats, so mark as non-IEC559 to force
-        // the slower comparison path.
-        static constexpr bool is_iec559 = false;
-        static constexpr int  radix     = 2;
-    };
-} // namespace detail
+// Note: std::bit_cast (from <bit>) is non-constexpr on gcc-10 (no
+// __builtin_bit_cast); the strong_order float path uses it at runtime only.
 
 //===----------------------------------------------------------------------===//
 // [cmp.categories] — ordering category types (from __compare/ordering.h)
@@ -477,16 +446,16 @@ struct fn {
         return strong_ordering(strong_order(static_cast<T&&>(t), static_cast<U&&>(u)));
     }
 
-    // (2) Floating-point: IEC 559 bit-level total order (non-constexpr, memcpy)
-    //     Only for float (sizeof==4) and double (sizeof==8); long double falls through.
+    // (2) Floating-point: IEC 559 bit-level total order (non-constexpr; bit_cast
+    //     is non-constexpr on gcc-10).  Only float/double (32/64-bit); long double falls through.
     template<class T, class U, class D = decay_t<T>>
         requires is_same_v<D, decay_t<U>> && is_floating_point_v<D>
     static strong_ordering go(T&& t, U&& u, detail::priority_tag<1>) noexcept {
-        if constexpr (detail::fp_limits<D>::is_iec559 &&
+        if constexpr (numeric_limits<D>::is_iec559 &&
                       (sizeof(D) == sizeof(int32_t) || sizeof(D) == sizeof(int64_t))) {
             using int_t = conditional_t<sizeof(D) == sizeof(int32_t), int32_t, int64_t>;
-            int_t rx = detail::bit_cast_mem<int_t>(static_cast<D>(t));
-            int_t ry = detail::bit_cast_mem<int_t>(static_cast<D>(u));
+            int_t rx = bit_cast<int_t>(static_cast<D>(t));
+            int_t ry = bit_cast<int_t>(static_cast<D>(u));
             // IEEE 754: flip sign bit of negative values to make integer comparison work
             using uint_t = make_unsigned_t<int_t>;
             const int_t min_val = int_t(uint_t(1) << (sizeof(int_t)*8 - 1));
@@ -512,12 +481,12 @@ struct fn {
                         return u_neg <=> t_neg;
                     // both same sign NaN: order by bit pattern (runtime only)
                     if constexpr (sizeof(D) == sizeof(int32_t)) {
-                        int32_t a = detail::bit_cast_mem<int32_t>(td);
-                        int32_t b = detail::bit_cast_mem<int32_t>(ud);
+                        int32_t a = bit_cast<int32_t>(td);
+                        int32_t b = bit_cast<int32_t>(ud);
                         return a <=> b;
                     } else if constexpr (sizeof(D) == sizeof(int64_t)) {
-                        int64_t a = detail::bit_cast_mem<int64_t>(td);
-                        int64_t b = detail::bit_cast_mem<int64_t>(ud);
+                        int64_t a = bit_cast<int64_t>(td);
+                        int64_t b = bit_cast<int64_t>(ud);
                         return a <=> b;
                     } else {
                         // Can't compare by bit pattern for other sizes: treat equal
