@@ -1,0 +1,1815 @@
+// <random> -- pseudo-random number generation.
+// Mechanically ported from libc++ include/__random/*.h
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Deferred (follow-up will append at === MORE DISTRIBUTIONS APPEND POINT ===):
+//   binomial_distribution, negative_binomial_distribution, geometric_distribution
+//   gamma_distribution, weibull_distribution, extreme_value_distribution
+//   lognormal_distribution, chi_squared_distribution, cauchy_distribution
+//   fisher_f_distribution, student_t_distribution
+//   piecewise_constant_distribution, piecewise_linear_distribution
+//   operator<< / operator>> for engines and distributions
+#pragma once
+
+#include <type_traits>
+#include <limits>
+#include <cstdint>
+#include <cmath>
+#include <initializer_list>
+#include <vector>
+#include <algorithm>
+#include <numeric>
+#include <iterator>
+#include <bit>
+#include <fcntl.h>
+#include <unistd.h>
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// Internal helpers: __log2
+//===----------------------------------------------------------------------===//
+
+template <class UIntType, UIntType Xp, size_t Rp>
+struct log2_imp;
+
+template <unsigned long long Xp, size_t Rp>
+struct log2_imp<unsigned long long, Xp, Rp> {
+    static const size_t value =
+        Xp & ((unsigned long long)(1) << Rp) ? Rp
+            : log2_imp<unsigned long long, Xp, Rp - 1>::value;
+};
+
+template <unsigned long long Xp>
+struct log2_imp<unsigned long long, Xp, 0> {
+    static const size_t value = 0;
+};
+
+template <size_t Rp>
+struct log2_imp<unsigned long long, 0, Rp> {
+    static const size_t value = Rp + 1;
+};
+
+template <class UIntType, UIntType Xp>
+struct rand_log2 {
+    static const size_t value =
+        log2_imp<unsigned long long, Xp, sizeof(UIntType) * __CHAR_BIT__ - 1>::value;
+};
+
+//===----------------------------------------------------------------------===//
+// Internal: is_seed_sequence_v
+//===----------------------------------------------------------------------===//
+
+template <class Sseq, class Engine>
+inline constexpr bool is_seed_sequence_v =
+    !is_convertible_v<Sseq, typename Engine::result_type> &&
+    !is_same_v<remove_cv_t<Sseq>, Engine>;
+
+//===----------------------------------------------------------------------===//
+// Internal: valid type checks for distributions
+//===----------------------------------------------------------------------===//
+
+template <class> struct rand_is_valid_realtype : false_type {};
+template <> struct rand_is_valid_realtype<float>       : true_type {};
+template <> struct rand_is_valid_realtype<double>      : true_type {};
+template <> struct rand_is_valid_realtype<long double> : true_type {};
+
+template <class> struct rand_is_valid_inttype : false_type {};
+template <> struct rand_is_valid_inttype<short>              : true_type {};
+template <> struct rand_is_valid_inttype<int>                : true_type {};
+template <> struct rand_is_valid_inttype<long>               : true_type {};
+template <> struct rand_is_valid_inttype<long long>          : true_type {};
+template <> struct rand_is_valid_inttype<unsigned short>     : true_type {};
+template <> struct rand_is_valid_inttype<unsigned int>       : true_type {};
+template <> struct rand_is_valid_inttype<unsigned long>      : true_type {};
+template <> struct rand_is_valid_inttype<unsigned long long> : true_type {};
+
+template <class, class = void>
+struct rand_is_valid_urng : false_type {};
+template <class G>
+struct rand_is_valid_urng<G,
+    enable_if_t<is_unsigned_v<typename G::result_type> &&
+                is_same_v<decltype(declval<G&>()()), typename G::result_type>>>
+    : true_type {};
+
+//===----------------------------------------------------------------------===//
+// linear_congruential_engine helpers (lce_ta)
+//===----------------------------------------------------------------------===//
+
+enum lce_alg_type { LCE_Full, LCE_Part, LCE_Schrage, LCE_Promote };
+
+template <unsigned long long a,
+          unsigned long long c,
+          unsigned long long m,
+          unsigned long long Mp,
+          bool HasOverflow = (a != 0ull && (m & (m - 1ull)) != 0ull),
+          bool Full        = (!HasOverflow || m - 1ull <= (Mp - c) / a),
+          bool Part        = (!HasOverflow || m - 1ull <= Mp / a),
+          bool Schrage     = (HasOverflow && m % a <= m / a)>
+struct lce_alg_picker {
+    static constexpr lce_alg_type mode =
+        Full    ? LCE_Full
+        : Part  ? LCE_Part
+        : Schrage ? LCE_Schrage
+                  : LCE_Promote;
+    static_assert(Mp != (unsigned long long)(-1) || Full || Part || Schrage,
+        "linear_congruential_engine: unsupported parameters (no __int128)");
+};
+
+template <unsigned long long a,
+          unsigned long long c,
+          unsigned long long m,
+          unsigned long long Mp,
+          lce_alg_type Mode = lce_alg_picker<a,c,m,Mp>::mode>
+struct lce_ta;
+
+// 64-bit specialisations
+
+template <unsigned long long a, unsigned long long c, unsigned long long m>
+struct lce_ta<a, c, m, (unsigned long long)(-1), LCE_Promote> {
+    typedef unsigned long long result_type;
+    static result_type next(result_type xp) {
+        // promote: use 128-bit via __extension__
+        __extension__ using calc_type = unsigned __int128;
+        return static_cast<result_type>(
+            (static_cast<calc_type>(a) * xp + c) % m);
+    }
+};
+
+template <unsigned long long a, unsigned long long c, unsigned long long m>
+struct lce_ta<a, c, m, (unsigned long long)(-1), LCE_Schrage> {
+    typedef unsigned long long result_type;
+    static result_type next(result_type x) {
+        const result_type q  = m / a;
+        const result_type r  = m % a;
+        const result_type t0 = a * (x % q);
+        const result_type t1 = r * (x / q);
+        x = t0 + (t0 < t1) * m - t1;
+        x += c - (x >= m - c) * m;
+        return x;
+    }
+};
+
+template <unsigned long long a, unsigned long long m>
+struct lce_ta<a, 0ull, m, (unsigned long long)(-1), LCE_Schrage> {
+    typedef unsigned long long result_type;
+    static result_type next(result_type x) {
+        const result_type q  = m / a;
+        const result_type r  = m % a;
+        const result_type t0 = a * (x % q);
+        const result_type t1 = r * (x / q);
+        x = t0 + (t0 < t1) * m - t1;
+        return x;
+    }
+};
+
+template <unsigned long long a, unsigned long long c, unsigned long long m>
+struct lce_ta<a, c, m, (unsigned long long)(-1), LCE_Part> {
+    typedef unsigned long long result_type;
+    static result_type next(result_type x) {
+        x = (a * x) % m;
+        x += c - (x >= m - c) * m;
+        return x;
+    }
+};
+
+template <unsigned long long a, unsigned long long c, unsigned long long m>
+struct lce_ta<a, c, m, (unsigned long long)(-1), LCE_Full> {
+    typedef unsigned long long result_type;
+    static result_type next(result_type x) { return (a * x + c) % m; }
+};
+
+template <unsigned long long a, unsigned long long c>
+struct lce_ta<a, c, 0ull, (unsigned long long)(-1), LCE_Full> {
+    typedef unsigned long long result_type;
+    static result_type next(result_type x) { return a * x + c; }
+};
+
+// 32-bit specialisations
+
+template <unsigned long long a, unsigned long long c, unsigned long long m>
+struct lce_ta<a, c, m, unsigned(-1), LCE_Promote> {
+    typedef unsigned result_type;
+    static result_type next(result_type x) {
+        return static_cast<result_type>(
+            lce_ta<a, c, m, (unsigned long long)(-1)>::next(x));
+    }
+};
+
+template <unsigned long long Ap, unsigned long long Cp, unsigned long long Mp>
+struct lce_ta<Ap, Cp, Mp, unsigned(-1), LCE_Schrage> {
+    typedef unsigned result_type;
+    static result_type next(result_type x) {
+        const result_type a  = static_cast<result_type>(Ap);
+        const result_type c  = static_cast<result_type>(Cp);
+        const result_type m  = static_cast<result_type>(Mp);
+        const result_type q  = m / a;
+        const result_type r  = m % a;
+        const result_type t0 = a * (x % q);
+        const result_type t1 = r * (x / q);
+        x = t0 + (t0 < t1) * m - t1;
+        x += c - (x >= m - c) * m;
+        return x;
+    }
+};
+
+template <unsigned long long Ap, unsigned long long Mp>
+struct lce_ta<Ap, 0ull, Mp, unsigned(-1), LCE_Schrage> {
+    typedef unsigned result_type;
+    static result_type next(result_type x) {
+        const result_type a = static_cast<result_type>(Ap);
+        const result_type m = static_cast<result_type>(Mp);
+        const result_type q = m / a;
+        const result_type r = m % a;
+        const result_type t0 = a * (x % q);
+        const result_type t1 = r * (x / q);
+        x = t0 + (t0 < t1) * m - t1;
+        return x;
+    }
+};
+
+template <unsigned long long Ap, unsigned long long Cp, unsigned long long Mp>
+struct lce_ta<Ap, Cp, Mp, unsigned(-1), LCE_Part> {
+    typedef unsigned result_type;
+    static result_type next(result_type x) {
+        const result_type a = static_cast<result_type>(Ap);
+        const result_type c = static_cast<result_type>(Cp);
+        const result_type m = static_cast<result_type>(Mp);
+        x = (a * x) % m;
+        x += c - (x >= m - c) * m;
+        return x;
+    }
+};
+
+template <unsigned long long Ap, unsigned long long Cp, unsigned long long Mp>
+struct lce_ta<Ap, Cp, Mp, unsigned(-1), LCE_Full> {
+    typedef unsigned result_type;
+    static result_type next(result_type x) {
+        const result_type a = static_cast<result_type>(Ap);
+        const result_type c = static_cast<result_type>(Cp);
+        const result_type m = static_cast<result_type>(Mp);
+        return (a * x + c) % m;
+    }
+};
+
+template <unsigned long long Ap, unsigned long long Cp>
+struct lce_ta<Ap, Cp, 0ull, unsigned(-1), LCE_Full> {
+    typedef unsigned result_type;
+    static result_type next(result_type x) {
+        const result_type a = static_cast<result_type>(Ap);
+        const result_type c = static_cast<result_type>(Cp);
+        return a * x + c;
+    }
+};
+
+// 16-bit fallback
+template <unsigned long long a, unsigned long long c, unsigned long long m, lce_alg_type mode>
+struct lce_ta<a, c, m, (unsigned short)(-1), mode> {
+    typedef unsigned short result_type;
+    static result_type next(result_type x) {
+        return static_cast<result_type>(lce_ta<a, c, m, unsigned(-1)>::next(x));
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// linear_congruential_engine
+//===----------------------------------------------------------------------===//
+
+template <class UIntType, UIntType a, UIntType c, UIntType m>
+class linear_congruential_engine {
+public:
+    typedef UIntType result_type;
+
+private:
+    result_type x_;
+
+    static constexpr const result_type Mp = result_type(-1);
+
+    static_assert(m == 0 || a < m, "linear_congruential_engine: invalid parameters");
+    static_assert(m == 0 || c < m, "linear_congruential_engine: invalid parameters");
+    static_assert(is_unsigned_v<UIntType>, "UIntType must be an unsigned type");
+
+public:
+    static constexpr const result_type Min = (c == 0u) ? 1u : 0u;
+    static constexpr const result_type Max = m - UIntType(1u);
+    static_assert(Min < Max, "linear_congruential_engine: invalid parameters");
+
+    static inline constexpr const result_type multiplier   = a;
+    static inline constexpr const result_type increment    = c;
+    static inline constexpr const result_type modulus      = m;
+    static constexpr result_type min() { return Min; }
+    static constexpr result_type max() { return Max; }
+    static inline constexpr const result_type default_seed = 1u;
+
+    linear_congruential_engine() : linear_congruential_engine(default_seed) {}
+    explicit linear_congruential_engine(result_type s) { seed(s); }
+    template <class Sseq>
+        requires is_seed_sequence_v<Sseq, linear_congruential_engine>
+    explicit linear_congruential_engine(Sseq& q) { seed(q); }
+
+    void seed(result_type s = default_seed) {
+        if constexpr (m == 0) {
+            if constexpr (c == 0)
+                x_ = (s == 0) ? 1 : s;
+            else
+                x_ = s;
+        } else {
+            if constexpr (c == 0)
+                x_ = (s % m == 0) ? 1 : s % m;
+            else
+                x_ = s % m;
+        }
+    }
+
+    template <class Sseq>
+        requires is_seed_sequence_v<Sseq, linear_congruential_engine>
+    void seed(Sseq& q) {
+        constexpr unsigned k = 1 + (m == 0 ? (sizeof(result_type) * __CHAR_BIT__ - 1) / 32
+                                            : (m > 0x100000000ull));
+        static_assert(k <= 2);
+        uint32_t ar[k + 3];
+        q.generate(ar, ar + k + 3);
+        result_type s = static_cast<result_type>(
+            (ar[3] + (k == 1 ? 0 : (uint64_t)ar[4] << 32)) % m);
+        x_ = (c == 0 && s == 0) ? result_type(1) : s;
+    }
+
+    result_type operator()() {
+        return x_ = static_cast<result_type>(lce_ta<a, c, m, Mp>::next(x_));
+    }
+    void discard(unsigned long long z) {
+        for (; z; --z) operator()();
+    }
+
+    friend bool operator==(const linear_congruential_engine& lhs,
+                           const linear_congruential_engine& rhs) {
+        return lhs.x_ == rhs.x_;
+    }
+    friend bool operator!=(const linear_congruential_engine& lhs,
+                           const linear_congruential_engine& rhs) {
+        return !(lhs == rhs);
+    }
+};
+
+using minstd_rand0 = linear_congruential_engine<uint_fast32_t, 16807, 0, 2147483647>;
+using minstd_rand  = linear_congruential_engine<uint_fast32_t, 48271, 0, 2147483647>;
+
+//===----------------------------------------------------------------------===//
+// mersenne_twister_engine
+//===----------------------------------------------------------------------===//
+
+template <class UIntType,
+          size_t w, size_t n, size_t mshift, size_t r,
+          UIntType a,
+          size_t u, UIntType d,
+          size_t s, UIntType b,
+          size_t t, UIntType c,
+          size_t l, UIntType f>
+class mersenne_twister_engine {
+public:
+    typedef UIntType result_type;
+
+private:
+    result_type x_[n];
+    size_t i_;
+
+    static constexpr const result_type Dt = numeric_limits<result_type>::digits;
+    static_assert(0 < mshift);
+    static_assert(mshift <= n);
+    static_assert(w <= Dt);
+    static_assert(2 <= w);
+    static_assert(r <= w);
+    static_assert(u <= w);
+    static_assert(s <= w);
+    static_assert(t <= w);
+    static_assert(l <= w);
+
+public:
+    static constexpr const result_type Min = 0;
+    static constexpr const result_type Max =
+        (w == Dt) ? result_type(~0) : (result_type(1) << w) - result_type(1);
+    static_assert(Min < Max);
+    static_assert(a <= Max);
+    static_assert(b <= Max);
+    static_assert(c <= Max);
+    static_assert(d <= Max);
+    static_assert(f <= Max);
+
+    static inline constexpr const size_t word_size                      = w;
+    static inline constexpr const size_t state_size                     = n;
+    static inline constexpr const size_t shift_size                     = mshift;
+    static inline constexpr const size_t mask_bits                      = r;
+    static inline constexpr const result_type xor_mask                  = a;
+    static inline constexpr const size_t tempering_u                    = u;
+    static inline constexpr const result_type tempering_d               = d;
+    static inline constexpr const size_t tempering_s                    = s;
+    static inline constexpr const result_type tempering_b               = b;
+    static inline constexpr const size_t tempering_t                    = t;
+    static inline constexpr const result_type tempering_c               = c;
+    static inline constexpr const size_t tempering_l                    = l;
+    static inline constexpr const result_type initialization_multiplier = f;
+    static constexpr result_type min() { return Min; }
+    static constexpr result_type max() { return Max; }
+    static inline constexpr const result_type default_seed = 5489u;
+
+    mersenne_twister_engine() : mersenne_twister_engine(default_seed) {}
+    explicit mersenne_twister_engine(result_type sd) { seed(sd); }
+    template <class Sseq>
+        requires is_seed_sequence_v<Sseq, mersenne_twister_engine>
+    explicit mersenne_twister_engine(Sseq& q) { seed(q); }
+
+    void seed(result_type sd = default_seed) {
+        x_[0] = sd & Max;
+        for (size_t k = 1; k < n; ++k)
+            x_[k] = (f * (x_[k-1] ^ mt_rshift<w-2>(x_[k-1])) + k) & Max;
+        i_ = 0;
+    }
+
+    template <class Sseq>
+        requires is_seed_sequence_v<Sseq, mersenne_twister_engine>
+    void seed(Sseq& q) {
+        const unsigned k = 1 + (w - 1) / 32;
+        static_assert(k <= 2);
+        uint32_t ar[n * k];
+        q.generate(ar, ar + n * k);
+        for (size_t j = 0; j < n; ++j) {
+            if constexpr (k == 1)
+                x_[j] = static_cast<result_type>(ar[j] & Max);
+            else
+                x_[j] = static_cast<result_type>(
+                    (ar[2*j] + ((uint64_t)ar[2*j+1] << 32)) & Max);
+        }
+        const result_type mask = (r == Dt) ? result_type(~0) : (result_type(1) << r) - result_type(1);
+        i_ = 0;
+        if ((x_[0] & ~mask) == 0) {
+            for (size_t j = 1; j < n; ++j)
+                if (x_[j] != 0) return;
+            x_[0] = result_type(1) << (w - 1);
+        }
+    }
+
+    result_type operator()() {
+        const size_t j        = (i_ + 1) % n;
+        const result_type mask = (r == Dt) ? result_type(~0) : (result_type(1) << r) - result_type(1);
+        const result_type yp   = (x_[i_] & ~mask) | (x_[j] & mask);
+        const size_t k         = (i_ + mshift) % n;
+        x_[i_]                 = x_[k] ^ mt_rshift<1>(yp) ^ (a * (yp & 1));
+        result_type z          = x_[i_] ^ (mt_rshift<u>(x_[i_]) & d);
+        i_                     = j;
+        z ^= mt_lshift<s>(z) & b;
+        z ^= mt_lshift<t>(z) & c;
+        return z ^ mt_rshift<l>(z);
+    }
+
+    void discard(unsigned long long z) {
+        for (; z; --z) operator()();
+    }
+
+    friend bool operator==(const mersenne_twister_engine& lhs,
+                           const mersenne_twister_engine& rhs) {
+        if (lhs.i_ == rhs.i_)
+            return std::equal(lhs.x_, lhs.x_ + n, rhs.x_);
+        if (lhs.i_ == 0 || rhs.i_ == 0) {
+            size_t j = std::min(n - lhs.i_, n - rhs.i_);
+            if (!std::equal(lhs.x_ + lhs.i_, lhs.x_ + lhs.i_ + j, rhs.x_ + rhs.i_))
+                return false;
+            if (lhs.i_ == 0)
+                return std::equal(lhs.x_ + j, lhs.x_ + n, rhs.x_);
+            return std::equal(lhs.x_, lhs.x_ + (n - j), rhs.x_ + j);
+        }
+        if (lhs.i_ < rhs.i_) {
+            size_t j = n - rhs.i_;
+            if (!std::equal(lhs.x_ + lhs.i_, lhs.x_ + lhs.i_ + j, rhs.x_ + rhs.i_))
+                return false;
+            if (!std::equal(lhs.x_ + lhs.i_ + j, lhs.x_ + n, rhs.x_))
+                return false;
+            return std::equal(lhs.x_, lhs.x_ + lhs.i_, rhs.x_ + (n - (lhs.i_ + j)));
+        }
+        size_t j = n - lhs.i_;
+        if (!std::equal(rhs.x_ + rhs.i_, rhs.x_ + rhs.i_ + j, lhs.x_ + lhs.i_))
+            return false;
+        if (!std::equal(rhs.x_ + rhs.i_ + j, rhs.x_ + n, lhs.x_))
+            return false;
+        return std::equal(rhs.x_, rhs.x_ + rhs.i_, lhs.x_ + (n - (rhs.i_ + j)));
+    }
+    friend bool operator!=(const mersenne_twister_engine& lhs,
+                           const mersenne_twister_engine& rhs) {
+        return !(lhs == rhs);
+    }
+
+private:
+    template <size_t count>
+    static result_type mt_lshift(result_type x) {
+        if constexpr (count < w) return (x << count) & Max;
+        else                     return result_type(0);
+    }
+    template <size_t count>
+    static result_type mt_rshift(result_type x) {
+        if constexpr (count < Dt) return x >> count;
+        else                      return result_type(0);
+    }
+};
+
+using mt19937 = mersenne_twister_engine<
+    uint_fast32_t, 32, 624, 397, 31,
+    0x9908b0df, 11, 0xffffffff, 7, 0x9d2c5680, 15, 0xefc60000, 18, 1812433253>;
+
+using mt19937_64 = mersenne_twister_engine<
+    uint_fast64_t, 64, 312, 156, 31,
+    0xb5026f5aa96619e9ULL, 29, 0x5555555555555555ULL, 17,
+    0x71d67fffeda60000ULL, 37, 0xfff7eee000000000ULL, 43,
+    6364136223846793005ULL>;
+
+//===----------------------------------------------------------------------===//
+// subtract_with_carry_engine
+//===----------------------------------------------------------------------===//
+
+template <class UIntType, size_t w, size_t s, size_t r>
+class subtract_with_carry_engine {
+public:
+    typedef UIntType result_type;
+
+private:
+    result_type x_[r];
+    result_type c_;
+    size_t i_;
+
+    static constexpr const result_type Dt = numeric_limits<result_type>::digits;
+    static_assert(0 < w);
+    static_assert(w <= Dt);
+    static_assert(0 < s);
+    static_assert(s < r);
+
+public:
+    static constexpr const result_type Min = 0;
+    static constexpr const result_type Max =
+        (w == Dt) ? result_type(~0) : (result_type(1) << w) - result_type(1);
+    static_assert(Min < Max);
+
+    static inline constexpr const size_t word_size = w;
+    static inline constexpr const size_t short_lag = s;
+    static inline constexpr const size_t long_lag   = r;
+    static constexpr result_type min() { return Min; }
+    static constexpr result_type max() { return Max; }
+    static inline constexpr const result_type default_seed = 19780503u;
+
+    subtract_with_carry_engine() : subtract_with_carry_engine(default_seed) {}
+    explicit subtract_with_carry_engine(result_type sd) { seed(sd); }
+    template <class Sseq>
+        requires is_seed_sequence_v<Sseq, subtract_with_carry_engine>
+    explicit subtract_with_carry_engine(Sseq& q) { seed(q); }
+
+    void seed(result_type sd = default_seed) {
+        linear_congruential_engine<result_type, 40014u, 0u, 2147483563u>
+            e(sd == 0u ? default_seed : sd);
+        for (size_t k = 0; k < r; ++k) {
+            if constexpr ((1 + (w - 1) / 32) == 1)
+                x_[k] = static_cast<result_type>(e() & Max);
+            else {
+                result_type e0 = e();
+                x_[k] = static_cast<result_type>((e0 + ((uint64_t)e() << 32)) & Max);
+            }
+        }
+        c_ = (x_[r-1] == 0);
+        i_ = 0;
+    }
+
+    template <class Sseq>
+        requires is_seed_sequence_v<Sseq, subtract_with_carry_engine>
+    void seed(Sseq& q) {
+        const unsigned k = 1 + (w - 1) / 32;
+        static_assert(k <= 2);
+        uint32_t ar[r * k];
+        q.generate(ar, ar + r * k);
+        for (size_t j = 0; j < r; ++j) {
+            if constexpr (k == 1)
+                x_[j] = static_cast<result_type>(ar[j] & Max);
+            else
+                x_[j] = static_cast<result_type>(
+                    (ar[2*j] + ((uint64_t)ar[2*j+1] << 32)) & Max);
+        }
+        c_ = (x_[r-1] == 0);
+        i_ = 0;
+    }
+
+    result_type operator()() {
+        const result_type& xs = x_[(i_ + (r - s)) % r];
+        result_type& xr       = x_[i_];
+        result_type new_c     = (c_ == 0) ? (xs < xr) : (xs != 0 ? xs <= xr : 1);
+        xr                    = (xs - xr - c_) & Max;
+        c_                    = new_c;
+        i_                    = (i_ + 1) % r;
+        return xr;
+    }
+    void discard(unsigned long long z) {
+        for (; z; --z) operator()();
+    }
+
+    friend bool operator==(const subtract_with_carry_engine& lhs,
+                           const subtract_with_carry_engine& rhs) {
+        if (lhs.c_ != rhs.c_) return false;
+        if (lhs.i_ == rhs.i_)
+            return std::equal(lhs.x_, lhs.x_ + r, rhs.x_);
+        if (lhs.i_ == 0 || rhs.i_ == 0) {
+            size_t j = std::min(r - lhs.i_, r - rhs.i_);
+            if (!std::equal(lhs.x_ + lhs.i_, lhs.x_ + lhs.i_ + j, rhs.x_ + rhs.i_))
+                return false;
+            if (lhs.i_ == 0)
+                return std::equal(lhs.x_ + j, lhs.x_ + r, rhs.x_);
+            return std::equal(lhs.x_, lhs.x_ + (r - j), rhs.x_ + j);
+        }
+        if (lhs.i_ < rhs.i_) {
+            size_t j = r - rhs.i_;
+            if (!std::equal(lhs.x_ + lhs.i_, lhs.x_ + lhs.i_ + j, rhs.x_ + rhs.i_))
+                return false;
+            if (!std::equal(lhs.x_ + lhs.i_ + j, lhs.x_ + r, rhs.x_))
+                return false;
+            return std::equal(lhs.x_, lhs.x_ + lhs.i_, rhs.x_ + (r - (lhs.i_ + j)));
+        }
+        size_t j = r - lhs.i_;
+        if (!std::equal(rhs.x_ + rhs.i_, rhs.x_ + rhs.i_ + j, lhs.x_ + lhs.i_))
+            return false;
+        if (!std::equal(rhs.x_ + rhs.i_ + j, rhs.x_ + r, lhs.x_))
+            return false;
+        return std::equal(rhs.x_, rhs.x_ + rhs.i_, lhs.x_ + (r - (rhs.i_ + j)));
+    }
+    friend bool operator!=(const subtract_with_carry_engine& lhs,
+                           const subtract_with_carry_engine& rhs) {
+        return !(lhs == rhs);
+    }
+};
+
+using ranlux24_base = subtract_with_carry_engine<uint_fast32_t, 24, 10, 24>;
+using ranlux48_base = subtract_with_carry_engine<uint_fast64_t, 48,  5, 12>;
+
+//===----------------------------------------------------------------------===//
+// discard_block_engine
+//===----------------------------------------------------------------------===//
+
+template <class Engine, size_t p, size_t rused>
+class discard_block_engine {
+    Engine e_;
+    int n_;
+
+    static_assert(0 < rused);
+    static_assert(rused <= p);
+    static_assert(rused <= (size_t)numeric_limits<int>::max());
+
+public:
+    typedef typename Engine::result_type result_type;
+
+    static inline constexpr const size_t block_size = p;
+    static inline constexpr const size_t used_block = rused;
+
+    static constexpr result_type Min = Engine::min();
+    static constexpr result_type Max = Engine::max();
+    static constexpr result_type min() { return Engine::min(); }
+    static constexpr result_type max() { return Engine::max(); }
+
+    discard_block_engine() : n_(0) {}
+    explicit discard_block_engine(const Engine& e) : e_(e), n_(0) {}
+    explicit discard_block_engine(Engine&& e) : e_(static_cast<Engine&&>(e)), n_(0) {}
+    explicit discard_block_engine(result_type sd) : e_(sd), n_(0) {}
+    template <class Sseq>
+        requires (is_seed_sequence_v<Sseq, discard_block_engine> &&
+                  !is_convertible_v<Sseq, Engine>)
+    explicit discard_block_engine(Sseq& q) : e_(q), n_(0) {}
+
+    void seed()               { e_.seed(); n_ = 0; }
+    void seed(result_type sd) { e_.seed(sd); n_ = 0; }
+    template <class Sseq>
+        requires is_seed_sequence_v<Sseq, discard_block_engine>
+    void seed(Sseq& q) { e_.seed(q); n_ = 0; }
+
+    result_type operator()() {
+        if (n_ >= static_cast<int>(rused)) {
+            e_.discard(p - rused);
+            n_ = 0;
+        }
+        ++n_;
+        return e_();
+    }
+    void discard(unsigned long long z) {
+        for (; z; --z) operator()();
+    }
+
+    const Engine& base() const noexcept { return e_; }
+
+    friend bool operator==(const discard_block_engine& lhs,
+                           const discard_block_engine& rhs) {
+        return lhs.n_ == rhs.n_ && lhs.e_ == rhs.e_;
+    }
+    friend bool operator!=(const discard_block_engine& lhs,
+                           const discard_block_engine& rhs) {
+        return !(lhs == rhs);
+    }
+};
+
+using ranlux24 = discard_block_engine<ranlux24_base, 223, 23>;
+using ranlux48 = discard_block_engine<ranlux48_base, 389, 11>;
+
+//===----------------------------------------------------------------------===//
+// independent_bits_engine
+//===----------------------------------------------------------------------===//
+
+template <class Engine, size_t w, class UIntType>
+class independent_bits_engine {
+    template <class UInt, UInt R0, size_t Wp, size_t Mp>
+    struct get_n_helper {
+        static constexpr const size_t Dt = numeric_limits<UInt>::digits;
+        static constexpr const size_t Np = Wp / Mp + (Wp % Mp != 0);
+        static constexpr const size_t W0 = Wp / Np;
+        static constexpr const UInt   Y0 = W0 >= Dt ? 0 : (R0 >> W0) << W0;
+    public:
+        static constexpr const size_t value = (R0 - Y0 > Y0 / Np) ? Np + 1 : Np;
+    };
+
+public:
+    typedef UIntType result_type;
+
+private:
+    Engine e_;
+
+    static constexpr const result_type Dt = numeric_limits<result_type>::digits;
+    static_assert(0 < w);
+    static_assert(w <= Dt);
+
+    typedef typename Engine::result_type engine_result_type;
+    using working_result_type = conditional_t<
+        sizeof(engine_result_type) <= sizeof(result_type),
+        result_type, engine_result_type>;
+
+    static constexpr const working_result_type Rp =
+        Engine::max() - Engine::min() + working_result_type(1);
+    static constexpr const size_t m_  = rand_log2<working_result_type, Rp>::value;
+    static constexpr const size_t n_  = get_n_helper<working_result_type, Rp, w, m_>::value;
+    static constexpr const size_t w0_ = w / n_;
+    static constexpr const size_t n0_ = n_ - w % n_;
+    static constexpr const size_t WDt = numeric_limits<working_result_type>::digits;
+    static constexpr const size_t EDt = numeric_limits<engine_result_type>::digits;
+    static constexpr const working_result_type y0_ =
+        w0_ >= WDt ? 0 : (Rp >> w0_) << w0_;
+    static constexpr const working_result_type y1_ =
+        w0_ >= WDt - 1 ? 0 : (Rp >> (w0_ + 1)) << (w0_ + 1);
+    static constexpr const engine_result_type mask0_ =
+        w0_ > 0 ? engine_result_type(~0) >> (EDt - w0_) : engine_result_type(0);
+    static constexpr const engine_result_type mask1_ =
+        w0_ < EDt - 1 ? engine_result_type(~0) >> (EDt - (w0_ + 1))
+                      : engine_result_type(~0);
+
+public:
+    static constexpr const result_type Min = 0;
+    static constexpr const result_type Max =
+        (w == Dt) ? result_type(~0) : (result_type(1) << w) - result_type(1);
+    static_assert(Min < Max);
+
+    static constexpr result_type min() { return Min; }
+    static constexpr result_type max() { return Max; }
+
+    independent_bits_engine() {}
+    explicit independent_bits_engine(const Engine& e) : e_(e) {}
+    explicit independent_bits_engine(Engine&& e) : e_(static_cast<Engine&&>(e)) {}
+    explicit independent_bits_engine(result_type sd) : e_(sd) {}
+    template <class Sseq>
+        requires (is_seed_sequence_v<Sseq, independent_bits_engine> &&
+                  !is_convertible_v<Sseq, Engine>)
+    explicit independent_bits_engine(Sseq& q) : e_(q) {}
+
+    void seed() { e_.seed(); }
+    void seed(result_type sd) { e_.seed(sd); }
+    template <class Sseq>
+        requires is_seed_sequence_v<Sseq, independent_bits_engine>
+    void seed(Sseq& q) { e_.seed(q); }
+
+    result_type operator()() {
+        if constexpr (Rp != 0) {
+            result_type sp = 0;
+            for (size_t k = 0; k < n0_; ++k) {
+                engine_result_type u;
+                do { u = e_() - Engine::min(); } while (u >= y0_);
+                sp = static_cast<result_type>(ibe_lshift<w0_>(sp) + (u & mask0_));
+            }
+            for (size_t k = n0_; k < n_; ++k) {
+                engine_result_type u;
+                do { u = e_() - Engine::min(); } while (u >= y1_);
+                sp = static_cast<result_type>(ibe_lshift<w0_ + 1>(sp) + (u & mask1_));
+            }
+            return sp;
+        } else {
+            return static_cast<result_type>(e_() & mask0_);
+        }
+    }
+    void discard(unsigned long long z) {
+        for (; z; --z) operator()();
+    }
+
+    const Engine& base() const noexcept { return e_; }
+
+    friend bool operator==(const independent_bits_engine& lhs,
+                           const independent_bits_engine& rhs) {
+        return lhs.e_ == rhs.e_;
+    }
+    friend bool operator!=(const independent_bits_engine& lhs,
+                           const independent_bits_engine& rhs) {
+        return !(lhs == rhs);
+    }
+
+private:
+    template <size_t count>
+    static result_type ibe_lshift(result_type x) {
+        if constexpr (count < Dt) return x << count;
+        else                      return result_type(0);
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// shuffle_order_engine
+//===----------------------------------------------------------------------===//
+
+template <uint64_t X, uint64_t Y>
+struct ugcd {
+    static constexpr const uint64_t value = ugcd<Y, X % Y>::value;
+};
+template <uint64_t X>
+struct ugcd<X, 0> {
+    static constexpr const uint64_t value = X;
+};
+
+template <uint64_t N, uint64_t D>
+struct uratio {
+    static_assert(D != 0);
+    static constexpr const uint64_t gcd_ = ugcd<N, D>::value;
+    static constexpr const uint64_t num  = N / gcd_;
+    static constexpr const uint64_t den  = D / gcd_;
+};
+
+template <class Engine, size_t k>
+class shuffle_order_engine {
+    static_assert(0 < k);
+
+public:
+    typedef typename Engine::result_type result_type;
+
+private:
+    Engine e_;
+    result_type v_[k];
+    result_type y_;
+
+public:
+    static inline constexpr const size_t table_size = k;
+
+    static constexpr const result_type Min = Engine::min();
+    static constexpr const result_type Max = Engine::max();
+    static_assert(Min < Max);
+    static constexpr result_type min() { return Min; }
+    static constexpr result_type max() { return Max; }
+
+    static constexpr const unsigned long long Rp = (unsigned long long)(Max - Min) + 1ull;
+
+    shuffle_order_engine()                          { init(); }
+    explicit shuffle_order_engine(const Engine& e) : e_(e) { init(); }
+    explicit shuffle_order_engine(Engine&& e) : e_(static_cast<Engine&&>(e)) { init(); }
+    explicit shuffle_order_engine(result_type sd) : e_(sd) { init(); }
+    template <class Sseq>
+        requires (is_seed_sequence_v<Sseq, shuffle_order_engine> &&
+                  !is_convertible_v<Sseq, Engine>)
+    explicit shuffle_order_engine(Sseq& q) : e_(q) { init(); }
+
+    void seed()               { e_.seed(); init(); }
+    void seed(result_type sd) { e_.seed(sd); init(); }
+    template <class Sseq>
+        requires is_seed_sequence_v<Sseq, shuffle_order_engine>
+    void seed(Sseq& q) { e_.seed(q); init(); }
+
+    result_type operator()() {
+        if constexpr (Rp != 0 || !(k & 1)) {
+            using Ratio = uratio<k, Rp != 0 ? Rp : 0x8000000000000000ull>;
+            if constexpr (Ratio::num > 0xFFFFFFFFFFFFFFFFull / (Max - Min)) {
+                return soe_evalf<Ratio::num, Ratio::den>();
+            } else {
+                const size_t j = static_cast<size_t>(Ratio::num * (y_ - Min) / Ratio::den);
+                y_   = v_[j];
+                v_[j] = e_();
+                return y_;
+            }
+        } else {
+            return soe_evalf<k, 0>();
+        }
+    }
+    void discard(unsigned long long z) {
+        for (; z; --z) operator()();
+    }
+
+    const Engine& base() const noexcept { return e_; }
+
+    friend bool operator==(const shuffle_order_engine& lhs,
+                           const shuffle_order_engine& rhs) {
+        return lhs.y_ == rhs.y_ &&
+               std::equal(lhs.v_, lhs.v_ + k, rhs.v_) &&
+               lhs.e_ == rhs.e_;
+    }
+    friend bool operator!=(const shuffle_order_engine& lhs,
+                           const shuffle_order_engine& rhs) {
+        return !(lhs == rhs);
+    }
+
+private:
+    void init() {
+        for (size_t j = 0; j < k; ++j) v_[j] = e_();
+        y_ = e_();
+    }
+    template <uint64_t num, uint64_t den>
+    result_type soe_evalf() {
+        const double fp = den == 0 ? num / (2. * 0x8000000000000000ull) : num / (double)den;
+        const size_t j  = static_cast<size_t>(fp * (y_ - Min));
+        y_   = v_[j];
+        v_[j] = e_();
+        return y_;
+    }
+};
+
+using knuth_b = shuffle_order_engine<minstd_rand0, 256>;
+
+//===----------------------------------------------------------------------===//
+// default_random_engine
+//===----------------------------------------------------------------------===//
+
+using default_random_engine = minstd_rand;
+
+//===----------------------------------------------------------------------===//
+// random_device
+//===----------------------------------------------------------------------===//
+
+class random_device {
+    int fd_;
+
+public:
+    typedef unsigned result_type;
+
+    static constexpr result_type min() { return 0; }
+    static constexpr result_type max() { return 0xFFFFFFFFu; }
+
+    random_device() {
+        fd_ = ::open("/dev/urandom", O_RDONLY);
+        if (fd_ < 0) __builtin_trap();
+    }
+    explicit random_device(const char* /*token*/) : random_device() {}
+    ~random_device() { if (fd_ >= 0) ::close(fd_); }
+
+    random_device(const random_device&)            = delete;
+    random_device& operator=(const random_device&) = delete;
+
+    result_type operator()() {
+        result_type v;
+        if (::read(fd_, &v, sizeof(v)) != (ssize_t)sizeof(v)) __builtin_trap();
+        return v;
+    }
+    double entropy() const noexcept { return 0.0; }
+};
+
+//===----------------------------------------------------------------------===//
+// seed_seq
+//===----------------------------------------------------------------------===//
+
+class seed_seq {
+public:
+    typedef uint32_t result_type;
+
+    seed_seq() noexcept {}
+
+    template <class T>
+        requires is_integral_v<T>
+    seed_seq(initializer_list<T> il) {
+        init(il.begin(), il.end());
+    }
+
+    template <class InputIterator>
+    seed_seq(InputIterator first, InputIterator last) {
+        static_assert(is_integral_v<typename iterator_traits<InputIterator>::value_type>,
+            "seed_seq: value_type must be integral");
+        init(first, last);
+    }
+
+    template <class RandomAccessIterator>
+    void generate(RandomAccessIterator first, RandomAccessIterator last) {
+        using value_type = typename iterator_traits<RandomAccessIterator>::value_type;
+        static_assert(is_unsigned_v<value_type> && sizeof(value_type) >= sizeof(uint32_t),
+            "seed_seq::generate: iterator value_type must be an unsigned integer >= 32 bits");
+        if (first == last) return;
+        std::fill(first, last, 0x8b8b8b8bu);
+        const size_t n  = static_cast<size_t>(last - first);
+        const size_t ss = v_.size();
+        const size_t t  = (n >= 623) ? 11 : (n >= 68) ? 7 : (n >= 39) ? 5 : (n >= 7) ? 3 : (n - 1) / 2;
+        const size_t p  = (n - t) / 2;
+        const size_t q  = p + t;
+        const size_t m  = std::max(ss + 1, n);
+        {
+            result_type rr = 1664525 * tp(first[0] ^ first[p] ^ first[n-1]);
+            first[p] += rr;
+            rr += ss;
+            first[q] += rr;
+            first[0] = rr;
+        }
+        size_t kmodn  = 0;
+        size_t k1modn = n - 1;
+        size_t kpmodn = p % n;
+        size_t kqmodn = q % n;
+        for (size_t k = 1; k <= ss; ++k) {
+            if (++kmodn  == n) kmodn  = 0;
+            if (++k1modn == n) k1modn = 0;
+            if (++kpmodn == n) kpmodn = 0;
+            if (++kqmodn == n) kqmodn = 0;
+            result_type rr = 1664525 * tp(first[kmodn] ^ first[kpmodn] ^ first[k1modn]);
+            first[kpmodn] += rr;
+            rr += kmodn + v_[k-1];
+            first[kqmodn] += rr;
+            first[kmodn] = rr;
+        }
+        for (size_t k = ss + 1; k < m; ++k) {
+            if (++kmodn  == n) kmodn  = 0;
+            if (++k1modn == n) k1modn = 0;
+            if (++kpmodn == n) kpmodn = 0;
+            if (++kqmodn == n) kqmodn = 0;
+            result_type rr = 1664525 * tp(first[kmodn] ^ first[kpmodn] ^ first[k1modn]);
+            first[kpmodn] += rr;
+            rr += kmodn;
+            first[kqmodn] += rr;
+            first[kmodn] = rr;
+        }
+        for (size_t k = m; k < m + n; ++k) {
+            if (++kmodn  == n) kmodn  = 0;
+            if (++k1modn == n) k1modn = 0;
+            if (++kpmodn == n) kpmodn = 0;
+            if (++kqmodn == n) kqmodn = 0;
+            result_type rr = 1566083941 * tp(first[kmodn] + first[kpmodn] + first[k1modn]);
+            first[kpmodn] ^= rr;
+            rr -= kmodn;
+            first[kqmodn] ^= rr;
+            first[kmodn] = rr;
+        }
+    }
+
+    size_t size() const noexcept { return v_.size(); }
+    template <class OutputIterator>
+    void param(OutputIterator dest) const {
+        std::copy(v_.begin(), v_.end(), dest);
+    }
+
+    seed_seq(const seed_seq&)            = delete;
+    void operator=(const seed_seq&)      = delete;
+
+private:
+    static result_type tp(result_type x) { return x ^ (x >> 27); }
+
+    template <class InputIterator>
+    void init(InputIterator first, InputIterator last) {
+        for (auto s = first; s != last; ++s)
+            v_.push_back(*s & 0xFFFFFFFF);
+    }
+
+    vector<result_type> v_;
+};
+
+//===----------------------------------------------------------------------===//
+// generate_canonical
+//===----------------------------------------------------------------------===//
+
+template <class RealType, size_t bits, class URNG>
+RealType generate_canonical(URNG& g) {
+    const size_t dt    = numeric_limits<RealType>::digits;
+    const size_t b     = dt < bits ? dt : bits;
+    const size_t log_r = rand_log2<uint64_t, URNG::max() - URNG::min() + uint64_t(1)>::value;
+    const size_t k     = b / log_r + (b % log_r != 0) + (b == 0);
+    const RealType rp  = static_cast<RealType>(URNG::max() - URNG::min()) + RealType(1);
+    RealType base      = rp;
+    RealType sp        = static_cast<RealType>(g() - URNG::min());
+    for (size_t i = 1; i < k; ++i, base *= rp)
+        sp += static_cast<RealType>(g() - URNG::min()) * base;
+    return sp / base;
+}
+
+//===----------------------------------------------------------------------===//
+// Internal: __independent_bits_engine (runtime-width, used by uniform_int)
+//===----------------------------------------------------------------------===//
+
+template <class Engine, class UIntType>
+class ibe_runtime {
+public:
+    typedef UIntType result_type;
+
+private:
+    typedef typename Engine::result_type engine_result_type;
+    using working_result_type = conditional_t<
+        sizeof(engine_result_type) <= sizeof(result_type),
+        result_type, engine_result_type>;
+
+    Engine& e_;
+    size_t w_;
+    size_t w0_;
+    size_t n_;
+    size_t n0_;
+    working_result_type y0_;
+    working_result_type y1_;
+    engine_result_type mask0_;
+    engine_result_type mask1_;
+
+    static constexpr const working_result_type Rp =
+        Engine::max() - Engine::min() + working_result_type(1);
+    static constexpr const size_t m_   = rand_log2<working_result_type, Rp>::value;
+    static constexpr const size_t WDt  = numeric_limits<working_result_type>::digits;
+    static constexpr const size_t EDt  = numeric_limits<engine_result_type>::digits;
+
+public:
+    ibe_runtime(Engine& e, size_t w) : e_(e), w_(w) {
+        n_  = w_ / m_ + (w_ % m_ != 0);
+        w0_ = w_ / n_;
+        if (Rp == 0)
+            y0_ = Rp;
+        else if (w0_ < WDt)
+            y0_ = (Rp >> w0_) << w0_;
+        else
+            y0_ = 0;
+        if (Rp - y0_ > y0_ / n_) {
+            ++n_;
+            w0_ = w_ / n_;
+            if (w0_ < WDt) y0_ = (Rp >> w0_) << w0_;
+            else            y0_ = 0;
+        }
+        n0_ = n_ - w_ % n_;
+        if (w0_ < WDt - 1)
+            y1_ = (Rp >> (w0_ + 1)) << (w0_ + 1);
+        else
+            y1_ = 0;
+        mask0_ = w0_ > 0 ? engine_result_type(~0) >> (EDt - w0_)     : engine_result_type(0);
+        mask1_ = w0_ < EDt - 1 ? engine_result_type(~0) >> (EDt - (w0_ + 1))
+                               : engine_result_type(~0);
+    }
+
+    result_type operator()() {
+        if constexpr (Rp == 0)
+            return static_cast<result_type>(e_() & mask0_);
+        const size_t w_rt = numeric_limits<result_type>::digits;
+        result_type sp = 0;
+        for (size_t k = 0; k < n0_; ++k) {
+            engine_result_type u;
+            do { u = e_() - Engine::min(); } while (u >= y0_);
+            if (w0_ < w_rt)
+                sp <<= w0_;
+            else
+                sp = 0;
+            sp += u & mask0_;
+        }
+        for (size_t k = n0_; k < n_; ++k) {
+            engine_result_type u;
+            do { u = e_() - Engine::min(); } while (u >= y1_);
+            if (w0_ < w_rt - 1)
+                sp <<= w0_ + 1;
+            else
+                sp = 0;
+            sp += u & mask1_;
+        }
+        return sp;
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// clamp_to_integral (internal, used by poisson_distribution)
+//===----------------------------------------------------------------------===//
+
+template <class IntT, class FloatT,
+          bool FloatBigger = (numeric_limits<FloatT>::digits > numeric_limits<IntT>::digits),
+          int Bits = (numeric_limits<IntT>::digits - numeric_limits<FloatT>::digits)>
+constexpr IntT max_representable_int_for_float() noexcept {
+    static_assert(is_floating_point_v<FloatT>);
+    static_assert(is_integral_v<IntT>);
+    static_assert(numeric_limits<FloatT>::radix == 2);
+    return FloatBigger ? numeric_limits<IntT>::max()
+                       : (numeric_limits<IntT>::max() >> Bits << Bits);
+}
+
+template <class IntT, class RealT>
+IntT clamp_to_integral(RealT r) noexcept {
+    using Lim = numeric_limits<IntT>;
+    const IntT max_val = max_representable_int_for_float<IntT, RealT>();
+    if (r >= ::nextafter(static_cast<RealT>(max_val), INFINITY))
+        return Lim::max();
+    else if (r <= Lim::lowest())
+        return Lim::min();
+    return static_cast<IntT>(r);
+}
+
+//===----------------------------------------------------------------------===//
+// uniform_int_distribution
+//===----------------------------------------------------------------------===//
+
+template <class IntType = int>
+class uniform_int_distribution {
+    static_assert(rand_is_valid_inttype<IntType>::value,
+        "uniform_int_distribution: IntType must be a supported integer type");
+
+public:
+    typedef IntType result_type;
+
+    class param_type {
+        result_type a_;
+        result_type b_;
+    public:
+        typedef uniform_int_distribution distribution_type;
+        explicit param_type(result_type a = 0,
+                            result_type b = numeric_limits<result_type>::max())
+            : a_(a), b_(b) {}
+        result_type a() const { return a_; }
+        result_type b() const { return b_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.a_ == y.a_ && x.b_ == y.b_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+
+public:
+    uniform_int_distribution() : uniform_int_distribution(0) {}
+    explicit uniform_int_distribution(result_type a,
+        result_type b = numeric_limits<result_type>::max())
+        : p_(param_type(a, b)) {}
+    explicit uniform_int_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p);
+
+    result_type a() const { return p_.a(); }
+    result_type b() const { return p_.b(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return a(); }
+    result_type max() const { return b(); }
+
+    friend bool operator==(const uniform_int_distribution& x,
+                           const uniform_int_distribution& y) { return x.p_ == y.p_; }
+    friend bool operator!=(const uniform_int_distribution& x,
+                           const uniform_int_distribution& y) { return !(x == y); }
+};
+
+template <class IntType>
+template <class URNG>
+typename uniform_int_distribution<IntType>::result_type
+uniform_int_distribution<IntType>::operator()(URNG& g, const param_type& p) {
+    static_assert(rand_is_valid_urng<URNG>::value, "");
+    using UIntType = conditional_t<sizeof(result_type) <= sizeof(uint32_t),
+                                   uint32_t, make_unsigned_t<result_type>>;
+    const UIntType rp = UIntType(p.b()) - UIntType(p.a()) + UIntType(1);
+    if (rp == 1) return p.a();
+    const size_t dt = numeric_limits<UIntType>::digits;
+    typedef ibe_runtime<URNG, UIntType> Eng;
+    if (rp == 0)
+        return static_cast<result_type>(Eng(g, dt)());
+    size_t w = dt - static_cast<size_t>(std::countl_zero(rp)) - 1;
+    if ((rp & (numeric_limits<UIntType>::max() >> (dt - w))) != 0)
+        ++w;
+    Eng e(g, w);
+    UIntType u;
+    do { u = e(); } while (u >= rp);
+    return static_cast<result_type>(u + p.a());
+}
+
+//===----------------------------------------------------------------------===//
+// uniform_real_distribution
+//===----------------------------------------------------------------------===//
+
+template <class RealType = double>
+class uniform_real_distribution {
+    static_assert(rand_is_valid_realtype<RealType>::value,
+        "uniform_real_distribution: RealType must be float, double, or long double");
+
+public:
+    typedef RealType result_type;
+
+    class param_type {
+        result_type a_;
+        result_type b_;
+    public:
+        typedef uniform_real_distribution distribution_type;
+        explicit param_type(result_type a = 0, result_type b = 1)
+            : a_(a), b_(b) {}
+        result_type a() const { return a_; }
+        result_type b() const { return b_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.a_ == y.a_ && x.b_ == y.b_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+
+public:
+    uniform_real_distribution() : uniform_real_distribution(0) {}
+    explicit uniform_real_distribution(result_type a, result_type b = 1)
+        : p_(param_type(a, b)) {}
+    explicit uniform_real_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p) {
+        static_assert(rand_is_valid_urng<URNG>::value, "");
+        return (p.b() - p.a()) *
+               generate_canonical<result_type, numeric_limits<result_type>::digits>(g) +
+               p.a();
+    }
+
+    result_type a() const { return p_.a(); }
+    result_type b() const { return p_.b(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return a(); }
+    result_type max() const { return b(); }
+
+    friend bool operator==(const uniform_real_distribution& x,
+                           const uniform_real_distribution& y) { return x.p_ == y.p_; }
+    friend bool operator!=(const uniform_real_distribution& x,
+                           const uniform_real_distribution& y) { return !(x == y); }
+};
+
+//===----------------------------------------------------------------------===//
+// bernoulli_distribution
+//===----------------------------------------------------------------------===//
+
+class bernoulli_distribution {
+public:
+    typedef bool result_type;
+
+    class param_type {
+        double p_;
+    public:
+        typedef bernoulli_distribution distribution_type;
+        explicit param_type(double p = 0.5) : p_(p) {}
+        double p() const { return p_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.p_ == y.p_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+
+public:
+    bernoulli_distribution() : bernoulli_distribution(0.5) {}
+    explicit bernoulli_distribution(double p) : p_(param_type(p)) {}
+    explicit bernoulli_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p) {
+        static_assert(rand_is_valid_urng<URNG>::value, "");
+        uniform_real_distribution<double> gen;
+        return gen(g) < p.p();
+    }
+
+    double p() const { return p_.p(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return false; }
+    result_type max() const { return true; }
+
+    friend bool operator==(const bernoulli_distribution& x,
+                           const bernoulli_distribution& y) { return x.p_ == y.p_; }
+    friend bool operator!=(const bernoulli_distribution& x,
+                           const bernoulli_distribution& y) { return !(x == y); }
+};
+
+//===----------------------------------------------------------------------===//
+// normal_distribution (Marsaglia polar method)
+//===----------------------------------------------------------------------===//
+
+template <class RealType = double>
+class normal_distribution {
+    static_assert(rand_is_valid_realtype<RealType>::value,
+        "normal_distribution: RealType must be float, double, or long double");
+
+public:
+    typedef RealType result_type;
+
+    class param_type {
+        result_type mean_;
+        result_type stddev_;
+    public:
+        typedef normal_distribution distribution_type;
+        explicit param_type(result_type mean = 0, result_type stddev = 1)
+            : mean_(mean), stddev_(stddev) {}
+        result_type mean()   const { return mean_; }
+        result_type stddev() const { return stddev_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.mean_ == y.mean_ && x.stddev_ == y.stddev_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+    result_type v_;
+    bool v_hot_;
+
+public:
+    normal_distribution() : normal_distribution(0) {}
+    explicit normal_distribution(result_type mean, result_type stddev = 1)
+        : p_(param_type(mean, stddev)), v_hot_(false) {}
+    explicit normal_distribution(const param_type& p) : p_(p), v_hot_(false) {}
+    void reset() { v_hot_ = false; }
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p) {
+        static_assert(rand_is_valid_urng<URNG>::value, "");
+        result_type up;
+        if (v_hot_) {
+            v_hot_ = false;
+            up = v_;
+        } else {
+            uniform_real_distribution<result_type> uni(-1, 1);
+            result_type u, v, s;
+            do {
+                u = uni(g); v = uni(g);
+                s = u * u + v * v;
+            } while (s > 1 || s == 0);
+            result_type fp = std::sqrt(-2 * std::log(s) / s);
+            v_     = v * fp;
+            v_hot_ = true;
+            up     = u * fp;
+        }
+        return up * p.stddev() + p.mean();
+    }
+
+    result_type mean()   const { return p_.mean(); }
+    result_type stddev() const { return p_.stddev(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return -numeric_limits<result_type>::infinity(); }
+    result_type max() const { return  numeric_limits<result_type>::infinity(); }
+
+    friend bool operator==(const normal_distribution& x, const normal_distribution& y) {
+        return x.p_ == y.p_ && x.v_hot_ == y.v_hot_ && (!x.v_hot_ || x.v_ == y.v_);
+    }
+    friend bool operator!=(const normal_distribution& x, const normal_distribution& y) {
+        return !(x == y);
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// exponential_distribution
+//===----------------------------------------------------------------------===//
+
+template <class RealType = double>
+class exponential_distribution {
+    static_assert(rand_is_valid_realtype<RealType>::value,
+        "exponential_distribution: RealType must be float, double, or long double");
+
+public:
+    typedef RealType result_type;
+
+    class param_type {
+        result_type lambda_;
+    public:
+        typedef exponential_distribution distribution_type;
+        explicit param_type(result_type lambda = 1) : lambda_(lambda) {}
+        result_type lambda() const { return lambda_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.lambda_ == y.lambda_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+
+public:
+    exponential_distribution() : exponential_distribution(1) {}
+    explicit exponential_distribution(result_type lambda) : p_(param_type(lambda)) {}
+    explicit exponential_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p) {
+        static_assert(rand_is_valid_urng<URNG>::value, "");
+        return -std::log(result_type(1) -
+            generate_canonical<result_type, numeric_limits<result_type>::digits>(g))
+            / p.lambda();
+    }
+
+    result_type lambda() const { return p_.lambda(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return 0; }
+    result_type max() const { return numeric_limits<result_type>::infinity(); }
+
+    friend bool operator==(const exponential_distribution& x,
+                           const exponential_distribution& y) { return x.p_ == y.p_; }
+    friend bool operator!=(const exponential_distribution& x,
+                           const exponential_distribution& y) { return !(x == y); }
+};
+
+//===----------------------------------------------------------------------===//
+// poisson_distribution
+//===----------------------------------------------------------------------===//
+
+template <class IntType = int>
+class poisson_distribution {
+    static_assert(rand_is_valid_inttype<IntType>::value,
+        "poisson_distribution: IntType must be a supported integer type");
+
+public:
+    typedef IntType result_type;
+
+    class param_type {
+        double mean_;
+        double s_;
+        double d_;
+        double l_;
+        double omega_;
+        double c0_, c1_, c2_, c3_, c_;
+
+    public:
+        typedef poisson_distribution distribution_type;
+        explicit param_type(double mean = 1.0);
+        double mean() const { return mean_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.mean_ == y.mean_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+        friend class poisson_distribution;
+    };
+
+private:
+    param_type p_;
+
+public:
+    poisson_distribution() : poisson_distribution(1.0) {}
+    explicit poisson_distribution(double mean) : p_(mean) {}
+    explicit poisson_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p);
+
+    double mean() const { return p_.mean(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return 0; }
+    result_type max() const { return numeric_limits<result_type>::max(); }
+
+    friend bool operator==(const poisson_distribution& x, const poisson_distribution& y) {
+        return x.p_ == y.p_;
+    }
+    friend bool operator!=(const poisson_distribution& x, const poisson_distribution& y) {
+        return !(x == y);
+    }
+};
+
+template <class IntType>
+poisson_distribution<IntType>::param_type::param_type(double mean)
+    : mean_(std::isinf(mean) ? numeric_limits<double>::max() : mean) {
+    if (mean_ < 10) {
+        s_ = 0; d_ = 0;
+        l_ = std::exp(-mean_);
+        omega_ = c3_ = c2_ = c1_ = c0_ = c_ = 0;
+    } else {
+        s_      = std::sqrt(mean_);
+        d_      = 6 * mean_ * mean_;
+        l_      = std::trunc(mean_ - 1.1484);
+        omega_  = .3989423 / s_;
+        double b1 = .4166667E-1 / mean_;
+        double b2 = .3 * b1 * b1;
+        c3_ = .1428571 * b1 * b2;
+        c2_ = b2 - 15. * c3_;
+        c1_ = b1 - 6. * b2 + 45. * c3_;
+        c0_ = 1. - b1 + 3. * b2 - 15. * c3_;
+        c_  = .1069 / mean_;
+    }
+}
+
+template <class IntType>
+template <class URNG>
+IntType poisson_distribution<IntType>::operator()(URNG& urng, const param_type& pr) {
+    static_assert(rand_is_valid_urng<URNG>::value, "");
+    double tx;
+    uniform_real_distribution<double> urd;
+    if (pr.mean_ < 10) {
+        tx = 0;
+        for (double pp = urd(urng); pp > pr.l_; ++tx)
+            pp *= urd(urng);
+    } else {
+        double difmuk;
+        double g = pr.mean_ + pr.s_ * normal_distribution<double>()(urng);
+        double u;
+        if (g > 0) {
+            tx = std::trunc(g);
+            if (tx >= pr.l_)
+                return clamp_to_integral<result_type>(tx);
+            difmuk = pr.mean_ - tx;
+            u = urd(urng);
+            if (pr.d_ * u >= difmuk * difmuk * difmuk)
+                return clamp_to_integral<result_type>(tx);
+        }
+        exponential_distribution<double> edist;
+        for (bool using_exp = false; true; using_exp = true) {
+            double e;
+            if (using_exp || g <= 0) {
+                double t;
+                do {
+                    e = edist(urng);
+                    u = urd(urng);
+                    u += u - 1;
+                    t = 1.8 + (u < 0 ? -e : e);
+                } while (t <= -.6744);
+                tx     = std::trunc(pr.mean_ + pr.s_ * t);
+                difmuk = pr.mean_ - tx;
+                using_exp = true;
+            }
+            double px, py;
+            if (tx < 10 && tx >= 0) {
+                const double fac[] = {1,1,2,6,24,120,720,5040,40320,362880};
+                px = -pr.mean_;
+                py = std::pow(pr.mean_, (double)tx) / fac[static_cast<int>(tx)];
+            } else {
+                double del = .8333333E-1 / tx;
+                del -= 4.8 * del * del * del;
+                double v = difmuk / tx;
+                if (std::abs(v) > 0.25)
+                    px = tx * std::log(1 + v) - difmuk - del;
+                else
+                    px = tx * v * v *
+                        (((((((.1250060 * v + -.1384794) * v + .1421878) * v + -.1661269) * v +
+                             .2000118) * v + -.2500068) * v + .3333333) * v + -.5) - del;
+                py = .3989423 / std::sqrt(tx);
+            }
+            double rr  = (0.5 - difmuk) / pr.s_;
+            double r2  = rr * rr;
+            double fx  = -0.5 * r2;
+            double fy  = pr.omega_ * (((pr.c3_ * r2 + pr.c2_) * r2 + pr.c1_) * r2 + pr.c0_);
+            if (using_exp) {
+                if (pr.c_ * std::abs(u) <= py * std::exp(px + e) - fy * std::exp(fx + e))
+                    break;
+            } else {
+                if (fy - u * fy <= py * std::exp(px - fx))
+                    break;
+            }
+        }
+    }
+    return clamp_to_integral<result_type>(tx);
+}
+
+//===----------------------------------------------------------------------===//
+// discrete_distribution
+//===----------------------------------------------------------------------===//
+
+template <class IntType = int>
+class discrete_distribution {
+    static_assert(rand_is_valid_inttype<IntType>::value,
+        "discrete_distribution: IntType must be a supported integer type");
+
+public:
+    typedef IntType result_type;
+
+    class param_type {
+        vector<double> p_;
+
+    public:
+        typedef discrete_distribution distribution_type;
+
+        param_type() {}
+        template <class InputIterator>
+        param_type(InputIterator f, InputIterator l) : p_(f, l) { init(); }
+        param_type(initializer_list<double> wl) : p_(wl.begin(), wl.end()) { init(); }
+        template <class UnaryOperation>
+        param_type(size_t nw, double xmin, double xmax, UnaryOperation fw);
+
+        vector<double> probabilities() const;
+
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.p_ == y.p_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+
+    private:
+        void init();
+        friend class discrete_distribution;
+    };
+
+private:
+    param_type p_;
+
+public:
+    discrete_distribution() {}
+    template <class InputIterator>
+    discrete_distribution(InputIterator f, InputIterator l) : p_(f, l) {}
+    discrete_distribution(initializer_list<double> wl) : p_(wl) {}
+    template <class UnaryOperation>
+    discrete_distribution(size_t nw, double xmin, double xmax, UnaryOperation fw)
+        : p_(nw, xmin, xmax, fw) {}
+    explicit discrete_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p) {
+        static_assert(rand_is_valid_urng<URNG>::value, "");
+        uniform_real_distribution<double> gen;
+        return static_cast<result_type>(
+            std::upper_bound(p.p_.begin(), p.p_.end(), gen(g)) - p.p_.begin());
+    }
+
+    vector<double> probabilities() const { return p_.probabilities(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return 0; }
+    result_type max() const { return static_cast<result_type>(p_.p_.size()); }
+
+    friend bool operator==(const discrete_distribution& x, const discrete_distribution& y) {
+        return x.p_ == y.p_;
+    }
+    friend bool operator!=(const discrete_distribution& x, const discrete_distribution& y) {
+        return !(x == y);
+    }
+};
+
+template <class IntType>
+template <class UnaryOperation>
+discrete_distribution<IntType>::param_type::param_type(
+    size_t nw, double xmin, double xmax, UnaryOperation fw) {
+    if (nw > 1) {
+        p_.reserve(nw - 1);
+        double d  = (xmax - xmin) / nw;
+        double d2 = d / 2;
+        for (size_t k = 0; k < nw; ++k)
+            p_.push_back(fw(xmin + k * d + d2));
+        init();
+    }
+}
+
+template <class IntType>
+void discrete_distribution<IntType>::param_type::init() {
+    if (!p_.empty()) {
+        if (p_.size() > 1) {
+            double s = std::accumulate(p_.begin(), p_.end(), 0.0);
+            for (auto it = p_.begin(); it != p_.end(); ++it)
+                *it /= s;
+            vector<double> t(p_.size() - 1);
+            std::partial_sum(p_.begin(), p_.end() - 1, t.begin());
+            swap(p_, t);
+        } else {
+            p_.clear();
+            p_.shrink_to_fit();
+        }
+    }
+}
+
+template <class IntType>
+vector<double> discrete_distribution<IntType>::param_type::probabilities() const {
+    size_t n = p_.size();
+    vector<double> pp(n + 1);
+    std::adjacent_difference(p_.begin(), p_.end(), pp.begin());
+    if (n > 0)
+        pp[n] = 1 - p_[n-1];
+    else
+        pp[0] = 1;
+    return pp;
+}
+
+// === MORE DISTRIBUTIONS APPEND POINT ===
+// Deferred: binomial_distribution, negative_binomial_distribution,
+// geometric_distribution, gamma_distribution, weibull_distribution,
+// extreme_value_distribution, lognormal_distribution, chi_squared_distribution,
+// cauchy_distribution, fisher_f_distribution, student_t_distribution,
+// piecewise_constant_distribution, piecewise_linear_distribution.
+// Also deferred: operator<< / operator>> for all engines and distributions.
+
+} // namespace std
