@@ -1805,11 +1805,1179 @@ vector<double> discrete_distribution<IntType>::param_type::probabilities() const
 }
 
 // === MORE DISTRIBUTIONS APPEND POINT ===
-// Deferred: binomial_distribution, negative_binomial_distribution,
-// geometric_distribution, gamma_distribution, weibull_distribution,
-// extreme_value_distribution, lognormal_distribution, chi_squared_distribution,
-// cauchy_distribution, fisher_f_distribution, student_t_distribution,
-// piecewise_constant_distribution, piecewise_linear_distribution.
-// Also deferred: operator<< / operator>> for all engines and distributions.
+// Still deferred: operator<< / operator>> for engines and distributions.
+
+//===----------------------------------------------------------------------===//
+// gamma_distribution
+//===----------------------------------------------------------------------===//
+
+template <class RealType = double>
+class gamma_distribution {
+    static_assert(rand_is_valid_realtype<RealType>::value,
+        "gamma_distribution: RealType must be float, double, or long double");
+
+public:
+    typedef RealType result_type;
+
+    class param_type {
+        result_type alpha_;
+        result_type beta_;
+    public:
+        typedef gamma_distribution distribution_type;
+        explicit param_type(result_type alpha = 1, result_type beta = 1)
+            : alpha_(alpha), beta_(beta) {}
+        result_type alpha() const { return alpha_; }
+        result_type beta()  const { return beta_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.alpha_ == y.alpha_ && x.beta_ == y.beta_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+
+public:
+    gamma_distribution() : gamma_distribution(1) {}
+    explicit gamma_distribution(result_type alpha, result_type beta = 1)
+        : p_(param_type(alpha, beta)) {}
+    explicit gamma_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p);
+
+    result_type alpha() const { return p_.alpha(); }
+    result_type beta()  const { return p_.beta(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return 0; }
+    result_type max() const { return numeric_limits<result_type>::infinity(); }
+
+    friend bool operator==(const gamma_distribution& x, const gamma_distribution& y) {
+        return x.p_ == y.p_;
+    }
+    friend bool operator!=(const gamma_distribution& x, const gamma_distribution& y) {
+        return !(x == y);
+    }
+};
+
+template <class RealType>
+template <class URNG>
+RealType gamma_distribution<RealType>::operator()(URNG& g, const param_type& p) {
+    static_assert(rand_is_valid_urng<URNG>::value, "");
+    result_type a = p.alpha();
+    uniform_real_distribution<result_type> gen(0, 1);
+    exponential_distribution<result_type> egen;
+    result_type x;
+    if (a == 1) {
+        x = egen(g);
+    } else if (a > 1) {
+        const result_type b = a - 1;
+        const result_type c = 3 * a - result_type(0.75);
+        while (true) {
+            const result_type u = gen(g);
+            const result_type v = gen(g);
+            const result_type w = u * (1 - u);
+            if (w != 0) {
+                const result_type y = std::sqrt(c / w) * (u - result_type(0.5));
+                x = b + y;
+                if (x >= 0) {
+                    const result_type z = 64 * w * w * w * v * v;
+                    if (z <= 1 - 2 * y * y / x)
+                        break;
+                    if (std::log(z) <= 2 * (b * std::log(x / b) - y))
+                        break;
+                }
+            }
+        }
+    } else {
+        while (true) {
+            const result_type u  = gen(g);
+            const result_type es = egen(g);
+            if (u <= 1 - a) {
+                x = std::pow(u, 1 / a);
+                if (x <= es)
+                    break;
+            } else {
+                const result_type e = -std::log((1 - u) / a);
+                x = std::pow(1 - a + a * e, 1 / a);
+                if (x <= e + es)
+                    break;
+            }
+        }
+    }
+    return x * p.beta();
+}
+
+//===----------------------------------------------------------------------===//
+// binomial_distribution
+//===----------------------------------------------------------------------===//
+
+template <class IntType = int>
+class binomial_distribution {
+    static_assert(rand_is_valid_inttype<IntType>::value,
+        "binomial_distribution: IntType must be a supported integer type");
+
+public:
+    typedef IntType result_type;
+
+    class param_type {
+        result_type t_;
+        double p_;
+        double pr_;
+        double odds_ratio_;
+        result_type r0_;
+    public:
+        typedef binomial_distribution distribution_type;
+        explicit param_type(result_type t = 1, double p = 0.5);
+        result_type t() const { return t_; }
+        double p() const { return p_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.t_ == y.t_ && x.p_ == y.p_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+        friend class binomial_distribution;
+    };
+
+private:
+    param_type p_;
+
+public:
+    binomial_distribution() : binomial_distribution(1) {}
+    explicit binomial_distribution(result_type t, double p = 0.5)
+        : p_(param_type(t, p)) {}
+    explicit binomial_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p);
+
+    result_type t() const { return p_.t(); }
+    double p() const { return p_.p(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return 0; }
+    result_type max() const { return t(); }
+
+    friend bool operator==(const binomial_distribution& x, const binomial_distribution& y) {
+        return x.p_ == y.p_;
+    }
+    friend bool operator!=(const binomial_distribution& x, const binomial_distribution& y) {
+        return !(x == y);
+    }
+};
+
+template <class IntType>
+binomial_distribution<IntType>::param_type::param_type(result_type t, double p)
+    : t_(t), p_(p) {
+    if (0 < p_ && p_ < 1) {
+        r0_ = static_cast<result_type>((t_ + 1) * p_);
+        pr_ = std::exp(
+            std::lgamma(t_ + 1.) - std::lgamma(r0_ + 1.) - std::lgamma(t_ - r0_ + 1.)
+            + r0_ * std::log(p_) + (t_ - r0_) * std::log(1 - p_));
+        odds_ratio_ = p_ / (1 - p_);
+    }
+}
+
+template <class IntType>
+template <class URNG>
+IntType binomial_distribution<IntType>::operator()(URNG& g, const param_type& pr) {
+    static_assert(rand_is_valid_urng<URNG>::value, "");
+    if (pr.t_ == 0 || pr.p_ == 0) return 0;
+    if (pr.p_ == 1) return pr.t_;
+    uniform_real_distribution<double> gen;
+    double u = gen(g) - pr.pr_;
+    if (u < 0) return pr.r0_;
+    double pu = pr.pr_;
+    double pd = pu;
+    result_type ru = pr.r0_;
+    result_type rd = ru;
+    while (true) {
+        bool do_break = true;
+        if (rd >= 1) {
+            pd *= rd / (pr.odds_ratio_ * (pr.t_ - rd + 1));
+            u -= pd;
+            do_break = false;
+            if (u < 0) return rd - 1;
+        }
+        if (rd != 0) --rd;
+        ++ru;
+        if (ru <= pr.t_) {
+            pu *= (pr.t_ - ru + 1) * pr.odds_ratio_ / ru;
+            u -= pu;
+            do_break = false;
+            if (u < 0) return ru;
+        }
+        if (do_break) return 0;
+    }
+}
+
+//===----------------------------------------------------------------------===//
+// negative_binomial_distribution
+//===----------------------------------------------------------------------===//
+
+template <class IntType = int>
+class negative_binomial_distribution {
+    static_assert(rand_is_valid_inttype<IntType>::value,
+        "negative_binomial_distribution: IntType must be a supported integer type");
+
+public:
+    typedef IntType result_type;
+
+    class param_type {
+        result_type k_;
+        double p_;
+    public:
+        typedef negative_binomial_distribution distribution_type;
+        explicit param_type(result_type k = 1, double p = 0.5) : k_(k), p_(p) {}
+        result_type k() const { return k_; }
+        double p() const { return p_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.k_ == y.k_ && x.p_ == y.p_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+
+public:
+    negative_binomial_distribution() : negative_binomial_distribution(1) {}
+    explicit negative_binomial_distribution(result_type k, double p = 0.5)
+        : p_(k, p) {}
+    explicit negative_binomial_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p);
+
+    result_type k() const { return p_.k(); }
+    double p() const { return p_.p(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return 0; }
+    result_type max() const { return numeric_limits<result_type>::max(); }
+
+    friend bool operator==(const negative_binomial_distribution& x,
+                           const negative_binomial_distribution& y) {
+        return x.p_ == y.p_;
+    }
+    friend bool operator!=(const negative_binomial_distribution& x,
+                           const negative_binomial_distribution& y) {
+        return !(x == y);
+    }
+};
+
+template <class IntType>
+template <class URNG>
+IntType negative_binomial_distribution<IntType>::operator()(URNG& urng, const param_type& pr) {
+    static_assert(rand_is_valid_urng<URNG>::value, "");
+    result_type k = pr.k();
+    double p = pr.p();
+    if (k <= 21 * p && sizeof(IntType) > 1) {
+        bernoulli_distribution gen(p);
+        result_type f = 0;
+        result_type s = 0;
+        while (s < k) {
+            if (gen(urng)) ++s;
+            else            ++f;
+        }
+        return f;
+    }
+    return poisson_distribution<result_type>(
+        gamma_distribution<double>(k, (1 - p) / p)(urng))(urng);
+}
+
+//===----------------------------------------------------------------------===//
+// geometric_distribution
+//===----------------------------------------------------------------------===//
+
+template <class IntType = int>
+class geometric_distribution {
+    static_assert(rand_is_valid_inttype<IntType>::value,
+        "geometric_distribution: IntType must be a supported integer type");
+
+public:
+    typedef IntType result_type;
+
+    class param_type {
+        double p_;
+    public:
+        typedef geometric_distribution distribution_type;
+        explicit param_type(double p = 0.5) : p_(p) {}
+        double p() const { return p_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.p_ == y.p_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+
+public:
+    geometric_distribution() : geometric_distribution(0.5) {}
+    explicit geometric_distribution(double p) : p_(p) {}
+    explicit geometric_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p) {
+        static_assert(rand_is_valid_urng<URNG>::value, "");
+        return negative_binomial_distribution<result_type>(1, p.p())(g);
+    }
+
+    double p() const { return p_.p(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return 0; }
+    result_type max() const { return numeric_limits<result_type>::max(); }
+
+    friend bool operator==(const geometric_distribution& x,
+                           const geometric_distribution& y) {
+        return x.p_ == y.p_;
+    }
+    friend bool operator!=(const geometric_distribution& x,
+                           const geometric_distribution& y) {
+        return !(x == y);
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// weibull_distribution
+//===----------------------------------------------------------------------===//
+
+template <class RealType = double>
+class weibull_distribution {
+    static_assert(rand_is_valid_realtype<RealType>::value,
+        "weibull_distribution: RealType must be float, double, or long double");
+
+public:
+    typedef RealType result_type;
+
+    class param_type {
+        result_type a_;
+        result_type b_;
+    public:
+        typedef weibull_distribution distribution_type;
+        explicit param_type(result_type a = 1, result_type b = 1) : a_(a), b_(b) {}
+        result_type a() const { return a_; }
+        result_type b() const { return b_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.a_ == y.a_ && x.b_ == y.b_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+
+public:
+    weibull_distribution() : weibull_distribution(1) {}
+    explicit weibull_distribution(result_type a, result_type b = 1)
+        : p_(param_type(a, b)) {}
+    explicit weibull_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p) {
+        static_assert(rand_is_valid_urng<URNG>::value, "");
+        return p.b() * std::pow(exponential_distribution<result_type>()(g), 1 / p.a());
+    }
+
+    result_type a() const { return p_.a(); }
+    result_type b() const { return p_.b(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return 0; }
+    result_type max() const { return numeric_limits<result_type>::infinity(); }
+
+    friend bool operator==(const weibull_distribution& x,
+                           const weibull_distribution& y) {
+        return x.p_ == y.p_;
+    }
+    friend bool operator!=(const weibull_distribution& x,
+                           const weibull_distribution& y) {
+        return !(x == y);
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// extreme_value_distribution
+//===----------------------------------------------------------------------===//
+
+template <class RealType = double>
+class extreme_value_distribution {
+    static_assert(rand_is_valid_realtype<RealType>::value,
+        "extreme_value_distribution: RealType must be float, double, or long double");
+
+public:
+    typedef RealType result_type;
+
+    class param_type {
+        result_type a_;
+        result_type b_;
+    public:
+        typedef extreme_value_distribution distribution_type;
+        explicit param_type(result_type a = 0, result_type b = 1) : a_(a), b_(b) {}
+        result_type a() const { return a_; }
+        result_type b() const { return b_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.a_ == y.a_ && x.b_ == y.b_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+
+public:
+    extreme_value_distribution() : extreme_value_distribution(0) {}
+    explicit extreme_value_distribution(result_type a, result_type b = 1)
+        : p_(param_type(a, b)) {}
+    explicit extreme_value_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p) {
+        static_assert(rand_is_valid_urng<URNG>::value, "");
+        return p.a() - p.b() *
+            std::log(-std::log(1 - uniform_real_distribution<result_type>()(g)));
+    }
+
+    result_type a() const { return p_.a(); }
+    result_type b() const { return p_.b(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return -numeric_limits<result_type>::infinity(); }
+    result_type max() const { return  numeric_limits<result_type>::infinity(); }
+
+    friend bool operator==(const extreme_value_distribution& x,
+                           const extreme_value_distribution& y) {
+        return x.p_ == y.p_;
+    }
+    friend bool operator!=(const extreme_value_distribution& x,
+                           const extreme_value_distribution& y) {
+        return !(x == y);
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// lognormal_distribution
+//===----------------------------------------------------------------------===//
+
+template <class RealType = double>
+class lognormal_distribution {
+    static_assert(rand_is_valid_realtype<RealType>::value,
+        "lognormal_distribution: RealType must be float, double, or long double");
+
+public:
+    typedef RealType result_type;
+
+    class param_type {
+        result_type m_;
+        result_type s_;
+    public:
+        typedef lognormal_distribution distribution_type;
+        explicit param_type(result_type m = 0, result_type s = 1) : m_(m), s_(s) {}
+        result_type m() const { return m_; }
+        result_type s() const { return s_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.m_ == y.m_ && x.s_ == y.s_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    normal_distribution<result_type> nd_;
+
+public:
+    lognormal_distribution() : lognormal_distribution(0) {}
+    explicit lognormal_distribution(result_type m, result_type s = 1)
+        : nd_(m, s) {}
+    explicit lognormal_distribution(const param_type& p)
+        : nd_(p.m(), p.s()) {}
+    void reset() { nd_.reset(); }
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return std::exp(nd_(g)); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p) {
+        static_assert(rand_is_valid_urng<URNG>::value, "");
+        typename normal_distribution<result_type>::param_type pn(p.m(), p.s());
+        return std::exp(nd_(g, pn));
+    }
+
+    result_type m() const { return nd_.mean(); }
+    result_type s() const { return nd_.stddev(); }
+    param_type param() const { return param_type(nd_.mean(), nd_.stddev()); }
+    void param(const param_type& p) {
+        typename normal_distribution<result_type>::param_type pn(p.m(), p.s());
+        nd_.param(pn);
+    }
+    result_type min() const { return 0; }
+    result_type max() const { return numeric_limits<result_type>::infinity(); }
+
+    friend bool operator==(const lognormal_distribution& x,
+                           const lognormal_distribution& y) {
+        return x.nd_ == y.nd_;
+    }
+    friend bool operator!=(const lognormal_distribution& x,
+                           const lognormal_distribution& y) {
+        return !(x == y);
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// chi_squared_distribution
+//===----------------------------------------------------------------------===//
+
+template <class RealType = double>
+class chi_squared_distribution {
+    static_assert(rand_is_valid_realtype<RealType>::value,
+        "chi_squared_distribution: RealType must be float, double, or long double");
+
+public:
+    typedef RealType result_type;
+
+    class param_type {
+        result_type n_;
+    public:
+        typedef chi_squared_distribution distribution_type;
+        explicit param_type(result_type n = 1) : n_(n) {}
+        result_type n() const { return n_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.n_ == y.n_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+
+public:
+    chi_squared_distribution() : chi_squared_distribution(1) {}
+    explicit chi_squared_distribution(result_type n) : p_(param_type(n)) {}
+    explicit chi_squared_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p) {
+        static_assert(rand_is_valid_urng<URNG>::value, "");
+        return gamma_distribution<result_type>(p.n() / 2, 2)(g);
+    }
+
+    result_type n() const { return p_.n(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return 0; }
+    result_type max() const { return numeric_limits<result_type>::infinity(); }
+
+    friend bool operator==(const chi_squared_distribution& x,
+                           const chi_squared_distribution& y) {
+        return x.p_ == y.p_;
+    }
+    friend bool operator!=(const chi_squared_distribution& x,
+                           const chi_squared_distribution& y) {
+        return !(x == y);
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// cauchy_distribution
+//===----------------------------------------------------------------------===//
+
+template <class RealType = double>
+class cauchy_distribution {
+    static_assert(rand_is_valid_realtype<RealType>::value,
+        "cauchy_distribution: RealType must be float, double, or long double");
+
+public:
+    typedef RealType result_type;
+
+    class param_type {
+        result_type a_;
+        result_type b_;
+    public:
+        typedef cauchy_distribution distribution_type;
+        explicit param_type(result_type a = 0, result_type b = 1) : a_(a), b_(b) {}
+        result_type a() const { return a_; }
+        result_type b() const { return b_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.a_ == y.a_ && x.b_ == y.b_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+
+public:
+    cauchy_distribution() : cauchy_distribution(0) {}
+    explicit cauchy_distribution(result_type a, result_type b = 1)
+        : p_(param_type(a, b)) {}
+    explicit cauchy_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p) {
+        static_assert(rand_is_valid_urng<URNG>::value, "");
+        uniform_real_distribution<result_type> gen;
+        return p.a() + p.b() *
+            std::tan(result_type(3.1415926535897932384626433832795) * gen(g));
+    }
+
+    result_type a() const { return p_.a(); }
+    result_type b() const { return p_.b(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return -numeric_limits<result_type>::infinity(); }
+    result_type max() const { return  numeric_limits<result_type>::infinity(); }
+
+    friend bool operator==(const cauchy_distribution& x,
+                           const cauchy_distribution& y) {
+        return x.p_ == y.p_;
+    }
+    friend bool operator!=(const cauchy_distribution& x,
+                           const cauchy_distribution& y) {
+        return !(x == y);
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// fisher_f_distribution
+//===----------------------------------------------------------------------===//
+
+template <class RealType = double>
+class fisher_f_distribution {
+    static_assert(rand_is_valid_realtype<RealType>::value,
+        "fisher_f_distribution: RealType must be float, double, or long double");
+
+public:
+    typedef RealType result_type;
+
+    class param_type {
+        result_type m_;
+        result_type n_;
+    public:
+        typedef fisher_f_distribution distribution_type;
+        explicit param_type(result_type m = 1, result_type n = 1) : m_(m), n_(n) {}
+        result_type m() const { return m_; }
+        result_type n() const { return n_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.m_ == y.m_ && x.n_ == y.n_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+
+public:
+    fisher_f_distribution() : fisher_f_distribution(1) {}
+    explicit fisher_f_distribution(result_type m, result_type n = 1)
+        : p_(param_type(m, n)) {}
+    explicit fisher_f_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p) {
+        static_assert(rand_is_valid_urng<URNG>::value, "");
+        gamma_distribution<result_type> gdm(p.m() * result_type(0.5));
+        gamma_distribution<result_type> gdn(p.n() * result_type(0.5));
+        return p.n() * gdm(g) / (p.m() * gdn(g));
+    }
+
+    result_type m() const { return p_.m(); }
+    result_type n() const { return p_.n(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return 0; }
+    result_type max() const { return numeric_limits<result_type>::infinity(); }
+
+    friend bool operator==(const fisher_f_distribution& x,
+                           const fisher_f_distribution& y) {
+        return x.p_ == y.p_;
+    }
+    friend bool operator!=(const fisher_f_distribution& x,
+                           const fisher_f_distribution& y) {
+        return !(x == y);
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// student_t_distribution
+//===----------------------------------------------------------------------===//
+
+template <class RealType = double>
+class student_t_distribution {
+    static_assert(rand_is_valid_realtype<RealType>::value,
+        "student_t_distribution: RealType must be float, double, or long double");
+
+public:
+    typedef RealType result_type;
+
+    class param_type {
+        result_type n_;
+    public:
+        typedef student_t_distribution distribution_type;
+        explicit param_type(result_type n = 1) : n_(n) {}
+        result_type n() const { return n_; }
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.n_ == y.n_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+    normal_distribution<result_type> nd_;
+
+public:
+    student_t_distribution() : student_t_distribution(1) {}
+    explicit student_t_distribution(result_type n) : p_(param_type(n)) {}
+    explicit student_t_distribution(const param_type& p) : p_(p) {}
+    void reset() { nd_.reset(); }
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p) {
+        static_assert(rand_is_valid_urng<URNG>::value, "");
+        gamma_distribution<result_type> gd(p.n() * result_type(0.5), 2);
+        return nd_(g) * std::sqrt(p.n() / gd(g));
+    }
+
+    result_type n() const { return p_.n(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return -numeric_limits<result_type>::infinity(); }
+    result_type max() const { return  numeric_limits<result_type>::infinity(); }
+
+    friend bool operator==(const student_t_distribution& x,
+                           const student_t_distribution& y) {
+        return x.p_ == y.p_;
+    }
+    friend bool operator!=(const student_t_distribution& x,
+                           const student_t_distribution& y) {
+        return !(x == y);
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// piecewise_constant_distribution
+//===----------------------------------------------------------------------===//
+
+template <class RealType = double>
+class piecewise_constant_distribution {
+    static_assert(rand_is_valid_realtype<RealType>::value,
+        "piecewise_constant_distribution: RealType must be float, double, or long double");
+
+public:
+    typedef RealType result_type;
+
+    class param_type {
+        vector<result_type> b_;
+        vector<result_type> densities_;
+        vector<result_type> areas_;
+
+        void init();
+        friend class piecewise_constant_distribution;
+
+    public:
+        typedef piecewise_constant_distribution distribution_type;
+
+        param_type();
+        template <class InputIteratorB, class InputIteratorW>
+        param_type(InputIteratorB f_b, InputIteratorB l_b, InputIteratorW f_w);
+        template <class UnaryOperation>
+        param_type(initializer_list<result_type> bl, UnaryOperation fw);
+        template <class UnaryOperation>
+        param_type(size_t nw, result_type xmin, result_type xmax, UnaryOperation fw);
+        param_type(const param_type&) = default;
+        param_type& operator=(const param_type& rhs);
+
+        vector<result_type> intervals() const { return b_; }
+        vector<result_type> densities() const { return densities_; }
+
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.densities_ == y.densities_ && x.b_ == y.b_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+
+public:
+    piecewise_constant_distribution() {}
+    template <class InputIteratorB, class InputIteratorW>
+    piecewise_constant_distribution(InputIteratorB f_b, InputIteratorB l_b,
+                                    InputIteratorW f_w)
+        : p_(f_b, l_b, f_w) {}
+    template <class UnaryOperation>
+    piecewise_constant_distribution(initializer_list<result_type> bl, UnaryOperation fw)
+        : p_(bl, fw) {}
+    template <class UnaryOperation>
+    piecewise_constant_distribution(size_t nw, result_type xmin, result_type xmax,
+                                    UnaryOperation fw)
+        : p_(nw, xmin, xmax, fw) {}
+    explicit piecewise_constant_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p);
+
+    vector<result_type> intervals() const { return p_.intervals(); }
+    vector<result_type> densities() const { return p_.densities(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return p_.b_.front(); }
+    result_type max() const { return p_.b_.back(); }
+
+    friend bool operator==(const piecewise_constant_distribution& x,
+                           const piecewise_constant_distribution& y) {
+        return x.p_ == y.p_;
+    }
+    friend bool operator!=(const piecewise_constant_distribution& x,
+                           const piecewise_constant_distribution& y) {
+        return !(x == y);
+    }
+};
+
+template <class RealType>
+typename piecewise_constant_distribution<RealType>::param_type&
+piecewise_constant_distribution<RealType>::param_type::operator=(const param_type& rhs) {
+    b_.reserve(rhs.b_.size());
+    densities_.reserve(rhs.densities_.size());
+    areas_.reserve(rhs.areas_.size());
+    b_         = rhs.b_;
+    densities_ = rhs.densities_;
+    areas_     = rhs.areas_;
+    return *this;
+}
+
+template <class RealType>
+void piecewise_constant_distribution<RealType>::param_type::init() {
+    result_type total_area = std::accumulate(densities_.begin(), densities_.end(),
+                                             result_type());
+    for (size_t i = 0; i < densities_.size(); ++i)
+        densities_[i] /= total_area;
+    areas_.assign(densities_.size(), result_type());
+    std::partial_sum(densities_.begin(), densities_.end() - 1, areas_.begin() + 1);
+    densities_.back() = 1 - areas_.back();
+    for (size_t i = 0; i < densities_.size(); ++i)
+        densities_[i] /= (b_[i + 1] - b_[i]);
+}
+
+template <class RealType>
+piecewise_constant_distribution<RealType>::param_type::param_type()
+    : b_(2), densities_(1, 1.0), areas_(1, 0.0) {
+    b_[1] = 1;
+}
+
+template <class RealType>
+template <class InputIteratorB, class InputIteratorW>
+piecewise_constant_distribution<RealType>::param_type::param_type(
+    InputIteratorB f_b, InputIteratorB l_b, InputIteratorW f_w)
+    : b_(f_b, l_b) {
+    if (b_.size() < 2) {
+        b_.resize(2);
+        b_[0] = 0;
+        b_[1] = 1;
+        densities_.assign(1, 1.0);
+        areas_.assign(1, 0.0);
+    } else {
+        densities_.reserve(b_.size() - 1);
+        std::copy_n(f_w, b_.size() - 1, std::back_inserter(densities_));
+        init();
+    }
+}
+
+template <class RealType>
+template <class UnaryOperation>
+piecewise_constant_distribution<RealType>::param_type::param_type(
+    initializer_list<result_type> bl, UnaryOperation fw)
+    : b_(bl.begin(), bl.end()) {
+    if (b_.size() < 2) {
+        b_.resize(2);
+        b_[0] = 0;
+        b_[1] = 1;
+        densities_.assign(1, 1.0);
+        areas_.assign(1, 0.0);
+    } else {
+        densities_.reserve(b_.size() - 1);
+        for (size_t i = 0; i < b_.size() - 1; ++i)
+            densities_.push_back(fw((b_[i + 1] + b_[i]) * result_type(0.5)));
+        init();
+    }
+}
+
+template <class RealType>
+template <class UnaryOperation>
+piecewise_constant_distribution<RealType>::param_type::param_type(
+    size_t nw, result_type xmin, result_type xmax, UnaryOperation fw)
+    : b_(nw == 0 ? 2 : nw + 1) {
+    size_t n      = b_.size() - 1;
+    result_type d = (xmax - xmin) / n;
+    densities_.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        b_[i] = xmin + i * d;
+        densities_.push_back(fw(b_[i] + d * result_type(0.5)));
+    }
+    b_[n] = xmax;
+    init();
+}
+
+template <class RealType>
+template <class URNG>
+RealType piecewise_constant_distribution<RealType>::operator()(URNG& g, const param_type& p) {
+    static_assert(rand_is_valid_urng<URNG>::value, "");
+    result_type u = uniform_real_distribution<result_type>()(g);
+    ptrdiff_t k = std::upper_bound(p.areas_.begin(), p.areas_.end(), u) -
+                  p.areas_.begin() - 1;
+    return (u - p.areas_[k]) / p.densities_[k] + p.b_[k];
+}
+
+//===----------------------------------------------------------------------===//
+// piecewise_linear_distribution
+//===----------------------------------------------------------------------===//
+
+template <class RealType = double>
+class piecewise_linear_distribution {
+    static_assert(rand_is_valid_realtype<RealType>::value,
+        "piecewise_linear_distribution: RealType must be float, double, or long double");
+
+public:
+    typedef RealType result_type;
+
+    class param_type {
+        vector<result_type> b_;
+        vector<result_type> densities_;
+        vector<result_type> areas_;
+
+        void init();
+        friend class piecewise_linear_distribution;
+
+    public:
+        typedef piecewise_linear_distribution distribution_type;
+
+        param_type();
+        template <class InputIteratorB, class InputIteratorW>
+        param_type(InputIteratorB f_b, InputIteratorB l_b, InputIteratorW f_w);
+        template <class UnaryOperation>
+        param_type(initializer_list<result_type> bl, UnaryOperation fw);
+        template <class UnaryOperation>
+        param_type(size_t nw, result_type xmin, result_type xmax, UnaryOperation fw);
+        param_type(const param_type&) = default;
+        param_type& operator=(const param_type& rhs);
+
+        vector<result_type> intervals() const { return b_; }
+        vector<result_type> densities() const { return densities_; }
+
+        friend bool operator==(const param_type& x, const param_type& y) {
+            return x.densities_ == y.densities_ && x.b_ == y.b_;
+        }
+        friend bool operator!=(const param_type& x, const param_type& y) {
+            return !(x == y);
+        }
+    };
+
+private:
+    param_type p_;
+
+public:
+    piecewise_linear_distribution() {}
+    template <class InputIteratorB, class InputIteratorW>
+    piecewise_linear_distribution(InputIteratorB f_b, InputIteratorB l_b,
+                                  InputIteratorW f_w)
+        : p_(f_b, l_b, f_w) {}
+    template <class UnaryOperation>
+    piecewise_linear_distribution(initializer_list<result_type> bl, UnaryOperation fw)
+        : p_(bl, fw) {}
+    template <class UnaryOperation>
+    piecewise_linear_distribution(size_t nw, result_type xmin, result_type xmax,
+                                  UnaryOperation fw)
+        : p_(nw, xmin, xmax, fw) {}
+    explicit piecewise_linear_distribution(const param_type& p) : p_(p) {}
+    void reset() {}
+
+    template <class URNG>
+    result_type operator()(URNG& g) { return (*this)(g, p_); }
+    template <class URNG>
+    result_type operator()(URNG& g, const param_type& p);
+
+    vector<result_type> intervals() const { return p_.intervals(); }
+    vector<result_type> densities() const { return p_.densities(); }
+    param_type param() const { return p_; }
+    void param(const param_type& p) { p_ = p; }
+    result_type min() const { return p_.b_.front(); }
+    result_type max() const { return p_.b_.back(); }
+
+    friend bool operator==(const piecewise_linear_distribution& x,
+                           const piecewise_linear_distribution& y) {
+        return x.p_ == y.p_;
+    }
+    friend bool operator!=(const piecewise_linear_distribution& x,
+                           const piecewise_linear_distribution& y) {
+        return !(x == y);
+    }
+};
+
+template <class RealType>
+typename piecewise_linear_distribution<RealType>::param_type&
+piecewise_linear_distribution<RealType>::param_type::operator=(const param_type& rhs) {
+    b_.reserve(rhs.b_.size());
+    densities_.reserve(rhs.densities_.size());
+    areas_.reserve(rhs.areas_.size());
+    b_         = rhs.b_;
+    densities_ = rhs.densities_;
+    areas_     = rhs.areas_;
+    return *this;
+}
+
+template <class RealType>
+void piecewise_linear_distribution<RealType>::param_type::init() {
+    areas_.assign(densities_.size() - 1, result_type());
+    result_type sp = 0;
+    for (size_t i = 0; i < areas_.size(); ++i) {
+        areas_[i] = (densities_[i + 1] + densities_[i]) * (b_[i + 1] - b_[i]) * result_type(0.5);
+        sp += areas_[i];
+    }
+    for (size_t i = areas_.size(); i > 1;) {
+        --i;
+        areas_[i] = areas_[i - 1] / sp;
+    }
+    areas_[0] = 0;
+    for (size_t i = 1; i < areas_.size(); ++i)
+        areas_[i] += areas_[i - 1];
+    for (size_t i = 0; i < densities_.size(); ++i)
+        densities_[i] /= sp;
+}
+
+template <class RealType>
+piecewise_linear_distribution<RealType>::param_type::param_type()
+    : b_(2), densities_(2, 1.0), areas_(1, 0.0) {
+    b_[1] = 1;
+}
+
+template <class RealType>
+template <class InputIteratorB, class InputIteratorW>
+piecewise_linear_distribution<RealType>::param_type::param_type(
+    InputIteratorB f_b, InputIteratorB l_b, InputIteratorW f_w)
+    : b_(f_b, l_b) {
+    if (b_.size() < 2) {
+        b_.resize(2);
+        b_[0] = 0;
+        b_[1] = 1;
+        densities_.assign(2, 1.0);
+        areas_.assign(1, 0.0);
+    } else {
+        densities_.reserve(b_.size());
+        std::copy_n(f_w, b_.size(), std::back_inserter(densities_));
+        init();
+    }
+}
+
+template <class RealType>
+template <class UnaryOperation>
+piecewise_linear_distribution<RealType>::param_type::param_type(
+    initializer_list<result_type> bl, UnaryOperation fw)
+    : b_(bl.begin(), bl.end()) {
+    if (b_.size() < 2) {
+        b_.resize(2);
+        b_[0] = 0;
+        b_[1] = 1;
+        densities_.assign(2, 1.0);
+        areas_.assign(1, 0.0);
+    } else {
+        densities_.reserve(b_.size());
+        for (size_t i = 0; i < b_.size(); ++i)
+            densities_.push_back(fw(b_[i]));
+        init();
+    }
+}
+
+template <class RealType>
+template <class UnaryOperation>
+piecewise_linear_distribution<RealType>::param_type::param_type(
+    size_t nw, result_type xmin, result_type xmax, UnaryOperation fw)
+    : b_(nw == 0 ? 2 : nw + 1) {
+    size_t n      = b_.size() - 1;
+    result_type d = (xmax - xmin) / n;
+    densities_.reserve(b_.size());
+    for (size_t i = 0; i < n; ++i) {
+        b_[i] = xmin + i * d;
+        densities_.push_back(fw(b_[i]));
+    }
+    b_[n] = xmax;
+    densities_.push_back(fw(b_[n]));
+    init();
+}
+
+template <class RealType>
+template <class URNG>
+RealType piecewise_linear_distribution<RealType>::operator()(URNG& g, const param_type& p) {
+    static_assert(rand_is_valid_urng<URNG>::value, "");
+    result_type u = uniform_real_distribution<result_type>()(g);
+    ptrdiff_t k = std::upper_bound(p.areas_.begin(), p.areas_.end(), u) -
+                  p.areas_.begin() - 1;
+    u -= p.areas_[k];
+    const result_type dk     = p.densities_[k];
+    const result_type dk1    = p.densities_[k + 1];
+    const result_type deltad = dk1 - dk;
+    const result_type bk     = p.b_[k];
+    if (deltad == 0)
+        return u / dk + bk;
+    const result_type bk1    = p.b_[k + 1];
+    const result_type deltab = bk1 - bk;
+    return (bk * dk1 - bk1 * dk +
+            std::sqrt(deltab * (deltab * dk * dk + 2 * deltad * u))) / deltad;
+}
 
 } // namespace std
