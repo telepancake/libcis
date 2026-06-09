@@ -11,7 +11,7 @@ cd "$(dirname "$0")"
 
 CXX="${CXX:-g++}"
 STD="${STD:-gnu++20}"
-FLAGS="-std=$STD -fno-exceptions -fno-rtti -nostdinc++ -Iinclude -g -O0 -Wall -Wextra"
+FLAGS="-std=$STD -fno-exceptions -fno-rtti -nostdinc++ -Iinclude -g -O0 -Wall -Wextra -pthread"
 
 mkdir -p build
 tests=(test/*.cpp)
