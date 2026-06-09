@@ -7,14 +7,6 @@
 //   deduction guides, enable_borrowed_range/enable_view specialisations.
 //
 // std::reverse_iterator comes from <iterator> (the canonical home).
-// <array> previously defined a local reverse_iterator, but that was an ODR
-// hazard; it now includes <iterator> directly.
-//
-// The ranges infrastructure below (begin/end/data/size CPOs, range concepts,
-// enable_borrowed_range, enable_view) is provisional: it lives here because
-// <ranges> has not yet been ported.  When <ranges> is ported, these
-// definitions MUST be moved there (or merged without duplication) per the
-// "No duplication of std vocabulary / detail helpers (ODR)" convention.
 #pragma once
 
 #include <type_traits>
@@ -22,6 +14,7 @@
 #include <cstddef>
 #include <array>
 #include <iterator>
+#include <ranges>
 
 namespace std {
 
@@ -50,238 +43,6 @@ namespace detail {
 } // namespace detail
 
 //===----------------------------------------------------------------------===//
-// Minimal ranges namespace for span
-// — enable_borrowed_range, enable_view, disable_sized_range
-// — to_address helper
-// — begin / end / size / data CPOs
-// — iterator_t, range_reference_t, range concepts
-//===----------------------------------------------------------------------===//
-
-namespace ranges {
-
-template<class>
-inline constexpr bool enable_borrowed_range = false;
-
-template<class>
-inline constexpr bool enable_view = false;
-
-template<class>
-inline constexpr bool disable_sized_range = false;
-
-} // namespace ranges
-
-// to_address (minimal version for raw pointers and smart pointers)
-namespace span_detail {
-    template<class T>
-    constexpr T* to_address(T* p) noexcept {
-        static_assert(!is_function_v<T>,
-            "to_address: argument must not be a function pointer");
-        return p;
-    }
-    template<class Ptr>
-    constexpr auto to_address(const Ptr& p) noexcept {
-        if constexpr (requires { Ptr::pointer_traits_to_address(p); })
-            return Ptr::pointer_traits_to_address(p);
-        else
-            return span_detail::to_address(p.operator->());
-    }
-} // namespace span_detail
-
-namespace ranges {
-
-// class_or_enum — for ADL disambiguation
-namespace detail {
-    template<class T>
-    concept class_or_enum = is_class_v<T> || is_union_v<T> || is_enum_v<T>;
-
-    // can_borrow: lvalue reference or enable_borrowed_range<remove_cvref_t>
-    template<class T>
-    concept can_borrow =
-        is_lvalue_reference_v<T> ||
-        enable_borrowed_range<remove_cvref_t<T>>;
-
-    template<class T>
-    concept integer_like_type =
-        is_integral_v<T> && !is_same_v<bool, remove_cv_t<T>>;
-} // namespace detail
-
-// ---- begin CPO ----
-namespace begin_cpo {
-void begin() = delete; // poison pill
-
-struct begin_fn {
-    // raw array
-    template<class T, size_t N>
-    [[nodiscard]] constexpr T* operator()(T (&arr)[N]) const noexcept {
-        return arr;
-    }
-    // member .begin() — only for can_borrow types
-    template<class T>
-        requires detail::can_borrow<T> &&
-                 requires(T&& t) { t.begin(); }
-    [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(t.begin())) -> decltype(t.begin()) {
-        return t.begin();
-    }
-    // ADL begin(t)
-    template<class T>
-        requires detail::can_borrow<T> &&
-                 detail::class_or_enum<remove_cvref_t<T>> &&
-                 (!requires(T&& t) { t.begin(); }) &&
-                 requires(T&& t) { begin(t); }
-    [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(begin(t))) -> decltype(begin(t)) {
-        return begin(t);
-    }
-};
-} // namespace begin_cpo
-
-// ---- end CPO ----
-namespace end_cpo {
-void end() = delete; // poison pill
-
-struct end_fn {
-    // raw array
-    template<class T, size_t N>
-    [[nodiscard]] constexpr T* operator()(T (&arr)[N]) const noexcept {
-        return arr + N;
-    }
-    // member .end()
-    template<class T>
-        requires detail::can_borrow<T> &&
-                 requires(T&& t) { t.end(); }
-    [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(t.end())) -> decltype(t.end()) {
-        return t.end();
-    }
-    // ADL end(t)
-    template<class T>
-        requires detail::can_borrow<T> &&
-                 detail::class_or_enum<remove_cvref_t<T>> &&
-                 (!requires(T&& t) { t.end(); }) &&
-                 requires(T&& t) { end(t); }
-    [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(end(t))) -> decltype(end(t)) {
-        return end(t);
-    }
-};
-} // namespace end_cpo
-
-// ---- size CPO ----
-namespace size_cpo {
-void size() = delete; // poison pill
-
-struct size_fn {
-    // raw array (rvalue)
-    template<class T, size_t N>
-    [[nodiscard]] constexpr size_t operator()(T (&&)[N]) const noexcept {
-        return N;
-    }
-    // raw array (lvalue)
-    template<class T, size_t N>
-    [[nodiscard]] constexpr size_t operator()(T (&)[N]) const noexcept {
-        return N;
-    }
-    // member .size()
-    template<class T>
-        requires (!ranges::disable_sized_range<remove_cvref_t<T>>) &&
-                 requires(T&& t) { t.size(); } &&
-                 detail::integer_like_type<remove_cvref_t<decltype(declval<T>().size())>>
-    [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(t.size())) -> decltype(t.size()) {
-        return t.size();
-    }
-    // ADL size(t)
-    template<class T>
-        requires (!ranges::disable_sized_range<remove_cvref_t<T>>) &&
-                 detail::class_or_enum<remove_cvref_t<T>> &&
-                 (!requires(T&& t) { t.size(); }) &&
-                 requires(T&& t) { size(t); } &&
-                 detail::integer_like_type<remove_cvref_t<decltype(size(declval<T>()))>>
-    [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(size(t))) -> decltype(size(t)) {
-        return size(t);
-    }
-};
-} // namespace size_cpo
-
-// ---- data CPO ----
-namespace data_cpo {
-struct data_fn {
-    // member .data() returning pointer-to-object
-    template<class T>
-        requires detail::can_borrow<T> &&
-                 requires(T&& t) {
-                     t.data();
-                     requires is_pointer_v<decltype(t.data())>;
-                     requires is_object_v<remove_pointer_t<decltype(t.data())>>;
-                 }
-    [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(t.data())) -> decltype(t.data()) {
-        return t.data();
-    }
-    // fallback: begin() returns a pointer
-    template<class T>
-        requires detail::can_borrow<T> &&
-                 (!requires(T&& t) {
-                     t.data();
-                     requires is_pointer_v<decltype(t.data())>;
-                  }) &&
-                 requires(T&& t) {
-                     t.begin();
-                     requires is_pointer_v<decltype(t.begin())>;
-                 }
-    [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(t.begin())) -> decltype(t.begin()) {
-        return t.begin();
-    }
-};
-} // namespace data_cpo
-
-inline namespace cpo {
-    inline constexpr auto begin = begin_cpo::begin_fn{};
-    inline constexpr auto end   = end_cpo::end_fn{};
-    inline constexpr auto size  = size_cpo::size_fn{};
-    inline constexpr auto data  = data_cpo::data_fn{};
-} // namespace cpo
-
-// Type aliases derived from range
-template<class R>
-using iterator_t = decltype(ranges::begin(declval<R&>()));
-
-template<class R>
-using sentinel_t = decltype(ranges::end(declval<R&>()));
-
-template<class R>
-using range_reference_t = decltype(*ranges::begin(declval<R&>()));
-
-// Range concepts
-template<class T>
-concept range = requires(T& t) {
-    ranges::begin(t);
-    ranges::end(t);
-};
-
-template<class T>
-concept sized_range = range<T> && requires(T& t) { ranges::size(t); };
-
-template<class T>
-concept borrowed_range =
-    range<T> &&
-    (is_lvalue_reference_v<T> || enable_borrowed_range<remove_cvref_t<T>>);
-
-// contiguous_range: begin() yields a pointer and data() matches
-template<class T>
-concept contiguous_range =
-    range<T> &&
-    requires(T& t) {
-        { ranges::data(t) } ->
-            same_as<add_pointer_t<remove_reference_t<range_reference_t<T>>>>;
-    };
-
-} // namespace ranges
-
-//===----------------------------------------------------------------------===//
 // Span internal concepts
 //===----------------------------------------------------------------------===//
 
@@ -308,7 +69,7 @@ concept span_compatible_iterator =
     requires(It it) { *it; } &&
     // to_address must give a pointer to the element type (raw ptr is ok)
     requires(It it) {
-        { span_detail::to_address(it) } ->
+        { to_address(it) } ->
             same_as<remove_reference_t<decltype(*it)>*>;
     };
 
@@ -367,7 +128,7 @@ public:
     template<class It>
         requires detail::span_compatible_iterator<It, element_type>
     constexpr explicit span(It first, size_type count)
-        : data_(span_detail::to_address(first)) {
+        : data_(to_address(first)) {
         (void)count;
     }
 
@@ -376,7 +137,7 @@ public:
         requires detail::span_compatible_iterator<It, element_type> &&
                  detail::span_compatible_sentinel<End, It>
     constexpr explicit span(It first, End last)
-        : data_(span_detail::to_address(first)) {
+        : data_(to_address(first)) {
         (void)last;
     }
 
@@ -534,14 +295,14 @@ public:
     template<class It>
         requires detail::span_compatible_iterator<It, element_type>
     constexpr span(It first, size_type count)
-        : data_(span_detail::to_address(first)), size_(count) {}
+        : data_(to_address(first)), size_(count) {}
 
     // (iterator, sentinel)
     template<class It, class End>
         requires detail::span_compatible_iterator<It, element_type> &&
                  detail::span_compatible_sentinel<End, It>
     constexpr span(It first, End last)
-        : data_(span_detail::to_address(first)),
+        : data_(to_address(first)),
           size_(static_cast<size_type>(last - first)) {}
 
     // C array
