@@ -1,0 +1,382 @@
+// <ratio> — compile-time rational arithmetic.
+// Mechanically ported from libc++ include/ratio.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+#pragma once
+
+#include <climits>       // CHAR_BIT
+#include <cstdint>       // intmax_t
+#include <type_traits>   // integral_constant, bool_constant
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// Internal compile-time helpers
+//===----------------------------------------------------------------------===//
+
+// static_gcd: greatest common divisor of |X| and |Y| at compile time.
+template <intmax_t X, intmax_t Y>
+inline constexpr intmax_t static_gcd = static_gcd<Y, X % Y>;
+
+template <intmax_t X>
+inline constexpr intmax_t static_gcd<X, 0> = X;
+
+template <>
+inline constexpr intmax_t static_gcd<0, 0> = 1;
+
+// static_lcm
+template <intmax_t X, intmax_t Y>
+inline constexpr intmax_t static_lcm = X / static_gcd<X, Y> * Y;
+
+// static_abs, static_sign
+template <intmax_t X>
+inline constexpr intmax_t static_abs = X < 0 ? -X : X;
+
+template <intmax_t X>
+inline constexpr intmax_t static_sign = X == 0 ? 0 : (X < 0 ? -1 : 1);
+
+//===----------------------------------------------------------------------===//
+// Overflow-checked arithmetic on intmax_t
+//===----------------------------------------------------------------------===//
+
+// ll_add: checked addition
+template <intmax_t X, intmax_t Y, intmax_t S = static_sign<Y>>
+class ll_add;
+
+template <intmax_t X, intmax_t Y>
+class ll_add<X, Y, 1> {
+    static constexpr intmax_t min_val = (1LL << (sizeof(intmax_t) * CHAR_BIT - 1)) + 1;
+    static constexpr intmax_t max_val = -min_val;
+    static_assert(X <= max_val - Y, "overflow in ratio arithmetic (add)");
+public:
+    static constexpr intmax_t value = X + Y;
+};
+
+template <intmax_t X, intmax_t Y>
+class ll_add<X, Y, 0> {
+public:
+    static constexpr intmax_t value = X;
+};
+
+template <intmax_t X, intmax_t Y>
+class ll_add<X, Y, -1> {
+    static constexpr intmax_t min_val = (1LL << (sizeof(intmax_t) * CHAR_BIT - 1)) + 1;
+    static constexpr intmax_t max_val = -min_val;
+    static_assert(min_val - Y <= X, "overflow in ratio arithmetic (add)");
+public:
+    static constexpr intmax_t value = X + Y;
+};
+
+// ll_sub: checked subtraction
+template <intmax_t X, intmax_t Y, intmax_t S = static_sign<Y>>
+class ll_sub;
+
+template <intmax_t X, intmax_t Y>
+class ll_sub<X, Y, 1> {
+    static constexpr intmax_t min_val = (1LL << (sizeof(intmax_t) * CHAR_BIT - 1)) + 1;
+    static constexpr intmax_t max_val = -min_val;
+    static_assert(min_val + Y <= X, "overflow in ratio arithmetic (sub)");
+public:
+    static constexpr intmax_t value = X - Y;
+};
+
+template <intmax_t X, intmax_t Y>
+class ll_sub<X, Y, 0> {
+public:
+    static constexpr intmax_t value = X;
+};
+
+template <intmax_t X, intmax_t Y>
+class ll_sub<X, Y, -1> {
+    static constexpr intmax_t min_val = (1LL << (sizeof(intmax_t) * CHAR_BIT - 1)) + 1;
+    static constexpr intmax_t max_val = -min_val;
+    static_assert(X <= max_val + Y, "overflow in ratio arithmetic (sub)");
+public:
+    static constexpr intmax_t value = X - Y;
+};
+
+// ll_mul: checked multiplication
+template <intmax_t X, intmax_t Y>
+class ll_mul {
+    static constexpr intmax_t nan_val = (1LL << (sizeof(intmax_t) * CHAR_BIT - 1));
+    static constexpr intmax_t min_val = nan_val + 1;
+    static constexpr intmax_t max_val = -min_val;
+    static constexpr intmax_t ax = static_abs<X>;
+    static constexpr intmax_t ay = static_abs<Y>;
+    static_assert(X != nan_val && Y != nan_val && ax <= max_val / ay,
+                  "overflow in ratio arithmetic (mul)");
+public:
+    static constexpr intmax_t value = X * Y;
+};
+
+template <intmax_t Y>
+class ll_mul<0, Y> { public: static constexpr intmax_t value = 0; };
+
+template <intmax_t X>
+class ll_mul<X, 0> { public: static constexpr intmax_t value = 0; };
+
+template <>
+class ll_mul<0, 0> { public: static constexpr intmax_t value = 0; };
+
+//===----------------------------------------------------------------------===//
+// ratio<Num, Den>
+//===----------------------------------------------------------------------===//
+
+template <intmax_t Num, intmax_t Den = 1>
+class ratio {
+    static_assert(Den != 0, "ratio: denominator cannot be zero");
+    static_assert(static_abs<Num> >= 0, "ratio: numerator out of range");
+    static_assert(static_abs<Den> > 0, "ratio: denominator out of range");
+
+    static constexpr intmax_t na  = static_abs<Num>;
+    static constexpr intmax_t da  = static_abs<Den>;
+    static constexpr intmax_t s   = static_sign<Num> * static_sign<Den>;
+    static constexpr intmax_t gcd = static_gcd<na, da>;
+
+public:
+    static constexpr intmax_t num = s * na / gcd;
+    static constexpr intmax_t den = da / gcd;
+
+    using type = ratio<num, den>;
+};
+
+//===----------------------------------------------------------------------===//
+// is_ratio helper
+//===----------------------------------------------------------------------===//
+
+template <class T>
+inline constexpr bool is_ratio_v = false;
+
+template <intmax_t Num, intmax_t Den>
+inline constexpr bool is_ratio_v<ratio<Num, Den>> = true;
+
+//===----------------------------------------------------------------------===//
+// ratio_multiply
+//===----------------------------------------------------------------------===//
+
+template <class R1, class R2>
+struct ratio_multiply_impl {
+    static_assert(is_ratio_v<R1>, "ratio_multiply requires R1 to be a ratio specialization");
+    static_assert(is_ratio_v<R2>, "ratio_multiply requires R2 to be a ratio specialization");
+private:
+    static constexpr intmax_t gcd_n1_d2 = static_gcd<R1::num, R2::den>;
+    static constexpr intmax_t gcd_d1_n2 = static_gcd<R1::den, R2::num>;
+public:
+    using type = typename ratio<
+        ll_mul<R1::num / gcd_n1_d2, R2::num / gcd_d1_n2>::value,
+        ll_mul<R2::den / gcd_n1_d2, R1::den / gcd_d1_n2>::value
+    >::type;
+};
+
+template <class R1, class R2>
+using ratio_multiply = typename ratio_multiply_impl<R1, R2>::type;
+
+//===----------------------------------------------------------------------===//
+// ratio_divide
+//===----------------------------------------------------------------------===//
+
+template <class R1, class R2>
+struct ratio_divide_impl {
+    static_assert(is_ratio_v<R1>, "ratio_divide requires R1 to be a ratio specialization");
+    static_assert(is_ratio_v<R2>, "ratio_divide requires R2 to be a ratio specialization");
+private:
+    static constexpr intmax_t gcd_n1_n2 = static_gcd<R1::num, R2::num>;
+    static constexpr intmax_t gcd_d1_d2 = static_gcd<R1::den, R2::den>;
+public:
+    using type = typename ratio<
+        ll_mul<R1::num / gcd_n1_n2, R2::den / gcd_d1_d2>::value,
+        ll_mul<R2::num / gcd_n1_n2, R1::den / gcd_d1_d2>::value
+    >::type;
+};
+
+template <class R1, class R2>
+using ratio_divide = typename ratio_divide_impl<R1, R2>::type;
+
+//===----------------------------------------------------------------------===//
+// ratio_add
+//===----------------------------------------------------------------------===//
+
+template <class R1, class R2>
+struct ratio_add_impl {
+    static_assert(is_ratio_v<R1>, "ratio_add requires R1 to be a ratio specialization");
+    static_assert(is_ratio_v<R2>, "ratio_add requires R2 to be a ratio specialization");
+private:
+    static constexpr intmax_t gcd_n1_n2 = static_gcd<R1::num, R2::num>;
+    static constexpr intmax_t gcd_d1_d2 = static_gcd<R1::den, R2::den>;
+public:
+    using type = typename ratio_multiply<
+        ratio<gcd_n1_n2, R1::den / gcd_d1_d2>,
+        ratio< ll_add< ll_mul<R1::num / gcd_n1_n2, R2::den / gcd_d1_d2>::value,
+                       ll_mul<R2::num / gcd_n1_n2, R1::den / gcd_d1_d2>::value >::value,
+               R2::den >
+    >::type;
+};
+
+template <class R1, class R2>
+using ratio_add = typename ratio_add_impl<R1, R2>::type;
+
+//===----------------------------------------------------------------------===//
+// ratio_subtract
+//===----------------------------------------------------------------------===//
+
+template <class R1, class R2>
+struct ratio_subtract_impl {
+    static_assert(is_ratio_v<R1>, "ratio_subtract requires R1 to be a ratio specialization");
+    static_assert(is_ratio_v<R2>, "ratio_subtract requires R2 to be a ratio specialization");
+private:
+    static constexpr intmax_t gcd_n1_n2 = static_gcd<R1::num, R2::num>;
+    static constexpr intmax_t gcd_d1_d2 = static_gcd<R1::den, R2::den>;
+public:
+    using type = typename ratio_multiply<
+        ratio<gcd_n1_n2, R1::den / gcd_d1_d2>,
+        ratio< ll_sub< ll_mul<R1::num / gcd_n1_n2, R2::den / gcd_d1_d2>::value,
+                       ll_mul<R2::num / gcd_n1_n2, R1::den / gcd_d1_d2>::value >::value,
+               R2::den >
+    >::type;
+};
+
+template <class R1, class R2>
+using ratio_subtract = typename ratio_subtract_impl<R1, R2>::type;
+
+//===----------------------------------------------------------------------===//
+// ratio comparison — using Stern-Brocot / continued-fraction approach
+//===----------------------------------------------------------------------===//
+
+// ratio_less: compare R1 < R2 using the Euclidean (continued fraction) algorithm
+// to avoid overflow. Mirrors libc++'s __ratio_less1 / __ratio_less.
+
+template <class R1, class R2,
+          bool Odd    = false,
+          intmax_t Q1 = R1::num / R1::den,
+          intmax_t M1 = R1::num % R1::den,
+          intmax_t Q2 = R2::num / R2::den,
+          intmax_t M2 = R2::num % R2::den>
+struct ratio_less1 {
+    static constexpr bool value = Odd ? Q2 < Q1 : Q1 < Q2;
+};
+
+// Q1 == Q2 == Qp, M1 == 0, M2 == 0 → equal
+template <class R1, class R2, bool Odd, intmax_t Qp>
+struct ratio_less1<R1, R2, Odd, Qp, 0, Qp, 0> {
+    static constexpr bool value = false;
+};
+
+// Q1 == Q2 == Qp, M1 == 0, M2 != 0 → R1 < R2 iff !Odd
+template <class R1, class R2, bool Odd, intmax_t Qp, intmax_t M2>
+struct ratio_less1<R1, R2, Odd, Qp, 0, Qp, M2> {
+    static constexpr bool value = !Odd;
+};
+
+// Q1 == Q2 == Qp, M1 != 0, M2 == 0 → R1 < R2 iff Odd
+template <class R1, class R2, bool Odd, intmax_t Qp, intmax_t M1>
+struct ratio_less1<R1, R2, Odd, Qp, M1, Qp, 0> {
+    static constexpr bool value = Odd;
+};
+
+// Q1 == Q2 == Qp, M1 != 0, M2 != 0 → recurse with inverted roles
+template <class R1, class R2, bool Odd, intmax_t Qp, intmax_t M1, intmax_t M2>
+struct ratio_less1<R1, R2, Odd, Qp, M1, Qp, M2> {
+    static constexpr bool value =
+        ratio_less1<ratio<R1::den, M1>, ratio<R2::den, M2>, !Odd>::value;
+};
+
+// Handle signs
+template <class R1, class R2,
+          intmax_t S1 = static_sign<R1::num>,
+          intmax_t S2 = static_sign<R2::num>>
+struct ratio_less_impl {
+    static constexpr bool value = S1 < S2;
+};
+
+template <class R1, class R2>
+struct ratio_less_impl<R1, R2, 1LL, 1LL> {
+    static constexpr bool value = ratio_less1<R1, R2>::value;
+};
+
+template <class R1, class R2>
+struct ratio_less_impl<R1, R2, -1LL, -1LL> {
+    static constexpr bool value =
+        ratio_less1<ratio<-R2::num, R2::den>, ratio<-R1::num, R1::den>>::value;
+};
+
+// Public ratio_less struct
+template <class R1, class R2>
+struct ratio_less : bool_constant<ratio_less_impl<R1, R2>::value> {
+    static_assert(is_ratio_v<R1>, "ratio_less requires R1 to be a ratio specialization");
+    static_assert(is_ratio_v<R2>, "ratio_less requires R2 to be a ratio specialization");
+};
+
+// ratio_equal
+template <class R1, class R2>
+struct ratio_equal : bool_constant<(R1::num == R2::num && R1::den == R2::den)> {
+    static_assert(is_ratio_v<R1>, "ratio_equal requires R1 to be a ratio specialization");
+    static_assert(is_ratio_v<R2>, "ratio_equal requires R2 to be a ratio specialization");
+};
+
+// ratio_not_equal
+template <class R1, class R2>
+struct ratio_not_equal : bool_constant<!ratio_equal<R1, R2>::value> {
+    static_assert(is_ratio_v<R1>, "ratio_not_equal requires R1 to be a ratio specialization");
+    static_assert(is_ratio_v<R2>, "ratio_not_equal requires R2 to be a ratio specialization");
+};
+
+// ratio_less_equal
+template <class R1, class R2>
+struct ratio_less_equal : bool_constant<!ratio_less<R2, R1>::value> {
+    static_assert(is_ratio_v<R1>, "ratio_less_equal requires R1 to be a ratio specialization");
+    static_assert(is_ratio_v<R2>, "ratio_less_equal requires R2 to be a ratio specialization");
+};
+
+// ratio_greater
+template <class R1, class R2>
+struct ratio_greater : bool_constant<ratio_less<R2, R1>::value> {
+    static_assert(is_ratio_v<R1>, "ratio_greater requires R1 to be a ratio specialization");
+    static_assert(is_ratio_v<R2>, "ratio_greater requires R2 to be a ratio specialization");
+};
+
+// ratio_greater_equal
+template <class R1, class R2>
+struct ratio_greater_equal : bool_constant<!ratio_less<R1, R2>::value> {
+    static_assert(is_ratio_v<R1>, "ratio_greater_equal requires R1 to be a ratio specialization");
+    static_assert(is_ratio_v<R2>, "ratio_greater_equal requires R2 to be a ratio specialization");
+};
+
+// _v variable templates
+template <class R1, class R2>
+inline constexpr bool ratio_equal_v = ratio_equal<R1, R2>::value;
+
+template <class R1, class R2>
+inline constexpr bool ratio_not_equal_v = ratio_not_equal<R1, R2>::value;
+
+template <class R1, class R2>
+inline constexpr bool ratio_less_v = ratio_less<R1, R2>::value;
+
+template <class R1, class R2>
+inline constexpr bool ratio_less_equal_v = ratio_less_equal<R1, R2>::value;
+
+template <class R1, class R2>
+inline constexpr bool ratio_greater_v = ratio_greater<R1, R2>::value;
+
+template <class R1, class R2>
+inline constexpr bool ratio_greater_equal_v = ratio_greater_equal<R1, R2>::value;
+
+//===----------------------------------------------------------------------===//
+// SI typedefs (only those that fit in intmax_t = int64_t)
+//===----------------------------------------------------------------------===//
+using atto  = ratio<1LL, 1000000000000000000LL>;
+using femto = ratio<1LL, 1000000000000000LL>;
+using pico  = ratio<1LL, 1000000000000LL>;
+using nano  = ratio<1LL, 1000000000LL>;
+using micro = ratio<1LL, 1000000LL>;
+using milli = ratio<1LL, 1000LL>;
+using centi = ratio<1LL, 100LL>;
+using deci  = ratio<1LL, 10LL>;
+using deca  = ratio<10LL, 1LL>;
+using hecto = ratio<100LL, 1LL>;
+using kilo  = ratio<1000LL, 1LL>;
+using mega  = ratio<1000000LL, 1LL>;
+using giga  = ratio<1000000000LL, 1LL>;
+using tera  = ratio<1000000000000LL, 1LL>;
+using peta  = ratio<1000000000000000LL, 1LL>;
+using exa   = ratio<1000000000000000000LL, 1LL>;
+
+} // namespace std
