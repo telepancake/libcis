@@ -1,0 +1,965 @@
+// <unordered_map> — ported from libc++ include/unordered_map
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+#pragma once
+
+#include <bits/hash_table.h>
+#include <functional>
+#include <memory>
+#include <utility>
+#include <initializer_list>
+#include <type_traits>
+
+namespace std {
+
+// ============================================================================
+// Key extractor for unordered_map: value_type = pair<const Key, T>
+// The hash and equality need to operate on Key, not pair<const Key, T>.
+// We use transparent wrappers that forward to the user's Hash/Equal.
+// ============================================================================
+
+namespace detail {
+
+// Hash wrapper: hash(pair<const K,V>) = Hash()(pair.first)
+template<class Key, class Hash>
+struct map_hash : Hash {
+    using Hash::operator();
+
+    template<class Pair>
+    size_t operator()(const Pair& p) const
+        noexcept(noexcept(static_cast<const Hash&>(*this)(p.first)))
+    {
+        return static_cast<const Hash&>(*this)(p.first);
+    }
+};
+
+// Equal wrapper: equal(p1, p2) = Equal()(p1.first, p2.first)
+template<class Key, class Equal>
+struct map_equal : Equal {
+    using Equal::operator();
+
+    template<class P1, class P2>
+    bool operator()(const P1& a, const P2& b) const
+        noexcept(noexcept(static_cast<const Equal&>(*this)(a.first, b.first)))
+    {
+        return static_cast<const Equal&>(*this)(a.first, b.first);
+    }
+};
+
+} // namespace detail
+
+// ============================================================================
+// unordered_map node handle
+// ============================================================================
+
+template<class Key, class T, class Alloc>
+struct um_node_handle {
+    using key_type    = Key;
+    using mapped_type = T;
+    using allocator_type = Alloc;
+    using value_type  = pair<const Key, T>;
+
+    // internal: hold a unique_ptr to the raw node
+    using NodeAlloc = typename allocator_traits<Alloc>::template rebind_alloc<
+        ht_node<value_type, typename allocator_traits<Alloc>::void_pointer>>;
+    using NodePtr = typename allocator_traits<NodeAlloc>::pointer;
+
+    NodePtr   ptr_  = nullptr;
+    allocator_type alloc_;
+    bool      has_alloc_ = false;
+
+    um_node_handle() noexcept = default;
+
+    um_node_handle(NodePtr p, const Alloc& a)
+        : ptr_(p), alloc_(a), has_alloc_(true) {}
+
+    um_node_handle(um_node_handle&& o) noexcept
+        : ptr_(o.ptr_), alloc_(move(o.alloc_)), has_alloc_(o.has_alloc_)
+    { o.ptr_ = nullptr; o.has_alloc_ = false; }
+
+    um_node_handle& operator=(um_node_handle&& o) noexcept {
+        destroy();
+        ptr_      = o.ptr_;
+        alloc_    = move(o.alloc_);
+        has_alloc_= o.has_alloc_;
+        o.ptr_    = nullptr;
+        o.has_alloc_ = false;
+        return *this;
+    }
+
+    ~um_node_handle() { destroy(); }
+
+    bool empty() const noexcept { return ptr_ == nullptr; }
+    explicit operator bool() const noexcept { return !empty(); }
+
+    allocator_type get_allocator() const { return alloc_; }
+    key_type&      key()           const { return const_cast<key_type&>(ptr_->get_value().first); }
+    mapped_type&   mapped()        const { return ptr_->get_value().second; }
+
+    void swap(um_node_handle& o) noexcept {
+        using std::swap;
+        swap(ptr_,       o.ptr_);
+        swap(alloc_,     o.alloc_);
+        swap(has_alloc_, o.has_alloc_);
+    }
+
+private:
+    void destroy() noexcept {
+        if (ptr_) {
+            NodeAlloc na(alloc_);
+            allocator_traits<NodeAlloc>::destroy(na, addressof(ptr_->get_value()));
+            allocator_traits<NodeAlloc>::deallocate(na, ptr_, 1);
+            ptr_ = nullptr;
+        }
+    }
+};
+
+template<class Key, class T, class Alloc>
+void swap(um_node_handle<Key,T,Alloc>& a, um_node_handle<Key,T,Alloc>& b) noexcept { a.swap(b); }
+
+// insert_return_type for unique containers
+template<class Iterator, class NodeHandle>
+struct um_insert_return_type {
+    Iterator   position;
+    bool       inserted;
+    NodeHandle node;
+};
+
+// ============================================================================
+// unordered_map<Key, T, Hash, Pred, Alloc>
+// ============================================================================
+
+template<class Key, class T,
+         class Hash  = hash<Key>,
+         class Pred  = equal_to<Key>,
+         class Alloc = allocator<pair<const Key, T>>>
+class unordered_map {
+public:
+    using key_type        = Key;
+    using mapped_type     = T;
+    using value_type      = pair<const Key, T>;
+    using hasher          = Hash;
+    using key_equal       = Pred;
+    using allocator_type  = Alloc;
+    using reference       = value_type&;
+    using const_reference = const value_type&;
+    using alloc_traits    = allocator_traits<Alloc>;
+    using pointer         = typename alloc_traits::pointer;
+    using const_pointer   = typename alloc_traits::const_pointer;
+    using size_type       = typename alloc_traits::size_type;
+    using difference_type = ptrdiff_t;
+
+private:
+    using MHash  = detail::map_hash<Key, Hash>;
+    using MEqual = detail::map_equal<Key, Pred>;
+    using Table  = hash_table<value_type, MHash, MEqual, Alloc, /*Unique=*/true>;
+
+    Table table_;
+
+    // Expose the wrapped hash/equal as the user's hash/equal
+    const Hash& user_hash()  const noexcept { return static_cast<const Hash&>(table_.hash_function()); }
+    const Pred& user_equal() const noexcept { return static_cast<const Pred&>(table_.key_eq()); }
+    Hash& user_hash()  noexcept { return static_cast<Hash&>(table_.hash_function()); }
+    Pred& user_equal() noexcept { return static_cast<Pred&>(table_.key_eq()); }
+
+public:
+    using iterator             = typename Table::iterator;
+    using const_iterator       = typename Table::const_iterator;
+    using local_iterator       = typename Table::local_iterator;
+    using const_local_iterator = typename Table::const_local_iterator;
+    using node_type            = um_node_handle<Key, T, Alloc>;
+    using insert_return_type   = um_insert_return_type<iterator, node_type>;
+
+    // -------------------------------------------------------------------------
+    // Constructors
+    // -------------------------------------------------------------------------
+
+    unordered_map() = default;
+
+    explicit unordered_map(size_type n,
+                           const Hash& hf   = Hash(),
+                           const Pred& eql  = Pred(),
+                           const Alloc& a   = Alloc())
+        : table_(n, MHash(hf), MEqual(eql), a) {}
+
+    unordered_map(size_type n, const Alloc& a)
+        : unordered_map(n, Hash(), Pred(), a) {}
+
+    unordered_map(size_type n, const Hash& hf, const Alloc& a)
+        : unordered_map(n, hf, Pred(), a) {}
+
+    explicit unordered_map(const Alloc& a)
+        : table_(a) {}
+
+    template<class InputIt>
+    unordered_map(InputIt first, InputIt last,
+                  size_type n   = 0,
+                  const Hash& hf = Hash(),
+                  const Pred& eql= Pred(),
+                  const Alloc& a = Alloc())
+        : table_(n, MHash(hf), MEqual(eql), a)
+    {
+        for (; first != last; ++first)
+            table_.emplace_unique(*first);
+    }
+
+    template<class InputIt>
+    unordered_map(InputIt first, InputIt last, size_type n, const Alloc& a)
+        : unordered_map(first, last, n, Hash(), Pred(), a) {}
+
+    template<class InputIt>
+    unordered_map(InputIt first, InputIt last, size_type n, const Hash& hf, const Alloc& a)
+        : unordered_map(first, last, n, hf, Pred(), a) {}
+
+    unordered_map(initializer_list<value_type> il,
+                  size_type n   = 0,
+                  const Hash& hf = Hash(),
+                  const Pred& eql= Pred(),
+                  const Alloc& a = Alloc())
+        : unordered_map(il.begin(), il.end(), n, hf, eql, a) {}
+
+    unordered_map(initializer_list<value_type> il, size_type n, const Alloc& a)
+        : unordered_map(il, n, Hash(), Pred(), a) {}
+
+    unordered_map(initializer_list<value_type> il, size_type n, const Hash& hf, const Alloc& a)
+        : unordered_map(il, n, hf, Pred(), a) {}
+
+    unordered_map(const unordered_map&)            = default;
+    unordered_map(unordered_map&&)                 = default;
+    unordered_map(const unordered_map& o, const Alloc& a) : table_(o.table_, a) {}
+    unordered_map(unordered_map&& o, const Alloc& a)      : table_(move(o.table_), a) {}
+
+    ~unordered_map() = default;
+
+    unordered_map& operator=(const unordered_map&) = default;
+    unordered_map& operator=(unordered_map&&)      = default;
+
+    unordered_map& operator=(initializer_list<value_type> il) {
+        table_.clear();
+        for (auto& v : il) table_.emplace_unique(v);
+        return *this;
+    }
+
+    // -------------------------------------------------------------------------
+    // Iterators
+    // -------------------------------------------------------------------------
+
+    iterator       begin()        noexcept { return table_.begin(); }
+    const_iterator begin()  const noexcept { return table_.begin(); }
+    iterator       end()          noexcept { return table_.end(); }
+    const_iterator end()    const noexcept { return table_.end(); }
+    const_iterator cbegin() const noexcept { return table_.cbegin(); }
+    const_iterator cend()   const noexcept { return table_.cend(); }
+
+    // -------------------------------------------------------------------------
+    // Capacity
+    // -------------------------------------------------------------------------
+
+    bool      empty()    const noexcept { return table_.empty(); }
+    size_type size()     const noexcept { return table_.size(); }
+    size_type max_size() const noexcept { return table_.max_size(); }
+
+    // -------------------------------------------------------------------------
+    // Modifiers
+    // -------------------------------------------------------------------------
+
+    void clear() noexcept { table_.clear(); }
+
+    // insert value_type
+    pair<iterator,bool> insert(const value_type& v) { return table_.emplace_unique(v); }
+    pair<iterator,bool> insert(value_type&& v)      { return table_.emplace_unique(move(v)); }
+
+    // insert with hint (hint ignored)
+    iterator insert(const_iterator, const value_type& v) { return insert(v).first; }
+    iterator insert(const_iterator, value_type&& v)      { return insert(move(v)).first; }
+
+    template<class P>
+        requires is_constructible_v<value_type, P&&>
+    pair<iterator,bool> insert(P&& p) {
+        return table_.emplace_unique(forward<P>(p));
+    }
+    template<class P>
+        requires is_constructible_v<value_type, P&&>
+    iterator insert(const_iterator, P&& p) { return insert(forward<P>(p)).first; }
+
+    template<class InputIt>
+    void insert(InputIt first, InputIt last) {
+        for (; first != last; ++first)
+            table_.emplace_unique(*first);
+    }
+    void insert(initializer_list<value_type> il) { insert(il.begin(), il.end()); }
+
+    // emplace
+    template<class... Args>
+    pair<iterator,bool> emplace(Args&&... args) {
+        return table_.emplace_unique(forward<Args>(args)...);
+    }
+    template<class... Args>
+    iterator emplace_hint(const_iterator, Args&&... args) {
+        return emplace(forward<Args>(args)...).first;
+    }
+
+    // try_emplace
+    template<class... Args>
+    pair<iterator,bool> try_emplace(const Key& k, Args&&... args) {
+        if (auto it = table_.find(value_type(k, T())); it != table_.end())
+            return {it, false};
+        return table_.emplace_unique(piecewise_construct,
+                                     forward_as_tuple(k),
+                                     forward_as_tuple(forward<Args>(args)...));
+    }
+    template<class... Args>
+    pair<iterator,bool> try_emplace(Key&& k, Args&&... args) {
+        if (auto it = table_.find(value_type(k, T())); it != table_.end())
+            return {it, false};
+        return table_.emplace_unique(piecewise_construct,
+                                     forward_as_tuple(move(k)),
+                                     forward_as_tuple(forward<Args>(args)...));
+    }
+    template<class... Args>
+    iterator try_emplace(const_iterator, const Key& k, Args&&... args) {
+        return try_emplace(k, forward<Args>(args)...).first;
+    }
+    template<class... Args>
+    iterator try_emplace(const_iterator, Key&& k, Args&&... args) {
+        return try_emplace(move(k), forward<Args>(args)...).first;
+    }
+
+    // insert_or_assign
+    template<class M>
+    pair<iterator,bool> insert_or_assign(const Key& k, M&& obj) {
+        auto r = table_.emplace_unique(k, forward<M>(obj));
+        if (!r.second) r.first->second = forward<M>(obj);
+        return r;
+    }
+    template<class M>
+    pair<iterator,bool> insert_or_assign(Key&& k, M&& obj) {
+        auto r = table_.emplace_unique(move(k), forward<M>(obj));
+        if (!r.second) r.first->second = forward<M>(obj);
+        return r;
+    }
+    template<class M>
+    iterator insert_or_assign(const_iterator, const Key& k, M&& obj) {
+        return insert_or_assign(k, forward<M>(obj)).first;
+    }
+    template<class M>
+    iterator insert_or_assign(const_iterator, Key&& k, M&& obj) {
+        return insert_or_assign(move(k), forward<M>(obj)).first;
+    }
+
+    // erase
+    iterator  erase(const_iterator pos)         { return table_.erase(pos); }
+    iterator  erase(iterator pos)               { return table_.erase(const_iterator(pos.node_)); }
+    iterator  erase(const_iterator f, const_iterator l) { return table_.erase(f, l); }
+    size_type erase(const Key& k) {
+        // Need to find by key
+        // Use find which searches on value_type; our MEqual uses .first
+        // So we need a value_type with the key
+        // Actually table_.find takes value_type; let's use find directly
+        auto it = find(k);
+        if (it == end()) return 0;
+        table_.erase(it);
+        return 1;
+    }
+
+    // extract / merge
+    node_type extract(const_iterator pos) {
+        auto h = table_.extract_node(pos);
+        return node_type(h.release(), get_allocator());
+    }
+    node_type extract(const Key& k) {
+        auto it = find(k);
+        if (it == end()) return node_type();
+        return extract(it);
+    }
+
+    insert_return_type insert(node_type&& nh) {
+        if (!nh.ptr_) return {end(), false, move(nh)};
+        nh.ptr_->hash_val = table_.hash_function()(value_type(nh.ptr_->get_value().first, T()));
+        auto [it, ins] = table_.insert_node_unique(nh.ptr_);
+        if (ins) nh.ptr_ = nullptr;
+        return {it, ins, move(nh)};
+    }
+    iterator insert(const_iterator, node_type&& nh) { return insert(move(nh)).position; }
+
+    template<class H2, class P2>
+    void merge(unordered_map<Key,T,H2,P2,Alloc>& src) {
+        // Simple: iterate and re-insert
+        for (auto it = src.begin(); it != src.end(); ) {
+            auto cur = it++;
+            auto r = try_emplace(cur->first, move(cur->second));
+            if (r.second) src.erase(cur);
+        }
+    }
+    template<class H2, class P2>
+    void merge(unordered_map<Key,T,H2,P2,Alloc>&& src) { merge(src); }
+
+    // -------------------------------------------------------------------------
+    // Lookup
+    // -------------------------------------------------------------------------
+
+    iterator find(const Key& k) {
+        // Build a dummy value_type to search; MEqual compares .first
+        // But we don't want to construct T just to do a lookup.
+        // Better: use the underlying table's find_base which takes value_type.
+        // We need a value_type with just k.
+        // Since we can't avoid constructing pair for lookup, use a helper.
+        // Actually: table_.find takes value_type, and MEqual compares .first only.
+        // We need a value_type that has k as first.
+        // Use a trick: temporarily construct.
+        // For now, just do it the straightforward way.
+        // The table's find does: hasher_(val) and key_eq_(node.val, val)
+        // Both use MHash/MEqual which extract .first.
+        // So we can pass any pair<Key, anything>:
+        struct dummy { const Key& k; T placeholder; };
+        // Actually pair<const Key, T> requires T constructible; use default if possible
+        // Use emplace trick: find in the bucket chain manually.
+        if (table_.bucket_count() == 0 || table_.size() == 0) return end();
+        size_t hv = table_.hash_function()(value_type(k, T{}));
+        size_t ch = detail::constrain_hash(hv, table_.bucket_count());
+        auto bp = table_.buckets_[ch];
+        if (!bp) return end();
+        using node_ptr = typename Table::node_ptr;
+        using base_ptr = typename Table::base_ptr;
+        for (base_ptr nd = bp->next_; nd; nd = nd->next_) {
+            node_ptr np = static_cast<node_ptr>(nd);
+            if (np->hash_val != hv &&
+                detail::constrain_hash(np->hash_val, table_.bucket_count()) != ch)
+                break;
+            if (np->hash_val == hv &&
+                static_cast<const Pred&>(table_.key_eq())(np->get_value().first, k))
+                return iterator(nd);
+        }
+        return end();
+    }
+
+    const_iterator find(const Key& k) const {
+        if (table_.bucket_count() == 0 || table_.size() == 0) return end();
+        size_t hv = table_.hash_function()(value_type(k, T{}));
+        size_t ch = detail::constrain_hash(hv, table_.bucket_count());
+        auto bp = table_.buckets_[ch];
+        if (!bp) return end();
+        using node_ptr = typename Table::node_ptr;
+        using base_ptr = typename Table::base_ptr;
+        for (base_ptr nd = bp->next_; nd; nd = nd->next_) {
+            node_ptr np = static_cast<node_ptr>(nd);
+            if (np->hash_val != hv &&
+                detail::constrain_hash(np->hash_val, table_.bucket_count()) != ch)
+                break;
+            if (np->hash_val == hv &&
+                static_cast<const Pred&>(table_.key_eq())(np->get_value().first, k))
+                return const_iterator(nd);
+        }
+        return end();
+    }
+
+    size_type count(const Key& k) const { return find(k) != end() ? 1 : 0; }
+    bool      contains(const Key& k) const { return find(k) != end(); }
+
+    pair<iterator,iterator> equal_range(const Key& k) {
+        iterator i = find(k), j = i;
+        if (i != end()) ++j;
+        return {i, j};
+    }
+    pair<const_iterator,const_iterator> equal_range(const Key& k) const {
+        const_iterator i = find(k), j = i;
+        if (i != end()) ++j;
+        return {i, j};
+    }
+
+    // at: traps under -fno-exceptions
+    T& at(const Key& k) {
+        auto it = find(k);
+        if (it == end()) __builtin_trap();
+        return it->second;
+    }
+    const T& at(const Key& k) const {
+        auto it = find(k);
+        if (it == end()) __builtin_trap();
+        return it->second;
+    }
+
+    T& operator[](const Key& k) {
+        auto r = try_emplace(k);
+        return r.first->second;
+    }
+    T& operator[](Key&& k) {
+        auto r = try_emplace(move(k));
+        return r.first->second;
+    }
+
+    // -------------------------------------------------------------------------
+    // Bucket interface
+    // -------------------------------------------------------------------------
+
+    size_type bucket_count()     const noexcept { return table_.bucket_count(); }
+    size_type max_bucket_count() const noexcept { return table_.max_bucket_count(); }
+    size_type bucket_size(size_type n) const    { return table_.bucket_size(n); }
+    size_type bucket(const Key& k)     const    {
+        return detail::constrain_hash(
+            table_.hash_function()(value_type(k, T{})), table_.bucket_count());
+    }
+
+    local_iterator       begin(size_type n)       { return table_.begin(n); }
+    local_iterator       end(size_type n)         { return table_.end(n); }
+    const_local_iterator begin(size_type n) const { return table_.begin(n); }
+    const_local_iterator end(size_type n)   const { return table_.end(n); }
+    const_local_iterator cbegin(size_type n) const { return table_.cbegin(n); }
+    const_local_iterator cend(size_type n)   const { return table_.cend(n); }
+
+    // -------------------------------------------------------------------------
+    // Load factor
+    // -------------------------------------------------------------------------
+
+    float load_factor()     const noexcept { return table_.load_factor(); }
+    float max_load_factor() const noexcept { return table_.max_load_factor(); }
+    void  max_load_factor(float mlf)       { table_.max_load_factor(mlf); }
+
+    void rehash(size_type n)  { table_.rehash(n); }
+    void reserve(size_type n) { table_.reserve(n); }
+
+    // -------------------------------------------------------------------------
+    // Observers
+    // -------------------------------------------------------------------------
+
+    hasher      hash_function() const { return static_cast<const Hash&>(table_.hash_function()); }
+    key_equal   key_eq()        const { return static_cast<const Pred&>(table_.key_eq()); }
+    allocator_type get_allocator() const noexcept { return table_.get_allocator(); }
+
+    // -------------------------------------------------------------------------
+    // Swap
+    // -------------------------------------------------------------------------
+
+    void swap(unordered_map& other) noexcept(
+        is_nothrow_swappable_v<Hash> && is_nothrow_swappable_v<Pred>)
+    { table_.swap(other.table_); }
+
+    // -------------------------------------------------------------------------
+    // Equality
+    // -------------------------------------------------------------------------
+
+    friend bool operator==(const unordered_map& a, const unordered_map& b) {
+        if (a.size() != b.size()) return false;
+        for (auto& [k, v] : a) {
+            auto it = b.find(k);
+            if (it == b.end() || !(it->second == v)) return false;
+        }
+        return true;
+    }
+};
+
+// Deduction guides
+template<class InputIt,
+         class Hash = hash<typename iterator_traits<InputIt>::value_type::first_type>,
+         class Pred = equal_to<typename iterator_traits<InputIt>::value_type::first_type>,
+         class Alloc = allocator<typename iterator_traits<InputIt>::value_type>>
+unordered_map(InputIt, InputIt,
+              typename allocator_traits<Alloc>::size_type = 0,
+              Hash = Hash(), Pred = Pred(), Alloc = Alloc())
+    -> unordered_map<typename iterator_traits<InputIt>::value_type::first_type,
+                     typename iterator_traits<InputIt>::value_type::second_type,
+                     Hash, Pred, Alloc>;
+
+template<class Key, class T,
+         class Hash = hash<Key>, class Pred = equal_to<Key>,
+         class Alloc = allocator<pair<const Key, T>>>
+unordered_map(initializer_list<pair<Key, T>>,
+              typename allocator_traits<Alloc>::size_type = 0,
+              Hash = Hash(), Pred = Pred(), Alloc = Alloc())
+    -> unordered_map<Key, T, Hash, Pred, Alloc>;
+
+template<class Key, class T, class Hash, class Pred, class Alloc>
+void swap(unordered_map<Key,T,Hash,Pred,Alloc>& a,
+          unordered_map<Key,T,Hash,Pred,Alloc>& b)
+    noexcept(noexcept(a.swap(b)))
+{ a.swap(b); }
+
+template<class Key, class T, class Hash, class Pred, class Alloc, class Pred2>
+typename unordered_map<Key,T,Hash,Pred,Alloc>::size_type
+erase_if(unordered_map<Key,T,Hash,Pred,Alloc>& c, Pred2 pred) {
+    auto old = c.size();
+    for (auto it = c.begin(); it != c.end(); )
+        it = pred(*it) ? c.erase(it) : next(it);
+    return old - c.size();
+}
+
+// ============================================================================
+// unordered_multimap<Key, T, Hash, Pred, Alloc>
+// ============================================================================
+
+template<class Key, class T, class Alloc>
+struct umm_node_handle {
+    using key_type    = Key;
+    using mapped_type = T;
+    using allocator_type = Alloc;
+    using value_type  = pair<const Key, T>;
+
+    using NodeAlloc = typename allocator_traits<Alloc>::template rebind_alloc<
+        ht_node<value_type, typename allocator_traits<Alloc>::void_pointer>>;
+    using NodePtr = typename allocator_traits<NodeAlloc>::pointer;
+
+    NodePtr ptr_ = nullptr;
+    allocator_type alloc_;
+    bool has_alloc_ = false;
+
+    umm_node_handle() noexcept = default;
+    umm_node_handle(NodePtr p, const Alloc& a)
+        : ptr_(p), alloc_(a), has_alloc_(true) {}
+    umm_node_handle(umm_node_handle&& o) noexcept
+        : ptr_(o.ptr_), alloc_(move(o.alloc_)), has_alloc_(o.has_alloc_)
+    { o.ptr_ = nullptr; }
+    umm_node_handle& operator=(umm_node_handle&& o) noexcept {
+        destroy();
+        ptr_      = o.ptr_;
+        alloc_    = move(o.alloc_);
+        has_alloc_= o.has_alloc_;
+        o.ptr_    = nullptr;
+        return *this;
+    }
+    ~umm_node_handle() { destroy(); }
+
+    bool empty() const noexcept { return !ptr_; }
+    explicit operator bool() const noexcept { return !empty(); }
+    allocator_type get_allocator() const { return alloc_; }
+    key_type&    key()    const { return const_cast<key_type&>(ptr_->get_value().first); }
+    mapped_type& mapped() const { return ptr_->get_value().second; }
+
+    void swap(umm_node_handle& o) noexcept {
+        using std::swap;
+        swap(ptr_, o.ptr_); swap(alloc_, o.alloc_); swap(has_alloc_, o.has_alloc_);
+    }
+private:
+    void destroy() noexcept {
+        if (ptr_) {
+            NodeAlloc na(alloc_);
+            allocator_traits<NodeAlloc>::destroy(na, addressof(ptr_->get_value()));
+            allocator_traits<NodeAlloc>::deallocate(na, ptr_, 1);
+            ptr_ = nullptr;
+        }
+    }
+};
+
+template<class Key, class T,
+         class Hash  = hash<Key>,
+         class Pred  = equal_to<Key>,
+         class Alloc = allocator<pair<const Key, T>>>
+class unordered_multimap {
+public:
+    using key_type        = Key;
+    using mapped_type     = T;
+    using value_type      = pair<const Key, T>;
+    using hasher          = Hash;
+    using key_equal       = Pred;
+    using allocator_type  = Alloc;
+    using reference       = value_type&;
+    using const_reference = const value_type&;
+    using alloc_traits    = allocator_traits<Alloc>;
+    using pointer         = typename alloc_traits::pointer;
+    using const_pointer   = typename alloc_traits::const_pointer;
+    using size_type       = typename alloc_traits::size_type;
+    using difference_type = ptrdiff_t;
+
+private:
+    using MHash  = detail::map_hash<Key, Hash>;
+    using MEqual = detail::map_equal<Key, Pred>;
+    using Table  = hash_table<value_type, MHash, MEqual, Alloc, /*Unique=*/false>;
+    Table table_;
+
+public:
+    using iterator             = typename Table::iterator;
+    using const_iterator       = typename Table::const_iterator;
+    using local_iterator       = typename Table::local_iterator;
+    using const_local_iterator = typename Table::const_local_iterator;
+    using node_type            = umm_node_handle<Key, T, Alloc>;
+
+    // -------------------------------------------------------------------------
+    // Constructors
+    // -------------------------------------------------------------------------
+
+    unordered_multimap() = default;
+
+    explicit unordered_multimap(size_type n,
+                                const Hash& hf  = Hash(),
+                                const Pred& eql = Pred(),
+                                const Alloc& a  = Alloc())
+        : table_(n, MHash(hf), MEqual(eql), a) {}
+
+    unordered_multimap(size_type n, const Alloc& a) : unordered_multimap(n, Hash(), Pred(), a) {}
+    unordered_multimap(size_type n, const Hash& hf, const Alloc& a)
+        : unordered_multimap(n, hf, Pred(), a) {}
+    explicit unordered_multimap(const Alloc& a) : table_(a) {}
+
+    template<class InputIt>
+    unordered_multimap(InputIt first, InputIt last,
+                       size_type n = 0, const Hash& hf = Hash(),
+                       const Pred& eql = Pred(), const Alloc& a = Alloc())
+        : table_(n, MHash(hf), MEqual(eql), a)
+    { for (; first != last; ++first) table_.emplace_multi(*first); }
+
+    template<class InputIt>
+    unordered_multimap(InputIt first, InputIt last, size_type n, const Alloc& a)
+        : unordered_multimap(first, last, n, Hash(), Pred(), a) {}
+
+    template<class InputIt>
+    unordered_multimap(InputIt first, InputIt last, size_type n, const Hash& hf, const Alloc& a)
+        : unordered_multimap(first, last, n, hf, Pred(), a) {}
+
+    unordered_multimap(initializer_list<value_type> il,
+                       size_type n = 0, const Hash& hf = Hash(),
+                       const Pred& eql = Pred(), const Alloc& a = Alloc())
+        : unordered_multimap(il.begin(), il.end(), n, hf, eql, a) {}
+
+    unordered_multimap(initializer_list<value_type> il, size_type n, const Alloc& a)
+        : unordered_multimap(il, n, Hash(), Pred(), a) {}
+
+    unordered_multimap(initializer_list<value_type> il, size_type n, const Hash& hf, const Alloc& a)
+        : unordered_multimap(il, n, hf, Pred(), a) {}
+
+    unordered_multimap(const unordered_multimap&)            = default;
+    unordered_multimap(unordered_multimap&&)                 = default;
+    unordered_multimap(const unordered_multimap& o, const Alloc& a) : table_(o.table_, a) {}
+    unordered_multimap(unordered_multimap&& o, const Alloc& a)      : table_(move(o.table_), a) {}
+
+    ~unordered_multimap() = default;
+    unordered_multimap& operator=(const unordered_multimap&) = default;
+    unordered_multimap& operator=(unordered_multimap&&)      = default;
+    unordered_multimap& operator=(initializer_list<value_type> il) {
+        table_.clear();
+        for (auto& v : il) table_.emplace_multi(v);
+        return *this;
+    }
+
+    // -------------------------------------------------------------------------
+    // Iterators
+    // -------------------------------------------------------------------------
+
+    iterator       begin()        noexcept { return table_.begin(); }
+    const_iterator begin()  const noexcept { return table_.begin(); }
+    iterator       end()          noexcept { return table_.end(); }
+    const_iterator end()    const noexcept { return table_.end(); }
+    const_iterator cbegin() const noexcept { return table_.cbegin(); }
+    const_iterator cend()   const noexcept { return table_.cend(); }
+
+    // -------------------------------------------------------------------------
+    // Capacity
+    // -------------------------------------------------------------------------
+
+    bool      empty()    const noexcept { return table_.empty(); }
+    size_type size()     const noexcept { return table_.size(); }
+    size_type max_size() const noexcept { return table_.max_size(); }
+
+    // -------------------------------------------------------------------------
+    // Modifiers
+    // -------------------------------------------------------------------------
+
+    void clear() noexcept { table_.clear(); }
+
+    iterator insert(const value_type& v) { return table_.emplace_multi(v); }
+    iterator insert(value_type&& v)      { return table_.emplace_multi(move(v)); }
+    iterator insert(const_iterator, const value_type& v) { return insert(v); }
+    iterator insert(const_iterator, value_type&& v)      { return insert(move(v)); }
+
+    template<class P>
+        requires is_constructible_v<value_type, P&&>
+    iterator insert(P&& p) { return table_.emplace_multi(forward<P>(p)); }
+    template<class P>
+        requires is_constructible_v<value_type, P&&>
+    iterator insert(const_iterator, P&& p) { return insert(forward<P>(p)); }
+
+    template<class InputIt>
+    void insert(InputIt first, InputIt last) {
+        for (; first != last; ++first) table_.emplace_multi(*first);
+    }
+    void insert(initializer_list<value_type> il) { insert(il.begin(), il.end()); }
+
+    template<class... Args>
+    iterator emplace(Args&&... args) { return table_.emplace_multi(forward<Args>(args)...); }
+    template<class... Args>
+    iterator emplace_hint(const_iterator, Args&&... args) { return emplace(forward<Args>(args)...); }
+
+    iterator  erase(const_iterator pos)             { return table_.erase(pos); }
+    iterator  erase(iterator pos)                   { return table_.erase(const_iterator(pos.node_)); }
+    iterator  erase(const_iterator f, const_iterator l) { return table_.erase(f, l); }
+    size_type erase(const Key& k) {
+        size_type r = 0;
+        auto it = find(k);
+        while (it != end() && it->first == k) { it = erase(it); ++r; }
+        return r;
+    }
+
+    node_type extract(const_iterator pos) {
+        auto h = table_.extract_node(pos);
+        return node_type(h.release(), get_allocator());
+    }
+    node_type extract(const Key& k) {
+        auto it = find(k);
+        if (it == end()) return node_type();
+        return extract(it);
+    }
+
+    iterator insert(node_type&& nh) {
+        if (!nh.ptr_) return end();
+        nh.ptr_->hash_val = table_.hash_function()(nh.ptr_->get_value());
+        iterator r = table_.insert_node_multi(nh.ptr_);
+        nh.ptr_ = nullptr;
+        return r;
+    }
+    iterator insert(const_iterator, node_type&& nh) { return insert(move(nh)); }
+
+    template<class H2, class P2>
+    void merge(unordered_multimap<Key,T,H2,P2,Alloc>& src) {
+        for (auto it = src.begin(); it != src.end(); ) {
+            auto cur = it++;
+            auto h = src.extract(cur);
+            insert(move(h));
+        }
+    }
+    template<class H2, class P2>
+    void merge(unordered_multimap<Key,T,H2,P2,Alloc>&& src) { merge(src); }
+
+    // -------------------------------------------------------------------------
+    // Lookup
+    // -------------------------------------------------------------------------
+
+    iterator find(const Key& k) {
+        if (table_.bucket_count() == 0 || table_.size() == 0) return end();
+        size_t hv = table_.hash_function()(value_type(k, T{}));
+        size_t ch = detail::constrain_hash(hv, table_.bucket_count());
+        using node_ptr2 = typename Table::node_ptr;
+        using base_ptr2 = typename Table::base_ptr;
+        auto bp = table_.buckets_[ch];
+        if (!bp) return end();
+        for (base_ptr2 nd = bp->next_; nd; nd = nd->next_) {
+            node_ptr2 np = static_cast<node_ptr2>(nd);
+            if (np->hash_val != hv &&
+                detail::constrain_hash(np->hash_val, table_.bucket_count()) != ch)
+                break;
+            if (np->hash_val == hv &&
+                static_cast<const Pred&>(table_.key_eq())(np->get_value().first, k))
+                return iterator(nd);
+        }
+        return end();
+    }
+
+    const_iterator find(const Key& k) const {
+        if (table_.bucket_count() == 0 || table_.size() == 0) return end();
+        size_t hv = table_.hash_function()(value_type(k, T{}));
+        size_t ch = detail::constrain_hash(hv, table_.bucket_count());
+        using node_ptr2 = typename Table::node_ptr;
+        using base_ptr2 = typename Table::base_ptr;
+        auto bp = table_.buckets_[ch];
+        if (!bp) return end();
+        for (base_ptr2 nd = bp->next_; nd; nd = nd->next_) {
+            node_ptr2 np = static_cast<node_ptr2>(nd);
+            if (np->hash_val != hv &&
+                detail::constrain_hash(np->hash_val, table_.bucket_count()) != ch)
+                break;
+            if (np->hash_val == hv &&
+                static_cast<const Pred&>(table_.key_eq())(np->get_value().first, k))
+                return const_iterator(nd);
+        }
+        return end();
+    }
+
+    size_type count(const Key& k) const {
+        size_type r = 0;
+        for (auto i = find(k); i != end() && i->first == k; ++i) ++r;
+        return r;
+    }
+    bool contains(const Key& k) const { return find(k) != end(); }
+
+    pair<iterator,iterator> equal_range(const Key& k) {
+        iterator i = find(k), j = i;
+        if (i != end()) { auto e = end(); do { ++j; } while (j != e && j->first == k); }
+        return {i, j};
+    }
+    pair<const_iterator,const_iterator> equal_range(const Key& k) const {
+        const_iterator i = find(k), j = i;
+        if (i != end()) { auto e = end(); do { ++j; } while (j != e && j->first == k); }
+        return {i, j};
+    }
+
+    // -------------------------------------------------------------------------
+    // Bucket interface
+    // -------------------------------------------------------------------------
+
+    size_type bucket_count()     const noexcept { return table_.bucket_count(); }
+    size_type max_bucket_count() const noexcept { return table_.max_bucket_count(); }
+    size_type bucket_size(size_type n) const    { return table_.bucket_size(n); }
+    size_type bucket(const Key& k)     const    {
+        return detail::constrain_hash(
+            table_.hash_function()(value_type(k, T{})), table_.bucket_count());
+    }
+
+    local_iterator       begin(size_type n)        { return table_.begin(n); }
+    local_iterator       end(size_type n)          { return table_.end(n); }
+    const_local_iterator begin(size_type n)  const { return table_.begin(n); }
+    const_local_iterator end(size_type n)    const { return table_.end(n); }
+    const_local_iterator cbegin(size_type n) const { return table_.cbegin(n); }
+    const_local_iterator cend(size_type n)   const { return table_.cend(n); }
+
+    float     load_factor()          const noexcept { return table_.load_factor(); }
+    float     max_load_factor()      const noexcept { return table_.max_load_factor(); }
+    void      max_load_factor(float mlf)             { table_.max_load_factor(mlf); }
+    void      rehash(size_type n)                    { table_.rehash(n); }
+    void      reserve(size_type n)                   { table_.reserve(n); }
+
+    hasher         hash_function() const { return static_cast<const Hash&>(table_.hash_function()); }
+    key_equal      key_eq()        const { return static_cast<const Pred&>(table_.key_eq()); }
+    allocator_type get_allocator() const noexcept { return table_.get_allocator(); }
+
+    void swap(unordered_multimap& other) noexcept(
+        is_nothrow_swappable_v<Hash> && is_nothrow_swappable_v<Pred>)
+    { table_.swap(other.table_); }
+
+    friend bool operator==(const unordered_multimap& a, const unordered_multimap& b) {
+        if (a.size() != b.size()) return false;
+        for (auto it = a.begin(); it != a.end(); ) {
+            const Key& k = it->first;
+            size_type n1 = 0, n2 = 0;
+            auto j = it;
+            while (j != a.end() && j->first == k) { ++j; ++n1; }
+            auto [b1, b2] = b.equal_range(k);
+            for (auto x = b1; x != b2; ++x) ++n2;
+            if (n1 != n2) return false;
+            it = j;
+        }
+        return true;
+    }
+};
+
+// Deduction guides for unordered_multimap
+template<class InputIt,
+         class Hash = hash<typename iterator_traits<InputIt>::value_type::first_type>,
+         class Pred = equal_to<typename iterator_traits<InputIt>::value_type::first_type>,
+         class Alloc = allocator<typename iterator_traits<InputIt>::value_type>>
+unordered_multimap(InputIt, InputIt,
+                   typename allocator_traits<Alloc>::size_type = 0,
+                   Hash = Hash(), Pred = Pred(), Alloc = Alloc())
+    -> unordered_multimap<typename iterator_traits<InputIt>::value_type::first_type,
+                          typename iterator_traits<InputIt>::value_type::second_type,
+                          Hash, Pred, Alloc>;
+
+template<class Key, class T,
+         class Hash = hash<Key>, class Pred = equal_to<Key>,
+         class Alloc = allocator<pair<const Key, T>>>
+unordered_multimap(initializer_list<pair<Key, T>>,
+                   typename allocator_traits<Alloc>::size_type = 0,
+                   Hash = Hash(), Pred = Pred(), Alloc = Alloc())
+    -> unordered_multimap<Key, T, Hash, Pred, Alloc>;
+
+template<class Key, class T, class Hash, class Pred, class Alloc>
+void swap(unordered_multimap<Key,T,Hash,Pred,Alloc>& a,
+          unordered_multimap<Key,T,Hash,Pred,Alloc>& b)
+    noexcept(noexcept(a.swap(b)))
+{ a.swap(b); }
+
+template<class Key, class T, class Hash, class Pred, class Alloc, class Pred2>
+typename unordered_multimap<Key,T,Hash,Pred,Alloc>::size_type
+erase_if(unordered_multimap<Key,T,Hash,Pred,Alloc>& c, Pred2 pred) {
+    auto old = c.size();
+    for (auto it = c.begin(); it != c.end(); )
+        it = pred(*it) ? c.erase(it) : next(it);
+    return old - c.size();
+}
+
+} // namespace std
