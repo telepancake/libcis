@@ -1,0 +1,50 @@
+// <latch> -- latch synchronization primitive.
+// Mechanically ported from libc++ include/latch.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+
+#include <atomic>
+#include <limits>
+#include <cstddef>
+
+namespace std {
+
+class latch {
+    atomic<ptrdiff_t> a;
+
+public:
+    [[nodiscard]] static constexpr ptrdiff_t max() noexcept {
+        return numeric_limits<ptrdiff_t>::max();
+    }
+
+    constexpr explicit latch(ptrdiff_t expected) noexcept : a(expected) {}
+
+    ~latch() = default;
+    latch(const latch&)            = delete;
+    latch& operator=(const latch&) = delete;
+
+    void count_down(ptrdiff_t update = 1) noexcept {
+        auto const old = a.fetch_sub(update, memory_order_release);
+        if (old == update)
+            a.notify_all();
+    }
+
+    [[nodiscard]] bool try_wait() const noexcept {
+        return a.load(memory_order_acquire) == 0;
+    }
+
+    void wait() const noexcept {
+        while (true) {
+            ptrdiff_t val = a.load(memory_order_acquire);
+            if (val == 0)
+                return;
+            a.wait(val, memory_order_acquire);
+        }
+    }
+
+    void arrive_and_wait(ptrdiff_t update = 1) noexcept {
+        count_down(update);
+        wait();
+    }
+};
+
+} // namespace std
