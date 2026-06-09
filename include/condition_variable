@@ -1,0 +1,286 @@
+// <condition_variable> — condition_variable, condition_variable_any, cv_status.
+// Mechanically ported from libc++ include/condition_variable +
+//   include/__condition_variable/condition_variable.h
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+#pragma once
+
+#include <mutex>
+#include <chrono>
+#include <memory>       // shared_ptr, make_shared
+#include <utility>      // move, forward
+#include <limits>
+#include <bits/pointer.h>
+#include <cerrno>
+#include <pthread.h>
+#include <time.h>
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// cv_status
+//===----------------------------------------------------------------------===//
+
+enum class cv_status { no_timeout, timeout };
+
+//===----------------------------------------------------------------------===//
+// Helper: convert any time_point to a CLOCK_REALTIME timespec
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+// Safe cast from any duration to nanoseconds, clamping at min/max.
+template <class Rep, class Period>
+chrono::nanoseconds safe_ns_cast(chrono::duration<Rep, Period> d) {
+    using namespace chrono;
+    if constexpr (is_floating_point_v<Rep>) {
+        using ratio_t    = ratio_divide<Period, nano>;
+        using ns_rep     = nanoseconds::rep;
+        Rep result_f     = d.count() * static_cast<Rep>(ratio_t::num) / static_cast<Rep>(ratio_t::den);
+        if (result_f >= static_cast<Rep>(numeric_limits<ns_rep>::max()))
+            return nanoseconds::max();
+        if (result_f <= static_cast<Rep>(numeric_limits<ns_rep>::min()))
+            return nanoseconds::min();
+        return nanoseconds(static_cast<ns_rep>(result_f));
+    } else {
+        if (d.count() == 0) return nanoseconds(0);
+        using ratio_t    = ratio_divide<Period, nano>;
+        using ns_rep     = nanoseconds::rep;
+        ns_rep max_rep   = numeric_limits<ns_rep>::max();
+        ns_rep min_rep   = numeric_limits<ns_rep>::min();
+        if (d.count() > 0 && d.count() > max_rep / ratio_t::num)
+            return nanoseconds::max();
+        if (d.count() < 0 && d.count() < min_rep / ratio_t::num)
+            return nanoseconds::min();
+        ns_rep r = static_cast<ns_rep>(d.count()) * ratio_t::num / ratio_t::den;
+        if (r == 0) return nanoseconds(1);
+        return nanoseconds(r);
+    }
+}
+
+// Build a timespec from a system_clock nanosecond time_point.
+inline struct timespec to_timespec(chrono::time_point<chrono::system_clock, chrono::nanoseconds> tp) {
+    using namespace chrono;
+    nanoseconds d = tp.time_since_epoch();
+    seconds s     = duration_cast<seconds>(d);
+    struct timespec ts;
+    using ts_sec = decltype(ts.tv_sec);
+    constexpr ts_sec ts_sec_max = numeric_limits<ts_sec>::max();
+    if (s.count() < ts_sec_max) {
+        ts.tv_sec  = static_cast<ts_sec>(s.count());
+        ts.tv_nsec = static_cast<long>((d - s).count());
+    } else {
+        ts.tv_sec  = ts_sec_max;
+        ts.tv_nsec = 999999999L;
+    }
+    return ts;
+}
+
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
+// condition_variable (wrapping pthread_cond_t + CLOCK_REALTIME)
+//===----------------------------------------------------------------------===//
+
+class condition_variable {
+    pthread_cond_t cv_ = PTHREAD_COND_INITIALIZER;
+public:
+    constexpr condition_variable() noexcept = default;
+    ~condition_variable() noexcept { pthread_cond_destroy(&cv_); }
+
+    condition_variable(const condition_variable&)            = delete;
+    condition_variable& operator=(const condition_variable&) = delete;
+
+    void notify_one() noexcept { pthread_cond_signal(&cv_); }
+    void notify_all() noexcept { pthread_cond_broadcast(&cv_); }
+
+    void wait(unique_lock<mutex>& lk) noexcept {
+        pthread_cond_wait(&cv_, lk.mutex()->native_handle());
+    }
+
+    template <class Predicate>
+    void wait(unique_lock<mutex>& lk, Predicate pred) {
+        while (!pred())
+            wait(lk);
+    }
+
+    // wait_until with system_clock (used as the canonical path)
+    template <class Clock, class Duration>
+    cv_status wait_until(unique_lock<mutex>& lk,
+                         const chrono::time_point<Clock, Duration>& abs_time) {
+        using namespace chrono;
+        // If already past deadline, return timeout immediately
+        if (Clock::now() >= abs_time)
+            return cv_status::timeout;
+
+        // Convert to system_clock nanoseconds for pthread_cond_timedwait
+        auto sys_now   = system_clock::now();
+        auto clock_now = Clock::now();
+        auto delta_ns  = detail::safe_ns_cast(abs_time - clock_now);
+        auto sys_abs   = time_point_cast<nanoseconds>(sys_now) + delta_ns;
+        struct timespec ts = detail::to_timespec(sys_abs);
+
+        int ec = pthread_cond_timedwait(&cv_, lk.mutex()->native_handle(), &ts);
+        if (ec != 0 && ec != ETIMEDOUT)
+            __builtin_trap(); // would be system_error
+        return Clock::now() < abs_time ? cv_status::no_timeout : cv_status::timeout;
+    }
+
+    template <class Clock, class Duration, class Predicate>
+    bool wait_until(unique_lock<mutex>& lk,
+                    const chrono::time_point<Clock, Duration>& abs_time,
+                    Predicate pred) {
+        while (!pred())
+            if (wait_until(lk, abs_time) == cv_status::timeout)
+                return pred();
+        return true;
+    }
+
+    template <class Rep, class Period>
+    cv_status wait_for(unique_lock<mutex>& lk,
+                       const chrono::duration<Rep, Period>& rel) {
+        using namespace chrono;
+        if (rel <= rel.zero())
+            return cv_status::timeout;
+        return wait_until(lk, steady_clock::now() + rel);
+    }
+
+    template <class Rep, class Period, class Predicate>
+    bool wait_for(unique_lock<mutex>& lk,
+                  const chrono::duration<Rep, Period>& rel,
+                  Predicate pred) {
+        return wait_until(lk, chrono::steady_clock::now() + rel, std::move(pred));
+    }
+
+    using native_handle_type = pthread_cond_t*;
+    native_handle_type native_handle() { return &cv_; }
+};
+
+//===----------------------------------------------------------------------===//
+// notify_all_at_thread_exit
+// Implemented via pthread_cleanup_push/pop in a detached helper or via a
+// thread-local list. Here we use a simple approach: store the cv+lock in a
+// thread-local structure and install a pthread_cleanup handler.
+// Since we can't use exceptions, we use pthread_cleanup_push with a C-callable.
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+struct notify_at_exit_entry {
+    condition_variable* cv;
+    unique_lock<mutex>  lk;
+};
+
+inline void notify_at_exit_cleanup(void* arg) {
+    auto* e = static_cast<notify_at_exit_entry*>(arg);
+    e->lk.unlock();
+    e->cv->notify_all();
+    delete e;
+}
+
+} // namespace detail
+
+// notify_all_at_thread_exit: when the calling thread exits, unlock lk then notify cv.
+// We implement this by stashing the info in a detached pthread that just waits
+// for the calling thread to finish.  Since -fno-exceptions simplifies things, we
+// use the straightforward approach: install a thread-local destructor via
+// pthread_key_create.
+inline void notify_all_at_thread_exit(condition_variable& cond,
+                                      unique_lock<mutex> lk) {
+    // We transfer ownership to a heap-allocated entry and install a
+    // thread-specific destructor to fire when the thread exits.
+    static pthread_key_t key;
+    static pthread_once_t once = PTHREAD_ONCE_INIT;
+    pthread_once(&once, []() {
+        pthread_key_create(&key, detail::notify_at_exit_cleanup);
+    });
+
+    auto* e = new detail::notify_at_exit_entry{&cond, std::move(lk)};
+    // If there's already a value for this key, run the old cleanup first.
+    void* old = pthread_getspecific(key);
+    if (old) detail::notify_at_exit_cleanup(old);
+    pthread_setspecific(key, e);
+}
+
+//===----------------------------------------------------------------------===//
+// unlock_guard — RAII that unlocks on construction, relocks on destruction.
+// (Used by condition_variable_any::wait.)
+//===----------------------------------------------------------------------===//
+
+template <class Lock>
+struct unlock_guard {
+    Lock& lock_;
+    explicit unlock_guard(Lock& l) : lock_(l) { lock_.unlock(); }
+    ~unlock_guard() noexcept { lock_.lock(); }
+    unlock_guard(const unlock_guard&)            = delete;
+    unlock_guard& operator=(const unlock_guard&) = delete;
+};
+
+//===----------------------------------------------------------------------===//
+// condition_variable_any (from libc++ condition_variable)
+//===----------------------------------------------------------------------===//
+
+class condition_variable_any {
+    condition_variable cv_;
+    shared_ptr<mutex>  mut_;
+public:
+    condition_variable_any() : mut_(make_shared<mutex>()) {}
+
+    void notify_one() noexcept {
+        { lock_guard<mutex> lx(*mut_); }
+        cv_.notify_one();
+    }
+
+    void notify_all() noexcept {
+        { lock_guard<mutex> lx(*mut_); }
+        cv_.notify_all();
+    }
+
+    template <class Lock>
+    void wait(Lock& lock) {
+        shared_ptr<mutex> m = mut_;
+        unique_lock<mutex> lk(*m);
+        unlock_guard<Lock> unlock(lock);
+        lock_guard<unique_lock<mutex>> lx(lk, adopt_lock);
+        cv_.wait(lk);
+    } // lk.unlock() then lock.lock()
+
+    template <class Lock, class Predicate>
+    void wait(Lock& lock, Predicate pred) {
+        while (!pred())
+            wait(lock);
+    }
+
+    template <class Lock, class Clock, class Duration>
+    cv_status wait_until(Lock& lock,
+                         const chrono::time_point<Clock, Duration>& abs_time) {
+        shared_ptr<mutex> m = mut_;
+        unique_lock<mutex> lk(*m);
+        unlock_guard<Lock> unlock(lock);
+        lock_guard<unique_lock<mutex>> lx(lk, adopt_lock);
+        return cv_.wait_until(lk, abs_time);
+    }
+
+    template <class Lock, class Clock, class Duration, class Predicate>
+    bool wait_until(Lock& lock,
+                    const chrono::time_point<Clock, Duration>& abs_time,
+                    Predicate pred) {
+        while (!pred())
+            if (wait_until(lock, abs_time) == cv_status::timeout)
+                return pred();
+        return true;
+    }
+
+    template <class Lock, class Rep, class Period>
+    cv_status wait_for(Lock& lock, const chrono::duration<Rep, Period>& rel) {
+        return wait_until(lock, chrono::steady_clock::now() + rel);
+    }
+
+    template <class Lock, class Rep, class Period, class Predicate>
+    bool wait_for(Lock& lock,
+                  const chrono::duration<Rep, Period>& rel,
+                  Predicate pred) {
+        return wait_until(lock, chrono::steady_clock::now() + rel, std::move(pred));
+    }
+};
+
+} // namespace std

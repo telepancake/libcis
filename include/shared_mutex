@@ -1,0 +1,313 @@
+// <shared_mutex> — shared_mutex, shared_timed_mutex, shared_lock.
+// Mechanically ported from libc++ include/shared_mutex +
+//   the __shared_mutex_base implementation.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+#pragma once
+
+#include <mutex>
+#include <condition_variable>
+#include <chrono>
+#include <utility>
+#include <bits/pointer.h>
+#include <climits>
+#include <cerrno>
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// shared_mutex_base — internal base used by shared_mutex and shared_timed_mutex.
+// Ported from libc++ __shared_mutex_base.
+// Uses mutex + two condition_variables:
+//   gate1_: wait for write_entered to clear (entering write, or readers full)
+//   gate2_: wait for all readers to leave (after write_entered is set)
+//===----------------------------------------------------------------------===//
+
+struct shared_mutex_base {
+    mutex              mut_;
+    condition_variable gate1_;   // wait here when write_entered is set
+    condition_variable gate2_;   // wait here for readers to drain
+    unsigned           state_ = 0;
+
+    static constexpr unsigned write_entered = 1U << (sizeof(unsigned) * CHAR_BIT - 1);
+    static constexpr unsigned n_readers     = ~write_entered;
+
+    shared_mutex_base()  = default;
+    ~shared_mutex_base() = default;
+    shared_mutex_base(const shared_mutex_base&)            = delete;
+    shared_mutex_base& operator=(const shared_mutex_base&) = delete;
+
+    // Exclusive ownership
+    void lock() {
+        unique_lock<mutex> lk(mut_);
+        while (state_ & write_entered)
+            gate1_.wait(lk);
+        state_ |= write_entered;
+        while (state_ & n_readers)
+            gate2_.wait(lk);
+    }
+
+    bool try_lock() {
+        unique_lock<mutex> lk(mut_);
+        if (state_ == 0) {
+            state_ = write_entered;
+            return true;
+        }
+        return false;
+    }
+
+    void unlock() {
+        {
+            lock_guard<mutex> lk(mut_);
+            state_ = 0;
+        }
+        gate1_.notify_all();
+    }
+
+    // Shared ownership
+    void lock_shared() {
+        unique_lock<mutex> lk(mut_);
+        while ((state_ & write_entered) || (state_ & n_readers) == n_readers)
+            gate1_.wait(lk);
+        unsigned nr = (state_ & n_readers) + 1;
+        state_ &= ~n_readers;
+        state_ |= nr;
+    }
+
+    bool try_lock_shared() {
+        unique_lock<mutex> lk(mut_);
+        if (!(state_ & write_entered) && (state_ & n_readers) < n_readers) {
+            ++state_;
+            return true;
+        }
+        return false;
+    }
+
+    void unlock_shared() {
+        lock_guard<mutex> lk(mut_);
+        unsigned nr = (state_ & n_readers) - 1;
+        state_ &= ~n_readers;
+        state_ |= nr;
+        if (state_ & write_entered) {
+            if (nr == 0)
+                gate2_.notify_one();
+        } else {
+            if (nr == n_readers - 1)
+                gate1_.notify_one();
+        }
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// shared_mutex (C++17)
+//===----------------------------------------------------------------------===//
+
+class shared_mutex {
+    shared_mutex_base base_;
+public:
+    shared_mutex()  = default;
+    ~shared_mutex() = default;
+    shared_mutex(const shared_mutex&)            = delete;
+    shared_mutex& operator=(const shared_mutex&) = delete;
+
+    void lock()           { base_.lock(); }
+    bool try_lock()       { return base_.try_lock(); }
+    void unlock()         { base_.unlock(); }
+
+    void lock_shared()    { base_.lock_shared(); }
+    bool try_lock_shared(){ return base_.try_lock_shared(); }
+    void unlock_shared()  { base_.unlock_shared(); }
+};
+
+//===----------------------------------------------------------------------===//
+// shared_timed_mutex
+//===----------------------------------------------------------------------===//
+
+class shared_timed_mutex {
+    shared_mutex_base base_;
+public:
+    shared_timed_mutex()  = default;
+    ~shared_timed_mutex() = default;
+    shared_timed_mutex(const shared_timed_mutex&)            = delete;
+    shared_timed_mutex& operator=(const shared_timed_mutex&) = delete;
+
+    // Exclusive
+    void lock()     { base_.lock(); }
+    bool try_lock() { return base_.try_lock(); }
+    void unlock()   { base_.unlock(); }
+
+    template <class Rep, class Period>
+    bool try_lock_for(const chrono::duration<Rep, Period>& rel) {
+        return try_lock_until(chrono::steady_clock::now() + rel);
+    }
+
+    template <class Clock, class Duration>
+    bool try_lock_until(const chrono::time_point<Clock, Duration>& abs) {
+        unique_lock<mutex> lk(base_.mut_);
+        if (base_.state_ & shared_mutex_base::write_entered) {
+            while (true) {
+                cv_status s = base_.gate1_.wait_until(lk, abs);
+                if (!(base_.state_ & shared_mutex_base::write_entered))
+                    break;
+                if (s == cv_status::timeout)
+                    return false;
+            }
+        }
+        base_.state_ |= shared_mutex_base::write_entered;
+        if (base_.state_ & shared_mutex_base::n_readers) {
+            while (true) {
+                cv_status s = base_.gate2_.wait_until(lk, abs);
+                if (!(base_.state_ & shared_mutex_base::n_readers))
+                    break;
+                if (s == cv_status::timeout) {
+                    base_.state_ &= ~shared_mutex_base::write_entered;
+                    base_.gate1_.notify_all();
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    // Shared
+    void lock_shared()    { base_.lock_shared(); }
+    bool try_lock_shared(){ return base_.try_lock_shared(); }
+    void unlock_shared()  { base_.unlock_shared(); }
+
+    template <class Rep, class Period>
+    bool try_lock_shared_for(const chrono::duration<Rep, Period>& rel) {
+        return try_lock_shared_until(chrono::steady_clock::now() + rel);
+    }
+
+    template <class Clock, class Duration>
+    bool try_lock_shared_until(const chrono::time_point<Clock, Duration>& abs) {
+        unique_lock<mutex> lk(base_.mut_);
+        if ((base_.state_ & shared_mutex_base::write_entered) ||
+            (base_.state_ & shared_mutex_base::n_readers) == shared_mutex_base::n_readers) {
+            while (true) {
+                cv_status s = base_.gate1_.wait_until(lk, abs);
+                if (!(base_.state_ & shared_mutex_base::write_entered) &&
+                    (base_.state_ & shared_mutex_base::n_readers) < shared_mutex_base::n_readers)
+                    break;
+                if (s == cv_status::timeout)
+                    return false;
+            }
+        }
+        unsigned nr = (base_.state_ & shared_mutex_base::n_readers) + 1;
+        base_.state_ &= ~shared_mutex_base::n_readers;
+        base_.state_ |= nr;
+        return true;
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// shared_lock<Mutex>
+//===----------------------------------------------------------------------===//
+
+template <class Mutex>
+class shared_lock {
+public:
+    using mutex_type = Mutex;
+private:
+    mutex_type* m_;
+    bool owns_;
+public:
+    shared_lock() noexcept : m_(nullptr), owns_(false) {}
+
+    explicit shared_lock(mutex_type& m) : m_(addressof(m)), owns_(true) {
+        m_->lock_shared();
+    }
+
+    shared_lock(mutex_type& m, defer_lock_t) noexcept
+        : m_(addressof(m)), owns_(false) {}
+
+    shared_lock(mutex_type& m, try_to_lock_t)
+        : m_(addressof(m)), owns_(m.try_lock_shared()) {}
+
+    shared_lock(mutex_type& m, adopt_lock_t)
+        : m_(addressof(m)), owns_(true) {}
+
+    template <class Clock, class Duration>
+    shared_lock(mutex_type& m, const chrono::time_point<Clock, Duration>& abs)
+        : m_(addressof(m)), owns_(m.try_lock_shared_until(abs)) {}
+
+    template <class Rep, class Period>
+    shared_lock(mutex_type& m, const chrono::duration<Rep, Period>& rel)
+        : m_(addressof(m)), owns_(m.try_lock_shared_for(rel)) {}
+
+    ~shared_lock() {
+        if (owns_) m_->unlock_shared();
+    }
+
+    shared_lock(const shared_lock&)            = delete;
+    shared_lock& operator=(const shared_lock&) = delete;
+
+    shared_lock(shared_lock&& u) noexcept : m_(u.m_), owns_(u.owns_) {
+        u.m_    = nullptr;
+        u.owns_ = false;
+    }
+
+    shared_lock& operator=(shared_lock&& u) noexcept {
+        if (this != addressof(u))
+            shared_lock(std::move(u)).swap(*this);
+        return *this;
+    }
+
+    void lock() {
+        if (m_ == nullptr) __builtin_trap(); // null mutex
+        if (owns_) __builtin_trap();          // already locked
+        m_->lock_shared();
+        owns_ = true;
+    }
+
+    bool try_lock() {
+        if (m_ == nullptr) __builtin_trap();
+        if (owns_) __builtin_trap();
+        owns_ = m_->try_lock_shared();
+        return owns_;
+    }
+
+    template <class Rep, class Period>
+    bool try_lock_for(const chrono::duration<Rep, Period>& rel) {
+        if (m_ == nullptr) __builtin_trap();
+        if (owns_) __builtin_trap();
+        owns_ = m_->try_lock_shared_for(rel);
+        return owns_;
+    }
+
+    template <class Clock, class Duration>
+    bool try_lock_until(const chrono::time_point<Clock, Duration>& abs) {
+        if (m_ == nullptr) __builtin_trap();
+        if (owns_) __builtin_trap();
+        owns_ = m_->try_lock_shared_until(abs);
+        return owns_;
+    }
+
+    void unlock() {
+        if (!owns_) __builtin_trap(); // not locked
+        m_->unlock_shared();
+        owns_ = false;
+    }
+
+    void swap(shared_lock& u) noexcept {
+        std::swap(m_, u.m_);
+        std::swap(owns_, u.owns_);
+    }
+
+    mutex_type* release() noexcept {
+        mutex_type* m = m_;
+        m_    = nullptr;
+        owns_ = false;
+        return m;
+    }
+
+    bool owns_lock() const noexcept { return owns_; }
+    explicit operator bool() const noexcept { return owns_; }
+    mutex_type* mutex() const noexcept { return m_; }
+};
+
+template <class Mutex>
+inline void swap(shared_lock<Mutex>& x, shared_lock<Mutex>& y) noexcept {
+    x.swap(y);
+}
+
+} // namespace std
