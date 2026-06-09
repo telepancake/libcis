@@ -1,0 +1,298 @@
+// <thread> — thread, jthread, this_thread
+// Mechanically ported from libc++ include/__thread/{thread,id,this_thread,jthread}.h
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Threading: POSIX pthread underneath.
+//   pthread_create / join failure -> __builtin_trap() (comment: libc++ throws).
+// sleep_for: uses nanosleep() from <time.h>.
+#pragma once
+
+#include <type_traits>
+#include <utility>
+#include <tuple>
+#include <functional>   // invoke, is_invocable_v
+#include <compare>
+#include <chrono>
+#include <stop_token>
+#include <pthread.h>
+#include <sched.h>      // sched_yield
+#include <time.h>       // nanosleep, struct timespec
+#include <unistd.h>     // sysconf, _SC_NPROCESSORS_ONLN
+
+namespace std {
+
+// ============================================================
+// thread::id — defined first so this_thread::get_id can be a friend
+// ============================================================
+namespace this_thread {
+    class thread_id_access; // private helper to construct thread::id
+}
+
+class thread {
+public:
+    // ---- nested id type ----
+    class id {
+        pthread_t id_ = 0;
+    public:
+        id() noexcept = default;
+
+        friend bool operator==(id x, id y) noexcept {
+            if (x.id_ == 0) return y.id_ == 0;
+            if (y.id_ == 0) return false;
+            return pthread_equal(x.id_, y.id_) != 0;
+        }
+
+        friend strong_ordering operator<=>(id x, id y) noexcept {
+            if (x == y) return strong_ordering::equal;
+            return (x.id_ < y.id_) ? strong_ordering::less
+                                    : strong_ordering::greater;
+        }
+
+    private:
+        explicit id(pthread_t v) noexcept : id_(v) {}
+        friend class thread;
+        friend class this_thread::thread_id_access;
+    };
+
+    using native_handle_type = pthread_t;
+
+    // ---- constructors ----
+    thread() noexcept : t_(0) {}
+
+    template<class F, class... Args>
+        requires (!is_same_v<remove_cvref_t<F>, thread>)
+    explicit thread(F&& f, Args&&... args) {
+        static_assert(is_constructible_v<decay_t<F>, F>);
+        static_assert((is_constructible_v<decay_t<Args>, Args> && ...));
+        static_assert(is_invocable_v<decay_t<F>, decay_t<Args>...>);
+
+        using Tuple = tuple<decay_t<F>, decay_t<Args>...>;
+        auto* p = new Tuple(std::forward<F>(f), std::forward<Args>(args)...);
+
+        int ec = pthread_create(&t_, nullptr, &thread_proxy<Tuple>, p);
+        if (ec == 0) {
+            // p ownership transferred to the new thread
+        } else {
+            delete p;
+            __builtin_trap(); // pthread_create failed (libc++ would throw)
+        }
+    }
+
+    thread(const thread&)            = delete;
+    thread& operator=(const thread&) = delete;
+
+    thread(thread&& other) noexcept : t_(other.t_) { other.t_ = 0; }
+
+    thread& operator=(thread&& other) noexcept {
+        if (joinable())
+            __builtin_trap(); // libc++ calls terminate() here
+        t_ = other.t_;
+        other.t_ = 0;
+        return *this;
+    }
+
+    ~thread() {
+        if (joinable())
+            __builtin_trap(); // libc++ calls terminate()
+    }
+
+    // ---- observers ----
+    [[nodiscard]] bool joinable()            const noexcept { return t_ != 0; }
+    [[nodiscard]] id   get_id()              const noexcept { return id(t_); }
+    [[nodiscard]] native_handle_type native_handle() noexcept { return t_; }
+    [[nodiscard]] static unsigned hardware_concurrency() noexcept;
+
+    // ---- modifiers ----
+    void swap(thread& other) noexcept { std::swap(t_, other.t_); }
+
+    void join() {
+        int ec = pthread_join(t_, nullptr);
+        if (ec != 0)
+            __builtin_trap(); // pthread_join failed (libc++ would throw)
+        t_ = 0;
+    }
+
+    void detach() {
+        int ec = pthread_detach(t_);
+        if (ec != 0)
+            __builtin_trap(); // pthread_detach failed (libc++ would throw)
+        t_ = 0;
+    }
+
+    friend void swap(thread& x, thread& y) noexcept { x.swap(y); }
+
+private:
+    pthread_t t_;
+
+    template<class Tuple, size_t... I>
+    static void invoke_tuple(Tuple& tup, index_sequence<I...>) {
+        std::invoke(std::move(get<I>(tup))...);
+    }
+
+    template<class Tuple>
+    static void* thread_proxy(void* vp) {
+        Tuple* p = static_cast<Tuple*>(vp);
+        struct Guard { Tuple* ptr; ~Guard() { delete ptr; } } guard{p};
+        invoke_tuple(*p, make_index_sequence<tuple_size_v<Tuple>>{});
+        return nullptr;
+    }
+};
+
+// ---- out-of-line hardware_concurrency ----
+inline unsigned thread::hardware_concurrency() noexcept {
+    long n = ::sysconf(_SC_NPROCESSORS_ONLN);
+    return (n > 0) ? static_cast<unsigned>(n) : 0u;
+}
+
+// ============================================================
+// namespace this_thread
+// ============================================================
+namespace this_thread {
+
+// Helper class that is a friend of thread::id to construct one from pthread_t
+class thread_id_access {
+public:
+    static thread::id make(pthread_t p) noexcept {
+        return thread::id(p);
+    }
+};
+
+inline thread::id get_id() noexcept {
+    return thread_id_access::make(pthread_self());
+}
+
+inline void yield() noexcept {
+    sched_yield();
+}
+
+// sleep_for(nanoseconds) — core implementation using nanosleep
+inline void sleep_for(const chrono::nanoseconds& ns) {
+    if (ns <= chrono::nanoseconds::zero())
+        return;
+    chrono::seconds sec = chrono::duration_cast<chrono::seconds>(ns);
+    chrono::nanoseconds rem = ns - sec;
+    struct timespec ts;
+    ts.tv_sec  = static_cast<time_t>(sec.count());
+    ts.tv_nsec = static_cast<long>(rem.count());
+    while (nanosleep(&ts, &ts) == -1) { /* interrupted; continue */ }
+}
+
+// sleep_for generic duration
+template<class Rep, class Period>
+void sleep_for(const chrono::duration<Rep, Period>& d) {
+    if (d > chrono::duration<Rep, Period>::zero()) {
+        constexpr chrono::duration<long double> max_ns{9223372036.0L};
+        chrono::nanoseconds ns;
+        if (d < max_ns) {
+            ns = chrono::duration_cast<chrono::nanoseconds>(d);
+            if (ns < d) ++ns;
+        } else {
+            ns = chrono::nanoseconds::max();
+        }
+        sleep_for(ns);
+    }
+}
+
+// sleep_until — steady_clock specialization
+template<class Duration>
+void sleep_until(
+    const chrono::time_point<chrono::steady_clock, Duration>& tp)
+{
+    sleep_for(tp - chrono::steady_clock::now());
+}
+
+// sleep_until — generic Clock
+template<class Clock, class Duration>
+void sleep_until(const chrono::time_point<Clock, Duration>& tp) {
+    while (Clock::now() < tp)
+        sleep_for(chrono::milliseconds(1));
+}
+
+} // namespace this_thread
+
+// ============================================================
+// jthread
+// ============================================================
+class jthread {
+public:
+    using id                 = thread::id;
+    using native_handle_type = thread::native_handle_type;
+
+    jthread() noexcept : stop_source_(nostopstate) {}
+
+    template<class Fun, class... Args>
+        requires (!is_same_v<remove_cvref_t<Fun>, jthread>)
+    explicit jthread(Fun&& fun, Args&&... args)
+        : stop_source_(),
+          thread_(init_thread(stop_source_,
+                              std::forward<Fun>(fun),
+                              std::forward<Args>(args)...)) {
+        static_assert(is_constructible_v<decay_t<Fun>, Fun>);
+        static_assert((is_constructible_v<decay_t<Args>, Args> && ...));
+        static_assert(is_invocable_v<decay_t<Fun>, decay_t<Args>...> ||
+                      is_invocable_v<decay_t<Fun>, stop_token, decay_t<Args>...>);
+    }
+
+    ~jthread() {
+        if (joinable()) {
+            request_stop();
+            join();
+        }
+    }
+
+    jthread(const jthread&)            = delete;
+    jthread(jthread&&) noexcept        = default;
+    jthread& operator=(const jthread&) = delete;
+
+    jthread& operator=(jthread&& other) noexcept {
+        if (this != &other) {
+            if (joinable()) {
+                request_stop();
+                join();
+            }
+            stop_source_ = std::move(other.stop_source_);
+            thread_      = std::move(other.thread_);
+        }
+        return *this;
+    }
+
+    void swap(jthread& other) noexcept {
+        std::swap(stop_source_, other.stop_source_);
+        std::swap(thread_, other.thread_);
+    }
+
+    [[nodiscard]] bool joinable()    const noexcept { return get_id() != id(); }
+    void join()                             { thread_.join(); }
+    void detach()                           { thread_.detach(); }
+    [[nodiscard]] id get_id()        const noexcept { return thread_.get_id(); }
+    [[nodiscard]] native_handle_type native_handle() { return thread_.native_handle(); }
+
+    [[nodiscard]] stop_source get_stop_source() noexcept { return stop_source_; }
+    [[nodiscard]] stop_token  get_stop_token()  const noexcept {
+        return stop_source_.get_token();
+    }
+    bool request_stop() noexcept { return stop_source_.request_stop(); }
+
+    [[nodiscard]] static unsigned hardware_concurrency() noexcept {
+        return thread::hardware_concurrency();
+    }
+
+    friend void swap(jthread& lhs, jthread& rhs) noexcept { lhs.swap(rhs); }
+
+private:
+    template<class Fun, class... Args>
+    static thread init_thread(const stop_source& ss, Fun&& fun, Args&&... args) {
+        if constexpr (is_invocable_v<decay_t<Fun>, stop_token, decay_t<Args>...>) {
+            return thread(std::forward<Fun>(fun), ss.get_token(),
+                          std::forward<Args>(args)...);
+        } else {
+            return thread(std::forward<Fun>(fun),
+                          std::forward<Args>(args)...);
+        }
+    }
+
+    stop_source stop_source_;
+    thread      thread_;
+};
+
+} // namespace std
