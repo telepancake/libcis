@@ -24,15 +24,7 @@
 //   __algorithm/shift_left.h, shift_right.h
 //   __algorithm/lexicographical_compare.h, lexicographical_compare_three_way.h
 //
-// DEFERRED to Part 2 (sorting/searching/heap/set-ops wave):
-//   sort, stable_sort, partial_sort, partial_sort_copy, nth_element
-//   lower_bound, upper_bound, equal_range, binary_search
-//   merge, inplace_merge
-//   set_union, set_intersection, set_difference, set_symmetric_difference, includes
-//   make_heap, push_heap, pop_heap, sort_heap, is_heap, is_heap_until
-//   partition, stable_partition, partition_copy, is_partitioned, partition_point
-//   is_sorted, is_sorted_until
-//   next_permutation, prev_permutation, is_permutation
+// DEFERRED (not yet ported):
 //   sample, shuffle  (require <random>)
 //   All ranges:: algorithm overloads (come with the <ranges> wave)
 //
@@ -46,6 +38,8 @@
 #include <type_traits>
 #include <initializer_list>
 #include <compare>
+#include <new>
+#include <cstddef>
 
 namespace std {
 
@@ -1246,7 +1240,1494 @@ lexicographical_compare_three_way(InputIter1 first1, InputIter1 last1,
 }
 
 // === PART 2 APPEND POINT ===
-// Part 2 (sorting/searching/heap/set-operations) should be inserted here,
-// before the closing brace of namespace std.
+// Part 2 (sorting/searching/heap/set-operations) is below.
+
+//===----------------------------------------------------------------------===//
+// PART 2: Heap, sorting, binary search, merge, set ops, partition, permutation
+// Ported from libc++ __algorithm/{is_heap_until,is_heap,push_heap,pop_heap,
+//   make_heap,sort_heap,is_sorted_until,is_sorted,lower_bound,upper_bound,
+//   equal_range,binary_search,partial_sort,partial_sort_copy,nth_element,
+//   sort,stable_sort,inplace_merge,merge,includes,set_{union,intersection,
+//   difference,symmetric_difference},partition,stable_partition,partition_copy,
+//   is_partitioned,partition_point,next_permutation,prev_permutation,
+//   is_permutation}.h
+//===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
+// [alg.heap] — Heap operations
+// (from __algorithm/is_heap_until.h, is_heap.h, push_heap.h, pop_heap.h,
+//  make_heap.h, sort_heap.h, sift_down.h)
+//===----------------------------------------------------------------------===//
+
+// is_heap_until (with comparator)
+template<class RandomIter, class Compare>
+[[nodiscard]] constexpr RandomIter
+is_heap_until(RandomIter first, RandomIter last, Compare comp) {
+    using diff_t = typename iterator_traits<RandomIter>::difference_type;
+    diff_t len = last - first;
+    diff_t p   = 0;
+    diff_t c   = 1;
+    RandomIter pp = first;
+    while (c < len) {
+        RandomIter cp = first + c;
+        if (comp(*pp, *cp)) return cp;
+        ++c;
+        ++cp;
+        if (c == len) return last;
+        if (comp(*pp, *cp)) return cp;
+        ++p;
+        ++pp;
+        c = 2 * p + 1;
+    }
+    return last;
+}
+
+// is_heap_until (operator<)
+template<class RandomIter>
+[[nodiscard]] constexpr RandomIter
+is_heap_until(RandomIter first, RandomIter last) {
+    return is_heap_until(first, last, less<>{});
+}
+
+// is_heap (with comparator)
+template<class RandomIter, class Compare>
+[[nodiscard]] constexpr bool
+is_heap(RandomIter first, RandomIter last, Compare comp) {
+    return is_heap_until(first, last, comp) == last;
+}
+
+// is_heap (operator<)
+template<class RandomIter>
+[[nodiscard]] constexpr bool
+is_heap(RandomIter first, RandomIter last) {
+    return is_heap(first, last, less<>{});
+}
+
+// sift_up — moves element at (last-1) up into the heap [first, last)
+namespace detail {
+    template<class RandomIter, class Compare>
+    constexpr void
+    sift_up(RandomIter first, RandomIter last, Compare& comp,
+            typename iterator_traits<RandomIter>::difference_type len) {
+        using value_type = typename iterator_traits<RandomIter>::value_type;
+        if (len > 1) {
+            len = (len - 2) / 2;
+            RandomIter ptr = first + len;
+            if (comp(*ptr, *--last)) {
+                value_type t(std::move(*last));
+                do {
+                    *last = std::move(*ptr);
+                    last  = ptr;
+                    if (len == 0) break;
+                    len = (len - 1) / 2;
+                    ptr = first + len;
+                } while (comp(*ptr, t));
+                *last = std::move(t);
+            }
+        }
+    }
+
+    // sift_down — sifts element at position start downward in heap [first, first+n)
+    template<class RandomIter, class Compare>
+    constexpr void
+    sift_down(RandomIter first, Compare& comp,
+              typename iterator_traits<RandomIter>::difference_type len,
+              typename iterator_traits<RandomIter>::difference_type start) {
+        using diff_t     = typename iterator_traits<RandomIter>::difference_type;
+        using value_type = typename iterator_traits<RandomIter>::value_type;
+        diff_t child = start;
+        if (len < 2 || (len - 2) / 2 < child) return;
+        child = 2 * child + 1;
+        if ((child + 1) < len && comp(first[child], first[child + 1]))
+            ++child;
+        if (comp(first[child], first[start])) return;
+        value_type top(std::move(first[start]));
+        do {
+            first[start] = std::move(first[child]);
+            start = child;
+            if ((len - 2) / 2 < child) break;
+            child = 2 * child + 1;
+            if ((child + 1) < len && comp(first[child], first[child + 1]))
+                ++child;
+        } while (!comp(first[child], top));
+        first[start] = std::move(top);
+    }
+
+    // floyd_sift_down — sifts down unconditionally (used by pop_heap)
+    // Returns the position of the hole after sifting down to a leaf.
+    template<class RandomIter, class Compare>
+    constexpr RandomIter
+    floyd_sift_down(RandomIter first, Compare& comp,
+                    typename iterator_traits<RandomIter>::difference_type len) {
+        using diff_t = typename iterator_traits<RandomIter>::difference_type;
+        RandomIter hole = first;
+        RandomIter child_i = first;
+        diff_t child = 0;
+        while (true) {
+            child_i += diff_t(child + 1);
+            child = 2 * child + 1;
+            if ((child + 1) < len && comp(*child_i, *(child_i + diff_t(1)))) {
+                ++child_i;
+                ++child;
+            }
+            *hole = std::move(*child_i);
+            hole  = child_i;
+            if (child > (len - 2) / 2) return hole;
+        }
+    }
+} // namespace detail
+
+// push_heap (with comparator) — [first, last-1) is a heap; bubble last-1 up
+template<class RandomIter, class Compare>
+constexpr void
+push_heap(RandomIter first, RandomIter last, Compare comp) {
+    typename iterator_traits<RandomIter>::difference_type len = last - first;
+    detail::sift_up(first, last, comp, len);
+}
+
+// push_heap (operator<)
+template<class RandomIter>
+constexpr void
+push_heap(RandomIter first, RandomIter last) {
+    push_heap(first, last, less<>{});
+}
+
+// pop_heap (with comparator) — swaps max to last-1, re-heapifies [first, last-1)
+template<class RandomIter, class Compare>
+constexpr void
+pop_heap(RandomIter first, RandomIter last, Compare comp) {
+    using value_type = typename iterator_traits<RandomIter>::value_type;
+    typename iterator_traits<RandomIter>::difference_type len = last - first;
+    if (len > 1) {
+        value_type top = std::move(*first);
+        RandomIter hole = detail::floyd_sift_down(first, comp, len);
+        --last;
+        if (hole == last) {
+            *hole = std::move(top);
+        } else {
+            *hole = std::move(*last);
+            ++hole;
+            *last = std::move(top);
+            detail::sift_up(first, hole, comp, hole - first);
+        }
+    }
+}
+
+// pop_heap (operator<)
+template<class RandomIter>
+constexpr void
+pop_heap(RandomIter first, RandomIter last) {
+    pop_heap(first, last, less<>{});
+}
+
+// make_heap (with comparator) — heapify [first, last) in O(n)
+template<class RandomIter, class Compare>
+constexpr void
+make_heap(RandomIter first, RandomIter last, Compare comp) {
+    using diff_t = typename iterator_traits<RandomIter>::difference_type;
+    diff_t n = last - first;
+    if (n > 1) {
+        for (diff_t start = (n - 2) / 2; start >= 0; --start)
+            detail::sift_down(first, comp, n, start);
+    }
+}
+
+// make_heap (operator<)
+template<class RandomIter>
+constexpr void
+make_heap(RandomIter first, RandomIter last) {
+    make_heap(first, last, less<>{});
+}
+
+// sort_heap (with comparator) — sorts a heap in ascending order
+template<class RandomIter, class Compare>
+constexpr void
+sort_heap(RandomIter first, RandomIter last, Compare comp) {
+    for (typename iterator_traits<RandomIter>::difference_type n = last - first;
+         n > 1; --last, --n)
+        pop_heap(first, last, comp);
+}
+
+// sort_heap (operator<)
+template<class RandomIter>
+constexpr void
+sort_heap(RandomIter first, RandomIter last) {
+    sort_heap(first, last, less<>{});
+}
+
+//===----------------------------------------------------------------------===//
+// [alg.sorting] — is_sorted, is_sorted_until
+// (from __algorithm/is_sorted_until.h, is_sorted.h)
+//===----------------------------------------------------------------------===//
+
+// is_sorted_until (with comparator)
+template<class ForwardIter, class Compare>
+[[nodiscard]] constexpr ForwardIter
+is_sorted_until(ForwardIter first, ForwardIter last, Compare comp) {
+    if (first != last) {
+        ForwardIter i = first;
+        while (++i != last) {
+            if (comp(*i, *first)) return i;
+            first = i;
+        }
+    }
+    return last;
+}
+
+// is_sorted_until (operator<)
+template<class ForwardIter>
+[[nodiscard]] constexpr ForwardIter
+is_sorted_until(ForwardIter first, ForwardIter last) {
+    return is_sorted_until(first, last, less<>{});
+}
+
+// is_sorted (with comparator)
+template<class ForwardIter, class Compare>
+[[nodiscard]] constexpr bool
+is_sorted(ForwardIter first, ForwardIter last, Compare comp) {
+    return is_sorted_until(first, last, comp) == last;
+}
+
+// is_sorted (operator<)
+template<class ForwardIter>
+[[nodiscard]] constexpr bool
+is_sorted(ForwardIter first, ForwardIter last) {
+    return is_sorted(first, last, less<>{});
+}
+
+//===----------------------------------------------------------------------===//
+// [alg.binary.search] — lower_bound, upper_bound, equal_range, binary_search
+// (from __algorithm/lower_bound.h, upper_bound.h, equal_range.h,
+//  binary_search.h)
+//===----------------------------------------------------------------------===//
+
+// lower_bound (with comparator) — first position where !(comp(*it, value))
+template<class ForwardIter, class T, class Compare>
+[[nodiscard]] constexpr ForwardIter
+lower_bound(ForwardIter first, ForwardIter last, const T& value, Compare comp) {
+    auto len = distance(first, last);
+    while (len != 0) {
+        auto half = len / 2;
+        ForwardIter mid = first;
+        advance(mid, half);
+        if (comp(*mid, value)) {
+            first = ++mid;
+            len -= half + 1;
+        } else {
+            len = half;
+        }
+    }
+    return first;
+}
+
+// lower_bound (operator<)
+template<class ForwardIter, class T>
+[[nodiscard]] constexpr ForwardIter
+lower_bound(ForwardIter first, ForwardIter last, const T& value) {
+    return lower_bound(first, last, value, less<>{});
+}
+
+// upper_bound (with comparator) — first position where comp(value, *it)
+template<class ForwardIter, class T, class Compare>
+[[nodiscard]] constexpr ForwardIter
+upper_bound(ForwardIter first, ForwardIter last, const T& value, Compare comp) {
+    auto len = distance(first, last);
+    while (len != 0) {
+        auto half = len / 2;
+        ForwardIter mid = first;
+        advance(mid, half);
+        if (comp(value, *mid)) {
+            len = half;
+        } else {
+            first = ++mid;
+            len -= half + 1;
+        }
+    }
+    return first;
+}
+
+// upper_bound (operator<)
+template<class ForwardIter, class T>
+[[nodiscard]] constexpr ForwardIter
+upper_bound(ForwardIter first, ForwardIter last, const T& value) {
+    return upper_bound(first, last, value, less<>{});
+}
+
+// equal_range (with comparator)
+template<class ForwardIter, class T, class Compare>
+[[nodiscard]] constexpr pair<ForwardIter, ForwardIter>
+equal_range(ForwardIter first, ForwardIter last, const T& value, Compare comp) {
+    auto len  = distance(first, last);
+    ForwardIter end = last;
+    while (len != 0) {
+        auto half = len / 2;
+        ForwardIter mid = first;
+        advance(mid, half);
+        if (comp(*mid, value)) {
+            first = ++mid;
+            len -= half + 1;
+        } else if (comp(value, *mid)) {
+            end = mid;
+            len = half;
+        } else {
+            ForwardIter mp1 = mid;
+            return {lower_bound(first, mid, value, comp),
+                    upper_bound(++mp1, end, value, comp)};
+        }
+    }
+    return {first, first};
+}
+
+// equal_range (operator<)
+template<class ForwardIter, class T>
+[[nodiscard]] constexpr pair<ForwardIter, ForwardIter>
+equal_range(ForwardIter first, ForwardIter last, const T& value) {
+    return equal_range(first, last, value, less<>{});
+}
+
+// binary_search (with comparator)
+template<class ForwardIter, class T, class Compare>
+[[nodiscard]] constexpr bool
+binary_search(ForwardIter first, ForwardIter last, const T& value, Compare comp) {
+    first = lower_bound(first, last, value, comp);
+    return first != last && !comp(value, *first);
+}
+
+// binary_search (operator<)
+template<class ForwardIter, class T>
+[[nodiscard]] constexpr bool
+binary_search(ForwardIter first, ForwardIter last, const T& value) {
+    return binary_search(first, last, value, less<>{});
+}
+
+//===----------------------------------------------------------------------===//
+// [alg.sorting] — partial_sort, partial_sort_copy
+// (from __algorithm/partial_sort.h, partial_sort_copy.h)
+//===----------------------------------------------------------------------===//
+
+// partial_sort (with comparator) — [first, middle) sorted ascending,
+// [middle, last) in unspecified order
+template<class RandomIter, class Compare>
+constexpr void
+partial_sort(RandomIter first, RandomIter middle, RandomIter last, Compare comp) {
+    if (first == middle) return;
+    make_heap(first, middle, comp);
+    typename iterator_traits<RandomIter>::difference_type len = middle - first;
+    for (RandomIter i = middle; i != last; ++i) {
+        if (comp(*i, *first)) {
+            swap(*i, *first);
+            detail::sift_down(first, comp, len, 0);
+        }
+    }
+    sort_heap(first, middle, comp);
+}
+
+// partial_sort (operator<)
+template<class RandomIter>
+constexpr void
+partial_sort(RandomIter first, RandomIter middle, RandomIter last) {
+    partial_sort(first, middle, last, less<>{});
+}
+
+// partial_sort_copy (with comparator)
+template<class InputIter, class RandomIter, class Compare>
+constexpr RandomIter
+partial_sort_copy(InputIter first, InputIter last,
+                  RandomIter result_first, RandomIter result_last,
+                  Compare comp) {
+    RandomIter r = result_first;
+    if (r != result_last) {
+        for (; first != last && r != result_last; ++first, ++r)
+            *r = *first;
+        make_heap(result_first, r, comp);
+        typename iterator_traits<RandomIter>::difference_type len = r - result_first;
+        for (; first != last; ++first) {
+            if (comp(*first, *result_first)) {
+                *result_first = *first;
+                detail::sift_down(result_first, comp, len, 0);
+            }
+        }
+        sort_heap(result_first, r, comp);
+    }
+    return r;
+}
+
+// partial_sort_copy (operator<)
+template<class InputIter, class RandomIter>
+constexpr RandomIter
+partial_sort_copy(InputIter first, InputIter last,
+                  RandomIter result_first, RandomIter result_last) {
+    return partial_sort_copy(first, last, result_first, result_last, less<>{});
+}
+
+//===----------------------------------------------------------------------===//
+// [alg.sorting] — nth_element
+// (from __algorithm/nth_element.h)
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+    // sort3: sort the three elements pointed to by x, y, z — returns whether any swap occurred
+    template<class RandomIter, class Compare>
+    constexpr bool
+    sort3(RandomIter x, RandomIter y, RandomIter z, Compare& comp) {
+        if (!comp(*y, *x)) {
+            if (!comp(*z, *y)) return false;
+            swap(*y, *z);
+            if (comp(*y, *x)) swap(*x, *y);
+            return true;
+        }
+        if (comp(*z, *y)) {
+            swap(*x, *z);
+            return true;
+        }
+        swap(*x, *y);
+        if (comp(*z, *y)) swap(*y, *z);
+        return true;
+    }
+
+    template<class RandomIter, class Compare>
+    constexpr bool
+    nth_element_find_guard(RandomIter& i, RandomIter& j,
+                           RandomIter m, Compare& comp) {
+        while (true) {
+            if (i == --j) return false;
+            if (comp(*j, *m)) return true;
+        }
+    }
+} // namespace detail
+
+// nth_element (with comparator)
+template<class RandomIter, class Compare>
+constexpr void
+nth_element(RandomIter first, RandomIter nth, RandomIter last, Compare comp) {
+    using diff_t = typename iterator_traits<RandomIter>::difference_type;
+    const diff_t limit = 7;
+    while (true) {
+        if (nth == last) return;
+        diff_t len = last - first;
+        if (len <= 1) return;
+        if (len == 2) {
+            if (comp(*--last, *first)) swap(*first, *last);
+            return;
+        }
+        if (len == 3) {
+            RandomIter m = first;
+            detail::sort3(first, ++m, --last, comp);
+            return;
+        }
+        if (len <= limit) {
+            // selection sort
+            RandomIter lm1 = last;
+            for (--lm1; first != lm1; ++first) {
+                RandomIter mn = min_element(first, last, comp);
+                if (mn != first) swap(*first, *mn);
+            }
+            return;
+        }
+        RandomIter m = first + len / 2;
+        RandomIter lm1 = last;
+        unsigned n_swaps = detail::sort3(first, m, --lm1, comp) ? 1u : 0u;
+        RandomIter i = first;
+        RandomIter j = lm1;
+        if (!comp(*i, *m)) {
+            if (detail::nth_element_find_guard(i, j, m, comp)) {
+                swap(*i, *j);
+                ++n_swaps;
+            } else {
+                ++i;
+                j = last;
+                if (!comp(*first, *--j)) {
+                    while (true) {
+                        if (i == j) return;
+                        if (comp(*first, *i)) {
+                            swap(*i, *j);
+                            ++n_swaps;
+                            ++i;
+                            break;
+                        }
+                        ++i;
+                    }
+                }
+                if (i == j) return;
+                while (true) {
+                    while (!comp(*first, *i)) ++i;
+                    do { --j; } while (comp(*first, *j));
+                    if (i >= j) break;
+                    swap(*i, *j);
+                    ++n_swaps;
+                    ++i;
+                }
+                if (nth < i) return;
+                first = i;
+                continue;
+            }
+        }
+        ++i;
+        if (i < j) {
+            while (true) {
+                while (comp(*i, *m)) ++i;
+                do { --j; } while (!comp(*j, *m));
+                if (i >= j) break;
+                swap(*i, *j);
+                ++n_swaps;
+                if (m == i) m = j;
+                ++i;
+            }
+        }
+        if (i != m && comp(*m, *i)) {
+            swap(*i, *m);
+            ++n_swaps;
+        }
+        if (nth == i) return;
+        if (n_swaps == 0) {
+            if (nth < i) {
+                j = m = first;
+                while (true) {
+                    if (++j == i) return;
+                    if (comp(*j, *m)) break;
+                    m = j;
+                }
+            } else {
+                j = m = i;
+                while (true) {
+                    if (++j == last) return;
+                    if (comp(*j, *m)) break;
+                    m = j;
+                }
+            }
+        }
+        if (nth < i) {
+            last = i;
+        } else {
+            first = ++i;
+        }
+    }
+}
+
+// nth_element (operator<)
+template<class RandomIter>
+constexpr void
+nth_element(RandomIter first, RandomIter nth, RandomIter last) {
+    nth_element(first, nth, last, less<>{});
+}
+
+//===----------------------------------------------------------------------===//
+// [alg.sort] — sort (introsort)
+// (from __algorithm/sort.h)
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+    // insertion_sort — sort [first, last) with insertion sort
+    template<class BidiIter, class Compare>
+    constexpr void
+    insertion_sort(BidiIter first, BidiIter last, Compare& comp) {
+        using value_type = typename iterator_traits<BidiIter>::value_type;
+        if (first == last) return;
+        BidiIter i = first;
+        for (++i; i != last; ++i) {
+            BidiIter j = i;
+            --j;
+            if (comp(*i, *j)) {
+                value_type t(std::move(*i));
+                BidiIter k = j;
+                j = i;
+                do {
+                    *j = std::move(*k);
+                    j  = k;
+                } while (j != first && comp(t, *--k));
+                *j = std::move(t);
+            }
+        }
+    }
+
+    // insertion_sort_unguarded — assumes element before first is a valid guard
+    template<class RandomIter, class Compare>
+    void
+    insertion_sort_unguarded(RandomIter first, RandomIter last, Compare& comp) {
+        using value_type = typename iterator_traits<RandomIter>::value_type;
+        using diff_t = typename iterator_traits<RandomIter>::difference_type;
+        if (first == last) return;
+        for (RandomIter i = first + diff_t(1); i != last; ++i) {
+            RandomIter j = i - diff_t(1);
+            if (comp(*i, *j)) {
+                value_type t(std::move(*i));
+                RandomIter k = j;
+                j = i;
+                do {
+                    *j = std::move(*k);
+                    j  = k;
+                } while (comp(t, *--k));
+                *j = std::move(t);
+            }
+        }
+    }
+
+    // bit_log2 — floor(log2(n)) for n > 0
+    inline unsigned
+    bit_log2(unsigned long long n) {
+        return (unsigned)(sizeof(unsigned long long) * 8 - 1 -
+                          __builtin_clzll(n));
+    }
+
+    // introsort — [first, last), depth controls heap-sort fallback
+    template<class RandomIter, class Compare>
+    void
+    introsort(RandomIter first, RandomIter last, Compare& comp,
+              typename iterator_traits<RandomIter>::difference_type depth,
+              bool leftmost) {
+        using diff_t     = typename iterator_traits<RandomIter>::difference_type;
+        using value_type = typename iterator_traits<RandomIter>::value_type;
+        constexpr diff_t ISORT_LIMIT = 24;
+
+        while (true) {
+            diff_t len = last - first;
+            if (len < 2) return;
+            if (len == 2) {
+                if (comp(*--last, *first)) swap(*first, *last);
+                return;
+            }
+            if (len == 3) {
+                detail::sort3(first, first + diff_t(1), last - diff_t(1), comp);
+                return;
+            }
+            if (len < ISORT_LIMIT) {
+                if (leftmost)
+                    detail::insertion_sort(first, last, comp);
+                else
+                    detail::insertion_sort_unguarded(first, last, comp);
+                return;
+            }
+            if (depth == 0) {
+                // Fall back to heap sort
+                make_heap(first, last, comp);
+                sort_heap(first, last, comp);
+                return;
+            }
+            --depth;
+
+            // Median-of-three pivot selection
+            diff_t half = len / 2;
+            detail::sort3(first + half, first, last - diff_t(1), comp);
+            // Now *first is the median/pivot
+
+            // Partition [first+1, last) around pivot *first
+            // equals on left: __partition_with_equals_on_right pattern
+            {
+                // Put pivot at first; partition [first+1, last)
+                value_type pivot(std::move(*first));
+                RandomIter i = first + diff_t(1);
+                RandomIter j = last;
+
+                // Find first >= pivot from left
+                while (i < j && comp(*i, pivot)) ++i;
+                // Find last < pivot from right (guarded)
+                while (i < j) {
+                    --j;
+                    if (comp(*j, pivot)) break;
+                }
+
+                bool already_partitioned = (i >= j);
+                if (!already_partitioned) {
+                    swap(*i, *j);
+                    ++i;
+                }
+
+                // Continue partitioning
+                while (i < j) {
+                    while (comp(*i, pivot)) ++i;
+                    do { --j; } while (!comp(*j, pivot));
+                    if (i >= j) break;
+                    swap(*i, *j);
+                    ++i;
+                }
+
+                // Place pivot at its final position (just before i)
+                RandomIter pivot_pos = i - diff_t(1);
+                *first    = std::move(*pivot_pos);
+                *pivot_pos = std::move(pivot);
+
+                // [first, pivot_pos) < *pivot_pos <= [pivot_pos+1, last)
+                if (!leftmost && !comp(*(first - diff_t(1)), *pivot_pos)) {
+                    // Everything in [first, pivot_pos] is equal to pivot
+                    first = pivot_pos + diff_t(1);
+                    continue;
+                }
+
+                // Recurse on smaller partition, tail-recurse on larger
+                introsort(first, pivot_pos, comp, depth, leftmost);
+                leftmost = false;
+                first    = pivot_pos + diff_t(1);
+            }
+        }
+    }
+} // namespace detail
+
+// sort (with comparator)
+template<class RandomIter, class Compare>
+constexpr void
+sort(RandomIter first, RandomIter last, Compare comp) {
+    if (first == last) return;
+    using diff_t = typename iterator_traits<RandomIter>::difference_type;
+    diff_t depth = diff_t(2) * diff_t(detail::bit_log2(
+        (unsigned long long)(last - first)));
+    detail::introsort(first, last, comp, depth, true);
+}
+
+// sort (operator<)
+template<class RandomIter>
+constexpr void
+sort(RandomIter first, RandomIter last) {
+    sort(first, last, less<>{});
+}
+
+//===----------------------------------------------------------------------===//
+// [alg.merge] — merge, inplace_merge
+// (from __algorithm/merge.h, inplace_merge.h)
+//===----------------------------------------------------------------------===//
+
+// merge (with comparator) — merge two sorted ranges into output
+template<class InputIter1, class InputIter2, class OutputIter, class Compare>
+constexpr OutputIter
+merge(InputIter1 first1, InputIter1 last1,
+      InputIter2 first2, InputIter2 last2,
+      OutputIter result, Compare comp) {
+    for (; first1 != last1; ++result) {
+        if (first2 == last2) return copy(first1, last1, result);
+        if (comp(*first2, *first1)) {
+            *result = *first2; ++first2;
+        } else {
+            *result = *first1; ++first1;
+        }
+    }
+    return copy(first2, last2, result);
+}
+
+// merge (operator<)
+template<class InputIter1, class InputIter2, class OutputIter>
+constexpr OutputIter
+merge(InputIter1 first1, InputIter1 last1,
+      InputIter2 first2, InputIter2 last2,
+      OutputIter result) {
+    return merge(first1, last1, first2, last2, result, less<>{});
+}
+
+// inplace_merge helpers
+namespace detail {
+    template<class Compare>
+    struct comp_invert {
+        Compare comp;
+        template<class T1, class T2>
+        bool operator()(const T1& x, const T2& y) const { return comp(y, x); }
+    };
+
+    // half_inplace_merge: merge [first1,last1) and [first2,last2) into [result,...),
+    // moving from both halves — [first2,last2) already in place after result range
+    template<class Iter1, class Iter2, class OutIter, class Compare>
+    constexpr void
+    half_inplace_merge(Iter1 first1, Iter1 last1,
+                       Iter2 first2, Iter2 last2,
+                       OutIter result, Compare& comp) {
+        for (; first1 != last1; ++result) {
+            if (first2 == last2) {
+                move(first1, last1, result);
+                return;
+            }
+            if (comp(*first2, *first1)) {
+                *result = std::move(*first2); ++first2;
+            } else {
+                *result = std::move(*first1); ++first1;
+            }
+        }
+        // first2..last2 are already in the right place
+    }
+
+    template<class BidiIter, class Compare>
+    void
+    buffered_inplace_merge(BidiIter first, BidiIter middle, BidiIter last,
+                           Compare& comp,
+                           typename iterator_traits<BidiIter>::difference_type len1,
+                           typename iterator_traits<BidiIter>::difference_type len2,
+                           typename iterator_traits<BidiIter>::value_type* buff) {
+        using value_type = typename iterator_traits<BidiIter>::value_type;
+        if (len1 <= len2) {
+            value_type* p = buff;
+            for (BidiIter i = first; i != middle; ++i, ++p)
+                ::new (static_cast<void*>(p)) value_type(std::move(*i));
+            half_inplace_merge(buff, p, middle, last, first, comp);
+            // destroy temporaries
+            for (value_type* q = buff; q != p; ++q) q->~value_type();
+        } else {
+            value_type* p = buff;
+            for (BidiIter i = middle; i != last; ++i, ++p)
+                ::new (static_cast<void*>(p)) value_type(std::move(*i));
+            // reverse-merge: use reverse_iterator + inverted comp
+            using RBi = reverse_iterator<BidiIter>;
+            using Rv  = reverse_iterator<value_type*>;
+            comp_invert<Compare&> inv{comp};
+            half_inplace_merge(Rv(p), Rv(buff), RBi(middle), RBi(first),
+                               RBi(last), inv);
+            for (value_type* q = buff; q != p; ++q) q->~value_type();
+        }
+    }
+
+    template<class BidiIter, class Compare>
+    void
+    inplace_merge_impl(BidiIter first, BidiIter middle, BidiIter last,
+                       Compare& comp,
+                       typename iterator_traits<BidiIter>::difference_type len1,
+                       typename iterator_traits<BidiIter>::difference_type len2,
+                       typename iterator_traits<BidiIter>::value_type* buff,
+                       ptrdiff_t buff_size) {
+        using diff_t = typename iterator_traits<BidiIter>::difference_type;
+        while (true) {
+            if (len2 == 0) return;
+            if (len1 <= buff_size || len2 <= buff_size)
+                return buffered_inplace_merge(first, middle, last, comp, len1, len2, buff);
+            // Shrink left range
+            for (; true; ++first, --len1) {
+                if (len1 == 0) return;
+                if (comp(*middle, *first)) break;
+            }
+            BidiIter m1, m2;
+            diff_t len11, len21;
+            if (len1 < len2) {
+                len21 = len2 / 2;
+                m2 = middle;
+                advance(m2, len21);
+                m1 = upper_bound(first, middle, *m2, comp);
+                len11 = distance(first, m1);
+            } else {
+                if (len1 == 1) {
+                    swap(*first, *middle);
+                    return;
+                }
+                len11 = len1 / 2;
+                m1 = first;
+                advance(m1, len11);
+                m2 = lower_bound(middle, last, *m1, comp);
+                len21 = distance(middle, m2);
+            }
+            diff_t len12 = len1 - len11;
+            diff_t len22 = len2 - len21;
+            middle = rotate(m1, middle, m2);
+            if (len11 + len21 < len12 + len22) {
+                inplace_merge_impl(first, m1, middle, comp, len11, len21, buff, buff_size);
+                first  = middle;
+                middle = m2;
+                len1   = len12;
+                len2   = len22;
+            } else {
+                inplace_merge_impl(middle, m2, last, comp, len12, len22, buff, buff_size);
+                last   = middle;
+                middle = m1;
+                len1   = len11;
+                len2   = len21;
+            }
+        }
+    }
+} // namespace detail
+
+// inplace_merge (with comparator)
+template<class BidiIter, class Compare>
+void
+inplace_merge(BidiIter first, BidiIter middle, BidiIter last, Compare comp) {
+    using value_type = typename iterator_traits<BidiIter>::value_type;
+    using diff_t     = typename iterator_traits<BidiIter>::difference_type;
+    diff_t len1    = distance(first, middle);
+    diff_t len2    = distance(middle, last);
+    diff_t buf_sz  = min(len1, len2);
+    // Allocate temporary buffer (may get fewer bytes than requested)
+    value_type* buf = nullptr;
+    ptrdiff_t got = 0;
+    if (buf_sz > 0) {
+        buf = static_cast<value_type*>(::operator new(
+                  static_cast<size_t>(buf_sz) * sizeof(value_type),
+                  std::nothrow));
+        got = buf ? buf_sz : 0;
+    }
+    detail::inplace_merge_impl(first, middle, last, comp, len1, len2, buf, got);
+    ::operator delete(buf);
+}
+
+// inplace_merge (operator<)
+template<class BidiIter>
+void
+inplace_merge(BidiIter first, BidiIter middle, BidiIter last) {
+    inplace_merge(first, middle, last, less<>{});
+}
+
+//===----------------------------------------------------------------------===//
+// [alg.sort] — stable_sort
+// (from __algorithm/stable_sort.h)
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+    // merge_move_assign — like merge but moves from input
+    template<class Iter1, class Iter2, class OutIter, class Compare>
+    constexpr void
+    merge_move_assign(Iter1 first1, Iter1 last1,
+                      Iter2 first2, Iter2 last2,
+                      OutIter result, Compare& comp) {
+        for (; first1 != last1; ++result) {
+            if (first2 == last2) {
+                for (; first1 != last1; ++first1, ++result)
+                    *result = std::move(*first1);
+                return;
+            }
+            if (comp(*first2, *first1)) {
+                *result = std::move(*first2); ++first2;
+            } else {
+                *result = std::move(*first1); ++first1;
+            }
+        }
+        for (; first2 != last2; ++first2, ++result)
+            *result = std::move(*first2);
+    }
+
+    // stable_sort_impl — mergesort using buff when available
+    template<class RandomIter, class Compare>
+    void
+    stable_sort_impl(RandomIter first, RandomIter last, Compare& comp,
+                     typename iterator_traits<RandomIter>::difference_type len,
+                     typename iterator_traits<RandomIter>::value_type* buff,
+                     ptrdiff_t buff_size) {
+        using value_type = typename iterator_traits<RandomIter>::value_type;
+        using diff_t     = typename iterator_traits<RandomIter>::difference_type;
+        if (len <= 1) return;
+        if (len == 2) {
+            if (comp(*--last, *first)) swap(*first, *last);
+            return;
+        }
+        // Threshold for insertion sort (same as libc++: trivially-copyable=>128, else 16)
+        const diff_t isort_thresh =
+            is_trivially_copy_assignable<value_type>::value ? 128 : 16;
+        if (len <= isort_thresh) {
+            detail::insertion_sort(first, last, comp);
+            return;
+        }
+        diff_t l2 = len / 2;
+        RandomIter m = first + l2;
+        if (len <= buff_size) {
+            // sort both halves in-place, then merge into buff
+            stable_sort_impl(first, m, comp, l2, buff, buff_size);
+            stable_sort_impl(m, last, comp, len - l2, buff, buff_size);
+            // merge first..m and m..last into buff, then copy back
+            value_type* bp = buff;
+            for (RandomIter i = first; i != m; ++i, ++bp)
+                ::new (static_cast<void*>(bp)) value_type(std::move(*i));
+            value_type* bend = bp;
+            bp = buff;
+            merge_move_assign(buff, bend, m, last, first, comp);
+            for (value_type* p = buff; p != bend; ++p) p->~value_type();
+        } else {
+            stable_sort_impl(first, m, comp, l2, buff, buff_size);
+            stable_sort_impl(m, last, comp, len - l2, buff, buff_size);
+            inplace_merge_impl(first, m, last, comp, l2, len - l2, buff, buff_size);
+        }
+    }
+} // namespace detail
+
+// stable_sort (with comparator)
+template<class RandomIter, class Compare>
+void
+stable_sort(RandomIter first, RandomIter last, Compare comp) {
+    using value_type = typename iterator_traits<RandomIter>::value_type;
+    using diff_t     = typename iterator_traits<RandomIter>::difference_type;
+    diff_t len  = last - first;
+    value_type* buf = nullptr;
+    ptrdiff_t got = 0;
+    if (len > 1) {
+        buf = static_cast<value_type*>(::operator new(
+                  static_cast<size_t>(len) * sizeof(value_type),
+                  std::nothrow));
+        got = buf ? len : 0;
+    }
+    detail::stable_sort_impl(first, last, comp, len, buf, got);
+    ::operator delete(buf);
+}
+
+// stable_sort (operator<)
+template<class RandomIter>
+void
+stable_sort(RandomIter first, RandomIter last) {
+    stable_sort(first, last, less<>{});
+}
+
+//===----------------------------------------------------------------------===//
+// [alg.set.operations] — includes, set_union, set_intersection,
+//   set_difference, set_symmetric_difference
+// (from __algorithm/includes.h, set_union.h, set_intersection.h,
+//  set_difference.h, set_symmetric_difference.h)
+//===----------------------------------------------------------------------===//
+
+// includes (with comparator) — true iff [first2,last2) is a subset of [first1,last1)
+template<class InputIter1, class InputIter2, class Compare>
+[[nodiscard]] constexpr bool
+includes(InputIter1 first1, InputIter1 last1,
+         InputIter2 first2, InputIter2 last2,
+         Compare comp) {
+    for (; first2 != last2; ++first1) {
+        if (first1 == last1 || comp(*first2, *first1)) return false;
+        if (!comp(*first1, *first2)) ++first2;
+    }
+    return true;
+}
+
+// includes (operator<)
+template<class InputIter1, class InputIter2>
+[[nodiscard]] constexpr bool
+includes(InputIter1 first1, InputIter1 last1,
+         InputIter2 first2, InputIter2 last2) {
+    return includes(first1, last1, first2, last2, less<>{});
+}
+
+// set_union (with comparator)
+template<class InputIter1, class InputIter2, class OutputIter, class Compare>
+constexpr OutputIter
+set_union(InputIter1 first1, InputIter1 last1,
+          InputIter2 first2, InputIter2 last2,
+          OutputIter result, Compare comp) {
+    for (; first1 != last1; ++result) {
+        if (first2 == last2) return copy(first1, last1, result);
+        if (comp(*first2, *first1)) {
+            *result = *first2; ++first2;
+        } else {
+            if (!comp(*first1, *first2)) ++first2;
+            *result = *first1; ++first1;
+        }
+    }
+    return copy(first2, last2, result);
+}
+
+// set_union (operator<)
+template<class InputIter1, class InputIter2, class OutputIter>
+constexpr OutputIter
+set_union(InputIter1 first1, InputIter1 last1,
+          InputIter2 first2, InputIter2 last2,
+          OutputIter result) {
+    return set_union(first1, last1, first2, last2, result, less<>{});
+}
+
+// set_intersection (with comparator) — classic single-pass variant
+template<class InputIter1, class InputIter2, class OutputIter, class Compare>
+constexpr OutputIter
+set_intersection(InputIter1 first1, InputIter1 last1,
+                 InputIter2 first2, InputIter2 last2,
+                 OutputIter result, Compare comp) {
+    while (first1 != last1 && first2 != last2) {
+        if (comp(*first1, *first2)) {
+            ++first1;
+        } else {
+            if (!comp(*first2, *first1)) {
+                *result = *first1;
+                ++result;
+                ++first1;
+            }
+            ++first2;
+        }
+    }
+    return result;
+}
+
+// set_intersection (operator<)
+template<class InputIter1, class InputIter2, class OutputIter>
+constexpr OutputIter
+set_intersection(InputIter1 first1, InputIter1 last1,
+                 InputIter2 first2, InputIter2 last2,
+                 OutputIter result) {
+    return set_intersection(first1, last1, first2, last2, result, less<>{});
+}
+
+// set_difference (with comparator) — elements in [first1,last1) not in [first2,last2)
+template<class InputIter1, class InputIter2, class OutputIter, class Compare>
+constexpr OutputIter
+set_difference(InputIter1 first1, InputIter1 last1,
+               InputIter2 first2, InputIter2 last2,
+               OutputIter result, Compare comp) {
+    while (first1 != last1 && first2 != last2) {
+        if (comp(*first1, *first2)) {
+            *result = *first1; ++first1; ++result;
+        } else if (comp(*first2, *first1)) {
+            ++first2;
+        } else {
+            ++first1; ++first2;
+        }
+    }
+    return copy(first1, last1, result);
+}
+
+// set_difference (operator<)
+template<class InputIter1, class InputIter2, class OutputIter>
+constexpr OutputIter
+set_difference(InputIter1 first1, InputIter1 last1,
+               InputIter2 first2, InputIter2 last2,
+               OutputIter result) {
+    return set_difference(first1, last1, first2, last2, result, less<>{});
+}
+
+// set_symmetric_difference (with comparator)
+template<class InputIter1, class InputIter2, class OutputIter, class Compare>
+constexpr OutputIter
+set_symmetric_difference(InputIter1 first1, InputIter1 last1,
+                         InputIter2 first2, InputIter2 last2,
+                         OutputIter result, Compare comp) {
+    while (first1 != last1) {
+        if (first2 == last2) return copy(first1, last1, result);
+        if (comp(*first1, *first2)) {
+            *result = *first1; ++result; ++first1;
+        } else {
+            if (comp(*first2, *first1)) {
+                *result = *first2; ++result;
+            } else {
+                ++first1;
+            }
+            ++first2;
+        }
+    }
+    return copy(first2, last2, result);
+}
+
+// set_symmetric_difference (operator<)
+template<class InputIter1, class InputIter2, class OutputIter>
+constexpr OutputIter
+set_symmetric_difference(InputIter1 first1, InputIter1 last1,
+                         InputIter2 first2, InputIter2 last2,
+                         OutputIter result) {
+    return set_symmetric_difference(first1, last1, first2, last2, result, less<>{});
+}
+
+//===----------------------------------------------------------------------===//
+// [alg.partitions] — is_partitioned, partition, stable_partition,
+//   partition_copy, partition_point
+// (from __algorithm/is_partitioned.h, partition.h, stable_partition.h,
+//  partition_copy.h, partition_point.h)
+//===----------------------------------------------------------------------===//
+
+// is_partitioned
+template<class InputIter, class Predicate>
+[[nodiscard]] constexpr bool
+is_partitioned(InputIter first, InputIter last, Predicate pred) {
+    for (; first != last; ++first)
+        if (!pred(*first)) break;
+    if (first == last) return true;
+    ++first;
+    for (; first != last; ++first)
+        if (pred(*first)) return false;
+    return true;
+}
+
+// partition (forward iterator specialization)
+namespace detail {
+    template<class ForwardIter, class Predicate>
+    constexpr ForwardIter
+    partition_forward(ForwardIter first, ForwardIter last, Predicate& pred) {
+        while (true) {
+            if (first == last) return first;
+            if (!pred(*first)) break;
+            ++first;
+        }
+        ForwardIter p = first;
+        while (++p != last)
+            if (pred(*p)) { swap(*first, *p); ++first; }
+        return first;
+    }
+
+    template<class BidiIter, class Predicate>
+    constexpr BidiIter
+    partition_bidirectional(BidiIter first, BidiIter last, Predicate& pred) {
+        while (true) {
+            while (true) {
+                if (first == last) return first;
+                if (!pred(*first)) break;
+                ++first;
+            }
+            do {
+                if (first == --last) return first;
+            } while (!pred(*last));
+            swap(*first, *last);
+            ++first;
+        }
+    }
+} // namespace detail
+
+// partition (dispatches on iterator category)
+template<class ForwardIter, class Predicate>
+constexpr ForwardIter
+partition(ForwardIter first, ForwardIter last, Predicate pred) {
+    if constexpr (is_convertible_v<
+                      typename iterator_traits<ForwardIter>::iterator_category,
+                      bidirectional_iterator_tag>) {
+        return detail::partition_bidirectional(first, last, pred);
+    } else {
+        return detail::partition_forward(first, last, pred);
+    }
+}
+
+// stable_partition
+namespace detail {
+    template<class ForwardIter, class Predicate>
+    ForwardIter
+    stable_partition_impl(ForwardIter first, ForwardIter last, Predicate& pred,
+                          typename iterator_traits<ForwardIter>::difference_type len,
+                          typename iterator_traits<ForwardIter>::value_type* buff,
+                          ptrdiff_t buff_size) {
+        using value_type = typename iterator_traits<ForwardIter>::value_type;
+        if (len == 0 || (first == last)) return first;
+        if (len == 1) return first;
+        if (len == 2) {
+            ForwardIter m = first;
+            if (pred(*++m)) { swap(*first, *m); return m; }
+            return first;
+        }
+        if (len <= buff_size) {
+            // *first is known to be false (pred(*first)==false).
+            // Move false-elements to buffer, true-elements to front.
+            value_type* p = buff;
+            // Move *first (known false) into buffer
+            ::new (static_cast<void*>(p)) value_type(std::move(*first));
+            ++p;
+            ForwardIter i = first;  // i starts at first, loop starts at ++i below
+            while (++i != last) {
+                if (pred(*i)) {
+                    *first = std::move(*i);
+                    ++first;  // first = partition point (end of trues so far)
+                } else {
+                    ::new (static_cast<void*>(p)) value_type(std::move(*i));
+                    ++p;
+                }
+            }
+            // first now points to the partition point (first false position)
+            // Copy false-elements from buffer back starting at first
+            ForwardIter ret = first;  // save partition point
+            i = first;
+            for (value_type* q = buff; q != p; ++q, ++i) {
+                *i = std::move(*q);
+                q->~value_type();
+            }
+            return ret;  // return partition point (first false)
+        }
+        // Split in half, recurse.
+        // *first is known to be false.
+        ForwardIter m = first;
+        typename iterator_traits<ForwardIter>::difference_type l2 = len / 2;
+        advance(m, l2);
+        // Recurse on first half [first, m) — *first known false
+        ForwardIter ff = stable_partition_impl(first, m, pred, l2, buff, buff_size);
+        // For second half [m, last), advance past leading trues before recursing
+        ForwardIter m1 = m;
+        ForwardIter sf = last;
+        typename iterator_traits<ForwardIter>::difference_type len_half = len - l2;
+        while (pred(*m1)) {
+            if (++m1 == last) goto second_half_done;
+            --len_half;
+        }
+        sf = stable_partition_impl(m1, last, pred, len_half, buff, buff_size);
+second_half_done:
+        return rotate(ff, m, sf);
+    }
+} // namespace detail
+
+template<class ForwardIter, class Predicate>
+ForwardIter
+stable_partition(ForwardIter first, ForwardIter last, Predicate pred) {
+    // Find first element not satisfying pred
+    while (first != last && pred(*first)) ++first;
+    if (first == last) return first;
+    using value_type = typename iterator_traits<ForwardIter>::value_type;
+    using diff_t     = typename iterator_traits<ForwardIter>::difference_type;
+    diff_t len = distance(first, last);
+    value_type* buf = nullptr;
+    ptrdiff_t got = 0;
+    if (len >= 3) {
+        buf = static_cast<value_type*>(::operator new(
+                  static_cast<size_t>(len) * sizeof(value_type),
+                  std::nothrow));
+        got = buf ? len : 0;
+    }
+    ForwardIter result = detail::stable_partition_impl(first, last, pred, len, buf, got);
+    ::operator delete(buf);
+    return result;
+}
+
+// partition_copy
+template<class InputIter, class OutputIter1, class OutputIter2, class Predicate>
+constexpr pair<OutputIter1, OutputIter2>
+partition_copy(InputIter first, InputIter last,
+               OutputIter1 out_true, OutputIter2 out_false,
+               Predicate pred) {
+    for (; first != last; ++first) {
+        if (pred(*first)) { *out_true  = *first; ++out_true; }
+        else              { *out_false = *first; ++out_false; }
+    }
+    return {out_true, out_false};
+}
+
+// partition_point — binary search for partition boundary
+template<class ForwardIter, class Predicate>
+constexpr ForwardIter
+partition_point(ForwardIter first, ForwardIter last, Predicate pred) {
+    auto len = distance(first, last);
+    while (len != 0) {
+        auto half = len / 2;
+        ForwardIter m = first;
+        advance(m, half);
+        if (pred(*m)) {
+            first = ++m;
+            len -= half + 1;
+        } else {
+            len = half;
+        }
+    }
+    return first;
+}
+
+//===----------------------------------------------------------------------===//
+// [alg.permutation.generators] — next_permutation, prev_permutation,
+//   is_permutation
+// (from __algorithm/next_permutation.h, prev_permutation.h,
+//  is_permutation.h)
+//===----------------------------------------------------------------------===//
+
+// next_permutation (with comparator)
+template<class BidiIter, class Compare>
+constexpr bool
+next_permutation(BidiIter first, BidiIter last, Compare comp) {
+    BidiIter i = last;
+    if (first == last || first == --i) return false;
+    while (true) {
+        BidiIter ip1 = i;
+        if (comp(*--i, *ip1)) {
+            BidiIter j = last;
+            while (!comp(*i, *--j))
+                ;
+            swap(*i, *j);
+            reverse(ip1, last);
+            return true;
+        }
+        if (i == first) {
+            reverse(first, last);
+            return false;
+        }
+    }
+}
+
+// next_permutation (operator<)
+template<class BidiIter>
+constexpr bool
+next_permutation(BidiIter first, BidiIter last) {
+    return next_permutation(first, last, less<>{});
+}
+
+// prev_permutation (with comparator)
+template<class BidiIter, class Compare>
+constexpr bool
+prev_permutation(BidiIter first, BidiIter last, Compare comp) {
+    BidiIter i = last;
+    if (first == last || first == --i) return false;
+    while (true) {
+        BidiIter ip1 = i;
+        if (comp(*ip1, *--i)) {
+            BidiIter j = last;
+            while (!comp(*--j, *i))
+                ;
+            swap(*i, *j);
+            reverse(ip1, last);
+            return true;
+        }
+        if (i == first) {
+            reverse(first, last);
+            return false;
+        }
+    }
+}
+
+// prev_permutation (operator<)
+template<class BidiIter>
+constexpr bool
+prev_permutation(BidiIter first, BidiIter last) {
+    return prev_permutation(first, last, less<>{});
+}
+
+// is_permutation (3-iterator, with predicate)
+template<class ForwardIter1, class ForwardIter2, class BinaryPred>
+[[nodiscard]] constexpr bool
+is_permutation(ForwardIter1 first1, ForwardIter1 last1,
+               ForwardIter2 first2, BinaryPred pred) {
+    // Skip equal prefix
+    for (; first1 != last1; ++first1, ++first2)
+        if (!pred(*first1, *first2)) break;
+    if (first1 == last1) return true;
+    using diff_t = typename iterator_traits<ForwardIter1>::difference_type;
+    diff_t l1 = distance(first1, last1);
+    if (l1 == diff_t(1)) return false;
+    ForwardIter2 last2 = first2;
+    advance(last2, l1);
+    // For each element in [first1, last1), verify same count in [first2, last2)
+    for (ForwardIter1 i = first1; i != last1; ++i) {
+        // Check if *i already counted
+        bool already = false;
+        for (ForwardIter1 j = first1; j != i; ++j)
+            if (pred(*j, *i)) { already = true; break; }
+        if (already) continue;
+        diff_t c2 = 0;
+        for (ForwardIter2 j = first2; j != last2; ++j)
+            if (pred(*i, *j)) ++c2;
+        if (c2 == 0) return false;
+        diff_t c1 = 1;
+        for (ForwardIter1 j = next(i); j != last1; ++j)
+            if (pred(*i, *j)) ++c1;
+        if (c1 != c2) return false;
+    }
+    return true;
+}
+
+// is_permutation (3-iterator, operator==)
+template<class ForwardIter1, class ForwardIter2>
+[[nodiscard]] constexpr bool
+is_permutation(ForwardIter1 first1, ForwardIter1 last1, ForwardIter2 first2) {
+    return is_permutation(first1, last1, first2, equal_to<>{});
+}
+
+// is_permutation (4-iterator, with predicate)
+template<class ForwardIter1, class ForwardIter2, class BinaryPred>
+[[nodiscard]] constexpr bool
+is_permutation(ForwardIter1 first1, ForwardIter1 last1,
+               ForwardIter2 first2, ForwardIter2 last2,
+               BinaryPred pred) {
+    // Skip equal prefix
+    while (first1 != last1 && first2 != last2) {
+        if (!pred(*first1, *first2)) break;
+        ++first1; ++first2;
+    }
+    if (first1 == last1) return first2 == last2;
+    if (first2 == last2) return false;
+    auto l1 = distance(first1, last1);
+    auto l2 = distance(first2, last2);
+    if (l1 != l2) return false;
+    // For each element in [first1, last1), verify same count in [first2, last2)
+    for (ForwardIter1 i = first1; i != last1; ++i) {
+        bool already = false;
+        for (ForwardIter1 j = first1; j != i; ++j)
+            if (pred(*j, *i)) { already = true; break; }
+        if (already) continue;
+        decltype(l1) c2 = 0;
+        for (ForwardIter2 j = first2; j != last2; ++j)
+            if (pred(*i, *j)) ++c2;
+        if (c2 == 0) return false;
+        decltype(l1) c1 = 1;
+        for (ForwardIter1 j = next(i); j != last1; ++j)
+            if (pred(*i, *j)) ++c1;
+        if (c1 != c2) return false;
+    }
+    return true;
+}
+
+// is_permutation (4-iterator, operator==)
+template<class ForwardIter1, class ForwardIter2>
+[[nodiscard]] constexpr bool
+is_permutation(ForwardIter1 first1, ForwardIter1 last1,
+               ForwardIter2 first2, ForwardIter2 last2) {
+    return is_permutation(first1, last1, first2, last2, equal_to<>{});
+}
 
 } // namespace std

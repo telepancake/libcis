@@ -598,3 +598,357 @@ void test_algorithm_lexicographical_compare_three_way() {
     auto r4 = std::lexicographical_compare_three_way(a, a + 2, a, a + 3);
     CHECK(r4 < 0);
 }
+
+// ======== Part 2: heap operations ========
+
+void test_algorithm_heap() {
+    // make_heap / is_heap / push_heap / pop_heap / sort_heap
+    int a[] = {3, 1, 4, 1, 5, 9, 2, 6};
+    std::make_heap(a, a + 8);
+    CHECK(std::is_heap(a, a + 8));
+    CHECK(std::is_heap_until(a, a + 8) == a + 8);
+
+    // push_heap: append element then sift up
+    int b[] = {9, 6, 5, 4, 3, 2, 1, 0, 7};  // first 8 form a heap
+    std::make_heap(b, b + 8);
+    b[8] = 7;
+    std::push_heap(b, b + 9);
+    CHECK(std::is_heap(b, b + 9));
+
+    // pop_heap: moves max to end
+    int c[] = {5, 3, 4, 2, 1};
+    std::make_heap(c, c + 5);
+    CHECK(c[0] == 5);
+    std::pop_heap(c, c + 5);
+    CHECK(c[4] == 5);
+    CHECK(std::is_heap(c, c + 4));
+
+    // sort_heap
+    int d[] = {3, 1, 4, 1, 5, 9, 2, 6};
+    std::make_heap(d, d + 8);
+    std::sort_heap(d, d + 8);
+    CHECK(std::is_sorted(d, d + 8));
+
+    // with comparator (max-heap by default = ascending sort)
+    int e[] = {4, 2, 7, 1, 9};
+    std::make_heap(e, e + 5, std::greater<int>{});
+    CHECK(std::is_heap(e, e + 5, std::greater<int>{}));
+    std::sort_heap(e, e + 5, std::greater<int>{});
+    // sorted descending
+    CHECK(e[0] == 9 && e[4] == 1);
+}
+
+// ======== Part 2: is_sorted / is_sorted_until ========
+
+void test_algorithm_is_sorted() {
+    int a[] = {1, 2, 3, 4, 5};
+    CHECK(std::is_sorted(a, a + 5));
+    int b[] = {1, 3, 2, 4};
+    CHECK(!std::is_sorted(b, b + 4));
+    // empty / single
+    CHECK(std::is_sorted(a, a));
+    CHECK(std::is_sorted(a, a + 1));
+
+    auto it = std::is_sorted_until(b, b + 4);
+    CHECK(it == b + 2);
+
+    // with comp
+    int c[] = {5, 4, 3, 2, 1};
+    CHECK(std::is_sorted(c, c + 5, std::greater<int>{}));
+}
+
+// ======== Part 2: sort ========
+
+void test_algorithm_sort() {
+    int a[] = {5, 3, 8, 1, 9, 2, 7, 4, 6};
+    std::sort(a, a + 9);
+    CHECK(std::is_sorted(a, a + 9));
+    CHECK(a[0] == 1 && a[8] == 9);
+
+    // with comparator
+    int b[] = {5, 3, 8, 1, 9, 2, 7, 4, 6};
+    std::sort(b, b + 9, std::greater<int>{});
+    CHECK(std::is_sorted(b, b + 9, std::greater<int>{}));
+    CHECK(b[0] == 9 && b[8] == 1);
+
+    // already sorted
+    int c[] = {1, 2, 3, 4, 5};
+    std::sort(c, c + 5);
+    CHECK(std::is_sorted(c, c + 5));
+
+    // reverse sorted
+    int d[] = {5, 4, 3, 2, 1};
+    std::sort(d, d + 5);
+    CHECK(d[0] == 1 && d[4] == 5);
+
+    // single / empty
+    int e[] = {42};
+    std::sort(e, e + 1);
+    CHECK(e[0] == 42);
+    std::sort(e, e);
+}
+
+// ======== Part 2: stable_sort ========
+
+void test_algorithm_stable_sort() {
+    int a[] = {5, 3, 8, 1, 9, 2, 7, 4, 6};
+    std::stable_sort(a, a + 9);
+    CHECK(std::is_sorted(a, a + 9));
+    CHECK(a[0] == 1 && a[8] == 9);
+
+    // with comparator
+    int b[] = {5, 3, 8, 1, 2};
+    std::stable_sort(b, b + 5, std::greater<int>{});
+    CHECK(std::is_sorted(b, b + 5, std::greater<int>{}));
+
+    // stability: equal elements keep relative order
+    // Use pairs: sort by first, check second is stable
+    // Simulate with structs via arrays of pairs
+    // Use int* trick: sort 0-4 with key = v%3, record original index
+    // Simple test: already-sorted remains sorted
+    int c[] = {1, 1, 2, 2, 3, 3};
+    std::stable_sort(c, c + 6);
+    CHECK(c[0] == 1 && c[5] == 3);
+}
+
+// ======== Part 2: partial_sort / partial_sort_copy ========
+
+void test_algorithm_partial_sort() {
+    int a[] = {5, 3, 8, 1, 9, 2, 7, 4, 6};
+    std::partial_sort(a, a + 4, a + 9);
+    // First 4 elements are the 4 smallest, sorted
+    CHECK(a[0] == 1 && a[1] == 2 && a[2] == 3 && a[3] == 4);
+
+    // with comparator
+    int b[] = {5, 3, 8, 1, 9, 2, 7, 4, 6};
+    std::partial_sort(b, b + 3, b + 9, std::greater<int>{});
+    CHECK(b[0] == 9 && b[1] == 8 && b[2] == 7);
+}
+
+void test_algorithm_partial_sort_copy() {
+    int src[] = {5, 3, 8, 1, 9, 2, 7, 4, 6};
+    int dst[4] = {};
+    auto end = std::partial_sort_copy(src, src + 9, dst, dst + 4);
+    CHECK(end == dst + 4);
+    CHECK(dst[0] == 1 && dst[1] == 2 && dst[2] == 3 && dst[3] == 4);
+
+    // with comparator
+    int dst2[3] = {};
+    auto end2 = std::partial_sort_copy(src, src + 9, dst2, dst2 + 3, std::greater<int>{});
+    CHECK(end2 == dst2 + 3);
+    CHECK(dst2[0] == 9 && dst2[1] == 8 && dst2[2] == 7);
+}
+
+// ======== Part 2: nth_element ========
+
+void test_algorithm_nth_element() {
+    int a[] = {5, 3, 8, 1, 9, 2, 7, 4, 6};
+    std::nth_element(a, a + 4, a + 9);
+    // a[4] should be 5 (the median)
+    CHECK(a[4] == 5);
+    // All elements before a[4] should be <= a[4]
+    for (int i = 0; i < 4; ++i) CHECK(a[i] <= 5);
+    for (int i = 5; i < 9; ++i) CHECK(a[i] >= 5);
+
+    // with comparator
+    int b[] = {5, 3, 8, 1, 9, 2, 7, 4, 6};
+    std::nth_element(b, b + 0, b + 9, std::greater<int>{});
+    CHECK(b[0] == 9);
+}
+
+// ======== Part 2: lower_bound / upper_bound / equal_range / binary_search ========
+
+void test_algorithm_lower_bound() {
+    int a[] = {1, 2, 2, 3, 4, 4, 5};
+    auto it = std::lower_bound(a, a + 7, 2);
+    CHECK(it == a + 1);
+    auto it2 = std::lower_bound(a, a + 7, 6);
+    CHECK(it2 == a + 7);
+    auto it3 = std::lower_bound(a, a + 7, 0);
+    CHECK(it3 == a);
+    auto it4 = std::lower_bound(a, a + 7, 4);
+    CHECK(*it4 == 4 && it4 == a + 4);
+}
+
+void test_algorithm_upper_bound() {
+    int a[] = {1, 2, 2, 3, 4, 4, 5};
+    auto it = std::upper_bound(a, a + 7, 2);
+    CHECK(it == a + 3);
+    auto it2 = std::upper_bound(a, a + 7, 6);
+    CHECK(it2 == a + 7);
+    auto it3 = std::upper_bound(a, a + 7, 0);
+    CHECK(it3 == a);
+}
+
+void test_algorithm_equal_range() {
+    int a[] = {1, 2, 2, 3, 4, 4, 5};
+    auto [lo, hi] = std::equal_range(a, a + 7, 2);
+    CHECK(lo == a + 1 && hi == a + 3);
+    auto [lo2, hi2] = std::equal_range(a, a + 7, 6);
+    CHECK(lo2 == a + 7 && hi2 == a + 7);
+    auto [lo3, hi3] = std::equal_range(a, a + 7, 3);
+    CHECK(lo3 == a + 3 && hi3 == a + 4);
+}
+
+void test_algorithm_binary_search() {
+    int a[] = {1, 2, 3, 4, 5};
+    CHECK(std::binary_search(a, a + 5, 3));
+    CHECK(!std::binary_search(a, a + 5, 6));
+    CHECK(std::binary_search(a, a + 5, 1));
+    CHECK(std::binary_search(a, a + 5, 5));
+    CHECK(!std::binary_search(a, a, 1)); // empty
+}
+
+// ======== Part 2: merge / inplace_merge ========
+
+void test_algorithm_merge() {
+    int a[] = {1, 3, 5, 7};
+    int b[] = {2, 4, 6, 8};
+    int out[8] = {};
+    auto end = std::merge(a, a + 4, b, b + 4, out);
+    CHECK(end == out + 8);
+    for (int i = 0; i < 8; ++i) CHECK(out[i] == i + 1);
+
+    // with comparator
+    int c[] = {8, 6, 4, 2};
+    int d[] = {7, 5, 3, 1};
+    int out2[8] = {};
+    std::merge(c, c + 4, d, d + 4, out2, std::greater<int>{});
+    CHECK(out2[0] == 8 && out2[7] == 1);
+}
+
+void test_algorithm_inplace_merge() {
+    int a[] = {1, 3, 5, 2, 4, 6};
+    std::inplace_merge(a, a + 3, a + 6);
+    CHECK(std::is_sorted(a, a + 6));
+    CHECK(a[0] == 1 && a[5] == 6);
+
+    int b[] = {8, 6, 4, 7, 5, 3};
+    std::inplace_merge(b, b + 3, b + 6, std::greater<int>{});
+    CHECK(std::is_sorted(b, b + 6, std::greater<int>{}));
+}
+
+// ======== Part 2: set operations ========
+
+void test_algorithm_set_ops() {
+    int a[] = {1, 2, 3, 4, 5};
+    int b[] = {3, 4, 5, 6, 7};
+
+    // includes
+    CHECK(std::includes(a, a + 5, a + 2, a + 4));  // {3,4} in {1..5}
+    CHECK(!std::includes(a, a + 5, b, b + 5));      // {3..7} not in {1..5}
+
+    // set_union
+    int un[10] = {};
+    auto un_end = std::set_union(a, a + 5, b, b + 5, un);
+    CHECK(un_end - un == 7);
+    CHECK(un[0] == 1 && un[6] == 7);
+
+    // set_intersection
+    int isect[5] = {};
+    auto is_end = std::set_intersection(a, a + 5, b, b + 5, isect);
+    CHECK(is_end - isect == 3);
+    CHECK(isect[0] == 3 && isect[1] == 4 && isect[2] == 5);
+
+    // set_difference a - b
+    int diff[5] = {};
+    auto diff_end = std::set_difference(a, a + 5, b, b + 5, diff);
+    CHECK(diff_end - diff == 2);
+    CHECK(diff[0] == 1 && diff[1] == 2);
+
+    // set_symmetric_difference
+    int symm[10] = {};
+    auto symm_end = std::set_symmetric_difference(a, a + 5, b, b + 5, symm);
+    CHECK(symm_end - symm == 4);
+    CHECK(symm[0] == 1 && symm[1] == 2 && symm[2] == 6 && symm[3] == 7);
+}
+
+// ======== Part 2: partition operations ========
+
+void test_algorithm_partition() {
+    int a[] = {1, 2, 3, 4, 5, 6, 7, 8};
+    auto mid = std::partition(a, a + 8, [](int x){ return x % 2 == 0; });
+    CHECK(std::is_partitioned(a, a + 8, [](int x){ return x % 2 == 0; }));
+    // All evens before mid, all odds from mid onward
+    for (int* p = a; p != mid; ++p) CHECK(*p % 2 == 0);
+    for (int* p = mid; p != a + 8; ++p) CHECK(*p % 2 != 0);
+}
+
+void test_algorithm_stable_partition() {
+    int a[] = {1, 2, 3, 4, 5, 6, 7, 8};
+    auto mid = std::stable_partition(a, a + 8, [](int x){ return x % 2 == 0; });
+    CHECK(std::is_partitioned(a, a + 8, [](int x){ return x % 2 == 0; }));
+    // Evens should be in original relative order: 2,4,6,8
+    CHECK(a[0] == 2 && a[1] == 4 && a[2] == 6 && a[3] == 8);
+    // Odds in original relative order: 1,3,5,7
+    CHECK(a[4] == 1 && a[5] == 3 && a[6] == 5 && a[7] == 7);
+    CHECK(mid == a + 4);
+}
+
+void test_algorithm_partition_copy() {
+    int src[] = {1, 2, 3, 4, 5};
+    int evens[5] = {}, odds[5] = {};
+    auto [pe, po] = std::partition_copy(src, src + 5, evens, odds,
+                                         [](int x){ return x % 2 == 0; });
+    CHECK(pe - evens == 2);
+    CHECK(po - odds == 3);
+    CHECK(evens[0] == 2 && evens[1] == 4);
+    CHECK(odds[0] == 1 && odds[1] == 3 && odds[2] == 5);
+}
+
+void test_algorithm_is_partitioned() {
+    int a[] = {2, 4, 6, 1, 3, 5};
+    CHECK(std::is_partitioned(a, a + 6, [](int x){ return x % 2 == 0; }));
+    int b[] = {1, 2, 3, 4};
+    CHECK(!std::is_partitioned(b, b + 4, [](int x){ return x % 2 == 0; }));
+    // empty is partitioned
+    CHECK(std::is_partitioned(a, a, [](int){ return false; }));
+}
+
+void test_algorithm_partition_point() {
+    int a[] = {2, 4, 6, 1, 3, 5};
+    auto pt = std::partition_point(a, a + 6, [](int x){ return x % 2 == 0; });
+    CHECK(pt == a + 3);
+}
+
+// ======== Part 2: permutations ========
+
+void test_algorithm_next_permutation() {
+    int a[] = {1, 2, 3};
+    CHECK(std::next_permutation(a, a + 3));
+    CHECK(a[0] == 1 && a[1] == 3 && a[2] == 2);
+    CHECK(std::next_permutation(a, a + 3));
+    CHECK(a[0] == 2 && a[1] == 1 && a[2] == 3);
+    // Count all permutations of {1,2,3}
+    int b[] = {1, 2, 3};
+    int count = 1;
+    while (std::next_permutation(b, b + 3)) ++count;
+    CHECK(count == 6);
+    // After cycling back, array should be {1,2,3}
+    CHECK(b[0] == 1 && b[1] == 2 && b[2] == 3);
+}
+
+void test_algorithm_prev_permutation() {
+    int a[] = {3, 2, 1};
+    CHECK(std::prev_permutation(a, a + 3));
+    CHECK(a[0] == 3 && a[1] == 1 && a[2] == 2);
+    // Count all permutations
+    int b[] = {3, 2, 1};
+    int count = 1;
+    while (std::prev_permutation(b, b + 3)) ++count;
+    CHECK(count == 6);
+}
+
+void test_algorithm_is_permutation() {
+    int a[] = {1, 2, 3};
+    int b[] = {3, 1, 2};
+    CHECK(std::is_permutation(a, a + 3, b));
+    CHECK(std::is_permutation(a, a + 3, b, b + 3));
+    int c[] = {1, 2, 4};
+    CHECK(!std::is_permutation(a, a + 3, c));
+    CHECK(!std::is_permutation(a, a + 3, c, c + 3));
+    // same sequence
+    CHECK(std::is_permutation(a, a + 3, a));
+    // with pred
+    CHECK(std::is_permutation(a, a + 3, b, std::equal_to<int>{}));
+}
