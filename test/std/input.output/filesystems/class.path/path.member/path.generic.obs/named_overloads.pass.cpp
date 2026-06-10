@@ -1,0 +1,87 @@
+// AST-transferred from libc++ by tools/transfer.py (slug=input_output_filesystems_class_path_path_member_path_generic_obs_named_overloads).
+// main -> test_input_output_filesystems_class_path_path_member_path_generic_obs_named_overloads; file-scope helpers isolated in anon namespace.
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// UNSUPPORTED: c++03, c++11, c++14
+
+// These tests require locale for non-char paths
+// UNSUPPORTED: no-localization
+
+// <filesystem>
+
+// class path
+
+// std::string  generic_string() const;
+// std::wstring generic_wstring() const;
+// std::u8string  generic_u8string() const;
+// std::u16string generic_u16string() const;
+// std::u32string generic_u32string() const;
+
+#include <filesystem>
+#include <cassert>
+#include <string>
+#include <type_traits>
+
+#include "count_new.h"
+#include "make_string.h"
+#include "min_allocator.h"
+#include "test_iterators.h"
+#include "test_macros.h"
+namespace fs = std::filesystem;
+
+namespace libcis_ns_input_output_filesystems_class_path_path_member_path_generic_obs_named_overloads { // libcis: isolate file-scope helpers
+MultiStringType input = MKSTR("c:\\foo\\bar");
+#ifdef _WIN32
+// On windows, the generic_* accessors return a path with forward slashes
+MultiStringType ref = MKSTR("c:/foo/bar");
+#else
+// On posix, the input string is returned as-is
+MultiStringType ref = MKSTR("c:\\foo\\bar");
+} using namespace libcis_ns_input_output_filesystems_class_path_path_member_path_generic_obs_named_overloads; // libcis
+
+#endif
+
+void test_input_output_filesystems_class_path_path_member_path_generic_obs_named_overloads()
+{
+  using namespace fs;
+  auto const& MS = ref;
+  const char* value = input;
+  const path p(value);
+  {
+    std::string s = p.generic_string();
+    assert(s == (const char*)MS);
+  }
+  {
+#if TEST_STD_VER > 17 && defined(__cpp_char8_t)
+    ASSERT_SAME_TYPE(decltype(p.generic_u8string()), std::u8string);
+    std::u8string s = p.generic_u8string();
+    assert(s == (const char8_t*)MS);
+#else
+    ASSERT_SAME_TYPE(decltype(p.generic_u8string()), std::string);
+    std::string s = p.generic_u8string();
+    assert(s == (const char*)MS);
+#endif
+  }
+#ifndef TEST_HAS_NO_WIDE_CHARACTERS
+  {
+    std::wstring s = p.generic_wstring();
+    assert(s == (const wchar_t*)MS);
+  }
+#endif
+  {
+    std::u16string s = p.generic_u16string();
+    assert(s == (const char16_t*)MS);
+  }
+  {
+    std::u32string s = p.generic_u32string();
+    assert(s == (const char32_t*)MS);
+  }
+
+  return;
+}
