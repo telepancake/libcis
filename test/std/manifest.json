@@ -37480,6 +37480,972 @@
    "slug": "localization_locales_locale_locale_types_locale_id_tested_elsewhere",
    "kind": "run",
    "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.match/lookahead_capture.pass.cpp",
+   "slug": "re_re_alg_re_alg_match_lookahead_capture",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.match/parse_curly_brackets.pass.cpp",
+   "slug": "re_re_alg_re_alg_match_parse_curly_brackets",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.replace/test1.pass.cpp",
+   "slug": "re_re_alg_re_alg_replace_test1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.match/extended.pass.cpp",
+   "slug": "re_re_alg_re_alg_match_extended",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.match/grep.pass.cpp",
+   "slug": "re_re_alg_re_alg_match_grep",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.match/inverted_character_classes.pass.cpp",
+   "slug": "re_re_alg_re_alg_match_inverted_character_classes",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.replace/test2.pass.cpp",
+   "slug": "re_re_alg_re_alg_replace_test2",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.replace/test3.pass.cpp",
+   "slug": "re_re_alg_re_alg_replace_test3",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.replace/test4.pass.cpp",
+   "slug": "re_re_alg_re_alg_replace_test4",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.replace/test5.pass.cpp",
+   "slug": "re_re_alg_re_alg_replace_test5",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.match/awk.pass.cpp",
+   "slug": "re_re_alg_re_alg_match_awk",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.match/basic.pass.cpp",
+   "slug": "re_re_alg_re_alg_match_basic",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.match/ecma.pass.cpp",
+   "slug": "re_re_alg_re_alg_match_ecma",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.match/egrep.pass.cpp",
+   "slug": "re_re_alg_re_alg_match_egrep",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.replace/test6.pass.cpp",
+   "slug": "re_re_alg_re_alg_replace_test6",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.replace/zero_length_matches.pass.cpp",
+   "slug": "re_re_alg_re_alg_replace_zero_length_matches",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.search/awk.pass.cpp",
+   "slug": "re_re_alg_re_alg_search_awk",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.search/backup.pass.cpp",
+   "slug": "re_re_alg_re_alg_search_backup",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.search/basic.pass.cpp",
+   "slug": "re_re_alg_re_alg_search_basic",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.search/ecma.pass.cpp",
+   "slug": "re_re_alg_re_alg_search_ecma",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.search/egrep.pass.cpp",
+   "slug": "re_re_alg_re_alg_search_egrep",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.search/no_update_pos.pass.cpp",
+   "slug": "re_re_alg_re_alg_search_no_update_pos",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.except/nothing_to_do.pass.cpp",
+   "slug": "re_re_alg_re_except_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.badexp/regex_error.pass.cpp",
+   "slug": "re_re_badexp_regex_error",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.const/re.err/error_type.pass.cpp",
+   "slug": "re_re_const_re_err_error_type",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.def/defns.regex.finite.state.machine/nothing_to_do.pass.cpp",
+   "slug": "re_re_def_defns_regex_finite_state_machine_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.def/defns.regex.format.specifier/nothing_to_do.pass.cpp",
+   "slug": "re_re_def_defns_regex_format_specifier_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.def/defns.regex.matched/nothing_to_do.pass.cpp",
+   "slug": "re_re_def_defns_regex_matched_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.def/defns.regex.primary.equivalence.class/nothing_to_do.pass.cpp",
+   "slug": "re_re_def_defns_regex_primary_equivalence_class_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.def/defns.regex.regular.expression/nothing_to_do.pass.cpp",
+   "slug": "re_re_def_defns_regex_regular_expression_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.def/defns.regex.subexpression/nothing_to_do.pass.cpp",
+   "slug": "re_re_def_defns_regex_subexpression_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.general/nothing_to_do.pass.cpp",
+   "slug": "re_re_general_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.search/extended.pass.cpp",
+   "slug": "re_re_alg_re_alg_search_extended",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.search/grep.pass.cpp",
+   "slug": "re_re_alg_re_alg_search_grep",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.search/invert_neg_word_search.pass.cpp",
+   "slug": "re_re_alg_re_alg_search_invert_neg_word_search",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.alg/re.alg.search/lookahead.pass.cpp",
+   "slug": "re_re_alg_re_alg_search_lookahead",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.regiter/iterator_concept_conformance.compile.pass.cpp",
+   "slug": "re_re_iter_re_regiter_iterator_concept_conformance",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.regiter/re.regiter.cnstr/cnstr.pass.cpp",
+   "slug": "re_re_iter_re_regiter_re_regiter_cnstr_cnstr",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.regiter/re.regiter.cnstr/default.pass.cpp",
+   "slug": "re_re_iter_re_regiter_re_regiter_cnstr_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.const/re.matchflag/match_not_null.pass.cpp",
+   "slug": "re_re_const_re_matchflag_match_not_null",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.const/re.matchflag/match_prev_avail.pass.cpp",
+   "slug": "re_re_const_re_matchflag_match_prev_avail",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.const/re.synopt/syntax_option_type.pass.cpp",
+   "slug": "re_re_const_re_synopt_syntax_option_type",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.def/defns.regex.collating.element/nothing_to_do.pass.cpp",
+   "slug": "re_re_def_defns_regex_collating_element_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.regiter/re.regiter.comp/equal.pass.cpp",
+   "slug": "re_re_iter_re_regiter_re_regiter_comp_equal",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.regiter/re.regiter.comp/tested_elsewhere.pass.cpp",
+   "slug": "re_re_iter_re_regiter_re_regiter_comp_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.regiter/re.regiter.deref/deref.pass.cpp",
+   "slug": "re_re_iter_re_regiter_re_regiter_deref_deref",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.regiter/re.regiter.incr/post.pass.cpp",
+   "slug": "re_re_iter_re_regiter_re_regiter_incr_post",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.const/re.matchflag/match_flag_type.pass.cpp",
+   "slug": "re_re_const_re_matchflag_match_flag_type",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.const/re.matchflag/match_multiline.pass.cpp",
+   "slug": "re_re_const_re_matchflag_match_multiline",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.const/re.matchflag/match_not_bol.pass.cpp",
+   "slug": "re_re_const_re_matchflag_match_not_bol",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.const/re.matchflag/match_not_eol.pass.cpp",
+   "slug": "re_re_const_re_matchflag_match_not_eol",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.regiter/types.pass.cpp",
+   "slug": "re_re_iter_re_regiter_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.tokiter/iterator_concept_conformance.compile.pass.cpp",
+   "slug": "re_re_iter_re_tokiter_iterator_concept_conformance",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.tokiter/re.tokiter.cnstr/array.pass.cpp",
+   "slug": "re_re_iter_re_tokiter_re_tokiter_cnstr_array",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.tokiter/re.tokiter.cnstr/default.pass.cpp",
+   "slug": "re_re_iter_re_tokiter_re_tokiter_cnstr_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.tokiter/re.tokiter.cnstr/init.pass.cpp",
+   "slug": "re_re_iter_re_tokiter_re_tokiter_cnstr_init",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.tokiter/re.tokiter.cnstr/int.pass.cpp",
+   "slug": "re_re_iter_re_tokiter_re_tokiter_cnstr_int",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.tokiter/re.tokiter.cnstr/vector.pass.cpp",
+   "slug": "re_re_iter_re_tokiter_re_tokiter_cnstr_vector",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.tokiter/re.tokiter.comp/equal.pass.cpp",
+   "slug": "re_re_iter_re_tokiter_re_tokiter_comp_equal",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.tokiter/re.tokiter.deref/deref.pass.cpp",
+   "slug": "re_re_iter_re_tokiter_re_tokiter_deref_deref",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.tokiter/re.tokiter.incr/post.pass.cpp",
+   "slug": "re_re_iter_re_tokiter_re_tokiter_incr_post",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.iter/re.tokiter/types.pass.cpp",
+   "slug": "re_re_iter_re_tokiter_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.assign/assign.il.pass.cpp",
+   "slug": "re_re_regex_re_regex_assign_assign_il",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.assign/assign.pass.cpp",
+   "slug": "re_re_regex_re_regex_assign_assign",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.assign/assign_iter_iter_flag.pass.cpp",
+   "slug": "re_re_regex_re_regex_assign_assign_iter_iter_flag",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.assign/assign_ptr_flag.pass.cpp",
+   "slug": "re_re_regex_re_regex_assign_assign_ptr_flag",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.assign/assign_ptr_size_flag.pass.cpp",
+   "slug": "re_re_regex_re_regex_assign_assign_ptr_size_flag",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.assign/string.pass.cpp",
+   "slug": "re_re_regex_re_regex_assign_string",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.const/constants.pass.cpp",
+   "slug": "re_re_regex_re_regex_const_constants",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/awk_oct.pass.cpp",
+   "slug": "re_re_regex_re_regex_construct_awk_oct",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.assign/assign_string_flag.pass.cpp",
+   "slug": "re_re_regex_re_regex_assign_assign_string_flag",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.assign/copy.pass.cpp",
+   "slug": "re_re_regex_re_regex_assign_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.assign/il.pass.cpp",
+   "slug": "re_re_regex_re_regex_assign_il",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.assign/ptr.pass.cpp",
+   "slug": "re_re_regex_re_regex_assign_ptr",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/iter_iter.pass.cpp",
+   "slug": "re_re_regex_re_regex_construct_iter_iter",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/iter_iter_flg.pass.cpp",
+   "slug": "re_re_regex_re_regex_construct_iter_iter_flg",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/ptr.pass.cpp",
+   "slug": "re_re_regex_re_regex_construct_ptr",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/ptr_flg.pass.cpp",
+   "slug": "re_re_regex_re_regex_construct_ptr_flg",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/copy.pass.cpp",
+   "slug": "re_re_regex_re_regex_construct_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/deduct.pass.cpp",
+   "slug": "re_re_regex_re_regex_construct_deduct",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/default.pass.cpp",
+   "slug": "re_re_regex_re_regex_construct_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/il_flg.pass.cpp",
+   "slug": "re_re_regex_re_regex_construct_il_flg",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.locale/imbue.pass.cpp",
+   "slug": "re_re_regex_re_regex_locale_imbue",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.nonmemb/re.regex.nmswap/swap.pass.cpp",
+   "slug": "re_re_regex_re_regex_nonmemb_re_regex_nmswap_swap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.operations/tested_elsewhere.pass.cpp",
+   "slug": "re_re_regex_re_regex_operations_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.swap/swap.pass.cpp",
+   "slug": "re_re_regex_re_regex_swap_swap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/ptr_size.pass.cpp",
+   "slug": "re_re_regex_re_regex_construct_ptr_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/ptr_size_flg.pass.cpp",
+   "slug": "re_re_regex_re_regex_construct_ptr_size_flg",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/string.pass.cpp",
+   "slug": "re_re_regex_re_regex_construct_string",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/string_flg.pass.cpp",
+   "slug": "re_re_regex_re_regex_construct_string_flg",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.regex/types.pass.cpp",
+   "slug": "re_re_regex_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.req/nothing_to_do.pass.cpp",
+   "slug": "re_re_req_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/range_concept_conformance.compile.pass.cpp",
+   "slug": "re_re_results_range_concept_conformance",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.acc/begin_end.pass.cpp",
+   "slug": "re_re_results_re_results_acc_begin_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.acc/cbegin_cend.pass.cpp",
+   "slug": "re_re_results_re_results_acc_cbegin_cend",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.acc/index.pass.cpp",
+   "slug": "re_re_results_re_results_acc_index",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.acc/length.pass.cpp",
+   "slug": "re_re_results_re_results_acc_length",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.acc/position.pass.cpp",
+   "slug": "re_re_results_re_results_acc_position",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.acc/prefix.pass.cpp",
+   "slug": "re_re_results_re_results_acc_prefix",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.acc/str.pass.cpp",
+   "slug": "re_re_results_re_results_acc_str",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.acc/suffix.pass.cpp",
+   "slug": "re_re_results_re_results_acc_suffix",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.all/get_allocator.pass.cpp",
+   "slug": "re_re_results_re_results_all_get_allocator",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.const/allocator.pass.cpp",
+   "slug": "re_re_results_re_results_const_allocator",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.const/copy.pass.cpp",
+   "slug": "re_re_results_re_results_const_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.const/copy_assign.pass.cpp",
+   "slug": "re_re_results_re_results_const_copy_assign",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.const/default.pass.cpp",
+   "slug": "re_re_results_re_results_const_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.const/move.pass.cpp",
+   "slug": "re_re_results_re_results_const_move",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.const/move_assign.pass.cpp",
+   "slug": "re_re_results_re_results_const_move_assign",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.form/form1.pass.cpp",
+   "slug": "re_re_results_re_results_form_form1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.form/form2.pass.cpp",
+   "slug": "re_re_results_re_results_form_form2",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.size/max_size.pass.cpp",
+   "slug": "re_re_results_re_results_size_max_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.state/ready.pass.cpp",
+   "slug": "re_re_results_re_results_state_ready",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.swap/member_swap.pass.cpp",
+   "slug": "re_re_results_re_results_swap_member_swap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.swap/non_member_swap.pass.cpp",
+   "slug": "re_re_results_re_results_swap_non_member_swap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/types.pass.cpp",
+   "slug": "re_re_results_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.submatch/re.submatch.members/compare_string_type.pass.cpp",
+   "slug": "re_re_submatch_re_submatch_members_compare_string_type",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.submatch/re.submatch.members/compare_sub_match.pass.cpp",
+   "slug": "re_re_submatch_re_submatch_members_compare_sub_match",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.submatch/re.submatch.members/compare_value_type_ptr.pass.cpp",
+   "slug": "re_re_submatch_re_submatch_members_compare_value_type_ptr",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.form/form3.pass.cpp",
+   "slug": "re_re_results_re_results_form_form3",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.form/form4.pass.cpp",
+   "slug": "re_re_results_re_results_form_form4",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.nonmember/equal.pass.cpp",
+   "slug": "re_re_results_re_results_nonmember_equal",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.results/re.results.size/empty.pass.cpp",
+   "slug": "re_re_results_re_results_size_empty",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.submatch/re.submatch.members/default.pass.cpp",
+   "slug": "re_re_submatch_re_submatch_members_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.submatch/re.submatch.members/length.pass.cpp",
+   "slug": "re_re_submatch_re_submatch_members_length",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.submatch/re.submatch.members/operator_string.pass.cpp",
+   "slug": "re_re_submatch_re_submatch_members_operator_string",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.submatch/re.submatch.members/str.pass.cpp",
+   "slug": "re_re_submatch_re_submatch_members_str",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/cmatch.pass.cpp",
+   "slug": "re_re_syn_cmatch",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/cregex_iterator.pass.cpp",
+   "slug": "re_re_syn_cregex_iterator",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/cregex_token_iterator.pass.cpp",
+   "slug": "re_re_syn_cregex_token_iterator",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/csub_match.pass.cpp",
+   "slug": "re_re_syn_csub_match",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.submatch/re.submatch.members/swap.pass.cpp",
+   "slug": "re_re_submatch_re_submatch_members_swap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.submatch/re.submatch.op/compare.pass.cpp",
+   "slug": "re_re_submatch_re_submatch_op_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.submatch/re.submatch.op/stream.pass.cpp",
+   "slug": "re_re_submatch_re_submatch_op_stream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.submatch/types.pass.cpp",
+   "slug": "re_re_submatch_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/regex.pass.cpp",
+   "slug": "re_re_syn_regex",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/smatch.pass.cpp",
+   "slug": "re_re_syn_smatch",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/sregex_iterator.pass.cpp",
+   "slug": "re_re_syn_sregex_iterator",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/sregex_token_iterator.pass.cpp",
+   "slug": "re_re_syn_sregex_token_iterator",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/ssub_match.pass.cpp",
+   "slug": "re_re_syn_ssub_match",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/wcmatch.pass.cpp",
+   "slug": "re_re_syn_wcmatch",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/wcregex_iterator.pass.cpp",
+   "slug": "re_re_syn_wcregex_iterator",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/wcregex_token_iterator.pass.cpp",
+   "slug": "re_re_syn_wcregex_token_iterator",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/wcsub_match.pass.cpp",
+   "slug": "re_re_syn_wcsub_match",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/wregex.pass.cpp",
+   "slug": "re_re_syn_wregex",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/wsmatch.pass.cpp",
+   "slug": "re_re_syn_wsmatch",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/wsregex_iterator.pass.cpp",
+   "slug": "re_re_syn_wsregex_iterator",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/wsregex_token_iterator.pass.cpp",
+   "slug": "re_re_syn_wsregex_token_iterator",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.syn/wssub_match.pass.cpp",
+   "slug": "re_re_syn_wssub_match",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.traits/default.pass.cpp",
+   "slug": "re_re_traits_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.traits/getloc.pass.cpp",
+   "slug": "re_re_traits_getloc",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.traits/imbue.pass.cpp",
+   "slug": "re_re_traits_imbue",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.traits/isctype.pass.cpp",
+   "slug": "re_re_traits_isctype",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.traits/length.pass.cpp",
+   "slug": "re_re_traits_length",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.traits/lookup_classname.pass.cpp",
+   "slug": "re_re_traits_lookup_classname",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.traits/translate_nocase.pass.cpp",
+   "slug": "re_re_traits_translate_nocase",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.traits/types.pass.cpp",
+   "slug": "re_re_traits_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.traits/value.pass.cpp",
+   "slug": "re_re_traits_value",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.traits/lookup_collatename.pass.cpp",
+   "slug": "re_re_traits_lookup_collatename",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.traits/transform.pass.cpp",
+   "slug": "re_re_traits_transform",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.traits/transform_primary.pass.cpp",
+   "slug": "re_re_traits_transform_primary",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "re/re.traits/translate.pass.cpp",
+   "slug": "re_re_traits_translate",
+   "kind": "run",
+   "flags": []
   }
  ],
  "skipped": [
@@ -38694,6 +39660,46 @@
   {
    "file": "localization/locale.categories/category.ctype/locale.ctype.byname/narrow_many.pass.cpp",
    "reason": "requires-unmet:locale.fr_CA.ISO8859-1"
+  },
+  {
+   "file": "re/re.alg/re.alg.replace/exponential.pass.cpp",
+   "reason": "unsupported:no-exceptions"
+  },
+  {
+   "file": "re/re.alg/re.alg.match/exponential.pass.cpp",
+   "reason": "unsupported:no-exceptions"
+  },
+  {
+   "file": "re/re.alg/re.alg.search/exponential.pass.cpp",
+   "reason": "unsupported:no-exceptions"
+  },
+  {
+   "file": "re/re.grammar/excessive_brace_count.pass.cpp",
+   "reason": "unsupported:no-exceptions"
+  },
+  {
+   "file": "re/re.grammar/excessive_brace_min_max.pass.cpp",
+   "reason": "unsupported:no-exceptions"
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/bad_ctype.pass.cpp",
+   "reason": "unsupported:no-exceptions"
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/bad_escape.pass.cpp",
+   "reason": "unsupported:no-exceptions"
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/bad_range.pass.cpp",
+   "reason": "unsupported:no-exceptions"
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/bad_repeat.pass.cpp",
+   "reason": "unsupported:no-exceptions"
+  },
+  {
+   "file": "re/re.regex/re.regex.construct/bad_backref.pass.cpp",
+   "reason": "unsupported:no-exceptions"
   }
  ],
  "errors": [
@@ -45015,6 +46021,7 @@
   "containers",
   "thread",
   "input.output",
-  "localization"
+  "localization",
+  "re"
  ]
 }
