@@ -1,0 +1,147 @@
+{
+ "diagnostics": {
+  "inputs": 72,
+  "transferred": 72,
+  "skipped": 0,
+  "errors": 0,
+  "libcxx": {
+   "compile_pass": 72,
+   "compile_fail": 0,
+   "run_pass": 72,
+   "run_fail": 0,
+   "compile_fails": [],
+   "run_fails": []
+  },
+  "libstdcxx": {
+   "compile_pass": 72,
+   "compile_fail": 0,
+   "run_pass": 72,
+   "run_fail": 0,
+   "compile_fails": [],
+   "run_fails": []
+  }
+ },
+ "concepts": {
+  "inputs": 35,
+  "transferred": 34,
+  "skipped": 0,
+  "errors": 1,
+  "libcxx": {
+   "compile_pass": 33,
+   "compile_fail": 1,
+   "run_pass": 4,
+   "run_fail": 0,
+   "compile_fails": [
+    "concepts/concepts.callable/concept.predicate/predicate.compile.pass.cpp"
+   ],
+   "run_fails": []
+  },
+  "libstdcxx": {
+   "compile_pass": 32,
+   "compile_fail": 2,
+   "run_pass": 4,
+   "run_fail": 0,
+   "compile_fails": [
+    "concepts/concepts.compare/concept.equalitycomparable/equality_comparable.compile.pass.cpp",
+    "concepts/concepts.compare/concepts.totallyordered/totally_ordered_with.compile.pass.cpp"
+   ],
+   "run_fails": []
+  }
+ },
+ "language.support": {
+  "inputs": 272,
+  "transferred": 221,
+  "skipped": 24,
+  "errors": 27,
+  "libcxx": {
+   "compile_pass": 200,
+   "compile_fail": 21,
+   "run_pass": 139,
+   "run_fail": 1,
+   "compile_fails": [
+    "language.support/support.dynamic/new.delete/new.delete.array/delete_align_val_t_replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size.replace.indirect.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size_align.replace.indirect.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size_align.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size_align_nothrow.replace.indirect.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size_align_nothrow.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size_nothrow.replace.indirect.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size_nothrow.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/sized_delete_array.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/sized_delete_array_calls_unsized_delete_array.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/delete_align_val_t_replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/new.size.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/new.size_align.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/new.size_align_nothrow.replace.indirect.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/new.size_align_nothrow.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/new.size_nothrow.replace.indirect.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/new.size_nothrow.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/sized_delete.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/sized_delete_calls_unsized_delete.pass.cpp",
+    "language.support/support.limits/limits/numeric.limits.members/infinity.pass.cpp"
+   ],
+   "run_fails": [
+    "language.support/support.srcloc/general.pass.cpp"
+   ]
+  },
+  "libstdcxx": {
+   "compile_pass": 175,
+   "compile_fail": 46,
+   "run_pass": 135,
+   "run_fail": 2,
+   "compile_fails": [
+    "language.support/cmp/cmp.alg/compare_partial_order_fallback.pass.cpp",
+    "language.support/cmp/cmp.alg/compare_strong_order_fallback.pass.cpp",
+    "language.support/cmp/cmp.alg/compare_weak_order_fallback.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/delete_align_val_t_replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size.replace.indirect.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size_align.replace.indirect.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size_align.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size_align_nothrow.replace.indirect.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size_align_nothrow.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size_nothrow.replace.indirect.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/new.size_nothrow.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/sized_delete_array.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.array/sized_delete_array_calls_unsized_delete_array.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/delete_align_val_t_replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/new.size.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/new.size_align.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/new.size_align_nothrow.replace.indirect.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/new.size_align_nothrow.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/new.size_nothrow.replace.indirect.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/new.size_nothrow.replace.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/sized_delete.pass.cpp",
+    "language.support/support.dynamic/new.delete/new.delete.single/sized_delete_calls_unsized_delete.pass.cpp",
+    "language.support/support.limits/limits/numeric.limits.members/infinity.pass.cpp",
+    "language.support/support.limits/support.limits.general/bitset.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/chrono.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/cmath.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/cstdlib.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/cstring.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/deque.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/execution.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/filesystem.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/format.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/iterator.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/new.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/ostream.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/print.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/random.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/set.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/span.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/sstream.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/stack.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/unordered_map.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/unordered_set.version.compile.pass.cpp",
+    "language.support/support.limits/support.limits.general/vector.version.compile.pass.cpp",
+    "language.support/support.runtime/cstdalign.compile.pass.cpp"
+   ],
+   "run_fails": [
+    "language.support/support.c.headers/support.c.headers.other/math.lerp.pass.cpp",
+    "language.support/support.srcloc/general.pass.cpp"
+   ]
+  }
+ }
+}
