@@ -2,10 +2,11 @@
 # Build and run the libcis test suite against MULTIPLE standard libraries, so a
 # test is only trusted if it passes against real vendor libraries too.
 #
-# Backends:
-#   libcis     - our library      (g++-10, gnu++20, -nostdinc++ -Iinclude, freestanding via src/support.cpp)
-#   libcxx     - vendor LLVM libc++ (clang++-18, gnu++23, -stdlib=libc++)
-#   libstdcxx  - vendor GNU libstdc++ (g++-13, gnu++23)
+# Backends (vendors are the NEWEST available so all standard features are present
+# and tests run unconditionally — never guarded/disabled):
+#   libcis     - our library        (g++-10,    gnu++20, -nostdinc++ -Iinclude, freestanding via src/support.cpp)
+#   libcxx     - vendor LLVM libc++  (clang++-20, gnu++2c, -stdlib=libc++)
+#   libstdcxx  - vendor GNU libstdc++ (g++-14,    gnu++26)
 #
 # All backends use -fno-exceptions -fno-rtti so the library is the only variable.
 # Each test file is compiled+linked+run on its own; we tally COMPILE and RUN
@@ -48,8 +49,8 @@ if [ "$want" = all ] || [ "$want" = libcis ]; then
   run_backend libcis "g++-10 -std=gnu++20 $common -nostdinc++ -Iinclude @SRC@ src/support.cpp @MAIN@ -nodefaultlibs -o @OUT@ -lpthread -lm -lc -lgcc_s -lgcc"
 fi
 if [ "$want" = all ] || [ "$want" = libcxx ]; then
-  run_backend libcxx "clang++-18 -std=gnu++23 -stdlib=libc++ $common @SRC@ @MAIN@ -pthread -o @OUT@"
+  run_backend libcxx "clang++-20 -std=gnu++2c -stdlib=libc++ $common @SRC@ @MAIN@ -pthread -o @OUT@"
 fi
 if [ "$want" = all ] || [ "$want" = libstdcxx ]; then
-  run_backend libstdcxx "g++-13 -std=gnu++23 $common @SRC@ @MAIN@ -pthread -o @OUT@"
+  run_backend libstdcxx "g++-14 -std=gnu++26 $common @SRC@ @MAIN@ -pthread -o @OUT@"
 fi
