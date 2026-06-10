@@ -55,7 +55,7 @@ def gen(backend):
     os.makedirs(bdir, exist_ok=True)
 
     L = [
-        "ninja_required_version = 1.10",
+        "ninja_required_version = 1.10", "builddir = build",
         f"cxx = {b['cxx']}", f"cargs = {b['cargs']}", f"link = {b['link']}", "",
         "rule cc",        # compile one source -> .o (+ depfile: tracks all headers)
         "  command = $cxx $cargs $flags -c $in -o $out -MMD -MF $out.d",
