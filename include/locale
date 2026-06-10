@@ -1,0 +1,438 @@
+// <locale> — MINIMAL locale implementation for <ios>.
+// Mechanically ported from libc++ include/__locale + include/locale (selective).
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// DESIGN NOTE (libcis reduced iostreams):
+//   This is intentionally minimal: locale holds a "classic C" identity only.
+//   Facets provided: ctype_base, ctype<char>, ctype<wchar_t>,
+//                    numpunct<char>, numpunct<wchar_t>.
+//   Intentionally OMITTED: collate, num_get, num_put, money_*, time_*,
+//   messages, codecvt, wbuffer_convert, wstring_convert.
+//   Number formatting is handled directly by <ostream>/<istream>, not num_put.
+//   locale::name(), locale(const char*), locale(const string&), combine(),
+//   operator() (string collation) are all stubbed / not provided.
+#pragma once
+
+// Hide all our symbols so they don't conflict with libstdc++.so symbols at runtime.
+// libstdc++ links in as a shared lib; without hidden visibility our weak std::locale,
+// std::ctype<> etc. would be interposed by libstdc++'s strong symbols, causing ABI mismatch.
+#pragma GCC visibility push(hidden)
+
+#include <cstddef>   // size_t
+#include <cctype>    // isspace, isdigit, etc.
+#include <cwchar>    // wint_t
+#include <type_traits>
+
+namespace std {
+
+// Forward declarations needed internally.
+class locale;
+template<class Facet> const Facet& use_facet(const locale&);
+template<class Facet> bool has_facet(const locale&) noexcept;
+
+//===----------------------------------------------------------------------===//
+// locale::id
+//===----------------------------------------------------------------------===//
+class locale {
+public:
+    // --- nested class id ---
+    class id {
+    public:
+        id() = default;
+        id(const id&) = delete;
+        id& operator=(const id&) = delete;
+
+        // Returns a unique non-zero integer for this id object.
+        // Assigned lazily on first call (thread-unsafe; acceptable here).
+        size_t __get() const {
+            if (val == 0) {
+                val = ++counter;
+            }
+            return val;
+        }
+    private:
+        mutable size_t val = 0;
+        static size_t counter;
+    };
+
+    // --- nested class facet ---
+    class facet {
+    protected:
+        explicit facet(size_t refs = 0) : refs_(refs) {}
+        virtual ~facet() = default;
+        facet(const facet&) = delete;
+        facet& operator=(const facet&) = delete;
+    private:
+        friend class locale;
+        size_t refs_;
+    };
+
+    // category bitmask
+    typedef int category;
+    static constexpr category none     = 0x000;
+    static constexpr category collate  = 0x010;
+    static constexpr category ctype    = 0x020;
+    static constexpr category monetary = 0x040;
+    static constexpr category numeric  = 0x080;
+    static constexpr category time     = 0x100;
+    static constexpr category messages = 0x200;
+    static constexpr category all      = collate | ctype | monetary | numeric | time | messages;
+
+    // construct/copy/destroy — only classic/default supported
+    locale() noexcept : classic_(true) {}
+    locale(const locale&) noexcept = default;
+    locale& operator=(const locale&) noexcept = default;
+    ~locale() = default;
+
+    bool operator==(const locale& other) const noexcept { return classic_ == other.classic_; }
+    bool operator!=(const locale& other) const noexcept { return !(*this == other); }
+
+    static const locale& classic() noexcept {
+        static locale inst;
+        return inst;
+    }
+    static locale global(const locale& loc) {
+        locale prev = global_locale();
+        global_locale() = loc;
+        return prev;
+    }
+
+    // use_facet / has_facet support: store a small table of facet pointers
+    // indexed by locale::id.  Since we only ever have the classic locale,
+    // we keep one static registry.
+    static const facet* __get_facet(size_t id) noexcept;
+    static void __register_facet(size_t id, const facet* f) noexcept;
+
+private:
+    bool classic_ = true;
+
+    static locale& global_locale() {
+        static locale g;
+        return g;
+    }
+};
+
+// locale::id counter definition — lives here (header-only, #pragma once / include guard)
+inline size_t locale::id::counter = 0;
+
+// Static facet registry (array indexed by id)
+namespace detail {
+    constexpr size_t max_facets = 64;
+    inline const locale::facet* facet_registry[max_facets] = {};
+} // namespace detail
+
+inline const locale::facet* locale::__get_facet(size_t id) noexcept {
+    if (id == 0 || id >= detail::max_facets) return nullptr;
+    return detail::facet_registry[id];
+}
+inline void locale::__register_facet(size_t id, const locale::facet* f) noexcept {
+    if (id == 0 || id >= detail::max_facets) return;
+    detail::facet_registry[id] = f;
+}
+
+//===----------------------------------------------------------------------===//
+// has_facet / use_facet
+//===----------------------------------------------------------------------===//
+
+template<class Facet>
+bool has_facet(const locale&) noexcept {
+    size_t id = Facet::id.__get();
+    return locale::__get_facet(id) != nullptr;
+}
+
+template<class Facet>
+const Facet& use_facet(const locale& /*loc*/) {
+    size_t id = Facet::id.__get();
+    const locale::facet* f = locale::__get_facet(id);
+    if (!f) __builtin_trap(); // facet not installed — unreachable in well-formed code
+    return static_cast<const Facet&>(*f);
+}
+
+//===----------------------------------------------------------------------===//
+// ctype_base — character classification masks
+//===----------------------------------------------------------------------===//
+struct ctype_base {
+    typedef unsigned short mask;
+    static constexpr mask space  = 0x0001;
+    static constexpr mask print  = 0x0002;
+    static constexpr mask cntrl  = 0x0004;
+    static constexpr mask upper  = 0x0008;
+    static constexpr mask lower  = 0x0010;
+    static constexpr mask alpha  = 0x0020;
+    static constexpr mask digit  = 0x0040;
+    static constexpr mask punct  = 0x0080;
+    static constexpr mask xdigit = 0x0100;
+    static constexpr mask blank  = 0x0200;
+    static constexpr mask alnum  = alpha | digit;
+    static constexpr mask graph  = alnum | punct;
+};
+
+//===----------------------------------------------------------------------===//
+// ctype<char>
+//===----------------------------------------------------------------------===//
+template<class CharT> class ctype;
+
+template<>
+class ctype<char> : public locale::facet, public ctype_base {
+public:
+    typedef char char_type;
+    static locale::id id;
+
+    explicit ctype(const mask* tab = nullptr, bool del = false, size_t refs = 0)
+        : locale::facet(refs), tab_(tab), del_(del) {}
+
+    ~ctype() override {
+        if (del_ && tab_) delete[] tab_;
+    }
+
+    bool is(mask m, char c) const {
+        return do_is(m, c);
+    }
+    const char* is(const char* lo, const char* hi, mask* vec) const {
+        return do_is(lo, hi, vec);
+    }
+    const char* scan_is(mask m, const char* lo, const char* hi) const {
+        return do_scan_is(m, lo, hi);
+    }
+    const char* scan_not(mask m, const char* lo, const char* hi) const {
+        return do_scan_not(m, lo, hi);
+    }
+    char toupper(char c) const { return do_toupper(c); }
+    const char* toupper(char* lo, const char* hi) const { return do_toupper(lo, hi); }
+    char tolower(char c) const { return do_tolower(c); }
+    const char* tolower(char* lo, const char* hi) const { return do_tolower(lo, hi); }
+    char widen(char c) const { return do_widen(c); }
+    const char* widen(const char* lo, const char* hi, char* to) const { return do_widen(lo, hi, to); }
+    char narrow(char c, char dfault) const { return do_narrow(c, dfault); }
+    const char* narrow(const char* lo, const char* hi, char dfault, char* to) const {
+        return do_narrow(lo, hi, dfault, to);
+    }
+
+protected:
+    virtual bool do_is(mask m, char c) const {
+        return (classify(c) & m) != 0;
+    }
+    virtual const char* do_is(const char* lo, const char* hi, mask* vec) const {
+        for (const char* p = lo; p != hi; ++p, ++vec)
+            *vec = classify(*p);
+        return hi;
+    }
+    virtual const char* do_scan_is(mask m, const char* lo, const char* hi) const {
+        for (; lo != hi && !do_is(m, *lo); ++lo) {}
+        return lo;
+    }
+    virtual const char* do_scan_not(mask m, const char* lo, const char* hi) const {
+        for (; lo != hi && do_is(m, *lo); ++lo) {}
+        return lo;
+    }
+    virtual char do_toupper(char c) const {
+        return (char)::toupper((unsigned char)c);
+    }
+    virtual const char* do_toupper(char* lo, const char* hi) const {
+        for (; lo != hi; ++lo) *lo = do_toupper(*lo);
+        return hi;
+    }
+    virtual char do_tolower(char c) const {
+        return (char)::tolower((unsigned char)c);
+    }
+    virtual const char* do_tolower(char* lo, const char* hi) const {
+        for (; lo != hi; ++lo) *lo = do_tolower(*lo);
+        return hi;
+    }
+    virtual char do_widen(char c) const { return c; }
+    virtual const char* do_widen(const char* lo, const char* hi, char* to) const {
+        for (; lo != hi; ++lo, ++to) *to = *lo;
+        return hi;
+    }
+    virtual char do_narrow(char c, char /*dfault*/) const { return c; }
+    virtual const char* do_narrow(const char* lo, const char* hi, char /*dfault*/, char* to) const {
+        for (; lo != hi; ++lo, ++to) *to = *lo;
+        return hi;
+    }
+
+private:
+    static mask classify(char c) {
+        unsigned char u = (unsigned char)c;
+        mask m = 0;
+        if (::isspace(u))  m |= space;
+        if (::isprint(u))  m |= print;
+        if (::iscntrl(u))  m |= cntrl;
+        if (::isupper(u))  m |= upper;
+        if (::islower(u))  m |= lower;
+        if (::isalpha(u))  m |= alpha;
+        if (::isdigit(u))  m |= digit;
+        if (::ispunct(u))  m |= punct;
+        if (::isxdigit(u)) m |= xdigit;
+        if (::isblank(u))  m |= blank;
+        return m;
+    }
+
+    const mask* tab_;
+    bool del_;
+};
+
+inline locale::id ctype<char>::id;
+
+//===----------------------------------------------------------------------===//
+// ctype<wchar_t>
+//===----------------------------------------------------------------------===//
+template<>
+class ctype<wchar_t> : public locale::facet, public ctype_base {
+public:
+    typedef wchar_t char_type;
+    static locale::id id;
+
+    explicit ctype(size_t refs = 0) : locale::facet(refs) {}
+
+    bool is(mask m, wchar_t c) const { return do_is(m, c); }
+    const wchar_t* is(const wchar_t* lo, const wchar_t* hi, mask* vec) const {
+        return do_is(lo, hi, vec);
+    }
+    const wchar_t* scan_is(mask m, const wchar_t* lo, const wchar_t* hi) const {
+        return do_scan_is(m, lo, hi);
+    }
+    const wchar_t* scan_not(mask m, const wchar_t* lo, const wchar_t* hi) const {
+        return do_scan_not(m, lo, hi);
+    }
+    wchar_t toupper(wchar_t c) const { return do_toupper(c); }
+    const wchar_t* toupper(wchar_t* lo, const wchar_t* hi) const { return do_toupper(lo, hi); }
+    wchar_t tolower(wchar_t c) const { return do_tolower(c); }
+    const wchar_t* tolower(wchar_t* lo, const wchar_t* hi) const { return do_tolower(lo, hi); }
+    wchar_t widen(char c) const { return do_widen(c); }
+    const char* widen(const char* lo, const char* hi, wchar_t* to) const { return do_widen(lo, hi, to); }
+    char narrow(wchar_t c, char dfault) const { return do_narrow(c, dfault); }
+    const wchar_t* narrow(const wchar_t* lo, const wchar_t* hi, char dfault, char* to) const {
+        return do_narrow(lo, hi, dfault, to);
+    }
+
+protected:
+    virtual bool do_is(mask m, wchar_t c) const {
+        return (classify(c) & m) != 0;
+    }
+    virtual const wchar_t* do_is(const wchar_t* lo, const wchar_t* hi, mask* vec) const {
+        for (const wchar_t* p = lo; p != hi; ++p, ++vec) *vec = classify(*p);
+        return hi;
+    }
+    virtual const wchar_t* do_scan_is(mask m, const wchar_t* lo, const wchar_t* hi) const {
+        for (; lo != hi && !do_is(m, *lo); ++lo) {}
+        return lo;
+    }
+    virtual const wchar_t* do_scan_not(mask m, const wchar_t* lo, const wchar_t* hi) const {
+        for (; lo != hi && do_is(m, *lo); ++lo) {}
+        return lo;
+    }
+    virtual wchar_t do_toupper(wchar_t c) const { return (wchar_t)::towupper(c); }
+    virtual const wchar_t* do_toupper(wchar_t* lo, const wchar_t* hi) const {
+        for (; lo != hi; ++lo) *lo = do_toupper(*lo);
+        return hi;
+    }
+    virtual wchar_t do_tolower(wchar_t c) const { return (wchar_t)::towlower(c); }
+    virtual const wchar_t* do_tolower(wchar_t* lo, const wchar_t* hi) const {
+        for (; lo != hi; ++lo) *lo = do_tolower(*lo);
+        return hi;
+    }
+    virtual wchar_t do_widen(char c) const { return (wchar_t)(unsigned char)c; }
+    virtual const char* do_widen(const char* lo, const char* hi, wchar_t* to) const {
+        for (; lo != hi; ++lo, ++to) *to = do_widen(*lo);
+        return hi;
+    }
+    virtual char do_narrow(wchar_t c, char dfault) const {
+        if (c < 0 || c > 127) return dfault;
+        return (char)c;
+    }
+    virtual const wchar_t* do_narrow(const wchar_t* lo, const wchar_t* hi, char dfault, char* to) const {
+        for (; lo != hi; ++lo, ++to) *to = do_narrow(*lo, dfault);
+        return hi;
+    }
+
+private:
+    static mask classify(wchar_t c) {
+        mask m = 0;
+        if (::iswspace(c))  m |= space;
+        if (::iswprint(c))  m |= print;
+        if (::iswcntrl(c))  m |= cntrl;
+        if (::iswupper(c))  m |= upper;
+        if (::iswlower(c))  m |= lower;
+        if (::iswalpha(c))  m |= alpha;
+        if (::iswdigit(c))  m |= digit;
+        if (::iswpunct(c))  m |= punct;
+        if (::iswxdigit(c)) m |= xdigit;
+        if (::iswblank(c))  m |= blank;
+        return m;
+    }
+};
+
+inline locale::id ctype<wchar_t>::id;
+
+//===----------------------------------------------------------------------===//
+// numpunct<char> / numpunct<wchar_t>
+// Provides "C" locale punctuation info used by ostream/istream formatting.
+// num_put / num_get facets are intentionally omitted (see DESIGN NOTE).
+//===----------------------------------------------------------------------===//
+template<class CharT> class numpunct;
+
+template<>
+class numpunct<char> : public locale::facet {
+public:
+    typedef char char_type;
+    static locale::id id;
+
+    explicit numpunct(size_t refs = 0) : locale::facet(refs) {}
+
+    char decimal_point()  const { return do_decimal_point(); }
+    char thousands_sep()  const { return do_thousands_sep(); }
+    // grouping(): empty string = no grouping
+    // truename()/falsename(): "true"/"false"
+
+protected:
+    virtual char do_decimal_point() const { return '.'; }
+    virtual char do_thousands_sep() const { return ','; }
+};
+
+inline locale::id numpunct<char>::id;
+
+template<>
+class numpunct<wchar_t> : public locale::facet {
+public:
+    typedef wchar_t char_type;
+    static locale::id id;
+
+    explicit numpunct(size_t refs = 0) : locale::facet(refs) {}
+
+    wchar_t decimal_point() const { return do_decimal_point(); }
+    wchar_t thousands_sep() const { return do_thousands_sep(); }
+
+protected:
+    virtual wchar_t do_decimal_point() const { return L'.'; }
+    virtual wchar_t do_thousands_sep() const { return L','; }
+};
+
+inline locale::id numpunct<wchar_t>::id;
+
+//===----------------------------------------------------------------------===//
+// Classic-locale singleton facet instances — registered at startup.
+// We use a simple init helper struct with static storage.
+//===----------------------------------------------------------------------===//
+namespace detail {
+
+// Static instances of the classic facets (refs=1 means never deleted)
+inline ctype<char>    classic_ctype_char{nullptr, false, 1};
+inline ctype<wchar_t> classic_ctype_wchar{1};
+inline numpunct<char>    classic_numpunct_char{1};
+inline numpunct<wchar_t> classic_numpunct_wchar{1};
+
+struct locale_classic_init {
+    locale_classic_init() {
+        locale::__register_facet(ctype<char>::id.__get(),       &classic_ctype_char);
+        locale::__register_facet(ctype<wchar_t>::id.__get(),    &classic_ctype_wchar);
+        locale::__register_facet(numpunct<char>::id.__get(),    &classic_numpunct_char);
+        locale::__register_facet(numpunct<wchar_t>::id.__get(), &classic_numpunct_wchar);
+    }
+};
+inline locale_classic_init locale_classic_init_instance;
+
+} // namespace detail
+
+} // namespace std
+
+#pragma GCC visibility pop
