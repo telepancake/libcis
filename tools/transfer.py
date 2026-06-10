@@ -406,6 +406,18 @@ def transform(text: str, tu, path: str, slug: str):
     if cur:
         runs.append(cur)
 
+    # Use a NAMED per-file namespace + trailing `using namespace` rather than an
+    # anonymous namespace.  Both give cross-file uniqueness (the namespace name
+    # embeds the unique slug, so helpers from different transferred files cannot
+    # collide when linked together), but the named-namespace + using-directive
+    # form preserves ordinary unqualified name lookup AND argument-dependent
+    # lookup for the test body: many libc++ tests deliberately define helpers in
+    # the global namespace and rely on ADL / unqualified calls (e.g. shadowing or
+    # extending std:: names).  An anonymous namespace silently changed the set of
+    # associated namespaces for such calls and broke a whole class of tests; the
+    # named form with `using namespace libcis_ns_<slug>;` re-exports every name
+    # back into the enclosing (global) scope, so lookup is unchanged.
+    ns_name = f"libcis_ns_{slug}"
     for run in runs:
         wrap_start = run[0].extent.start.offset
         wrap_end = max(d.extent.end.offset for d in run)
@@ -414,8 +426,10 @@ def transform(text: str, tu, path: str, slug: str):
             j += 1
         if j < len(data) and data[j] == ";":
             wrap_end = j + 1
-        edits.append((wrap_start, wrap_start, "namespace { // libcis: isolate file-scope helpers\n"))
-        edits.append((wrap_end, wrap_end, "\n} // anonymous namespace (libcis)\n"))
+        edits.append((wrap_start, wrap_start,
+                      f"namespace {ns_name} {{ // libcis: isolate file-scope helpers\n"))
+        edits.append((wrap_end, wrap_end,
+                      f"\n}} using namespace {ns_name}; // libcis\n"))
 
     # apply edits right-to-left so offsets stay valid
     edits.sort(key=lambda e: (e[0], e[1]), reverse=True)
@@ -446,87 +460,169 @@ def verify(out_text: str, slug: str, ref_path: str):
     return hard, found
 
 
+def list_inputs(sub):
+    """All test inputs under a subtree, as (src_abspath, rel) sorted."""
+    root = os.path.join(SRC_STD, sub)
+    out = []
+    for dirpath, _dirs, files in os.walk(root):
+        for fn in sorted(files):
+            if not is_test_file(fn):
+                continue
+            src = os.path.abspath(os.path.join(dirpath, fn))
+            rel = os.path.relpath(src, SRC_STD)
+            out.append((src, rel))
+    return sorted(out, key=lambda t: t[1])
+
+
+# Each worker process keeps its own libclang Index (not fork-safe to share).
+_WORKER_IDX = None
+
+
+def _worker_idx():
+    global _WORKER_IDX
+    if _WORKER_IDX is None:
+        _WORKER_IDX = ci.Index.create()
+    return _WORKER_IDX
+
+
+def process_one(args):
+    """Worker: transfer a single input.  Returns a record dict describing the
+    outcome AND, on success, the output text (written by the parent so the
+    filesystem isn't touched concurrently)."""
+    src, rel = args
+    try:
+        with open(src, "r", errors="replace") as fh:
+            text = fh.read()
+    except Exception as ex:
+        return {"status": "error", "file": rel, "stage": "read", "diag": repr(ex)}
+
+    ok, reason, flags = decide(text)
+    if not ok:
+        return {"status": "skipped", "file": rel, "reason": reason}
+
+    slug = slug_for(rel)
+    try:
+        idx = _worker_idx()
+        tu = idx.parse(src, args=PARSE_ARGS)
+        hard = [d for d in tu.diagnostics if d.severity >= ci.Diagnostic.Error]
+        if hard:
+            return {"status": "error", "file": rel, "stage": "parse",
+                    "diag": str(hard[0])}
+        out, has_main = transform(text, tu, src, slug)
+    except TransformError as ex:
+        return {"status": "error", "file": rel, "stage": "transform", "diag": str(ex)}
+    except Exception as ex:  # pragma: no cover
+        return {"status": "error", "file": rel, "stage": "exc", "diag": repr(ex)}
+
+    if not has_main or rel.endswith(".compile.pass.cpp"):
+        kind = "compile"
+    else:
+        kind = "run"
+    return {"status": "ok", "file": rel, "slug": slug, "kind": kind,
+            "flags": flags, "_text": out}
+
+
+def copy_sibling_headers(sub):
+    root = os.path.join(SRC_STD, sub)
+    for dirpath, _dirs, files in os.walk(root):
+        hs = [f for f in files if f.endswith((".h", ".hpp"))]
+        if not hs:
+            continue
+        reld = os.path.relpath(dirpath, SRC_STD)
+        dd = os.path.join(DST_ROOT, reld)
+        os.makedirs(dd, exist_ok=True)
+        for f in hs:
+            shutil.copyfile(os.path.join(dirpath, f), os.path.join(dd, f))
+
+
+def load_manifest():
+    p = os.path.join(DST_ROOT, "manifest.json")
+    if os.path.exists(p):
+        with open(p) as fh:
+            m = json.load(fh)
+        for k in ("transferred", "skipped", "errors", "subtrees"):
+            m.setdefault(k, [])
+        return m
+    return {"transferred": [], "skipped": [], "errors": [], "subtrees": []}
+
+
+def save_manifest(m):
+    tmp = os.path.join(DST_ROOT, "manifest.json.tmp")
+    with open(tmp, "w") as fh:
+        json.dump(m, fh, indent=1)
+    os.replace(tmp, os.path.join(DST_ROOT, "manifest.json"))
+
+
 def main():
-    subtrees = sys.argv[1:] or ["numerics"]
+    import argparse
+    import multiprocessing as mp
+    from collections import Counter
 
-    if os.path.isdir(DST_ROOT):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("subtrees", nargs="*", default=["numerics"])
+    ap.add_argument("-j", "--jobs", type=int, default=max(1, (os.cpu_count() or 1)))
+    ap.add_argument("--fresh", action="store_true",
+                    help="wipe test/std before transferring (default: incremental)")
+    args = ap.parse_args()
+    subtrees = args.subtrees or ["numerics"]
+
+    if args.fresh and os.path.isdir(DST_ROOT):
         shutil.rmtree(DST_ROOT)
-    os.makedirs(DST_ROOT)
-    shutil.copytree(SRC_SUPPORT, DST_SUPPORT)
+    os.makedirs(DST_ROOT, exist_ok=True)
+    if not os.path.isdir(DST_SUPPORT):
+        shutil.copytree(SRC_SUPPORT, DST_SUPPORT)
 
-    idx = ci.Index.create()
-    manifest = {"transferred": [], "skipped": [], "errors": [], "subtrees": subtrees}
+    manifest = load_manifest()
+    # drop any prior records for the subtrees we're (re)building so a re-run of a
+    # subtree replaces rather than duplicates its entries.
+    def in_target(rel):
+        return any(rel == sub or rel.startswith(sub + "/") for sub in subtrees)
+    for k in ("transferred", "skipped", "errors"):
+        manifest[k] = [r for r in manifest[k] if not in_target(r["file"])]
+    for sub in subtrees:
+        if sub not in manifest["subtrees"]:
+            manifest["subtrees"].append(sub)
 
     for sub in subtrees:
-        root = os.path.join(SRC_STD, sub)
-        for dirpath, _dirs, files in os.walk(root):
-            for fn in sorted(files):
-                if not is_test_file(fn):
-                    continue
-                src = os.path.abspath(os.path.join(dirpath, fn))
-                rel = os.path.relpath(src, SRC_STD)
-                with open(src, "r", errors="replace") as fh:
-                    text = fh.read()
-                ok, reason, flags = decide(text)
-                if not ok:
-                    manifest["skipped"].append({"file": rel, "reason": reason})
-                    continue
-                slug = slug_for(rel)
-                try:
-                    tu = idx.parse(src, args=PARSE_ARGS)
-                    hard = [d for d in tu.diagnostics if d.severity >= ci.Diagnostic.Error]
-                    if hard:
-                        manifest["errors"].append(
-                            {"file": rel, "stage": "parse", "diag": str(hard[0])})
-                        continue
-                    out, has_main = transform(text, tu, src, slug)
-                except TransformError as ex:
-                    manifest["errors"].append({"file": rel, "stage": "transform", "diag": str(ex)})
-                    continue
-                except Exception as ex:  # pragma: no cover
-                    manifest["errors"].append({"file": rel, "stage": "exc", "diag": repr(ex)})
-                    continue
-
-                dst = os.path.join(DST_ROOT, rel)
+        inputs = list_inputs(sub)
+        print(f"[{sub}] {len(inputs)} inputs, -j{args.jobs}", flush=True)
+        nt = ns = ne = 0
+        results = []
+        with mp.Pool(processes=args.jobs) as pool:
+            for i, rec in enumerate(pool.imap_unordered(process_one, inputs, chunksize=4)):
+                results.append(rec)
+                if (i + 1) % 100 == 0:
+                    print(f"  [{sub}] {i+1}/{len(inputs)}", flush=True)
+        for rec in results:
+            st = rec["status"]
+            if st == "ok":
+                out = rec.pop("_text")
+                dst = os.path.join(DST_ROOT, rec["file"])
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 with open(dst, "w") as fh:
                     fh.write(out)
-                # a file with no entry point can only be syntax-checked, never
-                # linked+run, regardless of its .pass/.compile.pass suffix.
-                if not has_main or fn.endswith(".compile.pass.cpp"):
-                    kind = "compile"
-                else:
-                    kind = "run"
                 manifest["transferred"].append(
-                    {"file": rel, "slug": slug, "kind": kind, "flags": flags})
+                    {k: rec[k] for k in ("file", "slug", "kind", "flags")})
+                nt += 1
+            elif st == "skipped":
+                manifest["skipped"].append({"file": rec["file"], "reason": rec["reason"]})
+                ns += 1
+            else:
+                manifest["errors"].append(
+                    {"file": rec["file"], "stage": rec["stage"], "diag": rec["diag"]})
+                ne += 1
+        copy_sibling_headers(sub)
+        save_manifest(manifest)
+        print(f"[{sub}] transferred={nt} skipped={ns} errors={ne} "
+              f"(of {len(inputs)})", flush=True)
 
-    # bring sibling .h headers so ../../x.h relative includes resolve.
-    for sub in subtrees:
-        root = os.path.join(SRC_STD, sub)
-        for dirpath, _dirs, files in os.walk(root):
-            hs = [f for f in files if f.endswith((".h", ".hpp"))]
-            if not hs:
-                continue
-            reld = os.path.relpath(dirpath, SRC_STD)
-            dd = os.path.join(DST_ROOT, reld)
-            os.makedirs(dd, exist_ok=True)
-            for f in hs:
-                shutil.copyfile(os.path.join(dirpath, f), os.path.join(dd, f))
-
-    with open(os.path.join(DST_ROOT, "manifest.json"), "w") as fh:
-        json.dump(manifest, fh, indent=1)
-
-    nt, ns, ne = len(manifest["transferred"]), len(manifest["skipped"]), len(manifest["errors"])
-    print(f"transfer: subtrees={subtrees}")
-    print(f"  inputs found : {nt + ns + ne}")
-    print(f"  transferred  : {nt}")
-    print(f"  skipped      : {ns}")
-    print(f"  parse/xform errors : {ne}")
-    from collections import Counter
+    nt, ns, ne = (len(manifest["transferred"]), len(manifest["skipped"]),
+                  len(manifest["errors"]))
+    print(f"TOTAL transferred={nt} skipped={ns} errors={ne}")
     for r, c in Counter(s["reason"].split(":")[0] for s in manifest["skipped"]).most_common(12):
-        print(f"     skip[{r}] = {c}")
+        print(f"   skip[{r}] = {c}")
     for r, c in Counter(e["stage"] for e in manifest["errors"]).most_common(12):
-        print(f"     err[{r}] = {c}")
+        print(f"   err[{r}] = {c}")
 
 
 if __name__ == "__main__":
