@@ -6,6 +6,7 @@
 #include <iterator>
 #include <type_traits>
 #include <concepts>
+#include <string_view>
 
 // ---- concepts: range, sized_range, borrowed_range, view, etc. ----
 
@@ -401,4 +402,186 @@ void test_iota_transform_pipeline() {
     CHECK(vals[2] == 4);
     CHECK(vals[3] == 9);
     CHECK(vals[4] == 16);
+}
+
+// ---- join_view ----
+
+namespace {
+// Simple flat array range that is a view
+struct int_array_view : std::ranges::view_interface<int_array_view> {
+    const int* data_;
+    int size_;
+    constexpr int_array_view(const int* d, int s) : data_(d), size_(s) {}
+    constexpr const int* begin() const { return data_; }
+    constexpr const int* end()   const { return data_ + size_; }
+};
+
+// Simple range of int_array_view
+struct two_arrays {
+    int_array_view sub[2];
+    constexpr const int_array_view* begin() const { return sub; }
+    constexpr const int_array_view* end()   const { return sub + 2; }
+};
+} // anonymous namespace
+
+void test_ranges_join_view() {
+    // join two int arrays to get flat sequence: 1,2,3,4,5,6
+    static constexpr int a1[] = {1, 2, 3};
+    static constexpr int a2[] = {4, 5, 6};
+    two_arrays ta{{{a1, 3}, {a2, 3}}};
+    auto jv = ta | std::views::join;
+    static_assert(std::ranges::range<decltype(jv)>);
+
+    int flat[6];
+    int idx = 0;
+    for (auto x : jv) flat[idx++] = x;
+
+    CHECK(idx == 6);
+    CHECK(flat[0] == 1);
+    CHECK(flat[1] == 2);
+    CHECK(flat[2] == 3);
+    CHECK(flat[3] == 4);
+    CHECK(flat[4] == 5);
+    CHECK(flat[5] == 6);
+}
+
+void test_ranges_join_view_empty_inner() {
+    // Some inner ranges empty: join yields 10, 20, 30
+    static constexpr int e[] = {};
+    static constexpr int a1[] = {10, 20};
+    static constexpr int a2[] = {30};
+
+    struct four_arrays {
+        int_array_view sub[4];
+        constexpr const int_array_view* begin() const { return sub; }
+        constexpr const int_array_view* end()   const { return sub + 4; }
+    };
+    four_arrays ta{{{e, 0}, {a1, 2}, {e, 0}, {a2, 1}}};
+
+    auto jv = ta | std::views::join;
+    int flat[3];
+    int idx = 0;
+    for (auto x : jv) flat[idx++] = x;
+    CHECK(idx == 3);
+    CHECK(flat[0] == 10);
+    CHECK(flat[1] == 20);
+    CHECK(flat[2] == 30);
+}
+
+// ---- split_view ----
+
+// Helper: collect subranges from a split into an array of strings
+// We'll use std::string_view-like approach with char arrays.
+
+void test_ranges_split_view() {
+    // Split a string-like range on a delimiter char
+    // Use a simple array of chars as the range, split on ','
+    std::string_view sv = "hello,world,foo";
+    auto parts = sv | std::views::split(',');
+    static_assert(std::ranges::range<decltype(parts)>);
+
+    // Collect the parts as string_views (each part is a subrange of iterators)
+    int count = 0;
+    for (auto part : parts) {
+        (void)part;
+        ++count;
+    }
+    CHECK(count == 3);
+
+    // Check first part is "hello"
+    auto it = std::ranges::begin(parts);
+    auto first = *it;
+    std::string_view expected = "hello";
+    int i = 0;
+    for (auto c : first) {
+        CHECK(c == expected[i]);
+        ++i;
+    }
+    CHECK(i == 5);
+}
+
+void test_ranges_lazy_split_view() {
+    // lazy_split on a char range with single-char delimiter
+    std::string_view sv = "a,b,c";
+    auto parts = sv | std::views::lazy_split(',');
+    static_assert(std::ranges::range<decltype(parts)>);
+
+    int count = 0;
+    for (auto part : parts) {
+        (void)part;
+        ++count;
+    }
+    CHECK(count == 3);
+}
+
+// ---- elements_view / keys_view / values_view ----
+
+void test_ranges_elements_view() {
+    // Array of pair<int,string_view> — use elements<0> (keys) and elements<1> (values)
+    using P = std::pair<int, std::string_view>;
+    P arr[3] = {{1, "one"}, {2, "two"}, {3, "three"}};
+
+    // keys_view: yields 1, 2, 3
+    auto ks = arr | std::views::keys;
+    static_assert(std::ranges::range<decltype(ks)>);
+
+    int k[3];
+    int i = 0;
+    for (auto x : ks) k[i++] = x;
+    CHECK(i == 3);
+    CHECK(k[0] == 1);
+    CHECK(k[1] == 2);
+    CHECK(k[2] == 3);
+
+    // values_view: yields "one", "two", "three"
+    auto vs = arr | std::views::values;
+    static_assert(std::ranges::range<decltype(vs)>);
+    auto vit = std::ranges::begin(vs);
+    CHECK(*vit == "one");
+    ++vit;
+    CHECK(*vit == "two");
+    ++vit;
+    CHECK(*vit == "three");
+}
+
+void test_ranges_elements_view_static() {
+    using P = std::pair<int, std::string_view>;
+    // ref_view over array
+    static_assert(std::ranges::range<std::ranges::keys_view<std::ranges::ref_view<P[3]>>>);
+    static_assert(std::ranges::range<std::ranges::values_view<std::ranges::ref_view<P[3]>>>);
+}
+
+// ---- common_view ----
+
+void test_ranges_common_view() {
+    // take_while produces a non-common range (iterator != sentinel)
+    // Wrap it in common_view so begin/end have same type
+    int arr[6] = {1, 2, 3, 10, 11, 12};
+    auto tw = arr | std::views::take_while([](int x) { return x < 5; });
+    static_assert(!std::ranges::common_range<decltype(tw)>);
+
+    // Apply common_view
+    auto cv = tw | std::views::common;
+
+    // Now it's a common range
+    static_assert(std::ranges::range<decltype(cv)>);
+
+    int vals[3];
+    int count = 0;
+    for (auto x : cv) vals[count++] = x;
+    CHECK(count == 3);
+    CHECK(vals[0] == 1);
+    CHECK(vals[1] == 2);
+    CHECK(vals[2] == 3);
+}
+
+void test_ranges_common_view_already_common() {
+    // Applying views::common to an already-common range should return it unchanged (views::all)
+    int arr[4] = {1, 2, 3, 4};
+    auto cv = arr | std::views::common;
+    // Should just be a ref_view (already common)
+    static_assert(std::ranges::common_range<decltype(cv)>);
+    int count = 0;
+    for (auto x : cv) { (void)x; ++count; }
+    CHECK(count == 4);
 }
