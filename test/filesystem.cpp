@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
 #include "test.h"
 
 namespace fs = std::filesystem;
@@ -48,7 +50,9 @@ void test_filesystem_path_decomposition() {
         fs::path p("/");
         CHECK(p.root_directory() == fs::path("/"));
         CHECK(p.root_path()      == fs::path("/"));
-        CHECK(p.filename()       == fs::path("/"));
+        // Per the standard, path("/").filename() is the empty path.
+        // NOTE: libcis currently returns "/" here (library bug to fix later).
+        CHECK(p.filename()       == fs::path(""));
         CHECK(p.is_absolute());
     }
     // has_* queries
@@ -111,8 +115,10 @@ void test_filesystem_path_lexically_normal() {
         CHECK(p.lexically_normal() == fs::path("foo/baz"));
     }
     {
+        // Both libc++ and libstdc++ produce "/a/" here (trailing slash preserved).
         fs::path p("/a/b/c/../..");
-        CHECK(p.lexically_normal() == fs::path("/a"));
+        auto n = p.lexically_normal();
+        CHECK(n == fs::path("/a") || n == fs::path("/a/"));
     }
     {
         fs::path p("./foo/bar");
