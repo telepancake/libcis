@@ -1,0 +1,2531 @@
+// <filesystem> — C++17 filesystem library.
+// Mechanically ported from libc++ include/__filesystem/*.h
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+// POSIX '/' separator only (no Win32).
+// DEFERRED: stream operator<< / >> (needs <iostream>); u8path char8_t niceties.
+#pragma once
+
+#include <string>
+#include <string_view>
+#include <vector>
+#include <memory>
+#include <iterator>
+#include <compare>
+#include <chrono>
+#include <system_error>
+#include <cstdint>
+#include <functional>
+
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/statvfs.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <cerrno>
+#include <cstring>
+#include <cstdlib>
+#include <climits>
+
+namespace std {
+
+namespace filesystem {
+
+//===----------------------------------------------------------------------===//
+// Forward declarations
+//===----------------------------------------------------------------------===//
+class path;
+class filesystem_error;
+class directory_entry;
+class directory_iterator;
+class recursive_directory_iterator;
+class file_status;
+struct space_info;
+enum class file_type : signed char;
+enum class perms : unsigned;
+enum class perm_options : unsigned char;
+enum class copy_options : unsigned short;
+enum class directory_options : unsigned char;
+using file_time_type = std::chrono::time_point<std::chrono::system_clock,
+                                                std::chrono::nanoseconds>;
+
+//===----------------------------------------------------------------------===//
+// file_type
+//===----------------------------------------------------------------------===//
+enum class file_type : signed char {
+    none      =  0,
+    not_found = -1,
+    regular   =  1,
+    directory =  2,
+    symlink   =  3,
+    block     =  4,
+    character =  5,
+    fifo      =  6,
+    socket    =  7,
+    unknown   =  8
+};
+
+//===----------------------------------------------------------------------===//
+// perms
+//===----------------------------------------------------------------------===//
+enum class perms : unsigned {
+    none        = 0,
+    owner_read  = 0400,
+    owner_write = 0200,
+    owner_exec  = 0100,
+    owner_all   = 0700,
+    group_read  = 040,
+    group_write = 020,
+    group_exec  = 010,
+    group_all   = 070,
+    others_read  = 04,
+    others_write = 02,
+    others_exec  = 01,
+    others_all   = 07,
+    all          = 0777,
+    set_uid      = 04000,
+    set_gid      = 02000,
+    sticky_bit   = 01000,
+    mask         = 07777,
+    unknown      = 0xFFFF,
+};
+
+[[nodiscard]] inline constexpr perms operator&(perms lhs, perms rhs) noexcept {
+    return static_cast<perms>(static_cast<unsigned>(lhs) & static_cast<unsigned>(rhs));
+}
+[[nodiscard]] inline constexpr perms operator|(perms lhs, perms rhs) noexcept {
+    return static_cast<perms>(static_cast<unsigned>(lhs) | static_cast<unsigned>(rhs));
+}
+[[nodiscard]] inline constexpr perms operator^(perms lhs, perms rhs) noexcept {
+    return static_cast<perms>(static_cast<unsigned>(lhs) ^ static_cast<unsigned>(rhs));
+}
+[[nodiscard]] inline constexpr perms operator~(perms lhs) noexcept {
+    return static_cast<perms>(~static_cast<unsigned>(lhs));
+}
+inline perms& operator&=(perms& lhs, perms rhs) noexcept { return lhs = lhs & rhs; }
+inline perms& operator|=(perms& lhs, perms rhs) noexcept { return lhs = lhs | rhs; }
+inline perms& operator^=(perms& lhs, perms rhs) noexcept { return lhs = lhs ^ rhs; }
+
+//===----------------------------------------------------------------------===//
+// perm_options
+//===----------------------------------------------------------------------===//
+enum class perm_options : unsigned char { replace = 1, add = 2, remove = 4, nofollow = 8 };
+
+[[nodiscard]] inline constexpr perm_options operator&(perm_options lhs, perm_options rhs) noexcept {
+    return static_cast<perm_options>(static_cast<unsigned>(lhs) & static_cast<unsigned>(rhs));
+}
+[[nodiscard]] inline constexpr perm_options operator|(perm_options lhs, perm_options rhs) noexcept {
+    return static_cast<perm_options>(static_cast<unsigned>(lhs) | static_cast<unsigned>(rhs));
+}
+[[nodiscard]] inline constexpr perm_options operator^(perm_options lhs, perm_options rhs) noexcept {
+    return static_cast<perm_options>(static_cast<unsigned>(lhs) ^ static_cast<unsigned>(rhs));
+}
+[[nodiscard]] inline constexpr perm_options operator~(perm_options lhs) noexcept {
+    return static_cast<perm_options>(~static_cast<unsigned>(lhs));
+}
+inline perm_options& operator&=(perm_options& lhs, perm_options rhs) noexcept { return lhs = lhs & rhs; }
+inline perm_options& operator|=(perm_options& lhs, perm_options rhs) noexcept { return lhs = lhs | rhs; }
+inline perm_options& operator^=(perm_options& lhs, perm_options rhs) noexcept { return lhs = lhs ^ rhs; }
+
+//===----------------------------------------------------------------------===//
+// copy_options
+//===----------------------------------------------------------------------===//
+enum class copy_options : unsigned short {
+    none               = 0,
+    skip_existing      = 1,
+    overwrite_existing = 2,
+    update_existing    = 4,
+    recursive          = 8,
+    copy_symlinks      = 16,
+    skip_symlinks      = 32,
+    directories_only   = 64,
+    create_symlinks    = 128,
+    create_hard_links  = 256,
+    in_recursive_copy  = 512,
+};
+
+[[nodiscard]] inline constexpr copy_options operator&(copy_options lhs, copy_options rhs) noexcept {
+    return static_cast<copy_options>(static_cast<unsigned short>(lhs) & static_cast<unsigned short>(rhs));
+}
+[[nodiscard]] inline constexpr copy_options operator|(copy_options lhs, copy_options rhs) noexcept {
+    return static_cast<copy_options>(static_cast<unsigned short>(lhs) | static_cast<unsigned short>(rhs));
+}
+[[nodiscard]] inline constexpr copy_options operator^(copy_options lhs, copy_options rhs) noexcept {
+    return static_cast<copy_options>(static_cast<unsigned short>(lhs) ^ static_cast<unsigned short>(rhs));
+}
+[[nodiscard]] inline constexpr copy_options operator~(copy_options lhs) noexcept {
+    return static_cast<copy_options>(~static_cast<unsigned short>(lhs));
+}
+inline copy_options& operator&=(copy_options& lhs, copy_options rhs) noexcept { return lhs = lhs & rhs; }
+inline copy_options& operator|=(copy_options& lhs, copy_options rhs) noexcept { return lhs = lhs | rhs; }
+inline copy_options& operator^=(copy_options& lhs, copy_options rhs) noexcept { return lhs = lhs ^ rhs; }
+
+//===----------------------------------------------------------------------===//
+// directory_options
+//===----------------------------------------------------------------------===//
+enum class directory_options : unsigned char {
+    none                    = 0,
+    follow_directory_symlink = 1,
+    skip_permission_denied  = 2
+};
+
+[[nodiscard]] inline constexpr directory_options operator&(directory_options lhs, directory_options rhs) noexcept {
+    return static_cast<directory_options>(static_cast<unsigned char>(lhs) & static_cast<unsigned char>(rhs));
+}
+[[nodiscard]] inline constexpr directory_options operator|(directory_options lhs, directory_options rhs) noexcept {
+    return static_cast<directory_options>(static_cast<unsigned char>(lhs) | static_cast<unsigned char>(rhs));
+}
+[[nodiscard]] inline constexpr directory_options operator^(directory_options lhs, directory_options rhs) noexcept {
+    return static_cast<directory_options>(static_cast<unsigned char>(lhs) ^ static_cast<unsigned char>(rhs));
+}
+[[nodiscard]] inline constexpr directory_options operator~(directory_options lhs) noexcept {
+    return static_cast<directory_options>(~static_cast<unsigned char>(lhs));
+}
+inline directory_options& operator&=(directory_options& lhs, directory_options rhs) noexcept { return lhs = lhs & rhs; }
+inline directory_options& operator|=(directory_options& lhs, directory_options rhs) noexcept { return lhs = lhs | rhs; }
+inline directory_options& operator^=(directory_options& lhs, directory_options rhs) noexcept { return lhs = lhs ^ rhs; }
+
+//===----------------------------------------------------------------------===//
+// file_status
+//===----------------------------------------------------------------------===//
+class file_status {
+public:
+    file_status() noexcept : file_status(file_type::none) {}
+    explicit file_status(file_type ft, perms prms = perms::unknown) noexcept
+        : ft_(ft), prms_(prms) {}
+    file_status(const file_status&) noexcept = default;
+    file_status(file_status&&) noexcept = default;
+    ~file_status() {}
+    file_status& operator=(const file_status&) noexcept = default;
+    file_status& operator=(file_status&&) noexcept = default;
+
+    [[nodiscard]] file_type type() const noexcept { return ft_; }
+    [[nodiscard]] perms permissions() const noexcept { return prms_; }
+    void type(file_type ft) noexcept { ft_ = ft; }
+    void permissions(perms p) noexcept { prms_ = p; }
+
+    friend bool operator==(const file_status& lhs, const file_status& rhs) noexcept {
+        return lhs.type() == rhs.type() && lhs.permissions() == rhs.permissions();
+    }
+
+private:
+    file_type ft_;
+    perms prms_;
+};
+
+//===----------------------------------------------------------------------===//
+// space_info
+//===----------------------------------------------------------------------===//
+struct space_info {
+    uintmax_t capacity;
+    uintmax_t free;
+    uintmax_t available;
+    friend bool operator==(const space_info&, const space_info&) = default;
+};
+
+//===----------------------------------------------------------------------===//
+// path — POSIX '/' only
+//===----------------------------------------------------------------------===//
+
+// Helper: is this character a path separator?
+inline bool path_is_sep(char c) noexcept { return c == '/'; }
+
+// Traits for "is this type a source for path construction?"
+template <class T>
+struct can_convert_char { static constexpr bool value = false; };
+template <> struct can_convert_char<char> {
+    static constexpr bool value = true;
+    using char_type = char;
+};
+template <> struct can_convert_char<wchar_t> {
+    static constexpr bool value = true;
+    using char_type = wchar_t;
+};
+template <> struct can_convert_char<char16_t> {
+    static constexpr bool value = true;
+    using char_type = char16_t;
+};
+template <> struct can_convert_char<char32_t> {
+    static constexpr bool value = true;
+    using char_type = char32_t;
+};
+template <class T> struct can_convert_char<const T> : can_convert_char<T> {};
+
+struct null_sentinel_t {};
+
+template <class T, class = void>
+struct is_pathable_string : std::false_type {};
+
+template <class ECharT, class Traits, class Alloc>
+struct is_pathable_string<std::basic_string<ECharT, Traits, Alloc>,
+                          std::void_t<typename can_convert_char<ECharT>::char_type>>
+    : can_convert_char<ECharT> {
+    using str_type = std::basic_string<ECharT, Traits, Alloc>;
+    static const ECharT* range_begin(const str_type& s) { return s.data(); }
+    static const ECharT* range_end(const str_type& s) { return s.data() + s.size(); }
+    static ECharT first_or_null(const str_type& s) { return s.empty() ? ECharT{} : s[0]; }
+};
+
+template <class ECharT, class Traits>
+struct is_pathable_string<std::basic_string_view<ECharT, Traits>,
+                          std::void_t<typename can_convert_char<ECharT>::char_type>>
+    : can_convert_char<ECharT> {
+    using str_type = std::basic_string_view<ECharT, Traits>;
+    static const ECharT* range_begin(const str_type& s) { return s.data(); }
+    static const ECharT* range_end(const str_type& s) { return s.data() + s.size(); }
+    static ECharT first_or_null(const str_type& s) { return s.empty() ? ECharT{} : s[0]; }
+};
+
+template <class Source,
+          class DS            = std::decay_t<Source>,
+          class UnqualPtrType = std::remove_const_t<std::remove_pointer_t<DS>>,
+          bool IsCharPtr      = std::is_pointer_v<DS> && can_convert_char<UnqualPtrType>::value>
+struct is_pathable_char_array : std::false_type {};
+
+template <class Source, class ECharT, class UPtr>
+struct is_pathable_char_array<Source, ECharT*, UPtr, true>
+    : can_convert_char<std::remove_const_t<ECharT>> {
+    static const ECharT* range_begin(const ECharT* b) { return b; }
+    static const ECharT* range_end(const ECharT* b) {
+        const ECharT sentinel = ECharT{};
+        const ECharT* e = b;
+        for (; *e != sentinel; ++e)
+            ;
+        return e;
+    }
+    static ECharT first_or_null(const ECharT* b) { return *b; }
+};
+
+template <class Iter, class = void>
+struct has_input_iter_category : std::false_type {};
+template <class Iter>
+struct has_input_iter_category<Iter,
+    std::void_t<typename std::iterator_traits<Iter>::iterator_category>>
+    : std::bool_constant<std::is_base_of_v<
+          std::input_iterator_tag,
+          typename std::iterator_traits<Iter>::iterator_category>> {};
+
+template <class Iter, bool IsIt = has_input_iter_category<Iter>::value, class = void>
+struct is_pathable_iter : std::false_type {};
+
+template <class Iter>
+struct is_pathable_iter<Iter, true,
+    std::void_t<typename can_convert_char<
+        typename std::iterator_traits<Iter>::value_type>::char_type>>
+    : can_convert_char<typename std::iterator_traits<Iter>::value_type> {
+    using ECharT = typename std::iterator_traits<Iter>::value_type;
+    static Iter range_begin(Iter b) { return b; }
+    static null_sentinel_t range_end(Iter) { return null_sentinel_t{}; }
+    static ECharT first_or_null(Iter b) { return *b; }
+};
+
+template <class T,
+          bool IsString   = is_pathable_string<T>::value,
+          bool IsCharArr  = is_pathable_char_array<T>::value,
+          bool IsIter     = !is_pathable_char_array<T>::value && is_pathable_iter<T>::value>
+struct is_pathable : std::false_type {};
+
+template <class T> struct is_pathable<T, true,  false, false> : is_pathable_string<T> {};
+template <class T> struct is_pathable<T, false, true,  false> : is_pathable_char_array<T> {};
+template <class T> struct is_pathable<T, false, false, true>  : is_pathable_iter<T> {};
+
+// PathCVT: converts from various char types to std::string (POSIX path).
+// For char sources: direct append. For non-char sources: narrow via casting.
+template <class ECharT>
+struct path_cvt {
+    static void append_range(std::string& dest, const ECharT* b, const ECharT* e) {
+        for (; b != e; ++b)
+            dest.push_back(static_cast<char>(*b));
+    }
+    template <class Iter>
+    static void append_range(std::string& dest, Iter b, Iter e) {
+        for (; b != e; ++b)
+            dest.push_back(static_cast<char>(*b));
+    }
+    template <class Iter>
+    static void append_range(std::string& dest, Iter b, null_sentinel_t) {
+        const ECharT sentinel = ECharT{};
+        for (; *b != sentinel; ++b)
+            dest.push_back(static_cast<char>(*b));
+    }
+    template <class Source>
+    static void append_source(std::string& dest, const Source& s) {
+        using Traits = is_pathable<Source>;
+        append_range(dest, Traits::range_begin(s), Traits::range_end(s));
+    }
+};
+
+template <>
+struct path_cvt<char> {
+    template <class Iter>
+    static void append_range(std::string& dest, Iter b, Iter e) {
+        if constexpr (std::is_same_v<Iter, const char*> || std::is_same_v<Iter, char*>) {
+            dest.append(b, e);
+        } else {
+            for (; b != e; ++b)
+                dest.push_back(*b);
+        }
+    }
+    static void append_range(std::string& dest, const char* b, const char* e) {
+        dest.append(b, e);
+    }
+    static void append_range(std::string& dest, const char* b, null_sentinel_t) {
+        dest.append(b);
+    }
+    template <class Iter>
+    static void append_range(std::string& dest, Iter b, null_sentinel_t) {
+        const char sentinel = '\0';
+        for (; *b != sentinel; ++b)
+            dest.push_back(*b);
+    }
+    template <class Source>
+    static void append_source(std::string& dest, const Source& s) {
+        using Traits = is_pathable<Source>;
+        append_range(dest, Traits::range_begin(s), Traits::range_end(s));
+    }
+};
+
+class path {
+    template <class SourceOrIter, class T = path&>
+    using enable_if_pathable = std::enable_if_t<is_pathable<SourceOrIter>::value, T>;
+
+    template <class T>
+    using source_char = typename is_pathable<T>::char_type;
+
+    template <class T>
+    using source_cvt = path_cvt<source_char<T>>;
+
+public:
+    using value_type  = char;
+    using string_type = std::string;
+    static constexpr value_type preferred_separator = '/';
+
+    enum format : unsigned char { auto_format, native_format, generic_format };
+
+    // constructors and destructor
+    path() noexcept {}
+    path(const path& p) : pn_(p.pn_) {}
+    path(path&& p) noexcept : pn_(std::move(p.pn_)) {}
+    path(string_type&& s, format = format::auto_format) noexcept : pn_(std::move(s)) {}
+
+    template <class Source, class = enable_if_pathable<Source, void>>
+    path(const Source& src, format = format::auto_format) {
+        source_cvt<Source>::append_source(pn_, src);
+    }
+
+    template <class InputIt>
+    path(InputIt first, InputIt last, format = format::auto_format) {
+        using ItVal = typename std::iterator_traits<InputIt>::value_type;
+        path_cvt<ItVal>::append_range(pn_, first, last);
+    }
+
+    ~path() = default;
+
+    // assignments
+    path& operator=(const path& p) { pn_ = p.pn_; return *this; }
+    path& operator=(path&& p) noexcept { pn_ = std::move(p.pn_); return *this; }
+    path& operator=(string_type&& s) noexcept { pn_ = std::move(s); return *this; }
+    path& assign(string_type&& s) noexcept { pn_ = std::move(s); return *this; }
+
+    template <class Source>
+    enable_if_pathable<Source> operator=(const Source& src) { return this->assign(src); }
+
+    template <class Source>
+    enable_if_pathable<Source> assign(const Source& src) {
+        pn_.clear();
+        source_cvt<Source>::append_source(pn_, src);
+        return *this;
+    }
+
+    template <class InputIt>
+    path& assign(InputIt first, InputIt last) {
+        using ItVal = typename std::iterator_traits<InputIt>::value_type;
+        pn_.clear();
+        path_cvt<ItVal>::append_range(pn_, first, last);
+        return *this;
+    }
+
+    // appends (operator/=, append)
+    path& operator/=(const path& p) {
+        if (p.is_absolute()) {
+            pn_ = p.pn_;
+            return *this;
+        }
+        if (has_filename())
+            pn_ += preferred_separator;
+        pn_ += p.native();
+        return *this;
+    }
+
+    template <class Source>
+    enable_if_pathable<Source> operator/=(const Source& src) {
+        return this->append(src);
+    }
+
+    template <class Source>
+    enable_if_pathable<Source> append(const Source& src) {
+        using Traits = is_pathable<Source>;
+        using CVT    = path_cvt<source_char<Source>>;
+        bool source_is_absolute = path_is_sep(
+            static_cast<char>(Traits::first_or_null(src)));
+        if (source_is_absolute)
+            pn_.clear();
+        else if (has_filename())
+            pn_ += preferred_separator;
+        CVT::append_source(pn_, src);
+        return *this;
+    }
+
+    template <class InputIt>
+    path& append(InputIt first, InputIt last) {
+        using ItVal = typename std::iterator_traits<InputIt>::value_type;
+        if (first != last && path_is_sep(static_cast<char>(*first)))
+            pn_.clear();
+        else if (has_filename())
+            pn_ += preferred_separator;
+        path_cvt<ItVal>::append_range(pn_, first, last);
+        return *this;
+    }
+
+    // concatenation
+    path& operator+=(const path& x)        { pn_ += x.pn_; return *this; }
+    path& operator+=(const string_type& x)  { pn_ += x; return *this; }
+    path& operator+=(std::string_view x)    { pn_ += x; return *this; }
+    path& operator+=(const value_type* x)   { pn_ += x; return *this; }
+    path& operator+=(value_type x)          { pn_ += x; return *this; }
+
+    template <class ECharT>
+    requires can_convert_char<ECharT>::value
+    path& operator+=(ECharT x) {
+        path_cvt<ECharT>::append_source(pn_,
+            std::basic_string_view<ECharT>(std::addressof(x), 1));
+        return *this;
+    }
+
+    template <class Source>
+    enable_if_pathable<Source> operator+=(const Source& x) { return this->concat(x); }
+
+    template <class Source>
+    enable_if_pathable<Source> concat(const Source& x) {
+        source_cvt<Source>::append_source(pn_, x);
+        return *this;
+    }
+
+    template <class InputIt>
+    path& concat(InputIt first, InputIt last) {
+        using ItVal = typename std::iterator_traits<InputIt>::value_type;
+        path_cvt<ItVal>::append_range(pn_, first, last);
+        return *this;
+    }
+
+    // modifiers
+    void  clear() noexcept { pn_.clear(); }
+
+    path& make_preferred() { return *this; }  // POSIX: '/' is already preferred
+
+    path& remove_filename() {
+        auto fname = filename_sv();
+        if (!fname.empty())
+            pn_.erase(fname.data() - pn_.data());
+        return *this;
+    }
+
+    path& replace_filename(const path& replacement) {
+        remove_filename();
+        return (*this /= replacement);
+    }
+
+    path& replace_extension(const path& replacement = path()) {
+        // Remove existing extension
+        auto ext = extension_sv();
+        if (!ext.empty())
+            pn_.erase(pn_.size() - ext.size());
+        // Add new extension (prepend '.' if not already present and non-empty)
+        if (!replacement.empty()) {
+            if (replacement.pn_[0] != '.')
+                pn_ += '.';
+            pn_ += replacement.pn_;
+        }
+        return *this;
+    }
+
+    void swap(path& rhs) noexcept { pn_.swap(rhs.pn_); }
+
+    // native format observers
+    [[nodiscard]] const string_type& native() const noexcept { return pn_; }
+    [[nodiscard]] const value_type* c_str() const noexcept { return pn_.c_str(); }
+    operator string_type() const { return pn_; }
+
+    [[nodiscard]] std::string string() const { return pn_; }
+    [[nodiscard]] std::string generic_string() const { return pn_; }
+
+    // compare
+    [[nodiscard]] int compare(const path& p) const noexcept { return compare_sv(p.pn_); }
+    [[nodiscard]] int compare(const string_type& s) const   { return compare_sv(s); }
+    [[nodiscard]] int compare(std::string_view s) const     { return compare_sv(s); }
+    [[nodiscard]] int compare(const value_type* s) const    { return compare_sv(s); }
+
+    // decomposition
+    [[nodiscard]] path root_name() const      { return string_type(root_name_sv()); }
+    [[nodiscard]] path root_directory() const { return string_type(root_directory_sv()); }
+    [[nodiscard]] path root_path() const      {
+        return root_name().append(string_type(root_directory_sv()));
+    }
+    [[nodiscard]] path relative_path() const  { return string_type(relative_path_sv()); }
+    [[nodiscard]] path parent_path() const    { return string_type(parent_path_sv()); }
+    [[nodiscard]] path filename() const       { return string_type(filename_sv()); }
+    [[nodiscard]] path stem() const           { return string_type(stem_sv()); }
+    [[nodiscard]] path extension() const      { return string_type(extension_sv()); }
+
+    // query
+    [[nodiscard]] bool empty() const noexcept   { return pn_.empty(); }
+    [[nodiscard]] bool has_root_name() const      { return !root_name_sv().empty(); }
+    [[nodiscard]] bool has_root_directory() const { return !root_directory_sv().empty(); }
+    [[nodiscard]] bool has_root_path() const {
+        return has_root_name() || has_root_directory();
+    }
+    [[nodiscard]] bool has_relative_path() const  { return !relative_path_sv().empty(); }
+    [[nodiscard]] bool has_parent_path() const    { return !parent_path_sv().empty(); }
+    [[nodiscard]] bool has_filename() const       { return !filename_sv().empty(); }
+    [[nodiscard]] bool has_stem() const           { return !stem_sv().empty(); }
+    [[nodiscard]] bool has_extension() const      { return !extension_sv().empty(); }
+    [[nodiscard]] bool is_absolute() const        { return has_root_directory(); }
+    [[nodiscard]] bool is_relative() const        { return !is_absolute(); }
+
+    // lexical operations
+    [[nodiscard]] path lexically_normal() const;
+    [[nodiscard]] path lexically_relative(const path& base) const;
+    [[nodiscard]] path lexically_proximate(const path& base) const {
+        path result = lexically_relative(base);
+        if (result.native().empty())
+            return *this;
+        return result;
+    }
+
+    // operators
+    friend bool operator==(const path& lhs, const path& rhs) noexcept {
+        return lhs.compare_sv(rhs.pn_) == 0;
+    }
+    friend std::strong_ordering operator<=>(const path& lhs, const path& rhs) noexcept {
+        int r = lhs.compare_sv(rhs.pn_);
+        if (r < 0) return std::strong_ordering::less;
+        if (r > 0) return std::strong_ordering::greater;
+        return std::strong_ordering::equal;
+    }
+
+    friend path operator/(const path& lhs, const path& rhs) {
+        path result(lhs);
+        result /= rhs;
+        return result;
+    }
+
+    // iterators
+    class iterator;
+    using const_iterator = iterator;
+    [[nodiscard]] iterator begin() const;
+    [[nodiscard]] iterator end() const;
+
+private:
+    // internal string_view helper that returns a view into pn_
+    std::string_view root_name_sv() const noexcept {
+        // POSIX: no root name (only UNC on Windows)
+        (void)pn_;
+        return {};
+    }
+
+    std::string_view root_directory_sv() const noexcept {
+        if (!pn_.empty() && pn_[0] == '/')
+            return std::string_view(pn_.data(), 1);
+        return {};
+    }
+
+    std::string_view relative_path_sv() const noexcept {
+        // Skip leading '/'
+        std::string_view sv(pn_);
+        if (!sv.empty() && sv[0] == '/')
+            sv.remove_prefix(1);
+        return sv;
+    }
+
+    std::string_view parent_path_sv() const noexcept {
+        if (pn_.empty())
+            return {};
+        // Find last separator
+        auto filename = filename_sv();
+        if (filename.empty())
+            return std::string_view(pn_);
+        // parent is everything before the filename
+        std::size_t end = static_cast<std::size_t>(filename.data() - pn_.data());
+        if (end == 0)
+            return {};
+        // Don't strip the root slash
+        if (end == 1 && pn_[0] == '/')
+            return std::string_view(pn_.data(), 1);
+        // Strip trailing '/'
+        while (end > 1 && pn_[end - 1] == '/')
+            --end;
+        return std::string_view(pn_.data(), end);
+    }
+
+    std::string_view filename_sv() const noexcept {
+        if (pn_.empty())
+            return {};
+        // Trailing separator means empty filename
+        if (pn_.back() == '/' && pn_.size() > 1)
+            return {};
+        // If path is just '/', filename is '/'
+        if (pn_ == "/")
+            return std::string_view(pn_.data(), 1);
+        // Find last '/'
+        auto pos = pn_.rfind('/');
+        if (pos == std::string::npos)
+            return std::string_view(pn_.data(), pn_.size());
+        return std::string_view(pn_.data() + pos + 1, pn_.size() - pos - 1);
+    }
+
+    std::string_view stem_sv() const noexcept {
+        auto fname = filename_sv();
+        if (fname == "." || fname == "..")
+            return fname;
+        auto dot = fname.rfind('.');
+        if (dot == std::string_view::npos || dot == 0)
+            return fname;
+        return fname.substr(0, dot);
+    }
+
+    std::string_view extension_sv() const noexcept {
+        auto fname = filename_sv();
+        if (fname == "." || fname == "..")
+            return {};
+        auto dot = fname.rfind('.');
+        if (dot == std::string_view::npos || dot == 0)
+            return {};
+        return fname.substr(dot);
+    }
+
+    int compare_sv(std::string_view other) const noexcept {
+        // Compare component-by-component per the standard.
+        // For POSIX paths, simple string comparison is sufficient since
+        // there's only '/' as a separator and no root names.
+        return pn_.compare(other);
+    }
+
+    // Allow the iterator to access internals
+    friend class iterator;
+
+    string_type pn_;
+};
+
+inline void swap(path& lhs, path& rhs) noexcept { lhs.swap(rhs); }
+
+[[nodiscard]] inline size_t hash_value(const path& p) noexcept {
+    return std::hash<std::string>{}(p.native());
+}
+
+//===----------------------------------------------------------------------===//
+// path::lexically_normal, lexically_relative — non-trivial, defined after class
+//===----------------------------------------------------------------------===//
+
+inline path path::lexically_normal() const {
+    // Algorithm from the standard:
+    // 1. Replace each slash with preferred_separator (noop on POSIX)
+    // 2. Replace each directory-separator with a single slash
+    // 3. Replace each dot filename with nothing
+    // 4. Replace each non-dot-dot filename followed by a slash and dot-dot with nothing
+    // 5. If path is empty, return "."
+    if (pn_.empty())
+        return path(".");
+
+    // Split into components, process, rebuild
+    std::vector<std::string> parts;
+    bool is_abs = !pn_.empty() && pn_[0] == '/';
+    std::string_view sv(pn_);
+    if (is_abs) sv.remove_prefix(1);
+
+    // Split on '/'
+    while (!sv.empty()) {
+        auto pos = sv.find('/');
+        std::string_view comp;
+        if (pos == std::string_view::npos) {
+            comp = sv;
+            sv = {};
+        } else {
+            comp = sv.substr(0, pos);
+            sv.remove_prefix(pos + 1);
+        }
+        if (comp.empty() || comp == ".")
+            continue;
+        if (comp == "..") {
+            if (parts.empty()) {
+                if (!is_abs)
+                    parts.push_back("..");
+                // else: can't go above root, discard
+            } else if (parts.back() == "..") {
+                parts.push_back("..");
+            } else {
+                parts.pop_back();
+            }
+        } else {
+            parts.push_back(std::string(comp));
+        }
+    }
+
+    // Handle trailing separator: if original ended in '/' and had a filename
+    bool had_trailing_sep = pn_.size() > 1 && pn_.back() == '/';
+
+    std::string result;
+    if (is_abs)
+        result = "/";
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        if (i > 0 || is_abs) {
+            if (!is_abs || i > 0)
+                result += '/';
+        }
+        result += parts[i];
+    }
+    if (had_trailing_sep && !result.empty() && result.back() != '/')
+        result += '/';
+
+    if (result.empty())
+        return path(".");
+    return path(std::move(result));
+}
+
+// Helper: split path string into components, excluding '/' and empty parts
+inline std::vector<std::string> path_split_components(const path& p) {
+    std::vector<std::string> comps;
+    std::string_view sv(p.native());
+    // skip leading '/'
+    if (!sv.empty() && sv[0] == '/') sv.remove_prefix(1);
+    while (!sv.empty()) {
+        auto pos = sv.find('/');
+        std::string_view comp = (pos == std::string_view::npos) ? sv : sv.substr(0, pos);
+        if (!comp.empty())
+            comps.push_back(std::string(comp));
+        if (pos == std::string_view::npos) break;
+        sv.remove_prefix(pos + 1);
+    }
+    return comps;
+}
+
+inline path path::lexically_relative(const path& base) const {
+    // Check if both have same root
+    if (root_path() != base.root_path())
+        return path();
+
+    std::vector<std::string> a = path_split_components(*this);
+    std::vector<std::string> b = path_split_components(base);
+
+    // Find common prefix length
+    std::size_t i = 0;
+    while (i < a.size() && i < b.size() && a[i] == b[i])
+        ++i;
+
+    // Number of ".." needed
+    std::ptrdiff_t up = static_cast<std::ptrdiff_t>(b.size()) - static_cast<std::ptrdiff_t>(i);
+
+    // Check for ".." in remaining base — can't go above ".."
+    for (std::size_t j = i; j < b.size(); ++j)
+        if (b[j] == "..")
+            return path();
+
+    path result;
+    for (std::ptrdiff_t k = 0; k < up; ++k) {
+        if (result.empty())
+            result = path("..");
+        else
+            result /= path("..");
+    }
+    for (std::size_t j = i; j < a.size(); ++j) {
+        if (result.empty())
+            result = path(a[j]);
+        else
+            result /= path(a[j]);
+    }
+    if (result.empty())
+        return path(".");
+    return result;
+}
+
+//===----------------------------------------------------------------------===//
+// path::iterator
+//===----------------------------------------------------------------------===//
+class path::iterator {
+public:
+    enum parser_state : unsigned char {
+        singular,
+        before_begin,
+        in_root_dir,
+        in_filenames,
+        in_trailing_sep,
+        at_end
+    };
+
+    using iterator_category  = std::bidirectional_iterator_tag;
+    using iterator_concept   = std::bidirectional_iterator_tag;
+    using value_type         = path;
+    using difference_type    = std::ptrdiff_t;
+    using pointer            = const path*;
+    using reference          = path;
+
+    iterator() : path_ptr_(nullptr), entry_(), state_(singular) {}
+    iterator(const iterator&) = default;
+    ~iterator() = default;
+    iterator& operator=(const iterator&) = default;
+
+    [[nodiscard]] reference operator*() const { return stashed_elem_; }
+    pointer operator->() const { return &stashed_elem_; }
+
+    iterator& operator++() {
+        advance();
+        return *this;
+    }
+    iterator operator++(int) {
+        iterator tmp(*this);
+        ++(*this);
+        return tmp;
+    }
+    iterator& operator--() {
+        decrement();
+        return *this;
+    }
+    iterator operator--(int) {
+        iterator tmp(*this);
+        --(*this);
+        return tmp;
+    }
+
+    friend bool operator==(const iterator& lhs, const iterator& rhs) noexcept {
+        return lhs.path_ptr_ == rhs.path_ptr_ &&
+               lhs.entry_.data() == rhs.entry_.data();
+    }
+    friend bool operator!=(const iterator& lhs, const iterator& rhs) noexcept {
+        return !(lhs == rhs);
+    }
+
+private:
+    friend class path;
+
+    void set_stashed() {
+        stashed_elem_ = path(std::string(entry_));
+    }
+
+    void advance() {
+        const std::string& pn = path_ptr_->pn_;
+        const char* data = pn.data();
+        const char* end  = data + pn.size();
+
+        if (state_ == at_end) return;
+
+        if (state_ == in_trailing_sep) {
+            // Move to at_end
+            entry_ = std::string_view(end, 0);
+            state_ = at_end;
+            stashed_elem_ = path();
+            return;
+        }
+
+        // Current entry ends at entry_.data() + entry_.size()
+        const char* next = entry_.data() + entry_.size();
+
+        if (state_ == in_root_dir) {
+            // After root dir '/', move into filenames
+            state_ = in_filenames;
+        }
+
+        // Skip separators (shouldn't normally appear here unless in_filenames after trailing sep)
+        // Find the next component
+        // next points after current component
+        // Skip a separator if present
+        if (next < end && *next == '/') {
+            ++next;
+        }
+
+        if (next == end) {
+            // At the end
+            entry_ = std::string_view(end, 0);
+            state_ = at_end;
+            stashed_elem_ = path();
+            return;
+        }
+
+        // Find end of next component
+        const char* comp_end = next;
+        while (comp_end < end && *comp_end != '/')
+            ++comp_end;
+
+        // Check for trailing separator: component would be empty
+        if (comp_end == next) {
+            // trailing separator
+            state_ = in_trailing_sep;
+            entry_ = std::string_view(next - 1, 1); // the '/'
+            stashed_elem_ = path();
+            return;
+        }
+
+        entry_ = std::string_view(next, static_cast<std::size_t>(comp_end - next));
+        state_ = in_filenames;
+        set_stashed();
+    }
+
+    void decrement() {
+        const std::string& pn = path_ptr_->pn_;
+        const char* data = pn.data();
+
+        if (state_ == at_end || state_ == in_trailing_sep) {
+            // Go back to the last component
+            const char* end = data + pn.size();
+            // Skip trailing separator
+            const char* pos = end;
+            if (pos > data && *(pos - 1) == '/') {
+                // trailing sep
+                --pos;
+            }
+            if (pos == data) {
+                // was just '/'
+                entry_ = std::string_view(data, 1);
+                state_ = in_root_dir;
+                stashed_elem_ = path("/");
+                return;
+            }
+            // Find beginning of last component
+            const char* comp_end = pos;
+            while (pos > data && *(pos - 1) != '/')
+                --pos;
+            entry_ = std::string_view(pos, static_cast<std::size_t>(comp_end - pos));
+            state_ = in_filenames;
+            set_stashed();
+            return;
+        }
+
+        // We're in in_filenames or in_root_dir; go back one component
+        const char* cur = entry_.data();
+
+        if (cur == data) {
+            // Already at beginning, shouldn't happen
+            return;
+        }
+
+        // Check if cur is right after the root '/'
+        if (cur == data + 1 && *data == '/') {
+            // Go to root dir
+            entry_ = std::string_view(data, 1);
+            state_ = in_root_dir;
+            stashed_elem_ = path("/");
+            return;
+        }
+
+        // Step back past the '/' separator before current component
+        const char* pos = cur - 1; // points at '/'
+        const char* comp_end = pos; // end of previous component
+        while (pos > data && *(pos - 1) != '/')
+            --pos;
+        // Check for root dir
+        if (pos == data + 1 && *data == '/') {
+            // previous component immediately follows root '/'
+        }
+        entry_ = std::string_view(pos, static_cast<std::size_t>(comp_end - pos));
+        state_ = in_filenames;
+        set_stashed();
+    }
+
+    path stashed_elem_;
+    const path* path_ptr_;
+    std::string_view entry_;
+    parser_state state_;
+};
+
+inline path::iterator path::begin() const {
+    iterator it;
+    it.path_ptr_ = this;
+
+    if (pn_.empty()) {
+        it.entry_ = std::string_view(pn_.data(), 0);
+        it.state_ = iterator::at_end;
+        return it;
+    }
+
+    // Start: root dir (if absolute) or first filename component
+    if (pn_[0] == '/') {
+        it.entry_ = std::string_view(pn_.data(), 1);
+        it.state_ = iterator::in_root_dir;
+        it.stashed_elem_ = path("/");
+        return it;
+    }
+
+    // Relative: find first component
+    const char* data = pn_.data();
+    const char* end  = data + pn_.size();
+    const char* comp_end = data;
+    while (comp_end < end && *comp_end != '/')
+        ++comp_end;
+
+    it.entry_ = std::string_view(data, static_cast<std::size_t>(comp_end - data));
+    it.state_ = iterator::in_filenames;
+    it.stashed_elem_ = path(std::string(it.entry_));
+    return it;
+}
+
+inline path::iterator path::end() const {
+    iterator it;
+    it.path_ptr_ = this;
+    it.entry_ = std::string_view(pn_.data() + pn_.size(), 0);
+    it.state_ = iterator::at_end;
+    return it;
+}
+
+//===----------------------------------------------------------------------===//
+// filesystem_error
+// NOTE: never thrown; throwing overloads call __builtin_trap().
+//===----------------------------------------------------------------------===//
+class filesystem_error : public std::system_error {
+public:
+    filesystem_error(const std::string& what_arg, std::error_code ec)
+        : std::system_error(ec, what_arg),
+          storage_(std::make_shared<Storage>(path(), path())) {
+        create_what(0);
+    }
+
+    filesystem_error(const std::string& what_arg, const path& p1, std::error_code ec)
+        : std::system_error(ec, what_arg),
+          storage_(std::make_shared<Storage>(p1, path())) {
+        create_what(1);
+    }
+
+    filesystem_error(const std::string& what_arg, const path& p1, const path& p2,
+                     std::error_code ec)
+        : std::system_error(ec, what_arg),
+          storage_(std::make_shared<Storage>(p1, p2)) {
+        create_what(2);
+    }
+
+    filesystem_error(const filesystem_error&) = default;
+    ~filesystem_error() override = default;
+
+    [[nodiscard]] const path& path1() const noexcept { return storage_->p1; }
+    [[nodiscard]] const path& path2() const noexcept { return storage_->p2; }
+    [[nodiscard]] const char* what() const noexcept override {
+        return storage_->what.c_str();
+    }
+
+private:
+    void create_what(int num_paths) {
+        std::string w = std::system_error::what();
+        storage_->what = w;
+        if (num_paths >= 1) {
+            storage_->what += " [";
+            storage_->what += storage_->p1.native();
+            storage_->what += "]";
+        }
+        if (num_paths >= 2) {
+            storage_->what += " [";
+            storage_->what += storage_->p2.native();
+            storage_->what += "]";
+        }
+    }
+
+    struct Storage {
+        Storage(const path& a, const path& b) : p1(a), p2(b) {}
+        path p1, p2;
+        std::string what;
+    };
+    std::shared_ptr<Storage> storage_;
+};
+
+// Helper to "throw" a filesystem_error — in -fno-exceptions mode, trap.
+template <class... Args>
+[[noreturn]] inline void throw_filesystem_error(Args&&...) noexcept {
+    __builtin_trap();
+}
+
+//===----------------------------------------------------------------------===//
+// Internal POSIX helpers (stat -> file_status, file_time_type conversion)
+//===----------------------------------------------------------------------===//
+namespace detail {
+
+inline file_status status_from_stat(const struct ::stat& st) noexcept {
+    file_type ft = file_type::unknown;
+    if (S_ISREG(st.st_mode))        ft = file_type::regular;
+    else if (S_ISDIR(st.st_mode))   ft = file_type::directory;
+    else if (S_ISLNK(st.st_mode))   ft = file_type::symlink;
+    else if (S_ISBLK(st.st_mode))   ft = file_type::block;
+    else if (S_ISCHR(st.st_mode))   ft = file_type::character;
+    else if (S_ISFIFO(st.st_mode))  ft = file_type::fifo;
+    else if (S_ISSOCK(st.st_mode))  ft = file_type::socket;
+    perms prms = static_cast<perms>(st.st_mode & 07777);
+    return file_status(ft, prms);
+}
+
+inline file_time_type time_from_stat(const struct ::stat& st) noexcept {
+    using ns = std::chrono::nanoseconds;
+#ifdef __linux__
+    long long sec  = static_cast<long long>(st.st_mtim.tv_sec);
+    long long nsec = static_cast<long long>(st.st_mtim.tv_nsec);
+#else
+    long long sec  = static_cast<long long>(st.st_mtime);
+    long long nsec = 0;
+#endif
+    return file_time_type(ns(sec * 1'000'000'000LL + nsec));
+}
+
+// stat wrapper (follows symlinks)
+inline file_status do_stat(const path& p, std::error_code* ec) noexcept {
+    struct ::stat st;
+    if (::stat(p.c_str(), &st) != 0) {
+        int e = errno;
+        if (ec) *ec = std::error_code(e, std::generic_category());
+        if (e == ENOENT || e == ENOTDIR)
+            return file_status(file_type::not_found);
+        return file_status(file_type::none);
+    }
+    if (ec) ec->clear();
+    return status_from_stat(st);
+}
+
+// lstat wrapper (does not follow symlinks)
+inline file_status do_lstat(const path& p, std::error_code* ec) noexcept {
+    struct ::stat st;
+    if (::lstat(p.c_str(), &st) != 0) {
+        int e = errno;
+        if (ec) *ec = std::error_code(e, std::generic_category());
+        if (e == ENOENT || e == ENOTDIR)
+            return file_status(file_type::not_found);
+        return file_status(file_type::none);
+    }
+    if (ec) ec->clear();
+    return status_from_stat(st);
+}
+
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
+// Operations — error_code& overloads are real; throwing overloads trap.
+//===----------------------------------------------------------------------===//
+
+// status / symlink_status
+[[nodiscard]] inline file_status status(const path& p, std::error_code& ec) noexcept {
+    return detail::do_stat(p, &ec);
+}
+[[nodiscard]] inline file_status status(const path& p) {
+    std::error_code ec;
+    auto s = status(p, ec);
+    if (ec) __builtin_trap();
+    return s;
+}
+
+[[nodiscard]] inline file_status symlink_status(const path& p, std::error_code& ec) noexcept {
+    return detail::do_lstat(p, &ec);
+}
+[[nodiscard]] inline file_status symlink_status(const path& p) {
+    std::error_code ec;
+    auto s = symlink_status(p, ec);
+    if (ec) __builtin_trap();
+    return s;
+}
+
+// status_known, exists
+[[nodiscard]] inline bool status_known(file_status s) noexcept {
+    return s.type() != file_type::none;
+}
+[[nodiscard]] inline bool exists(file_status s) noexcept {
+    return status_known(s) && s.type() != file_type::not_found;
+}
+[[nodiscard]] inline bool exists(const path& p, std::error_code& ec) noexcept {
+    auto s = status(p, ec);
+    if (status_known(s)) ec.clear();
+    return exists(s);
+}
+[[nodiscard]] inline bool exists(const path& p) {
+    std::error_code ec;
+    auto s = status(p, ec);
+    if (ec && !status_known(s)) __builtin_trap();
+    return exists(s);
+}
+
+// is_* helpers
+[[nodiscard]] inline bool is_block_file(file_status s) noexcept     { return s.type() == file_type::block; }
+[[nodiscard]] inline bool is_character_file(file_status s) noexcept { return s.type() == file_type::character; }
+[[nodiscard]] inline bool is_directory(file_status s) noexcept      { return s.type() == file_type::directory; }
+[[nodiscard]] inline bool is_fifo(file_status s) noexcept           { return s.type() == file_type::fifo; }
+[[nodiscard]] inline bool is_regular_file(file_status s) noexcept   { return s.type() == file_type::regular; }
+[[nodiscard]] inline bool is_socket(file_status s) noexcept         { return s.type() == file_type::socket; }
+[[nodiscard]] inline bool is_symlink(file_status s) noexcept        { return s.type() == file_type::symlink; }
+[[nodiscard]] inline bool is_other(file_status s) noexcept {
+    return exists(s) && !is_regular_file(s) && !is_directory(s) && !is_symlink(s);
+}
+
+[[nodiscard]] inline bool is_block_file(const path& p, std::error_code& ec) noexcept   { return is_block_file(status(p, ec)); }
+[[nodiscard]] inline bool is_block_file(const path& p)                                  { return is_block_file(status(p)); }
+[[nodiscard]] inline bool is_character_file(const path& p, std::error_code& ec) noexcept { return is_character_file(status(p, ec)); }
+[[nodiscard]] inline bool is_character_file(const path& p)                               { return is_character_file(status(p)); }
+[[nodiscard]] inline bool is_directory(const path& p, std::error_code& ec) noexcept     { return is_directory(status(p, ec)); }
+[[nodiscard]] inline bool is_directory(const path& p)                                    { return is_directory(status(p)); }
+[[nodiscard]] inline bool is_fifo(const path& p, std::error_code& ec) noexcept          { return is_fifo(status(p, ec)); }
+[[nodiscard]] inline bool is_fifo(const path& p)                                         { return is_fifo(status(p)); }
+[[nodiscard]] inline bool is_regular_file(const path& p, std::error_code& ec) noexcept  { return is_regular_file(status(p, ec)); }
+[[nodiscard]] inline bool is_regular_file(const path& p)                                 { return is_regular_file(status(p)); }
+[[nodiscard]] inline bool is_socket(const path& p, std::error_code& ec) noexcept        { return is_socket(status(p, ec)); }
+[[nodiscard]] inline bool is_socket(const path& p)                                       { return is_socket(status(p)); }
+[[nodiscard]] inline bool is_symlink(const path& p, std::error_code& ec) noexcept       { return is_symlink(symlink_status(p, ec)); }
+[[nodiscard]] inline bool is_symlink(const path& p)                                      { return is_symlink(symlink_status(p)); }
+[[nodiscard]] inline bool is_other(const path& p, std::error_code& ec) noexcept         { return is_other(status(p, ec)); }
+[[nodiscard]] inline bool is_other(const path& p)                                        { return is_other(status(p)); }
+
+// file_size
+[[nodiscard]] inline uintmax_t file_size(const path& p, std::error_code& ec) noexcept {
+    struct ::stat st;
+    if (::stat(p.c_str(), &st) != 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return static_cast<uintmax_t>(-1);
+    }
+    ec.clear();
+    return static_cast<uintmax_t>(st.st_size);
+}
+[[nodiscard]] inline uintmax_t file_size(const path& p) {
+    std::error_code ec;
+    auto sz = file_size(p, ec);
+    if (ec) __builtin_trap();
+    return sz;
+}
+
+// hard_link_count
+[[nodiscard]] inline uintmax_t hard_link_count(const path& p, std::error_code& ec) noexcept {
+    struct ::stat st;
+    if (::lstat(p.c_str(), &st) != 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return static_cast<uintmax_t>(-1);
+    }
+    ec.clear();
+    return static_cast<uintmax_t>(st.st_nlink);
+}
+[[nodiscard]] inline uintmax_t hard_link_count(const path& p) {
+    std::error_code ec;
+    auto n = hard_link_count(p, ec);
+    if (ec) __builtin_trap();
+    return n;
+}
+
+// last_write_time
+[[nodiscard]] inline file_time_type last_write_time(const path& p, std::error_code& ec) noexcept {
+    struct ::stat st;
+    if (::stat(p.c_str(), &st) != 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return file_time_type::min();
+    }
+    ec.clear();
+    return detail::time_from_stat(st);
+}
+[[nodiscard]] inline file_time_type last_write_time(const path& p) {
+    std::error_code ec;
+    auto t = last_write_time(p, ec);
+    if (ec) __builtin_trap();
+    return t;
+}
+inline void last_write_time(const path& p, file_time_type new_time, std::error_code& ec) noexcept {
+    using ns = std::chrono::nanoseconds;
+    auto d = new_time.time_since_epoch();
+    auto total_ns = std::chrono::duration_cast<ns>(d).count();
+    struct ::timespec ts[2];
+    ts[0].tv_sec  = static_cast<time_t>(total_ns / 1'000'000'000LL);
+    ts[0].tv_nsec = static_cast<long>(total_ns % 1'000'000'000LL);
+    ts[1] = ts[0];
+    // Use UTIME_OMIT for access time
+    ts[0].tv_nsec = UTIME_OMIT;
+    if (::utimensat(AT_FDCWD, p.c_str(), ts, 0) != 0)
+        ec = std::error_code(errno, std::generic_category());
+    else
+        ec.clear();
+}
+inline void last_write_time(const path& p, file_time_type new_time) {
+    std::error_code ec;
+    last_write_time(p, new_time, ec);
+    if (ec) __builtin_trap();
+}
+
+// is_empty
+[[nodiscard]] inline bool is_empty(const path& p, std::error_code& ec) noexcept {
+    struct ::stat st;
+    if (::stat(p.c_str(), &st) != 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+    }
+    ec.clear();
+    if (S_ISDIR(st.st_mode)) {
+        // empty directory check
+        DIR* d = ::opendir(p.c_str());
+        if (!d) {
+            ec = std::error_code(errno, std::generic_category());
+            return false;
+        }
+        struct ::dirent* de;
+        bool empty = true;
+        while ((de = ::readdir(d)) != nullptr) {
+            std::string_view name(de->d_name);
+            if (name != "." && name != "..") {
+                empty = false;
+                break;
+            }
+        }
+        ::closedir(d);
+        return empty;
+    }
+    return st.st_size == 0;
+}
+[[nodiscard]] inline bool is_empty(const path& p) {
+    std::error_code ec;
+    bool r = is_empty(p, ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+
+// current_path
+[[nodiscard]] inline path current_path(std::error_code& ec) {
+    char buf[PATH_MAX];
+    if (::getcwd(buf, sizeof(buf)) == nullptr) {
+        ec = std::error_code(errno, std::generic_category());
+        return {};
+    }
+    ec.clear();
+    return path(buf);
+}
+[[nodiscard]] inline path current_path() {
+    std::error_code ec;
+    auto p = current_path(ec);
+    if (ec) __builtin_trap();
+    return p;
+}
+inline void current_path(const path& p, std::error_code& ec) noexcept {
+    if (::chdir(p.c_str()) != 0)
+        ec = std::error_code(errno, std::generic_category());
+    else
+        ec.clear();
+}
+inline void current_path(const path& p) {
+    std::error_code ec;
+    current_path(p, ec);
+    if (ec) __builtin_trap();
+}
+
+// absolute
+[[nodiscard]] inline path absolute(const path& p, std::error_code& ec) {
+    ec.clear();
+    if (p.is_absolute())
+        return p;
+    auto cwd = current_path(ec);
+    if (ec) return {};
+    return cwd / p;
+}
+[[nodiscard]] inline path absolute(const path& p) {
+    std::error_code ec;
+    auto r = absolute(p, ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+
+// canonical
+[[nodiscard]] inline path canonical(const path& p, std::error_code& ec) {
+    char buf[PATH_MAX];
+    if (::realpath(p.c_str(), buf) == nullptr) {
+        ec = std::error_code(errno, std::generic_category());
+        return {};
+    }
+    ec.clear();
+    return path(buf);
+}
+[[nodiscard]] inline path canonical(const path& p) {
+    std::error_code ec;
+    auto r = canonical(p, ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+
+// weakly_canonical
+[[nodiscard]] inline path weakly_canonical(const path& p, std::error_code& ec) {
+    // Try to canonicalize as much as possible
+    ec.clear();
+    // Find longest prefix that exists
+    path result;
+    std::vector<std::string> tail;
+    path cur = p.lexically_normal();
+
+    // Walk from the full path backward to find what exists
+    path existing = cur;
+    std::vector<std::string> non_existing;
+    while (!existing.empty()) {
+        struct ::stat st;
+        if (::lstat(existing.c_str(), &st) == 0) {
+            // Canonicalize the existing part
+            char buf[PATH_MAX];
+            if (::realpath(existing.c_str(), buf) != nullptr) {
+                result = path(buf);
+            } else {
+                result = existing;
+            }
+            break;
+        }
+        // not found, strip last component
+        auto fn = existing.filename().native();
+        if (fn.empty() || fn == "/") break;
+        non_existing.push_back(fn);
+        existing = existing.parent_path();
+    }
+    // Append non-existing parts back
+    for (auto it = non_existing.rbegin(); it != non_existing.rend(); ++it)
+        result /= *it;
+
+    if (result.empty())
+        result = cur;
+    return result;
+}
+[[nodiscard]] inline path weakly_canonical(const path& p) {
+    std::error_code ec;
+    auto r = weakly_canonical(p, ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+
+// equivalent
+[[nodiscard]] inline bool equivalent(const path& p1, const path& p2, std::error_code& ec) noexcept {
+    struct ::stat st1, st2;
+    if (::stat(p1.c_str(), &st1) != 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+    }
+    if (::stat(p2.c_str(), &st2) != 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+    }
+    ec.clear();
+    return st1.st_dev == st2.st_dev && st1.st_ino == st2.st_ino;
+}
+[[nodiscard]] inline bool equivalent(const path& p1, const path& p2) {
+    std::error_code ec;
+    bool r = equivalent(p1, p2, ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+
+// create_directory
+inline bool create_directory(const path& p, std::error_code& ec) noexcept {
+    if (::mkdir(p.c_str(), 0777) == 0) {
+        ec.clear();
+        return true;
+    }
+    if (errno == EEXIST) {
+        ec.clear();
+        return false;
+    }
+    ec = std::error_code(errno, std::generic_category());
+    return false;
+}
+inline bool create_directory(const path& p) {
+    std::error_code ec;
+    bool r = create_directory(p, ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+inline bool create_directory(const path& p, const path& attrs, std::error_code& ec) noexcept {
+    struct ::stat st;
+    if (::stat(attrs.c_str(), &st) != 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+    }
+    mode_t m = st.st_mode & 07777;
+    if (::mkdir(p.c_str(), m) == 0) {
+        ec.clear();
+        return true;
+    }
+    if (errno == EEXIST) {
+        ec.clear();
+        return false;
+    }
+    ec = std::error_code(errno, std::generic_category());
+    return false;
+}
+inline bool create_directory(const path& p, const path& attrs) {
+    std::error_code ec;
+    bool r = create_directory(p, attrs, ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+
+// create_directories
+inline bool create_directories(const path& p, std::error_code& ec) {
+    ec.clear();
+    if (p.empty()) {
+        ec = std::error_code(EINVAL, std::generic_category());
+        return false;
+    }
+    // Check if already exists
+    {
+        struct ::stat st;
+        if (::stat(p.c_str(), &st) == 0) {
+            if (S_ISDIR(st.st_mode))
+                return false;
+            ec = std::error_code(ENOTDIR, std::generic_category());
+            return false;
+        }
+    }
+    // Recursively create parent
+    path parent = p.parent_path();
+    if (!parent.empty() && parent != p) {
+        create_directories(parent, ec);
+        if (ec) return false;
+    }
+    return create_directory(p, ec);
+}
+inline bool create_directories(const path& p) {
+    std::error_code ec;
+    bool r = create_directories(p, ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+
+// create_symlink
+inline void create_symlink(const path& to, const path& new_symlink, std::error_code& ec) noexcept {
+    if (::symlink(to.c_str(), new_symlink.c_str()) != 0)
+        ec = std::error_code(errno, std::generic_category());
+    else
+        ec.clear();
+}
+inline void create_symlink(const path& to, const path& new_symlink) {
+    std::error_code ec;
+    create_symlink(to, new_symlink, ec);
+    if (ec) __builtin_trap();
+}
+
+// create_directory_symlink (same as create_symlink on POSIX)
+inline void create_directory_symlink(const path& to, const path& new_symlink, std::error_code& ec) noexcept {
+    create_symlink(to, new_symlink, ec);
+}
+inline void create_directory_symlink(const path& to, const path& new_symlink) {
+    create_symlink(to, new_symlink);
+}
+
+// create_hard_link
+inline void create_hard_link(const path& to, const path& new_hard_link, std::error_code& ec) noexcept {
+    if (::link(to.c_str(), new_hard_link.c_str()) != 0)
+        ec = std::error_code(errno, std::generic_category());
+    else
+        ec.clear();
+}
+inline void create_hard_link(const path& to, const path& new_hard_link) {
+    std::error_code ec;
+    create_hard_link(to, new_hard_link, ec);
+    if (ec) __builtin_trap();
+}
+
+// read_symlink
+[[nodiscard]] inline path read_symlink(const path& p, std::error_code& ec) {
+    char buf[PATH_MAX];
+    ssize_t n = ::readlink(p.c_str(), buf, sizeof(buf) - 1);
+    if (n < 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return {};
+    }
+    ec.clear();
+    buf[n] = '\0';
+    return path(buf);
+}
+[[nodiscard]] inline path read_symlink(const path& p) {
+    std::error_code ec;
+    auto r = read_symlink(p, ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+
+// remove
+inline bool remove(const path& p, std::error_code& ec) noexcept {
+    if (::remove(p.c_str()) == 0) {
+        ec.clear();
+        return true;
+    }
+    if (errno == ENOENT) {
+        ec.clear();
+        return false;
+    }
+    ec = std::error_code(errno, std::generic_category());
+    return false;
+}
+inline bool remove(const path& p) {
+    std::error_code ec;
+    bool r = remove(p, ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+
+// remove_all (recursive)
+inline uintmax_t remove_all(const path& p, std::error_code& ec) {
+    uintmax_t count = 0;
+    struct ::stat st;
+    if (::lstat(p.c_str(), &st) != 0) {
+        if (errno == ENOENT) { ec.clear(); return 0; }
+        ec = std::error_code(errno, std::generic_category());
+        return 0;
+    }
+    if (S_ISDIR(st.st_mode)) {
+        DIR* d = ::opendir(p.c_str());
+        if (!d) {
+            ec = std::error_code(errno, std::generic_category());
+            return 0;
+        }
+        struct ::dirent* de;
+        while ((de = ::readdir(d)) != nullptr) {
+            std::string_view name(de->d_name);
+            if (name == "." || name == "..") continue;
+            path child = p / path(std::string(name));
+            count += remove_all(child, ec);
+            if (ec) { ::closedir(d); return count; }
+        }
+        ::closedir(d);
+        if (::rmdir(p.c_str()) != 0) {
+            ec = std::error_code(errno, std::generic_category());
+            return count;
+        }
+        ++count;
+        ec.clear();
+        return count;
+    }
+    if (::unlink(p.c_str()) != 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return 0;
+    }
+    ec.clear();
+    return 1;
+}
+inline uintmax_t remove_all(const path& p) {
+    std::error_code ec;
+    auto r = remove_all(p, ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+
+// rename
+inline void rename(const path& from, const path& to, std::error_code& ec) noexcept {
+    if (::rename(from.c_str(), to.c_str()) != 0)
+        ec = std::error_code(errno, std::generic_category());
+    else
+        ec.clear();
+}
+inline void rename(const path& from, const path& to) {
+    std::error_code ec;
+    rename(from, to, ec);
+    if (ec) __builtin_trap();
+}
+
+// resize_file
+inline void resize_file(const path& p, uintmax_t size, std::error_code& ec) noexcept {
+    if (::truncate(p.c_str(), static_cast<off_t>(size)) != 0)
+        ec = std::error_code(errno, std::generic_category());
+    else
+        ec.clear();
+}
+inline void resize_file(const path& p, uintmax_t size) {
+    std::error_code ec;
+    resize_file(p, size, ec);
+    if (ec) __builtin_trap();
+}
+
+// copy_file
+inline bool copy_file(const path& from, const path& to,
+                      copy_options opt, std::error_code& ec) {
+    // Determine if destination exists
+    struct ::stat st_to;
+    bool to_exists = (::stat(to.c_str(), &st_to) == 0);
+
+    if (to_exists) {
+        if ((opt & copy_options::skip_existing) != copy_options::none) {
+            ec.clear();
+            return false;
+        }
+        if ((opt & copy_options::overwrite_existing) == copy_options::none &&
+            (opt & copy_options::update_existing) == copy_options::none) {
+            ec = std::error_code(EEXIST, std::generic_category());
+            return false;
+        }
+        if ((opt & copy_options::update_existing) != copy_options::none) {
+            struct ::stat st_from;
+            if (::stat(from.c_str(), &st_from) != 0) {
+                ec = std::error_code(errno, std::generic_category());
+                return false;
+            }
+#ifdef __linux__
+            if (st_from.st_mtim.tv_sec < st_to.st_mtim.tv_sec ||
+                (st_from.st_mtim.tv_sec == st_to.st_mtim.tv_sec &&
+                 st_from.st_mtim.tv_nsec <= st_to.st_mtim.tv_nsec)) {
+#else
+            if (st_from.st_mtime <= st_to.st_mtime) {
+#endif
+                ec.clear();
+                return false;
+            }
+        }
+    }
+
+    // Open source
+    int src_fd = ::open(from.c_str(), O_RDONLY);
+    if (src_fd < 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+    }
+    struct ::stat st_src;
+    if (::fstat(src_fd, &st_src) != 0) {
+        ::close(src_fd);
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+    }
+
+    // Open destination
+    int dst_fd = ::open(to.c_str(), O_WRONLY | O_CREAT | O_TRUNC, st_src.st_mode & 07777);
+    if (dst_fd < 0) {
+        ::close(src_fd);
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+    }
+
+    // Copy contents
+    char buf[65536];
+    ssize_t n;
+    while ((n = ::read(src_fd, buf, sizeof(buf))) > 0) {
+        ssize_t written = 0;
+        while (written < n) {
+            ssize_t w = ::write(dst_fd, buf + written, static_cast<size_t>(n - written));
+            if (w < 0) {
+                ::close(src_fd);
+                ::close(dst_fd);
+                ec = std::error_code(errno, std::generic_category());
+                return false;
+            }
+            written += w;
+        }
+    }
+    ::close(src_fd);
+    ::close(dst_fd);
+    if (n < 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+    }
+    ec.clear();
+    return true;
+}
+inline bool copy_file(const path& from, const path& to, std::error_code& ec) {
+    return copy_file(from, to, copy_options::none, ec);
+}
+inline bool copy_file(const path& from, const path& to, copy_options opt) {
+    std::error_code ec;
+    bool r = copy_file(from, to, opt, ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+inline bool copy_file(const path& from, const path& to) {
+    std::error_code ec;
+    bool r = copy_file(from, to, copy_options::none, ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+
+// copy_symlink
+inline void copy_symlink(const path& existing, const path& new_symlink, std::error_code& ec) noexcept {
+    path target = read_symlink(existing, ec);
+    if (ec) return;
+    create_symlink(target, new_symlink, ec);
+}
+inline void copy_symlink(const path& existing, const path& new_symlink) {
+    std::error_code ec;
+    copy_symlink(existing, new_symlink, ec);
+    if (ec) __builtin_trap();
+}
+
+// copy
+inline void copy(const path& from, const path& to, copy_options opt, std::error_code& ec) {
+    file_status f_st = symlink_status(from, ec);
+    if (ec) return;
+
+    if (is_symlink(f_st)) {
+        if ((opt & copy_options::skip_symlinks) != copy_options::none) {
+            ec.clear();
+            return;
+        }
+        if ((opt & copy_options::copy_symlinks) != copy_options::none) {
+            copy_symlink(from, to, ec);
+            return;
+        }
+        // Follow symlink
+        f_st = status(from, ec);
+        if (ec) return;
+    }
+
+    if (is_regular_file(f_st)) {
+        copy_file(from, to, opt, ec);
+        return;
+    }
+
+    if (is_directory(f_st)) {
+        // Create destination directory
+        bool created = create_directory(to, from, ec);
+        if (ec) return;
+        (void)created;
+
+        if ((opt & copy_options::recursive) != copy_options::none) {
+            DIR* d = ::opendir(from.c_str());
+            if (!d) {
+                ec = std::error_code(errno, std::generic_category());
+                return;
+            }
+            struct ::dirent* de;
+            while ((de = ::readdir(d)) != nullptr) {
+                std::string_view name(de->d_name);
+                if (name == "." || name == "..") continue;
+                path child_from = from / path(std::string(name));
+                path child_to   = to   / path(std::string(name));
+                copy(child_from, child_to,
+                     opt | copy_options::in_recursive_copy, ec);
+                if (ec) { ::closedir(d); return; }
+            }
+            ::closedir(d);
+        }
+        ec.clear();
+        return;
+    }
+    ec.clear();
+}
+inline void copy(const path& from, const path& to, std::error_code& ec) {
+    copy(from, to, copy_options::none, ec);
+}
+inline void copy(const path& from, const path& to, copy_options opt) {
+    std::error_code ec;
+    copy(from, to, opt, ec);
+    if (ec) __builtin_trap();
+}
+inline void copy(const path& from, const path& to) {
+    std::error_code ec;
+    copy(from, to, copy_options::none, ec);
+    if (ec) __builtin_trap();
+}
+
+// permissions
+inline void permissions(const path& p, perms prms, perm_options opts,
+                        std::error_code& ec) noexcept {
+    // Get current permissions if needed
+    mode_t mode = 0;
+    if ((opts & perm_options::add) != static_cast<perm_options>(0) ||
+        (opts & perm_options::remove) != static_cast<perm_options>(0)) {
+        struct ::stat st;
+        bool use_lstat = (opts & perm_options::nofollow) != static_cast<perm_options>(0);
+        int r = use_lstat ? ::lstat(p.c_str(), &st) : ::stat(p.c_str(), &st);
+        if (r != 0) {
+            ec = std::error_code(errno, std::generic_category());
+            return;
+        }
+        mode = st.st_mode & 07777;
+    }
+
+    unsigned uv = static_cast<unsigned>(prms) & 07777u;
+    if ((opts & perm_options::replace) != static_cast<perm_options>(0)) {
+        mode = static_cast<mode_t>(uv);
+    } else if ((opts & perm_options::add) != static_cast<perm_options>(0)) {
+        mode |= static_cast<mode_t>(uv);
+    } else if ((opts & perm_options::remove) != static_cast<perm_options>(0)) {
+        mode &= ~static_cast<mode_t>(uv);
+    }
+
+    bool use_lchmod = (opts & perm_options::nofollow) != static_cast<perm_options>(0);
+    int r;
+    if (use_lchmod) {
+        // lchmod doesn't exist on Linux; fallback to chmod on the symlink target
+        r = ::chmod(p.c_str(), mode);
+    } else {
+        r = ::chmod(p.c_str(), mode);
+    }
+    if (r != 0)
+        ec = std::error_code(errno, std::generic_category());
+    else
+        ec.clear();
+}
+inline void permissions(const path& p, perms prms, perm_options opts = perm_options::replace) {
+    std::error_code ec;
+    permissions(p, prms, opts, ec);
+    if (ec) __builtin_trap();
+}
+inline void permissions(const path& p, perms prms, std::error_code& ec) noexcept {
+    permissions(p, prms, perm_options::replace, ec);
+}
+
+// space
+[[nodiscard]] inline space_info space(const path& p, std::error_code& ec) noexcept {
+    struct ::statvfs sv;
+    if (::statvfs(p.c_str(), &sv) != 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return {static_cast<uintmax_t>(-1), static_cast<uintmax_t>(-1), static_cast<uintmax_t>(-1)};
+    }
+    ec.clear();
+    uintmax_t cap = static_cast<uintmax_t>(sv.f_blocks) * static_cast<uintmax_t>(sv.f_frsize);
+    uintmax_t fr  = static_cast<uintmax_t>(sv.f_bfree)  * static_cast<uintmax_t>(sv.f_frsize);
+    uintmax_t av  = static_cast<uintmax_t>(sv.f_bavail) * static_cast<uintmax_t>(sv.f_frsize);
+    return {cap, fr, av};
+}
+[[nodiscard]] inline space_info space(const path& p) {
+    std::error_code ec;
+    auto r = space(p, ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+
+// temp_directory_path
+[[nodiscard]] inline path temp_directory_path(std::error_code& ec) {
+    const char* tmp = ::getenv("TMPDIR");
+    if (!tmp) tmp = ::getenv("TMP");
+    if (!tmp) tmp = ::getenv("TEMP");
+    if (!tmp) tmp = "/tmp";
+    struct ::stat st;
+    if (::stat(tmp, &st) != 0 || !S_ISDIR(st.st_mode)) {
+        ec = std::error_code(ENOTDIR, std::generic_category());
+        return {};
+    }
+    ec.clear();
+    return path(tmp);
+}
+[[nodiscard]] inline path temp_directory_path() {
+    std::error_code ec;
+    auto r = temp_directory_path(ec);
+    if (ec) __builtin_trap();
+    return r;
+}
+
+// relative / proximate
+[[nodiscard]] inline path relative(const path& p, const path& base, std::error_code& ec) {
+    path tmp = weakly_canonical(p, ec);
+    if (ec) return {};
+    path tmpbase = weakly_canonical(base, ec);
+    if (ec) return {};
+    return tmp.lexically_relative(tmpbase);
+}
+[[nodiscard]] inline path relative(const path& p, std::error_code& ec) {
+    return relative(p, current_path(), ec);
+}
+[[nodiscard]] inline path relative(const path& p, const path& base = current_path()) {
+    return weakly_canonical(p).lexically_relative(weakly_canonical(base));
+}
+
+[[nodiscard]] inline path proximate(const path& p, const path& base, std::error_code& ec) {
+    path tmp = weakly_canonical(p, ec);
+    if (ec) return {};
+    path tmpbase = weakly_canonical(base, ec);
+    if (ec) return {};
+    return tmp.lexically_proximate(tmpbase);
+}
+[[nodiscard]] inline path proximate(const path& p, std::error_code& ec) {
+    return proximate(p, current_path(), ec);
+}
+[[nodiscard]] inline path proximate(const path& p, const path& base = current_path()) {
+    return weakly_canonical(p).lexically_proximate(weakly_canonical(base));
+}
+
+//===----------------------------------------------------------------------===//
+// directory_entry
+//===----------------------------------------------------------------------===//
+class directory_entry {
+    using Path = filesystem::path;
+public:
+    directory_entry() noexcept = default;
+    directory_entry(const directory_entry&) = default;
+    directory_entry(directory_entry&&) noexcept = default;
+
+    explicit directory_entry(const Path& p) : p_(p) {
+        std::error_code ec;
+        do_refresh(&ec);
+    }
+    directory_entry(const Path& p, std::error_code& ec) : p_(p) {
+        do_refresh(&ec);
+    }
+
+    ~directory_entry() = default;
+
+    directory_entry& operator=(const directory_entry&) = default;
+    directory_entry& operator=(directory_entry&&) noexcept = default;
+
+    void assign(const Path& p) {
+        p_ = p;
+        std::error_code ec;
+        do_refresh(&ec);
+    }
+    void assign(const Path& p, std::error_code& ec) {
+        p_ = p;
+        do_refresh(&ec);
+    }
+    void replace_filename(const Path& p) {
+        p_.replace_filename(p);
+        std::error_code ec;
+        do_refresh(&ec);
+    }
+    void replace_filename(const Path& p, std::error_code& ec) {
+        p_ = p_.parent_path() / p;
+        do_refresh(&ec);
+    }
+    void refresh() {
+        std::error_code ec;
+        do_refresh(&ec);
+    }
+    void refresh(std::error_code& ec) noexcept {
+        do_refresh(&ec);
+    }
+
+    [[nodiscard]] const Path& path() const noexcept { return p_; }
+    operator const Path&() const noexcept { return p_; }
+
+    [[nodiscard]] bool exists() const                              { return filesystem::exists(file_status{get_ft()}); }
+    [[nodiscard]] bool exists(std::error_code& ec) const noexcept { return filesystem::exists(file_status{get_ft(&ec)}); }
+    [[nodiscard]] bool is_block_file() const                              { return get_ft() == file_type::block; }
+    [[nodiscard]] bool is_block_file(std::error_code& ec) const noexcept { return get_ft(&ec) == file_type::block; }
+    [[nodiscard]] bool is_character_file() const                              { return get_ft() == file_type::character; }
+    [[nodiscard]] bool is_character_file(std::error_code& ec) const noexcept { return get_ft(&ec) == file_type::character; }
+    [[nodiscard]] bool is_directory() const                              { return get_ft() == file_type::directory; }
+    [[nodiscard]] bool is_directory(std::error_code& ec) const noexcept { return get_ft(&ec) == file_type::directory; }
+    [[nodiscard]] bool is_fifo() const                              { return get_ft() == file_type::fifo; }
+    [[nodiscard]] bool is_fifo(std::error_code& ec) const noexcept { return get_ft(&ec) == file_type::fifo; }
+    [[nodiscard]] bool is_other() const                              { return filesystem::is_other(get_status()); }
+    [[nodiscard]] bool is_other(std::error_code& ec) const noexcept { return filesystem::is_other(get_status(&ec)); }
+    [[nodiscard]] bool is_regular_file() const                              { return get_ft() == file_type::regular; }
+    [[nodiscard]] bool is_regular_file(std::error_code& ec) const noexcept { return get_ft(&ec) == file_type::regular; }
+    [[nodiscard]] bool is_socket() const                              { return get_ft() == file_type::socket; }
+    [[nodiscard]] bool is_socket(std::error_code& ec) const noexcept { return get_ft(&ec) == file_type::socket; }
+    [[nodiscard]] bool is_symlink() const                              { return get_sym_ft() == file_type::symlink; }
+    [[nodiscard]] bool is_symlink(std::error_code& ec) const noexcept { return get_sym_ft(&ec) == file_type::symlink; }
+    [[nodiscard]] uintmax_t file_size() const                              { return filesystem::file_size(p_); }
+    [[nodiscard]] uintmax_t file_size(std::error_code& ec) const noexcept { return filesystem::file_size(p_, ec); }
+    [[nodiscard]] uintmax_t hard_link_count() const                              { return filesystem::hard_link_count(p_); }
+    [[nodiscard]] uintmax_t hard_link_count(std::error_code& ec) const noexcept { return filesystem::hard_link_count(p_, ec); }
+    [[nodiscard]] file_time_type last_write_time() const                              { return filesystem::last_write_time(p_); }
+    [[nodiscard]] file_time_type last_write_time(std::error_code& ec) const noexcept { return filesystem::last_write_time(p_, ec); }
+
+    [[nodiscard]] file_status status() const                              { return get_status(); }
+    [[nodiscard]] file_status status(std::error_code& ec) const noexcept { return get_status(&ec); }
+    [[nodiscard]] file_status symlink_status() const                              { return get_symlink_status(); }
+    [[nodiscard]] file_status symlink_status(std::error_code& ec) const noexcept { return get_symlink_status(&ec); }
+
+    bool operator==(const directory_entry& rhs) const noexcept { return p_ == rhs.p_; }
+    std::strong_ordering operator<=>(const directory_entry& rhs) const noexcept {
+        return p_ <=> rhs.p_;
+    }
+
+private:
+    friend class directory_iterator;
+    friend class recursive_directory_iterator;
+    friend struct dir_stream;
+
+    // Cache for the stat result (simplified: just retype on access)
+    void do_refresh(std::error_code* ec) noexcept {
+        cached_status_ = detail::do_lstat(p_, ec);
+        if (!ec || !*ec) {
+            if (cached_status_.type() == file_type::symlink) {
+                cached_followed_ = detail::do_stat(p_, ec);
+            } else {
+                cached_followed_ = cached_status_;
+            }
+        }
+    }
+
+    // Set from directory iteration result (with known type)
+    void set_iter_entry(Path&& p, file_type ft) {
+        p_ = std::move(p);
+        cached_status_ = file_status(ft);
+        if (ft == file_type::symlink) {
+            std::error_code ec;
+            cached_followed_ = detail::do_stat(p_, &ec);
+        } else {
+            cached_followed_ = cached_status_;
+        }
+    }
+
+    file_type get_ft(std::error_code* ec = nullptr) const {
+        if (ec) ec->clear();
+        return cached_followed_.type();
+    }
+    file_type get_sym_ft(std::error_code* ec = nullptr) const {
+        if (ec) ec->clear();
+        return cached_status_.type();
+    }
+    file_status get_status(std::error_code* ec = nullptr) const {
+        if (ec) ec->clear();
+        return cached_followed_;
+    }
+    file_status get_symlink_status(std::error_code* ec = nullptr) const {
+        if (ec) ec->clear();
+        return cached_status_;
+    }
+
+    Path p_;
+    file_status cached_status_;   // lstat result (symlink itself)
+    file_status cached_followed_; // stat result (through symlink)
+};
+
+// proxy object for post-increment
+class dir_element_proxy {
+public:
+    directory_entry operator*() { return std::move(elem_); }
+private:
+    friend class directory_iterator;
+    friend class recursive_directory_iterator;
+    explicit dir_element_proxy(const directory_entry& e) : elem_(e) {}
+    dir_element_proxy(dir_element_proxy&& o) : elem_(std::move(o.elem_)) {}
+    directory_entry elem_;
+};
+
+//===----------------------------------------------------------------------===//
+// directory_iterator
+//===----------------------------------------------------------------------===//
+struct dir_stream {
+    explicit dir_stream(const path& p, directory_options opts,
+                        std::error_code* ec) {
+        d_ = ::opendir(p.c_str());
+        if (!d_) {
+            int e = errno;
+            if (ec) {
+                if (e == EACCES &&
+                    (opts & directory_options::skip_permission_denied) != directory_options::none)
+                    ec->clear();
+                else
+                    *ec = std::error_code(e, std::generic_category());
+            }
+            return;
+        }
+        if (ec) ec->clear();
+        // Advance to first entry
+        advance(ec);
+    }
+
+    ~dir_stream() {
+        if (d_) ::closedir(d_);
+    }
+
+    dir_stream(const dir_stream&) = delete;
+    dir_stream& operator=(const dir_stream&) = delete;
+
+    bool is_valid() const noexcept { return d_ != nullptr && entry_.has_value(); }
+
+    const directory_entry& current() const noexcept { return *entry_; }
+
+    void advance(std::error_code* ec) {
+        entry_.reset();
+        if (!d_) return;
+
+        while (true) {
+            errno = 0;
+            struct ::dirent* de = ::readdir(d_);
+            if (!de) {
+                if (errno != 0 && ec)
+                    *ec = std::error_code(errno, std::generic_category());
+                else if (ec)
+                    ec->clear();
+                return;
+            }
+            std::string_view name(de->d_name);
+            if (name == "." || name == "..") continue;
+
+            // Build directory_entry
+            path child = dir_path_ / path(std::string(name));
+            file_type ft = file_type::unknown;
+#ifdef DT_UNKNOWN
+            if (de->d_type != DT_UNKNOWN) {
+                switch (de->d_type) {
+                case DT_REG:  ft = file_type::regular;   break;
+                case DT_DIR:  ft = file_type::directory; break;
+                case DT_LNK:  ft = file_type::symlink;   break;
+                case DT_BLK:  ft = file_type::block;     break;
+                case DT_CHR:  ft = file_type::character; break;
+                case DT_FIFO: ft = file_type::fifo;      break;
+                case DT_SOCK: ft = file_type::socket;    break;
+                default:      ft = file_type::unknown;   break;
+                }
+            }
+#endif
+            directory_entry ent;
+            ent.set_iter_entry(std::move(child), ft);
+            entry_ = std::move(ent);
+            if (ec) ec->clear();
+            return;
+        }
+    }
+
+    path dir_path_;
+    DIR* d_ = nullptr;
+    // Use optional-like storage
+    struct optional_entry {
+        bool has = false;
+        directory_entry val;
+        void reset() { has = false; }
+        bool has_value() const { return has; }
+        const directory_entry& operator*() const { return val; }
+        directory_entry& operator*() { return val; }
+        void operator=(directory_entry&& e) { val = std::move(e); has = true; }
+        void reset(directory_entry e) { val = std::move(e); has = true; }
+    } entry_;
+};
+
+class directory_iterator {
+public:
+    using value_type        = directory_entry;
+    using difference_type   = std::ptrdiff_t;
+    using pointer           = const directory_entry*;
+    using reference         = const directory_entry&;
+    using iterator_category = std::input_iterator_tag;
+
+    directory_iterator() noexcept {}
+
+    explicit directory_iterator(const path& p)
+        : directory_iterator(p, nullptr, directory_options::none) {}
+
+    directory_iterator(const path& p, directory_options opts)
+        : directory_iterator(p, nullptr, opts) {}
+
+    directory_iterator(const path& p, std::error_code& ec)
+        : directory_iterator(p, &ec, directory_options::none) {}
+
+    directory_iterator(const path& p, directory_options opts, std::error_code& ec)
+        : directory_iterator(p, &ec, opts) {}
+
+    directory_iterator(const directory_iterator&) = default;
+    directory_iterator(directory_iterator&&) = default;
+    directory_iterator& operator=(const directory_iterator&) = default;
+    directory_iterator& operator=(directory_iterator&& o) noexcept {
+        if (this != &o)
+            imp_ = std::move(o.imp_);
+        return *this;
+    }
+    ~directory_iterator() = default;
+
+    [[nodiscard]] const directory_entry& operator*() const  { return imp_->current(); }
+    const directory_entry* operator->() const { return &**this; }
+
+    directory_iterator& operator++() { return increment(); }
+    dir_element_proxy operator++(int) {
+        dir_element_proxy p(**this);
+        increment();
+        return p;
+    }
+    directory_iterator& increment(std::error_code& ec) {
+        return do_increment(&ec);
+    }
+
+    bool operator==(std::default_sentinel_t) const noexcept {
+        return *this == directory_iterator();
+    }
+
+    friend bool operator==(const directory_iterator& lhs,
+                           const directory_iterator& rhs) noexcept {
+        return lhs.imp_ == rhs.imp_;
+    }
+    friend bool operator!=(const directory_iterator& lhs,
+                           const directory_iterator& rhs) noexcept {
+        return !(lhs == rhs);
+    }
+
+private:
+    directory_iterator(const path& p, std::error_code* ec,
+                       directory_options opts) {
+        auto s = std::make_shared<dir_stream>(p, opts, ec);
+        if (s->is_valid())
+            imp_ = std::move(s);
+    }
+
+    directory_iterator& increment() {
+        return do_increment(nullptr);
+    }
+
+    directory_iterator& do_increment(std::error_code* ec) {
+        if (!imp_) return *this;
+        imp_->advance(ec);
+        if (!imp_->is_valid())
+            imp_.reset();
+        return *this;
+    }
+
+    std::shared_ptr<dir_stream> imp_;
+};
+
+[[nodiscard]] inline directory_iterator begin(directory_iterator iter) noexcept {
+    return iter;
+}
+[[nodiscard]] inline directory_iterator end(directory_iterator) noexcept {
+    return directory_iterator();
+}
+
+//===----------------------------------------------------------------------===//
+// recursive_directory_iterator
+//===----------------------------------------------------------------------===//
+struct recursive_dir_impl {
+    struct level {
+        std::shared_ptr<dir_stream> stream;
+    };
+
+    std::vector<level> stack;
+    directory_options opts;
+    bool recursion_pending = true;
+
+    recursive_dir_impl(const path& p, directory_options o, std::error_code* ec)
+        : opts(o) {
+        auto s = std::make_shared<dir_stream>(p, o, ec);
+        if (s->is_valid())
+            stack.push_back({std::move(s)});
+    }
+};
+
+class recursive_directory_iterator {
+public:
+    using value_type        = directory_entry;
+    using difference_type   = std::ptrdiff_t;
+    using pointer           = const directory_entry*;
+    using reference         = const directory_entry&;
+    using iterator_category = std::input_iterator_tag;
+
+    recursive_directory_iterator() noexcept : rec_(false) {}
+
+    explicit recursive_directory_iterator(const path& p,
+        directory_options opts = directory_options::none)
+        : recursive_directory_iterator(p, opts, nullptr) {}
+
+    recursive_directory_iterator(const path& p, directory_options opts,
+                                 std::error_code& ec)
+        : recursive_directory_iterator(p, opts, &ec) {}
+
+    recursive_directory_iterator(const path& p, std::error_code& ec)
+        : recursive_directory_iterator(p, directory_options::none, &ec) {}
+
+    recursive_directory_iterator(const recursive_directory_iterator&) = default;
+    recursive_directory_iterator(recursive_directory_iterator&&) = default;
+    recursive_directory_iterator& operator=(const recursive_directory_iterator&) = default;
+    recursive_directory_iterator& operator=(recursive_directory_iterator&& o) noexcept {
+        if (this != &o) {
+            imp_ = std::move(o.imp_);
+            rec_ = o.rec_;
+        }
+        return *this;
+    }
+    ~recursive_directory_iterator() = default;
+
+    [[nodiscard]] const directory_entry& operator*() const { return current(); }
+    const directory_entry* operator->() const { return &current(); }
+
+    recursive_directory_iterator& operator++() { return do_increment(nullptr); }
+    dir_element_proxy operator++(int) {
+        dir_element_proxy p(**this);
+        ++(*this);
+        return p;
+    }
+    recursive_directory_iterator& increment(std::error_code& ec) {
+        return do_increment(&ec);
+    }
+
+    [[nodiscard]] directory_options options() const {
+        if (imp_) return imp_->opts;
+        return directory_options::none;
+    }
+    [[nodiscard]] int depth() const {
+        if (!imp_) return 0;
+        return static_cast<int>(imp_->stack.size()) - 1;
+    }
+    [[nodiscard]] bool recursion_pending() const { return rec_; }
+    void disable_recursion_pending() { rec_ = false; }
+
+    void pop(std::error_code& ec) { do_pop(&ec); }
+    void pop() { do_pop(nullptr); }
+
+    bool operator==(std::default_sentinel_t) const noexcept {
+        return *this == recursive_directory_iterator();
+    }
+
+    friend bool operator==(const recursive_directory_iterator& lhs,
+                           const recursive_directory_iterator& rhs) noexcept {
+        return lhs.imp_ == rhs.imp_;
+    }
+    friend bool operator!=(const recursive_directory_iterator& lhs,
+                           const recursive_directory_iterator& rhs) noexcept {
+        return !(lhs == rhs);
+    }
+
+private:
+    recursive_directory_iterator(const path& p, directory_options opts,
+                                 std::error_code* ec)
+        : rec_(true) {
+        auto impl = std::make_shared<recursive_dir_impl>(p, opts, ec);
+        if (!impl->stack.empty())
+            imp_ = std::move(impl);
+    }
+
+    const directory_entry& current() const {
+        return imp_->stack.back().stream->current();
+    }
+
+    recursive_directory_iterator& do_increment(std::error_code* ec) {
+        if (!imp_) return *this;
+
+        // Try to recurse into current entry if it's a directory
+        if (rec_) {
+            const directory_entry& cur = current();
+            if (cur.is_directory()) {
+                auto s = std::make_shared<dir_stream>(
+                    cur.path(), imp_->opts, ec);
+                if (s->is_valid()) {
+                    imp_->stack.push_back({std::move(s)});
+                    rec_ = true;
+                    return *this;
+                }
+                // Failed to open directory, skip
+                if (ec && *ec) {
+                    if ((imp_->opts & directory_options::skip_permission_denied) != directory_options::none &&
+                        ec->value() == EACCES) {
+                        ec->clear();
+                    } else {
+                        return *this;
+                    }
+                }
+            }
+        }
+        rec_ = true;
+
+        // Advance in current level
+        while (!imp_->stack.empty()) {
+            imp_->stack.back().stream->advance(ec);
+            if (ec && *ec) return *this;
+            if (imp_->stack.back().stream->is_valid())
+                return *this;
+            // Done with this level, pop
+            imp_->stack.pop_back();
+        }
+        // Stack empty = end
+        imp_.reset();
+        return *this;
+    }
+
+    void do_pop(std::error_code* ec) {
+        if (!imp_) return;
+        if (imp_->stack.empty()) { imp_.reset(); return; }
+        imp_->stack.pop_back();
+        if (imp_->stack.empty()) { imp_.reset(); return; }
+        // Advance to next entry in parent
+        do_increment(ec);
+    }
+
+    std::shared_ptr<recursive_dir_impl> imp_;
+    bool rec_;
+};
+
+[[nodiscard]] inline recursive_directory_iterator
+begin(recursive_directory_iterator iter) noexcept { return iter; }
+
+[[nodiscard]] inline recursive_directory_iterator
+end(recursive_directory_iterator) noexcept {
+    return recursive_directory_iterator();
+}
+
+} // namespace filesystem
+
+// hash specialization in namespace std
+template <>
+struct hash<filesystem::path> {
+    [[nodiscard]] size_t operator()(const filesystem::path& p) const noexcept {
+        return filesystem::hash_value(p);
+    }
+};
+
+} // namespace std
