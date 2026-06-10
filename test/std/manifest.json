@@ -35874,6 +35874,1612 @@
    "slug": "input_output_string_streams_stringstream_types",
    "kind": "compile",
    "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.collate/locale.collate/locale.collate.members/hash.pass.cpp",
+   "slug": "localization_locale_categories_category_collate_locale_collate_locale_collate_members_hash",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.collate/locale.collate/locale.collate.members/transform.pass.cpp",
+   "slug": "localization_locale_categories_category_collate_locale_collate_locale_collate_members_transform",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.collate/locale.collate/locale.collate.virtuals/tested_elsewhere.pass.cpp",
+   "slug": "localization_locale_categories_category_collate_locale_collate_locale_collate_virtuals_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.collate/locale.collate/types.pass.cpp",
+   "slug": "localization_locale_categories_category_collate_locale_collate_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/c.locales/clocale.pass.cpp",
+   "slug": "localization_c_locales_clocale",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.collate/locale.collate.byname/compare.pass.cpp",
+   "slug": "localization_locale_categories_category_collate_locale_collate_byname_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.collate/locale.collate.byname/hash.pass.cpp",
+   "slug": "localization_locale_categories_category_collate_locale_collate_byname_hash",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.collate/locale.collate.byname/transform.pass.cpp",
+   "slug": "localization_locale_categories_category_collate_locale_collate_byname_transform",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.collate/locale.collate.byname/types.pass.cpp",
+   "slug": "localization_locale_categories_category_collate_locale_collate_byname_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.collate/locale.collate/ctor.pass.cpp",
+   "slug": "localization_locale_categories_category_collate_locale_collate_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.collate/locale.collate/locale.collate.members/compare.pass.cpp",
+   "slug": "localization_locale_categories_category_collate_locale_collate_locale_collate_members_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/ctype_base.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_ctype_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.dtor/dtor.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_dtor_dtor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.members/ctor.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.members/is_1.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_members_is_1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.statics/classic_table.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_statics_classic_table",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.statics/table_size.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_statics_table_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.virtuals/tested_elsewhere.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_virtuals_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/types.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.members/scan_not.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_members_scan_not",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.members/table.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_members_table",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.members/tolower_1.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_members_tolower_1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.members/tolower_many.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_members_tolower_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.members/is_many.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_members_is_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.members/narrow_1.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_members_narrow_1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.members/narrow_many.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_members_narrow_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.members/scan_is.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_members_scan_is",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.members/toupper_1.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_members_toupper_1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.members/toupper_many.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_members_toupper_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.members/widen_1.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_members_widen_1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/facet.ctype.special/facet.ctype.char.members/widen_many.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_facet_ctype_special_facet_ctype_char_members_widen_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt.byname/ctor_char.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_byname_ctor_char",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt.byname/ctor_char16_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_byname_ctor_char16_t",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt.byname/ctor_char16_t_char8_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_byname_ctor_char16_t_char8_t",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt.byname/ctor_char32_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_byname_ctor_char32_t",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt.byname/ctor_char32_t_char8_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_byname_ctor_char32_t_char8_t",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt.byname/ctor_wchar_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_byname_ctor_wchar_t",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/codecvt_base.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_codecvt_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/ctor_char.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_ctor_char",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/ctor_wchar_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_ctor_wchar_t",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char16_t_always_noconv.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char16_t_always_noconv",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char16_t_char8_t_always_noconv.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char16_t_char8_t_always_noconv",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char16_t_char8_t_encoding.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char16_t_char8_t_encoding",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/ctor_char16_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_ctor_char16_t",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/ctor_char16_t_char8_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_ctor_char16_t_char8_t",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/ctor_char32_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_ctor_char32_t",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/ctor_char32_t_char8_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_ctor_char32_t_char8_t",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char16_t_char8_t_in.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char16_t_char8_t_in",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char16_t_char8_t_length.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char16_t_char8_t_length",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char16_t_char8_t_max_length.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char16_t_char8_t_max_length",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char16_t_char8_t_out.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char16_t_char8_t_out",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char16_t_char8_t_unshift.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char16_t_char8_t_unshift",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char16_t_encoding.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char16_t_encoding",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char16_t_in.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char16_t_in",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char16_t_length.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char16_t_length",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char32_t_char8_t_always_noconv.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_char8_t_always_noconv",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char32_t_char8_t_encoding.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_char8_t_encoding",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char32_t_char8_t_in.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_char8_t_in",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char32_t_char8_t_length.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_char8_t_length",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char16_t_max_length.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char16_t_max_length",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char16_t_out.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char16_t_out",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char16_t_unshift.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char16_t_unshift",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char32_t_always_noconv.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_always_noconv",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char32_t_char8_t_max_length.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_char8_t_max_length",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char32_t_char8_t_out.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_char8_t_out",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char32_t_char8_t_unshift.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_char8_t_unshift",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char32_t_encoding.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_encoding",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char32_t_in.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_in",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char32_t_length.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_length",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char32_t_max_length.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_max_length",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char32_t_out.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_out",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char32_t_unshift.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_unshift",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char_always_noconv.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char_always_noconv",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char_encoding.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char_encoding",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char_in.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char_in",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char_length.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char_length",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char_max_length.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char_max_length",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char_out.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char_out",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/char_unshift.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char_unshift",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/wchar_t_always_noconv.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_wchar_t_always_noconv",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/wchar_t_encoding.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_wchar_t_encoding",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/wchar_t_in.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_wchar_t_in",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.virtuals/tested_elsewhere.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_virtuals_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/types_char.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_types_char",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/types_char16_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_types_char16_t",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/types_char16_t_char8_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_types_char16_t_char8_t",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype.byname/is_many.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_byname_is_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype.byname/mask.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_byname_mask",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/wchar_t_length.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_wchar_t_length",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/wchar_t_max_length.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_wchar_t_max_length",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/wchar_t_out.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_wchar_t_out",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/wchar_t_unshift.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_wchar_t_unshift",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/types_char32_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_types_char32_t",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/types_char32_t_char8_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_types_char32_t_char8_t",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/types_wchar_t.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_codecvt_types_wchar_t",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype.byname/is_1.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_byname_is_1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype.byname/scan_is.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_byname_scan_is",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype.byname/scan_not.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_byname_scan_not",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype.byname/tolower_1.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_byname_tolower_1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype.byname/tolower_many.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_byname_tolower_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype.byname/toupper_1.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_byname_toupper_1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype.byname/toupper_many.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_byname_toupper_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype.byname/types.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_byname_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype.byname/widen_1.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_byname_widen_1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype.byname/widen_many.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_byname_widen_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/ctor.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/locale.ctype.members/is_1.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_locale_ctype_members_is_1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/locale.ctype.members/is_many.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_locale_ctype_members_is_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/locale.ctype.members/narrow_1.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_locale_ctype_members_narrow_1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/locale.ctype.members/narrow_many.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_locale_ctype_members_narrow_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/locale.ctype.members/scan_is.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_locale_ctype_members_scan_is",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/locale.ctype.members/scan_not.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_locale_ctype_members_scan_not",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.messages/locale.messages.byname/nothing_to_do.pass.cpp",
+   "slug": "localization_locale_categories_category_messages_locale_messages_byname_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.messages/locale.messages/ctor.pass.cpp",
+   "slug": "localization_locale_categories_category_messages_locale_messages_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.messages/locale.messages/locale.messages.members/not_testable.pass.cpp",
+   "slug": "localization_locale_categories_category_messages_locale_messages_locale_messages_members_not_testable",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.messages/locale.messages/locale.messages.virtuals/tested_elsewhere.pass.cpp",
+   "slug": "localization_locale_categories_category_messages_locale_messages_locale_messages_virtuals_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/locale.ctype.members/widen_1.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_locale_ctype_members_widen_1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/locale.ctype.members/widen_many.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_locale_ctype_members_widen_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/locale.ctype.virtuals/tested_elsewhere.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_locale_ctype_virtuals_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/types.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/locale.ctype.members/tolower_1.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_locale_ctype_members_tolower_1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/locale.ctype.members/tolower_many.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_locale_ctype_members_tolower_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/locale.ctype.members/toupper_1.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_locale_ctype_members_toupper_1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype/locale.ctype.members/toupper_many.pass.cpp",
+   "slug": "localization_locale_categories_category_ctype_locale_ctype_locale_ctype_members_toupper_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.messages/locale.messages/messages_base.pass.cpp",
+   "slug": "localization_locale_categories_category_messages_locale_messages_messages_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.messages/locale.messages/types.pass.cpp",
+   "slug": "localization_locale_categories_category_messages_locale_messages_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.get/ctor.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_money_get_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.get/locale.money.get.virtuals/tested_elsewhere.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_money_get_locale_money_get_virtuals_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.get/types.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_money_get_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.put/ctor.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_money_put_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.put/locale.money.put.virtuals/tested_elsewhere.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_money_put_locale_money_put_virtuals_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.put/types.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_money_put_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct.byname/curr_symbol.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_byname_curr_symbol",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct.byname/decimal_point.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_byname_decimal_point",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct.byname/frac_digits.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_byname_frac_digits",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct.byname/grouping.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_byname_grouping",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct.byname/neg_format.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_byname_neg_format",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct.byname/negative_sign.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_byname_negative_sign",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct.byname/pos_format.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_byname_pos_format",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct.byname/positive_sign.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_byname_positive_sign",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct/ctor.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct/locale.moneypunct.members/curr_symbol.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_locale_moneypunct_members_curr_symbol",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct/locale.moneypunct.members/decimal_point.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_locale_moneypunct_members_decimal_point",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct/locale.moneypunct.members/frac_digits.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_locale_moneypunct_members_frac_digits",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct/locale.moneypunct.members/positive_sign.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_locale_moneypunct_members_positive_sign",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct/locale.moneypunct.members/thousands_sep.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_locale_moneypunct_members_thousands_sep",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct/locale.moneypunct.virtuals/tested_elsewhere.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_locale_moneypunct_virtuals_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct/money_base.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_money_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct/locale.moneypunct.members/grouping.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_locale_moneypunct_members_grouping",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct/locale.moneypunct.members/neg_format.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_locale_moneypunct_members_neg_format",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct/locale.moneypunct.members/negative_sign.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_locale_moneypunct_members_negative_sign",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct/locale.moneypunct.members/pos_format.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_locale_moneypunct_members_pos_format",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.nm.put/facet.num.put.virtuals/tested_elsewhere.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_nm_put_facet_num_put_virtuals_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.nm.put/types.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_nm_put_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/ctor.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/facet.num.get.members/get_bool.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_facet_num_get_members_get_bool",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct/types.pass.cpp",
+   "slug": "localization_locale_categories_category_monetary_locale_moneypunct_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.nm.put/ctor.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_nm_put_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/facet.num.get.members/get_long_long.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_facet_num_get_members_get_long_long",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/facet.num.get.members/get_pointer.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_facet_num_get_members_get_pointer",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/facet.num.get.members/get_unsigned_int.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_facet_num_get_members_get_unsigned_int",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/facet.num.get.members/get_unsigned_long.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_facet_num_get_members_get_unsigned_long",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/facet.num.get.members/get_double.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_facet_num_get_members_get_double",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/facet.num.get.members/get_float.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_facet_num_get_members_get_float",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/facet.num.get.members/get_long.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_facet_num_get_members_get_long",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/facet.num.get.members/get_long_double.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_facet_num_get_members_get_long_double",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/facet.num.get.members/get_unsigned_long_long.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_facet_num_get_members_get_unsigned_long_long",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/facet.num.get.members/get_unsigned_short.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_facet_num_get_members_get_unsigned_short",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/facet.num.get.members/test_min_max.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_facet_num_get_members_test_min_max",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/facet.num.get.members/test_neg_one.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_facet_num_get_members_test_neg_one",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/facet.num.get.virtuals/tested_elsewhere.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_facet_num_get_virtuals_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/types.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.num.get/user_defined_char_type.pass.cpp",
+   "slug": "localization_locale_categories_category_numeric_locale_num_get_user_defined_char_type",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get.byname/date_order.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_byname_date_order",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get.byname/date_order_wide.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_byname_date_order_wide",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get.byname/get_date.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_byname_get_date",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get.byname/get_date_wide.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_byname_get_date_wide",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get.byname/get_monthname.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_byname_get_monthname",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get.byname/get_monthname_wide.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_byname_get_monthname_wide",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get.byname/get_one.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_byname_get_one",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get.byname/get_one_wide.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_byname_get_one_wide",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get.byname/get_time.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_byname_get_time",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get.byname/get_time_wide.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_byname_get_time_wide",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get.byname/get_weekday.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_byname_get_weekday",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get.byname/get_weekday_wide.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_byname_get_weekday_wide",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get.byname/get_year.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_byname_get_year",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get.byname/get_year_wide.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_byname_get_year_wide",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/ctor.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/locale.time.get.members/date_order.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_locale_time_get_members_date_order",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/locale.time.get.members/get_date.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_locale_time_get_members_get_date",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/locale.time.get.members/get_weekday_wide.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_locale_time_get_members_get_weekday_wide",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/locale.time.get.members/get_year.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_locale_time_get_members_get_year",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/locale.time.get.virtuals/tested_elsewhere.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_locale_time_get_virtuals_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/time_base.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_time_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/locale.time.get.members/get_date_wide.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_locale_time_get_members_get_date_wide",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/locale.time.get.members/get_many.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_locale_time_get_members_get_many",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/locale.time.get.members/get_monthname.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_locale_time_get_members_get_monthname",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/locale.time.get.members/get_monthname_wide.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_locale_time_get_members_get_monthname_wide",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/locale.time.get.members/get_one.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_locale_time_get_members_get_one",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/locale.time.get.members/get_time.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_locale_time_get_members_get_time",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/locale.time.get.members/get_time_wide.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_locale_time_get_members_get_time_wide",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/locale.time.get.members/get_weekday.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_locale_time_get_members_get_weekday",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.get/types.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_get_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.put.byname/put1.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_put_byname_put1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.put/ctor.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_put_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.put/locale.time.put.members/put1.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_put_locale_time_put_members_put1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.put/locale.time.put.members/put2.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_put_locale_time_put_members_put2",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.put/locale.time.put.virtuals/tested_elsewhere.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_put_locale_time_put_virtuals_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/category.time/locale.time.put/types.pass.cpp",
+   "slug": "localization_locale_categories_category_time_locale_time_put_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/facet.numpunct/locale.numpunct.byname/decimal_point.pass.cpp",
+   "slug": "localization_locale_categories_facet_numpunct_locale_numpunct_byname_decimal_point",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/facet.numpunct/locale.numpunct/facet.numpunct.virtuals/tested_elsewhere.pass.cpp",
+   "slug": "localization_locale_categories_facet_numpunct_locale_numpunct_facet_numpunct_virtuals_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/facet.numpunct/locale.numpunct/types.pass.cpp",
+   "slug": "localization_locale_categories_facet_numpunct_locale_numpunct_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/facets.examples/nothing_to_do.pass.cpp",
+   "slug": "localization_locale_categories_facets_examples_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/facet.numpunct/locale.numpunct/facet.numpunct.members/falsename.pass.cpp",
+   "slug": "localization_locale_categories_facet_numpunct_locale_numpunct_facet_numpunct_members_falsename",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/facet.numpunct/locale.numpunct/facet.numpunct.members/grouping.pass.cpp",
+   "slug": "localization_locale_categories_facet_numpunct_locale_numpunct_facet_numpunct_members_grouping",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/facet.numpunct/locale.numpunct/facet.numpunct.members/thousands_sep.pass.cpp",
+   "slug": "localization_locale_categories_facet_numpunct_locale_numpunct_facet_numpunct_members_thousands_sep",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/facet.numpunct/locale.numpunct/facet.numpunct.members/truename.pass.cpp",
+   "slug": "localization_locale_categories_facet_numpunct_locale_numpunct_facet_numpunct_members_truename",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/facet.numpunct/locale.numpunct.byname/grouping.pass.cpp",
+   "slug": "localization_locale_categories_facet_numpunct_locale_numpunct_byname_grouping",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/facet.numpunct/locale.numpunct/ctor.pass.cpp",
+   "slug": "localization_locale_categories_facet_numpunct_locale_numpunct_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.categories/facet.numpunct/locale.numpunct/facet.numpunct.members/decimal_point.pass.cpp",
+   "slug": "localization_locale_categories_facet_numpunct_locale_numpunct_facet_numpunct_members_decimal_point",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locale.syn/nothing_to_do.pass.cpp",
+   "slug": "localization_locale_syn_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.convenience/classification/isdigit.pass.cpp",
+   "slug": "localization_locales_locale_convenience_classification_isdigit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.convenience/classification/isgraph.pass.cpp",
+   "slug": "localization_locales_locale_convenience_classification_isgraph",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.convenience/classification/islower.pass.cpp",
+   "slug": "localization_locales_locale_convenience_classification_islower",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.convenience/classification/isprint.pass.cpp",
+   "slug": "localization_locales_locale_convenience_classification_isprint",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.convenience/classification/isalnum.pass.cpp",
+   "slug": "localization_locales_locale_convenience_classification_isalnum",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.convenience/classification/isalpha.pass.cpp",
+   "slug": "localization_locales_locale_convenience_classification_isalpha",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.convenience/classification/isblank.pass.cpp",
+   "slug": "localization_locales_locale_convenience_classification_isblank",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.convenience/classification/iscntrl.pass.cpp",
+   "slug": "localization_locales_locale_convenience_classification_iscntrl",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.convenience/classification/ispunct.pass.cpp",
+   "slug": "localization_locales_locale_convenience_classification_ispunct",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.convenience/classification/isspace.pass.cpp",
+   "slug": "localization_locales_locale_convenience_classification_isspace",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.convenience/classification/isupper.pass.cpp",
+   "slug": "localization_locales_locale_convenience_classification_isupper",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.convenience/classification/isxdigit.pass.cpp",
+   "slug": "localization_locales_locale_convenience_classification_isxdigit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.character/tolower.pass.cpp",
+   "slug": "localization_locales_locale_convenience_conversions_conversions_character_tolower",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.character/toupper.pass.cpp",
+   "slug": "localization_locales_locale_convenience_conversions_conversions_character_toupper",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.global.templates/has_facet.pass.cpp",
+   "slug": "localization_locales_locale_global_templates_has_facet",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale.global.templates/use_facet.pass.cpp",
+   "slug": "localization_locales_locale_global_templates_use_facet",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale/locale.cons/assign.pass.cpp",
+   "slug": "localization_locales_locale_locale_cons_assign",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locales/locale/locale.cons/char_pointer.pass.cpp",
+   "slug": "localization_locales_locale_locale_cons_char_pointer",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locales/locale/locale.cons/copy.pass.cpp",
+   "slug": "localization_locales_locale_locale_cons_copy",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locales/locale/locale.cons/locale_string_cat.pass.cpp",
+   "slug": "localization_locales_locale_locale_cons_locale_string_cat",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locales/locale/locale.cons/name_construction.pass.cpp",
+   "slug": "localization_locales_locale_locale_cons_name_construction",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale/locale.cons/string.pass.cpp",
+   "slug": "localization_locales_locale_locale_cons_string",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locales/locale/locale.members/combine.pass.cpp",
+   "slug": "localization_locales_locale_locale_members_combine",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/localization.general/nothing_to_do.pass.cpp",
+   "slug": "localization_localization_general_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale/locale.cons/default.pass.cpp",
+   "slug": "localization_locales_locale_locale_cons_default",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locales/locale/locale.cons/locale_char_pointer_cat.pass.cpp",
+   "slug": "localization_locales_locale_locale_cons_locale_char_pointer_cat",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locales/locale/locale.cons/locale_facetptr.pass.cpp",
+   "slug": "localization_locales_locale_locale_cons_locale_facetptr",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locales/locale/locale.cons/locale_locale_cat.pass.cpp",
+   "slug": "localization_locales_locale_locale_cons_locale_locale_cat",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locales/locale/locale.members/name.pass.cpp",
+   "slug": "localization_locales_locale_locale_members_name",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale/locale.operators/compare.pass.cpp",
+   "slug": "localization_locales_locale_locale_operators_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale/locale.operators/eq.pass.cpp",
+   "slug": "localization_locales_locale_locale_operators_eq",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale/locale.statics/classic.pass.cpp",
+   "slug": "localization_locales_locale_locale_statics_classic",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locales/locale/locale.statics/global.pass.cpp",
+   "slug": "localization_locales_locale_locale_statics_global",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "localization/locales/locale/locale.types/locale.category/category.pass.cpp",
+   "slug": "localization_locales_locale_locale_types_locale_category_category",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale/locale.types/locale.facet/tested_elsewhere.pass.cpp",
+   "slug": "localization_locales_locale_locale_types_locale_facet_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "localization/locales/locale/locale.types/locale.id/tested_elsewhere.pass.cpp",
+   "slug": "localization_locales_locale_locale_types_locale_id_tested_elsewhere",
+   "kind": "run",
+   "flags": []
   }
  ],
  "skipped": [
@@ -37080,6 +38686,14 @@
   {
    "file": "input.output/string.streams/stringstream/stringstream.members/gcount.pass.cpp",
    "reason": "requires-unmet:large_tests"
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype.byname/narrow_1.pass.cpp",
+   "reason": "requires-unmet:locale.fr_CA.ISO8859-1"
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.ctype.byname/narrow_many.pass.cpp",
+   "reason": "requires-unmet:locale.fr_CA.ISO8859-1"
   }
  ],
  "errors": [
@@ -43052,6 +44666,336 @@
    "file": "input.output/syncstream/syncbuf/types.compile.pass.cpp",
    "stage": "parse",
    "diag": "/home/user/llvm-project/libcxx/test/std/input.output/syncstream/syncbuf/types.compile.pass.cpp:38:23: error: no member named 'basic_syncbuf' in namespace 'std'"
+  },
+  {
+   "file": "localization/codecvt_unicode.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/codecvt_unicode.pass.cpp:2125:12: error: no member named 'codecvt_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/utf_sanity_check.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.categories/category.ctype/locale.codecvt/locale.codecvt.members/utf_sanity_check.pass.cpp:35:16: error: no template named 'codecvt_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.get/locale.money.get.members/get_long_double_en_US.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/locale:2544:37: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.get/locale.money.get.members/get_string_en_US.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/locale:2544:37: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.get/locale.money.get.members/get_long_double_fr_FR.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.categories/category.monetary/locale.money.get/locale.money.get.members/get_long_double_fr_FR.pass.cpp:62:70: error: use of undeclared identifier 'FR_MON_THOU_SEP'"
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.get/locale.money.get.members/get_long_double_overlong.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/locale:2544:37: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.get/locale.money.get.members/get_long_double_ru_RU.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.categories/category.monetary/locale.money.get/locale.money.get.members/get_long_double_ru_RU.pass.cpp:57:70: error: use of undeclared identifier 'RU_MON_THOU_SEP'"
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.get/locale.money.get.members/get_long_double_zh_CN.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/locale:2544:37: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.put/locale.money.put.members/put_long_double_en_US.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/__locale_dir/pad_and_output.h:33:29: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.put/locale.money.put.members/put_long_double_fr_FR.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.categories/category.monetary/locale.money.put/locale.money.put.members/put_long_double_fr_FR.pass.cpp:62:70: error: use of undeclared identifier 'FR_MON_THOU_SEP'"
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.put/locale.money.put.members/put_long_double_ru_RU.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.categories/category.monetary/locale.money.put/locale.money.put.members/put_long_double_ru_RU.pass.cpp:57:70: error: use of undeclared identifier 'RU_MON_THOU_SEP'"
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.put/locale.money.put.members/put_long_double_zh_CN.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/__locale_dir/pad_and_output.h:33:29: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.money.put/locale.money.put.members/put_string_en_US.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/__locale_dir/pad_and_output.h:33:29: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.monetary/locale.moneypunct.byname/thousands_sep.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.categories/category.monetary/locale.moneypunct.byname/thousands_sep.pass.cpp:117:72: error: use of undeclared identifier 'FR_MON_THOU_SEP'"
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.nm.put/facet.num.put.members/put_bool.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/locale:1254:83: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.nm.put/facet.num.put.members/put_double.hex.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/locale:1254:83: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.nm.put/facet.num.put.members/put_long_long.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/locale:1254:83: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.nm.put/facet.num.put.members/put_pointer.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/locale:1254:83: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.nm.put/facet.num.put.members/put_unsigned_long.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/locale:1254:83: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.nm.put/facet.num.put.members/put_unsigned_long_long.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/locale:1254:83: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.nm.put/facet.num.put.members/put_double.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/locale:1254:83: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.nm.put/facet.num.put.members/put_long.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/locale:1254:83: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.nm.put/facet.num.put.members/put_long_double.hex.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/locale:1254:83: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.categories/category.numeric/locale.nm.put/facet.num.put.members/put_long_double.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/locale:1254:83: error: overload resolution selected deleted operator ','"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_mode.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_mode.pass.cpp:27:17: error: no member named 'consume_header' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.categories/facet.numpunct/locale.numpunct.byname/thousands_sep.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.categories/facet.numpunct/locale.numpunct.byname/thousands_sep.pass.cpp:80:72: error: use of undeclared identifier 'FR_THOU_SEP'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf16.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf16.pass.cpp:38:22: error: no template named 'codecvt_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf16_always_noconv.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf16_always_noconv.pass.cpp:32:22: error: no template named 'codecvt_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf16_encoding.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf16_encoding.pass.cpp:32:22: error: no template named 'codecvt_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf16_in.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf16_in.pass.cpp:34:22: error: no template named 'codecvt_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf16_length.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf16_length.pass.cpp:45:18: error: no template named 'codecvt_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf16_max_length.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf16_max_length.pass.cpp:44:18: error: no template named 'codecvt_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf16_out.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf16_out.pass.cpp:50:18: error: no template named 'codecvt_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf16_unshift.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf16_unshift.pass.cpp:34:22: error: no template named 'codecvt_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8_length.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8_length.pass.cpp:45:18: error: no template named 'codecvt_utf8' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8_max_length.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8_max_length.pass.cpp:44:18: error: no template named 'codecvt_utf8' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8_out.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8_out.pass.cpp:47:18: error: no template named 'codecvt_utf8' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8_unshift.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8_unshift.pass.cpp:34:22: error: no template named 'codecvt_utf8' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8.pass.cpp:38:22: error: no template named 'codecvt_utf8' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8_always_noconv.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8_always_noconv.pass.cpp:32:22: error: no template named 'codecvt_utf8' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8_encoding.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8_encoding.pass.cpp:32:22: error: no template named 'codecvt_utf8' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8_in.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8_in.pass.cpp:34:22: error: no template named 'codecvt_utf8' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8_utf16_max_length.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8_utf16_max_length.pass.cpp:32:22: error: no template named 'codecvt_utf8_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8_utf16_out.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8_utf16_out.pass.cpp:45:18: error: no template named 'codecvt_utf8_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8_utf16_unshift.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8_utf16_unshift.pass.cpp:34:22: error: no template named 'codecvt_utf8_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8_utf16_always_noconv.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8_utf16_always_noconv.pass.cpp:32:22: error: no template named 'codecvt_utf8_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8_utf16_encoding.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8_utf16_encoding.pass.cpp:32:22: error: no template named 'codecvt_utf8_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8_utf16_in.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8_utf16_in.pass.cpp:45:18: error: no template named 'codecvt_utf8_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locale.stdcvt/codecvt_utf8_utf16_length.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locale.stdcvt/codecvt_utf8_utf16_length.pass.cpp:33:22: error: no template named 'codecvt_utf8_utf16' in namespace 'std'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.buffer/ctor.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.buffer/ctor.pass.cpp:39:18: error: no template named 'wbuffer_convert' in namespace 'std'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.buffer/overflow.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.buffer/overflow.pass.cpp:30:19: error: unknown template name 'wbuffer_convert'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.buffer/pbackfail.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.buffer/pbackfail.pass.cpp:27:19: error: unknown template name 'wbuffer_convert'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.buffer/rdbuf.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.buffer/rdbuf.pass.cpp:28:18: error: no template named 'wbuffer_convert' in namespace 'std'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.string/ctor_codecvt_state.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.string/ctor_codecvt_state.pass.cpp:28:22: error: no template named 'codecvt_utf8' in namespace 'std'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.string/ctor_copy.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.string/ctor_copy.pass.cpp:33:18: error: no template named 'codecvt_utf8' in namespace 'std'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.string/ctor_err_string.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.string/ctor_err_string.pass.cpp:29:18: error: no template named 'codecvt_utf8' in namespace 'std'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.string/from_bytes.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.string/from_bytes.pass.cpp:43:10: error: no member named 'wstring_convert' in namespace 'std'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.string/converted.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.string/converted.pass.cpp:40:18: error: no template named 'codecvt_utf8' in namespace 'std'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.string/ctor_codecvt.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.string/ctor_codecvt.pass.cpp:35:22: error: no template named 'codecvt_utf8' in namespace 'std'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.buffer/seekoff.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.buffer/seekoff.pass.cpp:45:22: error: no template named 'wbuffer_convert' in namespace 'std'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.buffer/state.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.buffer/state.pass.cpp:28:18: error: no template named 'wbuffer_convert' in namespace 'std'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.buffer/test.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.buffer/test.pass.cpp:26:14: error: no member named 'wbuffer_convert' in namespace 'std'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.buffer/underflow.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.buffer/underflow.pass.cpp:29:19: error: unknown template name 'wbuffer_convert'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.string/state.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.string/state.pass.cpp:26:18: error: no template named 'codecvt_utf8' in namespace 'std'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.string/to_bytes.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.string/to_bytes.pass.cpp:43:10: error: no member named 'wstring_convert' in namespace 'std'"
+  },
+  {
+   "file": "localization/locales/locale.convenience/conversions/conversions.string/types.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/localization/locales/locale.convenience/conversions/conversions.string/types.pass.cpp:34:22: error: no template named 'wstring_convert' in namespace 'std'"
   }
  ],
  "subtrees": [
@@ -43070,6 +45014,7 @@
   "utilities",
   "containers",
   "thread",
-  "input.output"
+  "input.output",
+  "localization"
  ]
 }
