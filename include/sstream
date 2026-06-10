@@ -576,54 +576,7 @@ inline void swap(basic_ostringstream<CharT, Traits, Allocator>& x,
 using ostringstream  = basic_ostringstream<char>;
 using wostringstream = basic_ostringstream<wchar_t>;
 
-//===----------------------------------------------------------------------===//
-// basic_iostream — needed by basic_stringstream.
-// Also defined in <iostream> (same template definition; not an ODR violation
-// because template definitions must be identical in all TUs).
-// We avoid including <iostream> here because it instantiates global stream
-// objects (cout, cin, etc.) backed by stdio, which creates ABI issues with
-// hidden visibility and C library function references.
-//===----------------------------------------------------------------------===//
-#ifndef LIBCIS_BASIC_IOSTREAM_DEFINED
-#define LIBCIS_BASIC_IOSTREAM_DEFINED
-template<class CharT, class Traits = char_traits<CharT>>
-class basic_iostream
-    : public basic_istream<CharT, Traits>
-    , public basic_ostream<CharT, Traits>
-{
-public:
-    using char_type   = CharT;
-    using traits_type = Traits;
-    using int_type    = typename traits_type::int_type;
-    using pos_type    = typename traits_type::pos_type;
-    using off_type    = typename traits_type::off_type;
-
-    explicit basic_iostream(basic_streambuf<char_type, traits_type>* sb)
-        : basic_istream<CharT, Traits>(sb)
-        , basic_ostream<CharT, Traits>()
-    {}
-
-    ~basic_iostream() override {}
-
-protected:
-    basic_iostream(basic_iostream&& rhs)
-        : basic_istream<CharT, Traits>(static_cast<basic_istream<CharT,Traits>&&>(rhs))
-        , basic_ostream<CharT, Traits>()
-    {}
-
-    basic_iostream& operator=(basic_iostream&& rhs) {
-        basic_istream<CharT, Traits>::swap(rhs);
-        return *this;
-    }
-
-    void swap(basic_iostream& rhs) {
-        basic_istream<CharT, Traits>::swap(rhs);
-    }
-};
-
-using iostream  = basic_iostream<char>;
-using wiostream = basic_iostream<wchar_t>;
-#endif // LIBCIS_BASIC_IOSTREAM_DEFINED
+// basic_iostream, iostream, wiostream come from <istream> (included above).
 
 //===----------------------------------------------------------------------===//
 // basic_stringstream

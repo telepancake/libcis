@@ -605,6 +605,55 @@ void swap(basic_istream<CharT, Traits>& x, basic_istream<CharT, Traits>& y) {
     x.swap(y);
 }
 
+//===----------------------------------------------------------------------===//
+// basic_iostream — derives from both basic_istream and basic_ostream.
+// Canonical home is <istream> (not <iostream>) so it can be used by <sstream>
+// without pulling in the global cin/cout/cerr/clog objects.
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits = char_traits<CharT>>
+class basic_iostream
+    : public basic_istream<CharT, Traits>
+    , public basic_ostream<CharT, Traits>
+{
+public:
+    using char_type   = CharT;
+    using traits_type = Traits;
+    using int_type    = typename traits_type::int_type;
+    using pos_type    = typename traits_type::pos_type;
+    using off_type    = typename traits_type::off_type;
+
+    explicit basic_iostream(basic_streambuf<char_type, traits_type>* sb)
+        : basic_istream<CharT, Traits>(sb)
+        , basic_ostream<CharT, Traits>()
+    {}
+
+    ~basic_iostream() override {}
+
+protected:
+    basic_iostream(basic_iostream&& rhs)
+        : basic_istream<CharT, Traits>(static_cast<basic_istream<CharT,Traits>&&>(rhs))
+        , basic_ostream<CharT, Traits>()
+    {}
+
+    basic_iostream& operator=(basic_iostream&& rhs) {
+        basic_istream<CharT, Traits>::swap(rhs);
+        return *this;
+    }
+
+    void swap(basic_iostream& rhs) {
+        basic_istream<CharT, Traits>::swap(rhs);
+    }
+};
+
+using iostream  = basic_iostream<char>;
+using wiostream = basic_iostream<wchar_t>;
+
+// swap
+template<class CharT, class Traits>
+void swap(basic_iostream<CharT, Traits>& x, basic_iostream<CharT, Traits>& y) {
+    x.swap(y);
+}
+
 } // namespace std
 
 #pragma GCC visibility pop
