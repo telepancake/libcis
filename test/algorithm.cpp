@@ -952,3 +952,134 @@ void test_algorithm_is_permutation() {
     // with pred
     CHECK(std::is_permutation(a, a + 3, b, std::equal_to<int>{}));
 }
+
+// ======== ranges:: algorithm tests ========
+#include <vector>
+
+void test_algorithm_ranges_sort() {
+    std::vector<int> v = {5, 3, 1, 4, 2};
+    std::ranges::sort(v);
+    CHECK(v[0] == 1 && v[1] == 2 && v[2] == 3 && v[3] == 4 && v[4] == 5);
+
+    // sort with projection (sort by negated value = descending)
+    std::ranges::sort(v, std::ranges::greater{});
+    CHECK(v[0] == 5 && v[4] == 1);
+}
+
+void test_algorithm_ranges_find_with_projection() {
+    using P = std::pair<int,int>;
+    std::vector<P> v = {{1,10},{2,20},{3,30}};
+    // find pair where .first == 2
+    auto it = std::ranges::find(v, 2, &P::first);
+    CHECK(it != v.end());
+    CHECK(it->first == 2 && it->second == 20);
+    // not found
+    auto it2 = std::ranges::find(v, 99, &P::first);
+    CHECK(it2 == v.end());
+}
+
+void test_algorithm_ranges_for_each() {
+    std::vector<int> v = {1, 2, 3, 4};
+    int sum = 0;
+    std::ranges::for_each(v, [&](int x){ sum += x; });
+    CHECK(sum == 10);
+
+    // for_each_n
+    sum = 0;
+    std::ranges::for_each_n(v.begin(), 3, [&](int x){ sum += x; });
+    CHECK(sum == 6);
+}
+
+void test_algorithm_ranges_count_if() {
+    std::vector<int> v = {1, 2, 3, 4, 5, 6};
+    auto n = std::ranges::count_if(v, [](int x){ return x % 2 == 0; });
+    CHECK(n == 3);
+
+    // count with projection
+    using P = std::pair<int,int>;
+    std::vector<P> p = {{1,0},{2,0},{1,0}};
+    auto c = std::ranges::count(p, 1, &P::first);
+    CHECK(c == 2);
+}
+
+void test_algorithm_ranges_min_max_with_proj() {
+    using P = std::pair<int,int>;
+    std::vector<P> v = {{3,0},{1,0},{4,0},{1,0},{5,0}};
+    auto mn = std::ranges::min_element(v, {}, &P::first);
+    CHECK(mn->first == 1);
+    auto mx = std::ranges::max_element(v, {}, &P::first);
+    CHECK(mx->first == 5);
+
+    // scalar min/max with projection
+    int a = 3, b = 7;
+    CHECK(std::ranges::min(a, b) == 3);
+    CHECK(std::ranges::max(a, b) == 7);
+    auto mm = std::ranges::minmax(a, b);
+    CHECK(mm.min == 3 && mm.max == 7);
+}
+
+void test_algorithm_ranges_copy_to_back_inserter() {
+    std::vector<int> src = {10, 20, 30};
+    std::vector<int> dst;
+    std::ranges::copy(src, std::back_inserter(dst));
+    CHECK(dst.size() == 3);
+    CHECK(dst[0] == 10 && dst[1] == 20 && dst[2] == 30);
+}
+
+void test_algorithm_ranges_transform() {
+    std::vector<int> src = {1, 2, 3, 4};
+    std::vector<int> dst(4);
+    std::ranges::transform(src, dst.begin(), [](int x){ return x * x; });
+    CHECK(dst[0] == 1 && dst[1] == 4 && dst[2] == 9 && dst[3] == 16);
+}
+
+void test_algorithm_ranges_all_any_none_of() {
+    std::vector<int> v = {2, 4, 6, 8};
+    CHECK(std::ranges::all_of(v, [](int x){ return x % 2 == 0; }));
+    CHECK(!std::ranges::any_of(v, [](int x){ return x % 2 != 0; }));
+    CHECK(std::ranges::none_of(v, [](int x){ return x < 0; }));
+}
+
+void test_algorithm_ranges_binary_search() {
+    std::vector<int> v = {1, 2, 3, 4, 5};
+    CHECK(std::ranges::binary_search(v, 3));
+    CHECK(!std::ranges::binary_search(v, 6));
+    auto lb = std::ranges::lower_bound(v, 3);
+    CHECK(*lb == 3);
+    auto ub = std::ranges::upper_bound(v, 3);
+    CHECK(*ub == 4);
+}
+
+void test_algorithm_ranges_remove_and_reverse() {
+    std::vector<int> v = {1, 2, 3, 2, 4};
+    auto [new_end, old_end] = std::ranges::remove(v, 2);
+    v.erase(new_end, old_end);
+    CHECK(v.size() == 3);
+    CHECK(v[0] == 1 && v[1] == 3 && v[2] == 4);
+
+    std::ranges::reverse(v);
+    CHECK(v[0] == 4 && v[1] == 3 && v[2] == 1);
+}
+
+void test_algorithm_ranges_fill_and_generate() {
+    std::vector<int> v(5);
+    std::ranges::fill(v, 7);
+    for (auto x : v) CHECK(x == 7);
+
+    int n = 0;
+    std::ranges::generate(v, [&]{ return ++n; });
+    CHECK(v[0] == 1 && v[4] == 5);
+}
+
+void test_algorithm_ranges_heap() {
+    std::vector<int> v = {3, 1, 4, 1, 5};
+    std::ranges::make_heap(v);
+    CHECK(std::ranges::is_heap(v));
+    v.push_back(9);
+    std::ranges::push_heap(v);
+    CHECK(v.front() == 9);
+    std::ranges::pop_heap(v);
+    v.pop_back();
+    std::ranges::sort_heap(v);
+    CHECK(std::ranges::is_sorted(v));
+}
