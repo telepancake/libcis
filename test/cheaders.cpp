@@ -76,7 +76,8 @@ void test_cstdlib_malloc() {
 
 void test_cmath_sqrt() {
     CHECK(std::sqrt(4.0) == 2.0);
-    CHECK(std::sqrtf(9.0f) == 3.0f);
+    // std::sqrtf is not standard C++ (C99 name); use the float overload of sqrt
+    CHECK(std::sqrt(9.0f) == 3.0f);
 }
 
 void test_cmath_sin_cos() {

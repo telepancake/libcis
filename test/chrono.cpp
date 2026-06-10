@@ -3,6 +3,8 @@
 // No #pragma once; no main() — gen_main.sh generates it.
 
 #include <chrono>
+#include <cstdint>     // int64_t
+#include <type_traits>
 #include "test.h"
 
 using namespace std::chrono;
@@ -136,17 +138,18 @@ void test_chrono_treat_as_floating_point() {
 // convenience typedefs
 //===----------------------------------------------------------------------===//
 void test_chrono_typedefs() {
-    // seconds can hold nanoseconds as a duration_cast
-    static_assert(std::is_same_v<nanoseconds::rep,  long long>);
-    static_assert(std::is_same_v<microseconds::rep, long long>);
-    static_assert(std::is_same_v<milliseconds::rep, long long>);
-    static_assert(std::is_same_v<seconds::rep,      long long>);
-    static_assert(std::is_same_v<minutes::rep,      long>);
-    static_assert(std::is_same_v<hours::rep,        long>);
-    static_assert(std::is_same_v<days::rep,         int>);
-    static_assert(std::is_same_v<weeks::rep,        int>);
-    static_assert(std::is_same_v<months::rep,       int>);
-    static_assert(std::is_same_v<years::rep,        int>);
+    // rep types are implementation-defined; the standard only requires signed
+    // integral types of sufficient width.  Test the portable properties.
+    static_assert(std::is_signed_v<nanoseconds::rep>  && sizeof(nanoseconds::rep)  >= 8);
+    static_assert(std::is_signed_v<microseconds::rep> && sizeof(microseconds::rep) >= 8);
+    static_assert(std::is_signed_v<milliseconds::rep> && sizeof(milliseconds::rep) >= 8);
+    static_assert(std::is_signed_v<seconds::rep>      && sizeof(seconds::rep)      >= 4);
+    static_assert(std::is_signed_v<minutes::rep>      && sizeof(minutes::rep)      >= 4);
+    static_assert(std::is_signed_v<hours::rep>        && sizeof(hours::rep)        >= 4);
+    static_assert(std::is_signed_v<days::rep>         && sizeof(days::rep)         >= 4);
+    static_assert(std::is_signed_v<weeks::rep>        && sizeof(weeks::rep)        >= 4);
+    static_assert(std::is_signed_v<months::rep>       && sizeof(months::rep)       >= 4);
+    static_assert(std::is_signed_v<years::rep>        && sizeof(years::rep)        >= 4);
 
     // period sanity checks
     static_assert(std::ratio_equal_v<nanoseconds::period,  std::nano>);
