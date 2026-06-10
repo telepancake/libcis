@@ -1,0 +1,233 @@
+// <iostream> — basic_iostream, global cout/cin/cerr/clog objects wired to stdio.
+// Mechanically ported from libc++ include/iostream.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Global stream objects are inline variables backed by function-local-static
+// stdio streambufs (one definition across TUs without nifty counter).
+// Each stream's streambuf is a stdio_streambuf backed by FILE*.
+//
+// VISIBILITY NOTE: C system headers (stdio.h, wchar.h) are included BEFORE
+// the visibility push so their symbol references stay at default visibility.
+#pragma once
+
+// Pull C system headers FIRST (default visibility) to avoid linker issues
+// when calling them from within the hidden-visibility block.
+#pragma GCC visibility push(default)
+#include <stdio.h>   // FILE*, stdin/stdout/stderr, fgetc/fputc/fread/fwrite/ungetc/fflush
+#include <wchar.h>   // fgetwc/fputwc/ungetwc/WEOF, wint_t
+#pragma GCC visibility pop
+
+// Hide all our symbols to prevent ABI conflict with libstdc++ shared library.
+#pragma GCC visibility push(hidden)
+
+#include <ostream>
+#include <istream>
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// basic_iostream
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits = char_traits<CharT>>
+class basic_iostream
+    : public basic_istream<CharT, Traits>
+    , public basic_ostream<CharT, Traits>
+{
+public:
+    using char_type   = CharT;
+    using traits_type = Traits;
+    using int_type    = typename traits_type::int_type;
+    using pos_type    = typename traits_type::pos_type;
+    using off_type    = typename traits_type::off_type;
+
+    explicit basic_iostream(basic_streambuf<char_type, traits_type>* sb)
+        : basic_istream<CharT, Traits>(sb)
+        , basic_ostream<CharT, Traits>()
+    {}
+
+    ~basic_iostream() override {}
+
+protected:
+    basic_iostream(basic_iostream&& rhs)
+        : basic_istream<CharT, Traits>(static_cast<basic_istream<CharT,Traits>&&>(rhs))
+        , basic_ostream<CharT, Traits>()
+    {}
+
+    basic_iostream& operator=(basic_iostream&& rhs) {
+        basic_istream<CharT, Traits>::swap(rhs);
+        return *this;
+    }
+
+    void swap(basic_iostream& rhs) {
+        basic_istream<CharT, Traits>::swap(rhs);
+    }
+};
+
+using iostream  = basic_iostream<char>;
+using wiostream = basic_iostream<wchar_t>;
+
+//===----------------------------------------------------------------------===//
+// stdio_streambuf — minimal streambuf backed by a FILE*
+//===----------------------------------------------------------------------===//
+namespace detail {
+
+template<class CharT, class Traits = char_traits<CharT>>
+class stdio_streambuf : public basic_streambuf<CharT, Traits> {
+public:
+    using int_type  = typename Traits::int_type;
+    using char_type = CharT;
+
+    explicit stdio_streambuf(FILE* f) : file_(f) {}
+
+protected:
+    int_type underflow() override {
+        if constexpr (is_same_v<CharT, char>) {
+            int c = ::fgetc(file_);
+            if (c == EOF) return Traits::eof();
+            buf_ = static_cast<char>(c);
+            this->setg(&buf_, &buf_, &buf_ + 1);
+            return Traits::to_int_type(buf_);
+        } else {
+            wint_t c = ::fgetwc(file_);
+            if (c == static_cast<wint_t>(WEOF)) return Traits::eof();
+            wbuf_ = static_cast<wchar_t>(c);
+            this->setg(&wbuf_, &wbuf_, &wbuf_ + 1);
+            return Traits::to_int_type(wbuf_);
+        }
+    }
+
+    int_type uflow() override {
+        int_type c = underflow();
+        if (c != Traits::eof())
+            this->gbump(1);
+        return c;
+    }
+
+    int_type pbackfail(int_type c = Traits::eof()) override {
+        if constexpr (is_same_v<CharT, char>) {
+            if (c == Traits::eof()) return Traits::eof();
+            int r = ::ungetc(static_cast<unsigned char>(Traits::to_char_type(c)), file_);
+            return (r == EOF) ? Traits::eof() : c;
+        } else {
+            if (c == Traits::eof()) return Traits::eof();
+            wint_t r = ::ungetwc(static_cast<wint_t>(Traits::to_char_type(c)), file_);
+            return (r == static_cast<wint_t>(WEOF)) ? Traits::eof() : c;
+        }
+    }
+
+    int_type overflow(int_type c = Traits::eof()) override {
+        if (c == Traits::eof()) {
+            ::fflush(file_);
+            return Traits::not_eof(c);
+        }
+        if constexpr (is_same_v<CharT, char>) {
+            int r = ::fputc(static_cast<unsigned char>(Traits::to_char_type(c)), file_);
+            return (r == EOF) ? Traits::eof() : c;
+        } else {
+            wint_t r = ::fputwc(static_cast<wchar_t>(Traits::to_char_type(c)), file_);
+            return (r == static_cast<wint_t>(WEOF)) ? Traits::eof() : c;
+        }
+    }
+
+    streamsize xsputn(const char_type* s, streamsize n) override {
+        if constexpr (is_same_v<CharT, char>) {
+            return static_cast<streamsize>(::fwrite(s, 1, static_cast<size_t>(n), file_));
+        } else {
+            for (streamsize i = 0; i < n; ++i) {
+                wint_t r = ::fputwc(static_cast<wchar_t>(s[i]), file_);
+                if (r == static_cast<wint_t>(WEOF)) return i;
+            }
+            return n;
+        }
+    }
+
+    streamsize xsgetn(char_type* s, streamsize n) override {
+        if constexpr (is_same_v<CharT, char>) {
+            return static_cast<streamsize>(::fread(s, 1, static_cast<size_t>(n), file_));
+        } else {
+            streamsize i = 0;
+            while (i < n) {
+                wint_t c = ::fgetwc(file_);
+                if (c == static_cast<wint_t>(WEOF)) break;
+                s[i++] = static_cast<wchar_t>(c);
+            }
+            return i;
+        }
+    }
+
+    int sync() override {
+        return ::fflush(file_) == 0 ? 0 : -1;
+    }
+
+private:
+    FILE* file_;
+    union {
+        char    buf_;
+        wchar_t wbuf_;
+    };
+};
+
+// One static stdio_streambuf per stdio stream.
+// Function-local-static: initialized once, lives until program exit.
+inline stdio_streambuf<char>& stdin_buf()  { static stdio_streambuf<char> b(stdin);  return b; }
+inline stdio_streambuf<char>& stdout_buf() { static stdio_streambuf<char> b(stdout); return b; }
+inline stdio_streambuf<char>& stderr_buf() { static stdio_streambuf<char> b(stderr); return b; }
+
+inline stdio_streambuf<wchar_t>& wstdin_buf()  { static stdio_streambuf<wchar_t> b(stdin);  return b; }
+inline stdio_streambuf<wchar_t>& wstdout_buf() { static stdio_streambuf<wchar_t> b(stdout); return b; }
+inline stdio_streambuf<wchar_t>& wstderr_buf() { static stdio_streambuf<wchar_t> b(stderr); return b; }
+
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
+// Global stream objects — inline variables (C++17), one definition across TUs.
+//===----------------------------------------------------------------------===//
+
+inline ostream& cout = [] () -> ostream& {
+    static ostream s(&detail::stdout_buf());
+    return s;
+}();
+
+inline ostream& cerr = [] () -> ostream& {
+    static ostream s(&detail::stderr_buf());
+    s.setf(ios_base::unitbuf);
+    return s;
+}();
+
+inline ostream& clog = [] () -> ostream& {
+    static ostream s(&detail::stderr_buf());
+    return s;
+}();
+
+inline istream& cin = [] () -> istream& {
+    static istream s(&detail::stdin_buf());
+    s.tie(&cout);
+    return s;
+}();
+
+// wchar_t variants
+inline wostream& wcout = [] () -> wostream& {
+    static wostream s(&detail::wstdout_buf());
+    return s;
+}();
+
+inline wostream& wcerr = [] () -> wostream& {
+    static wostream s(&detail::wstderr_buf());
+    s.setf(ios_base::unitbuf);
+    return s;
+}();
+
+inline wostream& wclog = [] () -> wostream& {
+    static wostream s(&detail::wstderr_buf());
+    return s;
+}();
+
+inline wistream& wcin = [] () -> wistream& {
+    static wistream s(&detail::wstdin_buf());
+    s.tie(&wcout);
+    return s;
+}();
+
+} // namespace std
+
+#pragma GCC visibility pop

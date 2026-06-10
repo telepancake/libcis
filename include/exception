@@ -28,8 +28,10 @@ public:
     exception() noexcept {}
     exception(const exception&) noexcept            = default;
     exception& operator=(const exception&) noexcept = default;
-    virtual ~exception() noexcept;
-    [[nodiscard]] virtual const char* what() const noexcept;
+    // These are defined in libstdc++.so; mark with default visibility so that
+    // references from hidden-visibility code can resolve them.
+    [[gnu::visibility("default")]] virtual ~exception() noexcept;
+    [[gnu::visibility("default")]] [[nodiscard]] virtual const char* what() const noexcept;
 };
 
 //===----------------------------------------------------------------------===//

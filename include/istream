@@ -1,0 +1,610 @@
+// <istream> — basic_istream<CharT,Traits>, ws manipulator, operator>> overloads.
+// Mechanically ported from libc++ include/__istream/basic_istream.h.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Number parsing: integers via charconv from_chars; floats via strtod/strtof/strtold.
+// Whitespace skipping via skipws fmtflag + ctype<CharT> facet.
+#pragma once
+
+// Pull C system headers before visibility push so their symbols keep default visibility.
+// These must come FIRST in each TU before any of our hidden-visibility headers include
+// them transitively (e.g. ios->system_error->cstdio->stdio.h).
+#pragma GCC visibility push(default)
+#include <stdio.h>   // fgetc, fputc, fread, fwrite, fflush, ungetc, stdin/stdout/stderr
+#include <wchar.h>   // fgetwc, fputwc, ungetwc, WEOF
+#include <stdlib.h>  // strtod, strtof, strtold
+#pragma GCC visibility pop
+
+// Hide all our symbols to prevent ABI conflict with libstdc++ shared library.
+#pragma GCC visibility push(hidden)
+
+#include <ostream>   // basic_ostream (needed for tie()->flush() in sentry)
+#include <ios>       // basic_ios, ios_base
+#include <streambuf> // basic_streambuf
+#include <locale>    // ctype<CharT>
+#include <charconv>  // from_chars
+#include <cstring>   // strlen, memcpy
+#include <string_view> // char_traits
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// Forward declarations
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits = char_traits<CharT>>
+class basic_istream;
+
+using istream  = basic_istream<char>;
+using wistream = basic_istream<wchar_t>;
+
+//===----------------------------------------------------------------------===//
+// basic_istream
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits>
+class basic_istream : virtual public basic_ios<CharT, Traits> {
+public:
+    using char_type   = CharT;
+    using traits_type = Traits;
+    using int_type    = typename traits_type::int_type;
+    using pos_type    = typename traits_type::pos_type;
+    using off_type    = typename traits_type::off_type;
+
+    //--- constructors ---
+    explicit basic_istream(basic_streambuf<char_type, traits_type>* sb)
+        : gcount_(0)
+    {
+        this->init(sb);
+    }
+    ~basic_istream() override {}
+
+    basic_istream(const basic_istream&) = delete;
+    basic_istream& operator=(const basic_istream&) = delete;
+
+protected:
+    basic_istream(basic_istream&& rhs) : gcount_(rhs.gcount_) {
+        this->move(rhs);
+        rhs.gcount_ = 0;
+    }
+    basic_istream& operator=(basic_istream&& rhs) {
+        this->swap(rhs);
+        gcount_ = rhs.gcount_;
+        rhs.gcount_ = 0;
+        return *this;
+    }
+    void swap(basic_istream& rhs) {
+        basic_ios<char_type, traits_type>::swap(rhs);
+        using std::swap;
+        swap(gcount_, rhs.gcount_);
+    }
+    // Protected default ctor (for basic_iostream)
+    basic_istream() : gcount_(0) {}
+
+public:
+    //===------------------------------------------------------------------===//
+    // sentry
+    //===------------------------------------------------------------------===//
+    class sentry {
+        bool ok_;
+    public:
+        explicit sentry(basic_istream& is, bool noskipws = false) : ok_(false) {
+            if (!is.good()) { is.setstate(ios_base::failbit); return; }
+            if (is.tie()) is.tie()->flush();
+            if (!noskipws && (is.flags() & ios_base::skipws)) {
+                // skip whitespace
+                const auto& ct = use_facet<ctype<char_type>>(is.getloc());
+                auto sb = is.rdbuf();
+                while (true) {
+                    int_type c = sb->sgetc();
+                    if (c == traits_type::eof()) {
+                        is.setstate(ios_base::eofbit | ios_base::failbit);
+                        return;
+                    }
+                    if (!ct.is(ctype_base::space, traits_type::to_char_type(c)))
+                        break;
+                    sb->sbumpc();
+                }
+            }
+            ok_ = true;
+        }
+        ~sentry() = default;
+        sentry(const sentry&) = delete;
+        sentry& operator=(const sentry&) = delete;
+        explicit operator bool() const { return ok_; }
+    };
+
+    //===------------------------------------------------------------------===//
+    // Manipulator hook
+    //===------------------------------------------------------------------===//
+    basic_istream& operator>>(basic_istream& (*pf)(basic_istream&)) {
+        return pf(*this);
+    }
+    basic_istream& operator>>(basic_ios<char_type, traits_type>& (*pf)(basic_ios<char_type, traits_type>&)) {
+        pf(*this); return *this;
+    }
+    basic_istream& operator>>(ios_base& (*pf)(ios_base&)) {
+        pf(*this); return *this;
+    }
+
+    //===------------------------------------------------------------------===//
+    // Formatted input: arithmetic types
+    //===------------------------------------------------------------------===//
+
+    basic_istream& operator>>(bool& v) {
+        sentry s(*this);
+        if (!s) return *this;
+        if (this->flags() & ios_base::boolalpha) {
+            // Read a word and compare
+            char buf[8]; int n = 0;
+            auto sb = this->rdbuf();
+            while (n < 7) {
+                int_type c = sb->sgetc();
+                if (c == traits_type::eof()) { if (n == 0) this->setstate(ios_base::eofbit|ios_base::failbit); else this->setstate(ios_base::eofbit); break; }
+                char_type ch = traits_type::to_char_type(c);
+                if constexpr (is_same_v<char_type, char>) {
+                    if (ch < 'a' || ch > 'z') break;
+                    buf[n++] = ch;
+                    sb->sbumpc();
+                } else {
+                    char nc = this->narrow(ch, '\0');
+                    if (nc < 'a' || nc > 'z') break;
+                    buf[n++] = nc;
+                    sb->sbumpc();
+                }
+            }
+            buf[n] = '\0';
+            if (n == 4 && buf[0]=='t' && buf[1]=='r' && buf[2]=='u' && buf[3]=='e') v = true;
+            else if (n == 5 && buf[0]=='f' && buf[1]=='a' && buf[2]=='l' && buf[3]=='s' && buf[4]=='e') v = false;
+            else this->setstate(ios_base::failbit);
+        } else {
+            long tmp = 0;
+            *this >> tmp;
+            if (this->good() || this->eof()) v = (tmp != 0);
+        }
+        return *this;
+    }
+
+    basic_istream& operator>>(short& v)              { return parse_integer(v); }
+    basic_istream& operator>>(unsigned short& v)     { return parse_uinteger(v); }
+    basic_istream& operator>>(int& v)                { return parse_integer(v); }
+    basic_istream& operator>>(unsigned int& v)       { return parse_uinteger(v); }
+    basic_istream& operator>>(long& v)               { return parse_integer(v); }
+    basic_istream& operator>>(unsigned long& v)      { return parse_uinteger(v); }
+    basic_istream& operator>>(long long& v)          { return parse_integer(v); }
+    basic_istream& operator>>(unsigned long long& v) { return parse_uinteger(v); }
+
+    basic_istream& operator>>(float& v) {
+        sentry s(*this);
+        if (!s) return *this;
+        char buf[64]; int n = 0;
+        read_numeric_chars(buf, sizeof(buf) - 1, n, true);
+        buf[n] = '\0';
+        if (n == 0) { this->setstate(ios_base::failbit); return *this; }
+        char* end;
+        v = ::strtof(buf, &end);
+        if (end == buf) this->setstate(ios_base::failbit);
+        return *this;
+    }
+    basic_istream& operator>>(double& v) {
+        sentry s(*this);
+        if (!s) return *this;
+        char buf[64]; int n = 0;
+        read_numeric_chars(buf, sizeof(buf) - 1, n, true);
+        buf[n] = '\0';
+        if (n == 0) { this->setstate(ios_base::failbit); return *this; }
+        char* end;
+        v = ::strtod(buf, &end);
+        if (end == buf) this->setstate(ios_base::failbit);
+        return *this;
+    }
+    basic_istream& operator>>(long double& v) {
+        sentry s(*this);
+        if (!s) return *this;
+        char buf[64]; int n = 0;
+        read_numeric_chars(buf, sizeof(buf) - 1, n, true);
+        buf[n] = '\0';
+        if (n == 0) { this->setstate(ios_base::failbit); return *this; }
+        char* end;
+        v = ::strtold(buf, &end);
+        if (end == buf) this->setstate(ios_base::failbit);
+        return *this;
+    }
+
+    basic_istream& operator>>(void*& v) {
+        sentry s(*this);
+        if (!s) return *this;
+        // Read a "0x..." hex sequence
+        unsigned long long addr = 0;
+        char buf[24]; int n = 0;
+        read_numeric_chars(buf, sizeof(buf) - 1, n, false);
+        buf[n] = '\0';
+        if (n == 0) { this->setstate(ios_base::failbit); return *this; }
+        // from_chars doesn't support 0x prefix; skip it
+        const char* p = buf;
+        if (n >= 2 && p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+            auto r = from_chars(p + 2, buf + n, addr, 16);
+            if (r.ec != errc{}) this->setstate(ios_base::failbit);
+        } else {
+            auto r = from_chars(p, buf + n, addr, 16);
+            if (r.ec != errc{}) this->setstate(ios_base::failbit);
+        }
+        v = reinterpret_cast<void*>(static_cast<uintptr_t>(addr));
+        return *this;
+    }
+
+    // streambuf*
+    basic_istream& operator>>(basic_streambuf<char_type, traits_type>* sb) {
+        gcount_ = 0;
+        sentry s(*this, true); // noskipws
+        if (!s) return *this;
+        if (!sb) { this->setstate(ios_base::failbit); return *this; }
+        auto src = this->rdbuf();
+        int_type c;
+        while ((c = src->sgetc()) != traits_type::eof()) {
+            if (sb->sputc(traits_type::to_char_type(c)) == traits_type::eof()) break;
+            src->sbumpc();
+            ++gcount_;
+        }
+        if (gcount_ == 0) this->setstate(ios_base::failbit);
+        if (c == traits_type::eof()) this->setstate(ios_base::eofbit);
+        return *this;
+    }
+
+    // char_type
+    basic_istream& operator>>(char_type& c) {
+        sentry s(*this);
+        if (!s) return *this;
+        int_type ic = this->rdbuf()->sbumpc();
+        if (ic == traits_type::eof()) {
+            this->setstate(ios_base::eofbit | ios_base::failbit);
+        } else {
+            c = traits_type::to_char_type(ic);
+        }
+        return *this;
+    }
+
+    // char_type* (reads word, null-terminates)
+    basic_istream& operator>>(char_type* s) {
+        sentry sn(*this);
+        if (!sn) return *this;
+        const auto& ct = use_facet<ctype<char_type>>(this->getloc());
+        auto sb = this->rdbuf();
+        size_t n = 0;
+        while (true) {
+            int_type c = sb->sgetc();
+            if (c == traits_type::eof()) { this->setstate(ios_base::eofbit); break; }
+            char_type ch = traits_type::to_char_type(c);
+            if (ct.is(ctype_base::space, ch)) break;
+            s[n++] = ch;
+            sb->sbumpc();
+        }
+        s[n] = char_type();
+        if (n == 0) this->setstate(ios_base::failbit);
+        return *this;
+    }
+
+    //===------------------------------------------------------------------===//
+    // Unformatted input
+    //===------------------------------------------------------------------===//
+    [[nodiscard]] streamsize gcount() const { return gcount_; }
+
+    int_type get() {
+        gcount_ = 0;
+        sentry s(*this, true);
+        if (!s) return traits_type::eof();
+        int_type c = this->rdbuf()->sbumpc();
+        if (c == traits_type::eof()) {
+            this->setstate(ios_base::eofbit | ios_base::failbit);
+        } else {
+            ++gcount_;
+        }
+        return c;
+    }
+
+    basic_istream& get(char_type& c) {
+        int_type ic = get();
+        if (ic != traits_type::eof())
+            c = traits_type::to_char_type(ic);
+        return *this;
+    }
+
+    basic_istream& get(char_type* s, streamsize n) {
+        return get(s, n, this->widen('\n'));
+    }
+
+    basic_istream& get(char_type* s, streamsize n, char_type delim) {
+        gcount_ = 0;
+        sentry sn(*this, true);
+        if (!sn) return *this;
+        auto sb = this->rdbuf();
+        while (gcount_ < n - 1) {
+            int_type c = sb->sgetc();
+            if (c == traits_type::eof()) { this->setstate(ios_base::eofbit); break; }
+            if (traits_type::eq(traits_type::to_char_type(c), delim)) break;
+            s[gcount_++] = traits_type::to_char_type(c);
+            sb->sbumpc();
+        }
+        if (n > 0) s[gcount_] = char_type();
+        if (gcount_ == 0) this->setstate(ios_base::failbit);
+        return *this;
+    }
+
+    basic_istream& get(basic_streambuf<char_type, traits_type>& sb) {
+        return get(sb, this->widen('\n'));
+    }
+
+    basic_istream& get(basic_streambuf<char_type, traits_type>& sb, char_type delim) {
+        gcount_ = 0;
+        sentry sn(*this, true);
+        if (!sn) return *this;
+        auto src = this->rdbuf();
+        while (true) {
+            int_type c = src->sgetc();
+            if (c == traits_type::eof()) { this->setstate(ios_base::eofbit); break; }
+            if (traits_type::eq(traits_type::to_char_type(c), delim)) break;
+            if (sb.sputc(traits_type::to_char_type(c)) == traits_type::eof()) break;
+            src->sbumpc();
+            ++gcount_;
+        }
+        if (gcount_ == 0) this->setstate(ios_base::failbit);
+        return *this;
+    }
+
+    basic_istream& getline(char_type* s, streamsize n) {
+        return getline(s, n, this->widen('\n'));
+    }
+
+    basic_istream& getline(char_type* s, streamsize n, char_type delim) {
+        gcount_ = 0;
+        sentry sn(*this, true);
+        if (!sn) { if (n > 0) s[0] = char_type(); return *this; }
+        auto sb = this->rdbuf();
+        bool found_delim = false;
+        while (gcount_ < n - 1) {
+            int_type c = sb->sbumpc();
+            if (c == traits_type::eof()) { this->setstate(ios_base::eofbit); break; }
+            ++gcount_;
+            if (traits_type::eq(traits_type::to_char_type(c), delim)) { found_delim = true; break; }
+            s[gcount_ - 1] = traits_type::to_char_type(c);
+        }
+        // If we stopped because buffer was full and no delim found, failbit
+        if (!found_delim && gcount_ == n - 1) {
+            // Peek to see if there's more data (and no eof)
+            int_type c = sb->sgetc();
+            if (c != traits_type::eof()) this->setstate(ios_base::failbit);
+            else this->setstate(ios_base::eofbit);
+        }
+        if (found_delim) s[gcount_ - 1] = char_type(); // overwrite delim position
+        else if (n > 0) s[gcount_] = char_type();
+        if (gcount_ == 0 && !found_delim) this->setstate(ios_base::failbit);
+        return *this;
+    }
+
+    basic_istream& ignore(streamsize n = 1, int_type delim = traits_type::eof()) {
+        gcount_ = 0;
+        sentry s(*this, true);
+        if (!s) return *this;
+        auto sb = this->rdbuf();
+        while (n > 0) {
+            int_type c = sb->sbumpc();
+            if (c == traits_type::eof()) { this->setstate(ios_base::eofbit); break; }
+            ++gcount_;
+            if (traits_type::eq_int_type(c, delim)) break;
+            if (n != static_cast<streamsize>(-1)) --n; // handle numeric_limits::max() as sentinel
+        }
+        return *this;
+    }
+
+    int_type peek() {
+        sentry s(*this, true);
+        if (!s) return traits_type::eof();
+        int_type c = this->rdbuf()->sgetc();
+        if (c == traits_type::eof())
+            this->setstate(ios_base::eofbit);
+        return c;
+    }
+
+    basic_istream& read(char_type* s, streamsize n) {
+        gcount_ = 0;
+        sentry sn(*this, true);
+        if (!sn) return *this;
+        gcount_ = this->rdbuf()->sgetn(s, n);
+        if (gcount_ != n) this->setstate(ios_base::eofbit | ios_base::failbit);
+        return *this;
+    }
+
+    streamsize readsome(char_type* s, streamsize n) {
+        gcount_ = 0;
+        sentry sn(*this, true);
+        if (!sn) return 0;
+        streamsize avail = this->rdbuf()->in_avail();
+        if (avail == -1) { this->setstate(ios_base::eofbit); return 0; }
+        streamsize to_read = avail < n ? avail : n;
+        if (to_read == 0) return 0;
+        gcount_ = this->rdbuf()->sgetn(s, to_read);
+        return gcount_;
+    }
+
+    basic_istream& putback(char_type c) {
+        gcount_ = 0;
+        sentry s(*this, true);
+        if (!s) return *this;
+        if (this->rdbuf()->sputbackc(c) == traits_type::eof())
+            this->setstate(ios_base::badbit);
+        return *this;
+    }
+
+    basic_istream& unget() {
+        gcount_ = 0;
+        sentry s(*this, true);
+        if (!s) return *this;
+        if (this->rdbuf()->sungetc() == traits_type::eof())
+            this->setstate(ios_base::badbit);
+        return *this;
+    }
+
+    int sync() {
+        sentry s(*this, true);
+        if (!s) return -1;
+        if (!this->rdbuf()) return -1;
+        return this->rdbuf()->pubsync();
+    }
+
+    //===------------------------------------------------------------------===//
+    // Seek
+    //===------------------------------------------------------------------===//
+    [[nodiscard]] pos_type tellg() {
+        sentry s(*this, true);
+        if (!s) return pos_type(off_type(-1));
+        return this->rdbuf()->pubseekoff(0, ios_base::cur, ios_base::in);
+    }
+
+    basic_istream& seekg(pos_type pos) {
+        sentry s(*this, true);
+        if (s) {
+            this->clear(this->rdstate() & ~ios_base::eofbit);
+            if (this->rdbuf()->pubseekpos(pos, ios_base::in) == pos_type(off_type(-1)))
+                this->setstate(ios_base::failbit);
+        }
+        return *this;
+    }
+
+    basic_istream& seekg(off_type off, ios_base::seekdir dir) {
+        sentry s(*this, true);
+        if (s) {
+            this->clear(this->rdstate() & ~ios_base::eofbit);
+            if (this->rdbuf()->pubseekoff(off, dir, ios_base::in) == pos_type(off_type(-1)))
+                this->setstate(ios_base::failbit);
+        }
+        return *this;
+    }
+
+private:
+    streamsize gcount_;
+
+    // Read non-whitespace chars into buf (max bufsz bytes) for numeric parsing.
+    // If allow_dot: allow '.', 'e', 'E', '+', '-' in addition to digits and leading sign.
+    void read_numeric_chars(char* buf, int bufsz, int& n, bool allow_float_chars) {
+        auto sb = this->rdbuf();
+        n = 0;
+        // Narrow helper
+        auto narrow_c = [&](char_type ch) -> char {
+            if constexpr (is_same_v<char_type, char>) return ch;
+            else return this->narrow(ch, '\0');
+        };
+        while (n < bufsz) {
+            int_type ic = sb->sgetc();
+            if (ic == traits_type::eof()) { this->setstate(ios_base::eofbit); break; }
+            char_type ch = traits_type::to_char_type(ic);
+            char nc = narrow_c(ch);
+            bool is_digit_char = (nc >= '0' && nc <= '9');
+            bool is_sign       = (n == 0 && (nc == '+' || nc == '-'));
+            bool is_hex_prefix = (n == 1 && buf[0] == '0' && (nc == 'x' || nc == 'X'));
+            bool is_hex_digit  = (nc >= 'a' && nc <= 'f') || (nc >= 'A' && nc <= 'F');
+            bool is_float_char = allow_float_chars &&
+                                 (nc == '.' || nc == 'e' || nc == 'E' || nc == '+' || nc == '-');
+            // A '+' or '-' after e/E in float context
+            bool is_exp_sign   = allow_float_chars && n > 0 &&
+                                 (nc == '+' || nc == '-') &&
+                                 (buf[n-1] == 'e' || buf[n-1] == 'E');
+
+            // Check if this character can be consumed
+            bool can_consume = is_digit_char || is_sign || is_hex_prefix || is_hex_digit ||
+                               is_float_char || is_exp_sign;
+
+            // Also accept 'x'/'X' for hex integers
+            if (!allow_float_chars && is_hex_prefix) can_consume = true;
+
+            if (!can_consume) break;
+
+            buf[n++] = nc;
+            sb->sbumpc();
+        }
+    }
+
+    // Signed integer parsing helper
+    template<class T>
+    basic_istream& parse_integer(T& v) {
+        sentry s(*this);
+        if (!s) return *this;
+        char buf[24]; int n = 0;
+        read_numeric_chars(buf, sizeof(buf) - 1, n, false);
+        buf[n] = '\0';
+        if (n == 0) { this->setstate(ios_base::failbit); return *this; }
+
+        int base = 10;
+        auto basefield = this->flags() & ios_base::basefield;
+        if (basefield == ios_base::hex) base = 16;
+        else if (basefield == ios_base::oct) base = 8;
+
+        const char* start = buf;
+        const char* end   = buf + n;
+        // Skip 0x/0X prefix for hex
+        if (base == 16 && n >= 2 && start[0] == '0' && (start[1] == 'x' || start[1] == 'X'))
+            start += 2;
+        // Skip leading '0' for oct detection in basefield==0 (default)
+        auto r = from_chars(start, end, v, base);
+        if (r.ec != errc{})
+            this->setstate(ios_base::failbit);
+        if (r.ptr == end && this->eof()) {} // fine
+        return *this;
+    }
+
+    // Unsigned integer parsing helper
+    template<class T>
+    basic_istream& parse_uinteger(T& v) {
+        sentry s(*this);
+        if (!s) return *this;
+        char buf[24]; int n = 0;
+        read_numeric_chars(buf, sizeof(buf) - 1, n, false);
+        buf[n] = '\0';
+        if (n == 0) { this->setstate(ios_base::failbit); return *this; }
+
+        int base = 10;
+        auto basefield = this->flags() & ios_base::basefield;
+        if (basefield == ios_base::hex) base = 16;
+        else if (basefield == ios_base::oct) base = 8;
+
+        const char* start = buf;
+        const char* end   = buf + n;
+        if (base == 16 && n >= 2 && start[0] == '0' && (start[1] == 'x' || start[1] == 'X'))
+            start += 2;
+        auto r = from_chars(start, end, v, base);
+        if (r.ec != errc{})
+            this->setstate(ios_base::failbit);
+        return *this;
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// Non-member char/string extractors
+//===----------------------------------------------------------------------===//
+
+// char (no skipws)
+template<class Traits>
+basic_istream<char, Traits>& operator>>(basic_istream<char, Traits>& is, char& c) {
+    return is >> c;  // use member operator>>(char_type&)
+}
+
+// ws manipulator
+template<class CharT, class Traits>
+basic_istream<CharT, Traits>& ws(basic_istream<CharT, Traits>& is) {
+    const auto& ct = use_facet<ctype<CharT>>(is.getloc());
+    auto sb = is.rdbuf();
+    while (true) {
+        typename basic_istream<CharT, Traits>::int_type c = sb->sgetc();
+        if (c == Traits::eof()) { is.setstate(ios_base::eofbit); break; }
+        if (!ct.is(ctype_base::space, Traits::to_char_type(c))) break;
+        sb->sbumpc();
+    }
+    return is;
+}
+
+// swap
+template<class CharT, class Traits>
+void swap(basic_istream<CharT, Traits>& x, basic_istream<CharT, Traits>& y) {
+    x.swap(y);
+}
+
+} // namespace std
+
+#pragma GCC visibility pop
