@@ -3,6 +3,7 @@
 // so names never collide with other test files.
 // Compile-time checks: static_assert. Runtime checks: CHECK(expr).
 #include <concepts>
+#include <cstddef>
 #include <utility>
 #include "test.h"
 

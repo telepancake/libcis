@@ -4,95 +4,99 @@
 #include "test.h"
 
 // ── values match the hex floating-point literals from the libc++ test ────────
+// For long double, exact equality is not portable (x86 80-bit vs double-width),
+// so we assert the value lies between the two adjacent double-precision
+// representable values that bracket the true mathematical constant.
+// These bounds are also exactly representable in 80-bit extended precision.
 
 void test_numbers_e() {
     static_assert(std::numbers::e          == 0x1.5bf0a8b145769p+1);
     static_assert(std::numbers::e_v<double>      == 0x1.5bf0a8b145769p+1);
-    static_assert(std::numbers::e_v<long double> == 0x1.5bf0a8b145769p+1l);
+    static_assert(std::numbers::e_v<long double> > 0x1.5bf0a8b145768p+1l && std::numbers::e_v<long double> < 0x1.5bf0a8b14576ap+1l);
     static_assert(std::numbers::e_v<float>       == 0x1.5bf0a8p+1f);
 }
 
 void test_numbers_log2e() {
     static_assert(std::numbers::log2e          == 0x1.71547652b82fep+0);
     static_assert(std::numbers::log2e_v<double>      == 0x1.71547652b82fep+0);
-    static_assert(std::numbers::log2e_v<long double> == 0x1.71547652b82fep+0l);
+    static_assert(std::numbers::log2e_v<long double> > 0x1.71547652b82fdp+0l && std::numbers::log2e_v<long double> < 0x1.71547652b82ffp+0l);
     static_assert(std::numbers::log2e_v<float>       == 0x1.715476p+0f);
 }
 
 void test_numbers_log10e() {
     static_assert(std::numbers::log10e          == 0x1.bcb7b1526e50ep-2);
     static_assert(std::numbers::log10e_v<double>      == 0x1.bcb7b1526e50ep-2);
-    static_assert(std::numbers::log10e_v<long double> == 0x1.bcb7b1526e50ep-2l);
+    static_assert(std::numbers::log10e_v<long double> > 0x1.bcb7b1526e50dp-2l && std::numbers::log10e_v<long double> < 0x1.bcb7b1526e50fp-2l);
     static_assert(std::numbers::log10e_v<float>       == 0x1.bcb7b15p-2f);
 }
 
 void test_numbers_pi() {
     static_assert(std::numbers::pi          == 0x1.921fb54442d18p+1);
     static_assert(std::numbers::pi_v<double>      == 0x1.921fb54442d18p+1);
-    static_assert(std::numbers::pi_v<long double> == 0x1.921fb54442d18p+1l);
+    static_assert(std::numbers::pi_v<long double> > 0x1.921fb54442d17p+1l && std::numbers::pi_v<long double> < 0x1.921fb54442d19p+1l);
     static_assert(std::numbers::pi_v<float>       == 0x1.921fb54p+1f);
 }
 
 void test_numbers_inv_pi() {
     static_assert(std::numbers::inv_pi          == 0x1.45f306dc9c883p-2);
     static_assert(std::numbers::inv_pi_v<double>      == 0x1.45f306dc9c883p-2);
-    static_assert(std::numbers::inv_pi_v<long double> == 0x1.45f306dc9c883p-2l);
+    static_assert(std::numbers::inv_pi_v<long double> > 0x1.45f306dc9c882p-2l && std::numbers::inv_pi_v<long double> < 0x1.45f306dc9c884p-2l);
     static_assert(std::numbers::inv_pi_v<float>       == 0x1.45f306p-2f);
 }
 
 void test_numbers_inv_sqrtpi() {
     static_assert(std::numbers::inv_sqrtpi          == 0x1.20dd750429b6dp-1);
     static_assert(std::numbers::inv_sqrtpi_v<double>      == 0x1.20dd750429b6dp-1);
-    static_assert(std::numbers::inv_sqrtpi_v<long double> == 0x1.20dd750429b6dp-1l);
+    static_assert(std::numbers::inv_sqrtpi_v<long double> > 0x1.20dd750429b6cp-1l && std::numbers::inv_sqrtpi_v<long double> < 0x1.20dd750429b6ep-1l);
     static_assert(std::numbers::inv_sqrtpi_v<float>       == 0x1.20dd76p-1f);
 }
 
 void test_numbers_ln2() {
     static_assert(std::numbers::ln2          == 0x1.62e42fefa39efp-1);
     static_assert(std::numbers::ln2_v<double>      == 0x1.62e42fefa39efp-1);
-    static_assert(std::numbers::ln2_v<long double> == 0x1.62e42fefa39efp-1l);
+    static_assert(std::numbers::ln2_v<long double> > 0x1.62e42fefa39eep-1l && std::numbers::ln2_v<long double> < 0x1.62e42fefa39f0p-1l);
     static_assert(std::numbers::ln2_v<float>       == 0x1.62e42fp-1f);
 }
 
 void test_numbers_ln10() {
     static_assert(std::numbers::ln10          == 0x1.26bb1bbb55516p+1);
     static_assert(std::numbers::ln10_v<double>      == 0x1.26bb1bbb55516p+1);
-    static_assert(std::numbers::ln10_v<long double> == 0x1.26bb1bbb55516p+1l);
+    static_assert(std::numbers::ln10_v<long double> > 0x1.26bb1bbb55515p+1l && std::numbers::ln10_v<long double> < 0x1.26bb1bbb55517p+1l);
     static_assert(std::numbers::ln10_v<float>       == 0x1.26bb1bp+1f);
 }
 
 void test_numbers_sqrt2() {
     static_assert(std::numbers::sqrt2          == 0x1.6a09e667f3bcdp+0);
     static_assert(std::numbers::sqrt2_v<double>      == 0x1.6a09e667f3bcdp+0);
-    static_assert(std::numbers::sqrt2_v<long double> == 0x1.6a09e667f3bcdp+0l);
+    static_assert(std::numbers::sqrt2_v<long double> > 0x1.6a09e667f3bccp+0l && std::numbers::sqrt2_v<long double> < 0x1.6a09e667f3bcep+0l);
     static_assert(std::numbers::sqrt2_v<float>       == 0x1.6a09e6p+0f);
 }
 
 void test_numbers_sqrt3() {
     static_assert(std::numbers::sqrt3          == 0x1.bb67ae8584caap+0);
     static_assert(std::numbers::sqrt3_v<double>      == 0x1.bb67ae8584caap+0);
-    static_assert(std::numbers::sqrt3_v<long double> == 0x1.bb67ae8584caap+0l);
+    static_assert(std::numbers::sqrt3_v<long double> > 0x1.bb67ae8584ca9p+0l && std::numbers::sqrt3_v<long double> < 0x1.bb67ae8584cabp+0l);
     static_assert(std::numbers::sqrt3_v<float>       == 0x1.bb67aep+0f);
 }
 
 void test_numbers_inv_sqrt3() {
     static_assert(std::numbers::inv_sqrt3          == 0x1.279a74590331cp-1);
     static_assert(std::numbers::inv_sqrt3_v<double>      == 0x1.279a74590331cp-1);
-    static_assert(std::numbers::inv_sqrt3_v<long double> == 0x1.279a74590331cp-1l);
+    static_assert(std::numbers::inv_sqrt3_v<long double> > 0x1.279a74590331bp-1l && std::numbers::inv_sqrt3_v<long double> < 0x1.279a74590331dp-1l);
     static_assert(std::numbers::inv_sqrt3_v<float>       == 0x1.279a74p-1f);
 }
 
 void test_numbers_egamma() {
     static_assert(std::numbers::egamma          == 0x1.2788cfc6fb619p-1);
     static_assert(std::numbers::egamma_v<double>      == 0x1.2788cfc6fb619p-1);
-    static_assert(std::numbers::egamma_v<long double> == 0x1.2788cfc6fb619p-1l);
+    static_assert(std::numbers::egamma_v<long double> > 0x1.2788cfc6fb618p-1l && std::numbers::egamma_v<long double> < 0x1.2788cfc6fb61ap-1l);
     static_assert(std::numbers::egamma_v<float>       == 0x1.2788cfp-1f);
 }
 
 void test_numbers_phi() {
     static_assert(std::numbers::phi          == 0x1.9e3779b97f4a8p+0);
     static_assert(std::numbers::phi_v<double>      == 0x1.9e3779b97f4a8p+0);
-    static_assert(std::numbers::phi_v<long double> == 0x1.9e3779b97f4a8p+0l);
+    static_assert(std::numbers::phi_v<long double> > 0x1.9e3779b97f4a7p+0l && std::numbers::phi_v<long double> < 0x1.9e3779b97f4a9p+0l);
     static_assert(std::numbers::phi_v<float>       == 0x1.9e3779ap+0f);
 }
 
