@@ -1,4 +1,5 @@
 build/
 a.out
 *.out
-.claude/
+__pycache__/
+*.pyc
