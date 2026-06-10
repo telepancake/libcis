@@ -4,11 +4,7 @@
 // Folded sources:
 //   libcxx/include/bitset  (bitset<N> with __bitset<N_words,Size> base)
 //
-// DEFERRED (noted):
-//   basic_string ctor / to_string returning std::string — <string> not yet
-//     ported.  A char-only to_string_buf helper writing into a caller-supplied
-//     buffer is provided instead.
-//   Stream operators operator>>/<< — need <iostream> (not ported).
+// Stream operators operator>>/<< — DEFERRED (need <iostream>, not yet ported).
 //
 // Exceptions -> __builtin_trap():
 //   out_of_range   (test/set/reset/flip with bad pos, string ctor bad pos)
@@ -16,7 +12,8 @@
 //   invalid_argument (string ctor with bad char)
 #pragma once
 
-#include <string_view>   // basic_string_view, char_traits
+#include <string>        // basic_string, char_traits, allocator
+#include <string_view>   // basic_string_view
 #include <functional>    // hash
 #include <climits>       // CHAR_BIT
 
@@ -393,7 +390,23 @@ public:
                      zero, one);
     }
 
-    // NOTE: basic_string ctor is DEFERRED — <string> not yet ported.
+    // from basic_string — standard C++ constructor
+    template<class CharT, class Traits, class Allocator>
+    explicit bitset(const basic_string<CharT, Traits, Allocator>& str,
+                    typename basic_string<CharT, Traits, Allocator>::size_type pos = 0,
+                    typename basic_string<CharT, Traits, Allocator>::size_type n   =
+                        basic_string<CharT, Traits, Allocator>::npos,
+                    CharT zero = CharT('0'),
+                    CharT one  = CharT('1'))
+    {
+        if (pos > str.size())
+            __builtin_trap(); // would throw out_of_range
+        size_t rlen = (n == basic_string<CharT, Traits, Allocator>::npos)
+                      ? str.size() - pos
+                      : (n < str.size() - pos ? n : str.size() - pos);
+        init_from_sv(basic_string_view<CharT, Traits>(str.data() + pos, rlen),
+                     zero, one);
+    }
 
     // ---------------------------------------------------------------
     // Bitwise assignment operators
@@ -494,10 +507,40 @@ public:
         return Base::to_ullong();
     }
 
-    // to_string: DEFERRED (needs basic_string from <string>).
-    // Provide a char-only helper writing into a caller-supplied buffer.
-    // to_string_buf(buf, buf_size, zero, one): writes N chars + NUL into buf.
-    // Returns the number of chars written (== N).
+    // Standard to_string — returns a basic_string with '0'/'1' (or custom) chars.
+    // Most-general overload: all three template params explicit.
+    template<class CharT, class Traits, class Allocator>
+    basic_string<CharT, Traits, Allocator>
+    to_string(CharT zero = CharT('0'), CharT one = CharT('1')) const {
+        basic_string<CharT, Traits, Allocator> r(N, zero);
+        for (size_t i = 0; i < N; ++i)
+            if (Base::get_bit(N - 1 - i))
+                r[i] = one;
+        return r;
+    }
+
+    // Convenience: Traits explicit, Allocator defaults to allocator<CharT>.
+    template<class CharT, class Traits>
+    basic_string<CharT, Traits, allocator<CharT>>
+    to_string(CharT zero = CharT('0'), CharT one = CharT('1')) const {
+        return to_string<CharT, Traits, allocator<CharT>>(zero, one);
+    }
+
+    // Convenience: only CharT explicit, Traits and Allocator default.
+    template<class CharT>
+    basic_string<CharT, char_traits<CharT>, allocator<CharT>>
+    to_string(CharT zero = CharT('0'), CharT one = CharT('1')) const {
+        return to_string<CharT, char_traits<CharT>, allocator<CharT>>(zero, one);
+    }
+
+    // Fully defaulted: returns std::string.
+    basic_string<char, char_traits<char>, allocator<char>>
+    to_string(char zero = '0', char one = '1') const {
+        return to_string<char, char_traits<char>, allocator<char>>(zero, one);
+    }
+
+    // to_string_buf: libcis extension (non-standard), kept for backwards compat.
+    // Writes N chars + NUL into a caller-supplied buffer.
     size_t to_string_buf(char* buf, size_t buf_size,
                          char zero = '0', char one = '1') const noexcept {
         if (buf_size < N + 1) __builtin_trap(); // caller must provide enough space
