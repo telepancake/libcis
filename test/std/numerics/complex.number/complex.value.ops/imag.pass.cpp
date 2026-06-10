@@ -19,7 +19,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_complex_value_ops_imag { // libcis: isolate file-scope helpers
 template <class T>
 void
 test()
@@ -27,7 +27,7 @@ test()
     std::complex<T> z(1.5, 2.5);
     assert(imag(z) == 2.5);
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_complex_value_ops_imag; // libcis
 
 
 void test_numerics_complex_number_complex_value_ops_imag()

@@ -33,7 +33,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numeric_ops_numeric_ops_midpoint_midpoint_pointer { // libcis: isolate file-scope helpers
 using FuncPtr = void (*)();
 struct Incomplete;
 
@@ -84,7 +84,7 @@ void test() {
   static_assert(test_pointer<T>());
   static_assert(test_pointer<const T>());
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numeric_ops_numeric_ops_midpoint_midpoint_pointer; // libcis
 
 
 void test_numerics_numeric_ops_numeric_ops_midpoint_midpoint_pointer() {

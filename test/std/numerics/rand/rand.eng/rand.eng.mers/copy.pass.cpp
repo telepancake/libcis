@@ -22,7 +22,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_eng_rand_eng_mers_copy { // libcis: isolate file-scope helpers
 void
 test1()
 {
@@ -52,7 +52,7 @@ test2()
     assert(e2() == k);
     assert(e1 == e2);
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_eng_rand_eng_mers_copy; // libcis
 
 
 void test_numerics_rand_rand_eng_rand_eng_mers_copy()

@@ -28,7 +28,7 @@
 #include "MoveOnly.h"
 #include "test_iterators.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numeric_ops_transform_reduce_transform_reduce_iter_iter_init_bop_uop { // libcis: isolate file-scope helpers
 struct identity
 {
     template <class T>
@@ -129,7 +129,7 @@ test()
 
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numeric_ops_transform_reduce_transform_reduce_iter_iter_init_bop_uop; // libcis
 
 
 void test_numerics_numeric_ops_transform_reduce_transform_reduce_iter_iter_init_bop_uop()

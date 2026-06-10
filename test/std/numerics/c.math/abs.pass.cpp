@@ -16,7 +16,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_c_math_abs { // libcis: isolate file-scope helpers
 template <class T>
 struct correct_size_int {
   typedef typename std::conditional<sizeof(T) < sizeof(int), int, T>::type type;
@@ -39,7 +39,7 @@ void test_big() {
   long long int negative_big_value = -big_value;
   assert(std::abs(negative_big_value) == big_value); // make sure it doesn't get casted to a smaller type
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_c_math_abs; // libcis
 
 
 // The following is helpful to keep in mind:

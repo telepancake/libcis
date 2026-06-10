@@ -27,7 +27,7 @@
 
 // std::bit_cast does not preserve padding bits, so if T has padding bits,
 // the results might not memcmp cleanly.
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_bit_bit_cast_bit_cast { // libcis: isolate file-scope helpers
 template<bool HasUniqueObjectRepresentations = true, typename T>
 void test_roundtrip_through_buffer(T from) {
     struct Buffer { char buffer[sizeof(T)]; };
@@ -277,7 +277,7 @@ constexpr bool basic_constexpr_test() {
     assert(from == to);
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_bit_bit_cast_bit_cast; // libcis
 
 
 void test_numerics_bit_bit_cast_bit_cast() {

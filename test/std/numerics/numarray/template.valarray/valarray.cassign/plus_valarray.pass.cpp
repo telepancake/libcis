@@ -34,7 +34,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numarray_template_valarray_valarray_cassign_plus_valarray { // libcis: isolate file-scope helpers
 template <class A>
 void test(const A& rhs) {
   int input[]      = {1, 2, 3, 4, 5};
@@ -48,7 +48,7 @@ void test(const A& rhs) {
   for (std::size_t i = 0; i < value.size(); ++i)
     assert(value[i] == expected[i]);
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numarray_template_valarray_valarray_cassign_plus_valarray; // libcis
 
 
 void test_numerics_numarray_template_valarray_valarray_cassign_plus_valarray() {

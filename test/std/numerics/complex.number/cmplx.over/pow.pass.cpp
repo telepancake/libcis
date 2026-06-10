@@ -32,7 +32,7 @@
 #include "test_macros.h"
 #include "../cases.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_cmplx_over_pow { // libcis: isolate file-scope helpers
 template <class T>
 double
 promote(T, typename std::enable_if<std::is_integral<T>::value>::type* = 0);
@@ -84,7 +84,7 @@ test(typename std::enable_if<!std::is_integral<T>::value>::type* = 0, typename s
     test(std::complex<T>(3, 4), U(5));
     test(std::complex<T>(3, 4), std::complex<U>(5, 6));
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_cmplx_over_pow; // libcis
 
 
 void test_numerics_complex_number_cmplx_over_pow()

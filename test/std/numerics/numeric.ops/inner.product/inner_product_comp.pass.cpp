@@ -31,7 +31,7 @@
 #include "test_iterators.h"
 
 #if TEST_STD_VER > 17
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numeric_ops_inner_product_inner_product_comp { // libcis: isolate file-scope helpers
 struct do_nothing_op
 {
     template<class T>
@@ -148,7 +148,7 @@ test()
 
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numeric_ops_inner_product_inner_product_comp; // libcis
 
 
 void test_numerics_numeric_ops_inner_product_inner_product_comp()

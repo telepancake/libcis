@@ -21,7 +21,7 @@
 #include "test_macros.h"
 #include "../cases.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_cmplx_over_real { // libcis: isolate file-scope helpers
 template <class T, int x>
 void
 test(typename std::enable_if<std::is_integral<T>::value>::type* = 0)
@@ -58,7 +58,7 @@ test()
     test<T, 1>();
     test<T, 10>();
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_cmplx_over_real; // libcis
 
 
 void test_numerics_complex_number_cmplx_over_real()

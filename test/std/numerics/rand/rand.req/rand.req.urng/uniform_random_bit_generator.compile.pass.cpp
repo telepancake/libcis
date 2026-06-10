@@ -17,7 +17,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_req_rand_req_urng_uniform_random_bit_generator { // libcis: isolate file-scope helpers
 static_assert(std::uniform_random_bit_generator<
               std::linear_congruential_engine<unsigned int, 0U, 1U, 2U> >);
 
@@ -45,7 +45,7 @@ static_assert(!std::uniform_random_bit_generator<const volatile int&&>);
 
 struct Empty {};
 static_assert(!std::uniform_random_bit_generator<Empty>);
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_req_rand_req_urng_uniform_random_bit_generator; // libcis
 
 
 namespace WrongReturnType {
@@ -138,7 +138,7 @@ struct MaxLessThanMin {
 static_assert(!std::uniform_random_bit_generator<MaxLessThanMin>);
 } // namespace MinNotLessMax
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_req_rand_req_urng_uniform_random_bit_generator { // libcis: isolate file-scope helpers
 struct Works {
   unsigned char operator()();
 
@@ -146,5 +146,5 @@ struct Works {
   static constexpr unsigned char max() { return 1; }
 };
 static_assert(std::uniform_random_bit_generator<Works>);
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_req_rand_req_urng_uniform_random_bit_generator; // libcis
 

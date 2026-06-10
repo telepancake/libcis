@@ -26,13 +26,13 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_cauchy_eval_param { // libcis: isolate file-scope helpers
 double
 f(double x, double a, double b)
 {
     return 1/3.1415926535897932 * std::atan((x - a)/b) + .5;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_cauchy_eval_param; // libcis
 
 
 void test_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_cauchy_eval_param()

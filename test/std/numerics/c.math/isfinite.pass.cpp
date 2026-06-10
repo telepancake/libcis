@@ -20,7 +20,7 @@
 #include "test_macros.h"
 #include "type_algorithms.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_c_math_isfinite { // libcis: isolate file-scope helpers
 struct TestFloat {
   template <class T>
   static TEST_CONSTEXPR_CXX23 bool test() {
@@ -69,7 +69,7 @@ template <typename T>
 struct ConvertibleTo {
   operator T() const { return T(); }
 };
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_c_math_isfinite; // libcis
 
 
 void test_numerics_c_math_isfinite() {

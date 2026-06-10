@@ -19,11 +19,11 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numarray_template_valarray_valarray_members_apply_value { // libcis: isolate file-scope helpers
 typedef int T;
 
 T f(T t) {return t + 5;}
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numarray_template_valarray_valarray_members_apply_value; // libcis
 
 
 void test_numerics_numarray_template_valarray_valarray_members_apply_value()

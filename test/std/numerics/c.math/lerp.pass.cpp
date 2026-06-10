@@ -22,7 +22,7 @@
 #include "test_macros.h"
 #include "fp_compare.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_c_math_lerp { // libcis: isolate file-scope helpers
 template <typename T>
 constexpr bool constexpr_test()
 {
@@ -61,7 +61,7 @@ void test()
     assert(std::lerp(T( 0), T( 0), T(23)) ==  T(0));
     assert(std::isnan(std::lerp(T( 0), T( 0), inf)));
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_c_math_lerp; // libcis
 
 
 

@@ -24,12 +24,12 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_dist_rand_dist_samp_rand_dist_samp_pconst_param_ctor_init_func { // libcis: isolate file-scope helpers
 double f(double x)
 {
     return x*2;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_dist_rand_dist_samp_rand_dist_samp_pconst_param_ctor_init_func; // libcis
 
 
 void test_numerics_rand_rand_dist_rand_dist_samp_rand_dist_samp_pconst_param_ctor_init_func()

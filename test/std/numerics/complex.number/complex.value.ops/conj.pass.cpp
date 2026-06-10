@@ -19,7 +19,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_complex_value_ops_conj { // libcis: isolate file-scope helpers
 template <class T>
 void
 test(const std::complex<T>& z, std::complex<T> x)
@@ -36,7 +36,7 @@ test()
     test(std::complex<T>(1, -2), std::complex<T>(1, 2));
     test(std::complex<T>(-1, -2), std::complex<T>(-1, 2));
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_complex_value_ops_conj; // libcis
 
 
 void test_numerics_complex_number_complex_value_ops_conj()

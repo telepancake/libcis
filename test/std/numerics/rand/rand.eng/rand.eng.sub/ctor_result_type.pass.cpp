@@ -30,7 +30,7 @@
 #include "test_convertible.h"
 #endif
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_eng_rand_eng_sub_ctor_result_type { // libcis: isolate file-scope helpers
 template <class T>
 std::string
 to_string(T const &e)
@@ -67,7 +67,7 @@ template <class E>
 void test_implicit_ctor() {
   assert(E(E::default_seed) == make_implicit<E>());
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_eng_rand_eng_sub_ctor_result_type; // libcis
 
 #endif
 

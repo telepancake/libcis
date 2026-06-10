@@ -25,7 +25,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_bit_bitops_count_popcount { // libcis: isolate file-scope helpers
 struct A {};
 enum       E1 : unsigned char { rEd };
 enum class E2 : unsigned char { red };
@@ -80,7 +80,7 @@ constexpr bool test()
 
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_bit_bitops_count_popcount; // libcis
 
 
 void test_numerics_bit_bitops_count_popcount()

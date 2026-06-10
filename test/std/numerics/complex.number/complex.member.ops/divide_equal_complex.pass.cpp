@@ -21,7 +21,7 @@
 #include "floating_pointer_helpers.h"
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_complex_member_ops_divide_equal_complex { // libcis: isolate file-scope helpers
 template <class T>
 TEST_CONSTEXPR_CXX20
 bool
@@ -53,7 +53,7 @@ test()
     assert(is_close(c3.imag(), T(-0.5)));
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_complex_member_ops_divide_equal_complex; // libcis
 
 
 void test_numerics_complex_number_complex_member_ops_divide_equal_complex()

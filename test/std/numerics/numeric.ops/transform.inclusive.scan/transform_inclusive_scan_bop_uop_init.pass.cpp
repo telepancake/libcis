@@ -31,7 +31,7 @@
 #include "test_macros.h"
 #include "test_iterators.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numeric_ops_transform_inclusive_scan_transform_inclusive_scan_bop_uop_init { // libcis: isolate file-scope helpers
 struct add_one {
     template <typename T>
     constexpr T operator()(T x) const {
@@ -161,7 +161,7 @@ test()
 
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numeric_ops_transform_inclusive_scan_transform_inclusive_scan_bop_uop_init; // libcis
 
 
 void test_numerics_numeric_ops_transform_inclusive_scan_transform_inclusive_scan_bop_uop_init()

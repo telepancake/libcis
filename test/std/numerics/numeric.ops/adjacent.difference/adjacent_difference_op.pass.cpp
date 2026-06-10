@@ -30,7 +30,7 @@
 #include "test_iterators.h"
 
 #if TEST_STD_VER > 17
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numeric_ops_adjacent_difference_adjacent_difference_op { // libcis: isolate file-scope helpers
 struct rvalue_subtractable
 {
     bool correctOperatorUsed = false;
@@ -177,7 +177,7 @@ test()
 
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numeric_ops_adjacent_difference_adjacent_difference_op; // libcis
 
 
 void test_numerics_numeric_ops_adjacent_difference_adjacent_difference_op()

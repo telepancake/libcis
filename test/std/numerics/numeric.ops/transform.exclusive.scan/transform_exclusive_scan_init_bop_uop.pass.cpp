@@ -30,7 +30,7 @@
 #include "test_macros.h"
 #include "test_iterators.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numeric_ops_transform_exclusive_scan_transform_exclusive_scan_init_bop_uop { // libcis: isolate file-scope helpers
 struct add_one {
     template <typename T>
     constexpr auto operator()(T x) const noexcept {
@@ -159,7 +159,7 @@ test()
 
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numeric_ops_transform_exclusive_scan_transform_exclusive_scan_init_bop_uop; // libcis
 
 
 void test_numerics_numeric_ops_transform_exclusive_scan_transform_exclusive_scan_init_bop_uop()

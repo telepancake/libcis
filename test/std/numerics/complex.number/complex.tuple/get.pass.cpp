@@ -28,7 +28,7 @@
 #include <vector>
 #include <utility>
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_complex_tuple_get { // libcis: isolate file-scope helpers
 template <typename T>
 constexpr void test() {
   // &
@@ -127,7 +127,7 @@ constexpr bool test() {
 
   return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_complex_tuple_get; // libcis
 
 
 void test_numerics_complex_number_complex_tuple_get() {

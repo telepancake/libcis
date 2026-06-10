@@ -25,7 +25,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numeric_ops_numeric_ops_gcd_gcd { // libcis: isolate file-scope helpers
 constexpr struct {
   int x;
   int y;
@@ -170,7 +170,7 @@ constexpr bool do_test(int = 0)
     }
     return accumulate;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numeric_ops_numeric_ops_gcd_gcd; // libcis
 
 
 void test_numerics_numeric_ops_numeric_ops_gcd_gcd()

@@ -24,7 +24,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_adapt_rand_adapt_ibits_ctor_sseq { // libcis: isolate file-scope helpers
 void
 test1()
 {
@@ -54,7 +54,7 @@ test2()
     os << e1;
     assert(os.str() == a);
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_adapt_rand_adapt_ibits_ctor_sseq; // libcis
 
 
 void test_numerics_rand_rand_adapt_rand_adapt_ibits_ctor_sseq()

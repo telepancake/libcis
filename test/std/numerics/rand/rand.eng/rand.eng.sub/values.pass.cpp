@@ -31,7 +31,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_eng_rand_eng_sub_values { // libcis: isolate file-scope helpers
 template <class T>
 void where(const T &) {}
 
@@ -76,7 +76,7 @@ test2()
     where(E::long_lag);
     where(E::default_seed);
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_eng_rand_eng_sub_values; // libcis
 
 
 void test_numerics_rand_rand_eng_rand_eng_sub_values()

@@ -30,7 +30,7 @@
 #include "test_convertible.h"
 #endif
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_eng_rand_eng_lcong_ctor_result_type { // libcis: isolate file-scope helpers
 template <class T>
 std::string to_string(T const& e) {
   std::ostringstream os;
@@ -135,7 +135,7 @@ void test_implicit() {
   static_assert(!test_convertible<E, T>(), "");
 #endif
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_eng_rand_eng_lcong_ctor_result_type; // libcis
 
 
 void test_numerics_rand_rand_eng_rand_eng_lcong_ctor_result_type()

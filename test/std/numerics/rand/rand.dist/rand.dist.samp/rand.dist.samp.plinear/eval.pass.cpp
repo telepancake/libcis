@@ -27,7 +27,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_dist_rand_dist_samp_rand_dist_samp_plinear_eval { // libcis: isolate file-scope helpers
 template <class T>
 inline
 T
@@ -350,7 +350,7 @@ test6()
       assert(std::abs(f(u[i], a, m, bk, c) - double(i) / N) < .0013);
     }
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_dist_rand_dist_samp_rand_dist_samp_plinear_eval; // libcis
 
 
 void test_numerics_rand_rand_dist_rand_dist_samp_rand_dist_samp_plinear_eval()

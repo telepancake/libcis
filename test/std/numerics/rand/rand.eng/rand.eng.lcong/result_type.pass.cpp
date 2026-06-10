@@ -22,7 +22,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_eng_rand_eng_lcong_result_type { // libcis: isolate file-scope helpers
 template <class T>
 void
 test()
@@ -31,7 +31,7 @@ test()
         typename std::linear_congruential_engine<T, 0, 0, 0>::result_type,
         T>::value), "");
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_eng_rand_eng_lcong_result_type; // libcis
 
 
 void test_numerics_rand_rand_eng_rand_eng_lcong_result_type()

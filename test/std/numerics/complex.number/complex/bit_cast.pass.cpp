@@ -15,7 +15,7 @@
 #include <bit>
 #include <complex>
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_complex_bit_cast { // libcis: isolate file-scope helpers
 template <class T>
 constexpr void test() {
   using Complex                       = std::complex<T>;
@@ -30,7 +30,7 @@ constexpr bool test_all() {
   test<long double>();
   return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_complex_bit_cast; // libcis
 
 
 void test_numerics_complex_number_complex_bit_cast() {

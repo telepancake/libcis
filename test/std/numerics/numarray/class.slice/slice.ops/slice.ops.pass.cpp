@@ -21,7 +21,7 @@
 
 #include "test_comparisons.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numarray_class_slice_slice_ops_slice_ops { // libcis: isolate file-scope helpers
 void test() {
   {
     std::slice s1;
@@ -60,7 +60,7 @@ void test() {
     assert(testEquality(s1, s2, false));
   }
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numarray_class_slice_slice_ops_slice_ops; // libcis
 
 
 void test_numerics_numarray_class_slice_slice_ops_slice_ops() {

@@ -24,7 +24,7 @@
 #include "test_macros.h"
 #include "fp_compare.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numeric_ops_numeric_ops_midpoint_midpoint_float { // libcis: isolate file-scope helpers
 template <typename T>
 constexpr bool is_nan(T x) {
   return x != x;
@@ -157,7 +157,7 @@ constexpr bool test() {
 
   return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numeric_ops_numeric_ops_midpoint_midpoint_float; // libcis
 
 
 void test_numerics_numeric_ops_numeric_ops_midpoint_midpoint_float() {

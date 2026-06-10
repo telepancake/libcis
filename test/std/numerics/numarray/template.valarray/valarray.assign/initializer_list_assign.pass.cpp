@@ -22,7 +22,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numarray_template_valarray_valarray_assign_initializer_list_assign { // libcis: isolate file-scope helpers
 struct S
 {
     S() : x_(0) { default_ctor_called = true; }
@@ -30,17 +30,17 @@ struct S
     int x_;
     static bool default_ctor_called;
 };
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numarray_template_valarray_valarray_assign_initializer_list_assign; // libcis
 
 
 bool S::default_ctor_called = false;
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numarray_template_valarray_valarray_assign_initializer_list_assign { // libcis: isolate file-scope helpers
 bool operator==(const S& lhs, const S& rhs)
 {
     return lhs.x_ == rhs.x_;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numarray_template_valarray_valarray_assign_initializer_list_assign; // libcis
 
 
 void test_numerics_numarray_template_valarray_valarray_assign_initializer_list_assign()

@@ -20,7 +20,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_adapt_rand_adapt_disc_eval { // libcis: isolate file-scope helpers
 void
 test1()
 {
@@ -38,7 +38,7 @@ test2()
     assert(e() == 28639057539807ull);
     assert(e() == 276846226770426ull);
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_adapt_rand_adapt_disc_eval; // libcis
 
 
 void test_numerics_rand_rand_adapt_rand_adapt_disc_eval()

@@ -13,7 +13,7 @@
 #include <cassert>
 #include <numbers>
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numbers_specialize { // libcis: isolate file-scope helpers
 constexpr bool tests() {
   [[maybe_unused]] float f0{std::numbers::e_v<float>};
   [[maybe_unused]] float f1{std::numbers::log2e_v<float>};
@@ -75,7 +75,7 @@ constexpr bool tests() {
 }
 
 static_assert(tests());
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numbers_specialize; // libcis
 
 
 void test_numerics_numbers_specialize() {

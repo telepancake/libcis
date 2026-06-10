@@ -21,7 +21,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_eng_rand_eng_lcong_assign { // libcis: isolate file-scope helpers
 template <class T, T a, T c, T m>
 void
 test1()
@@ -78,7 +78,7 @@ void test_ext() {
   test1<T, M - 1, M - 2, M>();
   test1<T, M - 1, M - 1, M>();
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_eng_rand_eng_lcong_assign; // libcis
 
 
 void test_numerics_rand_rand_eng_rand_eng_lcong_assign()

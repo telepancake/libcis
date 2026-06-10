@@ -25,7 +25,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_lognormal_eval_param { // libcis: isolate file-scope helpers
 template <class T>
 inline
 T
@@ -263,7 +263,7 @@ test5()
     assert(std::abs((skew - x_skew) / x_skew) < 0.3);
     assert(std::abs((kurtosis - x_kurtosis) / x_kurtosis) < 1.0);
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_lognormal_eval_param; // libcis
 
 
 void test_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_lognormal_eval_param()

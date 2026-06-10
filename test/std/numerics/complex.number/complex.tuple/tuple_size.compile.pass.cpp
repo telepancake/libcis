@@ -18,7 +18,7 @@
 #include <complex>
 #include <concepts>
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_complex_tuple_tuple_size { // libcis: isolate file-scope helpers
 template <typename C>
 concept HasTupleSize = requires { std::tuple_size<C>{}; };
 
@@ -40,5 +40,5 @@ void test() {
   test<double>();
   test<long double>();
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_complex_tuple_tuple_size; // libcis
 

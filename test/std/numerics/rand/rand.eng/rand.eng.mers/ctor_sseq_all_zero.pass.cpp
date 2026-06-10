@@ -30,7 +30,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_eng_rand_eng_mers_ctor_sseq_all_zero { // libcis: isolate file-scope helpers
 struct all_zero_seed_seq {
   typedef unsigned int result_type;
 
@@ -72,7 +72,7 @@ void test(void) {
   const result_type X0 = Xneg1 ^ (Y >> 1);
   assert(e() == X0);
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_eng_rand_eng_mers_ctor_sseq_all_zero; // libcis
 
 
 void test_numerics_rand_rand_eng_rand_eng_mers_ctor_sseq_all_zero() {

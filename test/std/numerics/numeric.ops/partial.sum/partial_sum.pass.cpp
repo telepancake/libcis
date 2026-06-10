@@ -25,7 +25,7 @@
 #include "test_macros.h"
 #include "test_iterators.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numeric_ops_partial_sum_partial_sum { // libcis: isolate file-scope helpers
 template <class InIter, class OutIter>
 TEST_CONSTEXPR_CXX20 void
 test()
@@ -75,7 +75,7 @@ test()
 
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numeric_ops_partial_sum_partial_sum; // libcis
 
 
 void test_numerics_numeric_ops_partial_sum_partial_sum()

@@ -19,12 +19,12 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numarray_template_valarray_valarray_cons_default { // libcis: isolate file-scope helpers
 struct S {
     S() { ctor_called = true; }
     static bool ctor_called;
 };
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numarray_template_valarray_valarray_cons_default; // libcis
 
 
 bool S::ctor_called = false;

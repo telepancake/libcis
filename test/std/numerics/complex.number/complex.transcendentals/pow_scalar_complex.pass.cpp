@@ -23,7 +23,7 @@
 #include "test_macros.h"
 #include "../cases.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_complex_transcendentals_pow_scalar_complex { // libcis: isolate file-scope helpers
 template <class T>
 void
 test(const T& a, const std::complex<T>& b, std::complex<T> x)
@@ -64,7 +64,7 @@ void test_edges()
         }
     }
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_complex_transcendentals_pow_scalar_complex; // libcis
 
 
 void test_numerics_complex_number_complex_transcendentals_pow_scalar_complex()

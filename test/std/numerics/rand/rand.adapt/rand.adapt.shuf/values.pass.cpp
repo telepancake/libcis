@@ -28,7 +28,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_adapt_rand_adapt_shuf_values { // libcis: isolate file-scope helpers
 template <class T>
 void where(const T &) {}
 
@@ -46,7 +46,7 @@ test1()
 #endif
     where(E::table_size);
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_adapt_rand_adapt_shuf_values; // libcis
 
 
 void test_numerics_rand_rand_adapt_rand_adapt_shuf_values()

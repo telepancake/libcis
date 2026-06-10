@@ -18,7 +18,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_bit_byteswap { // libcis: isolate file-scope helpers
 template <class T>
 concept has_byteswap = requires(T t) {
   std::byteswap(t);
@@ -163,7 +163,7 @@ constexpr bool test() {
 
   return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_bit_byteswap; // libcis
 
 
 void test_numerics_bit_byteswap() {

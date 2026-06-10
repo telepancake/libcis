@@ -27,7 +27,7 @@
 #include "test_iterators.h"
 
 #if TEST_STD_VER > 17
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numeric_ops_accumulate_accumulate_op { // libcis: isolate file-scope helpers
 struct rvalue_addable
 {
     bool correctOperatorUsed = false;
@@ -108,7 +108,7 @@ test()
 
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numeric_ops_accumulate_accumulate_op; // libcis
 
 
 void test_numerics_numeric_ops_accumulate_accumulate_op()

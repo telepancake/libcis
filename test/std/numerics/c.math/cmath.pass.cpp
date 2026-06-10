@@ -27,7 +27,7 @@
 #include "type_algorithms.h"
 
 // convertible to int/float/double/etc
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_c_math_cmath { // libcis: isolate file-scope helpers
 template <class T, int N=0>
 struct Value {
     operator T () { return T(N); }
@@ -1650,7 +1650,7 @@ void test_trunc()
     static_assert((std::is_same<decltype(trunc(Ambiguous())), Ambiguous>::value), "");
     assert(std::trunc(1) == 1);
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_c_math_cmath; // libcis
 
 
 void test_numerics_c_math_cmath()

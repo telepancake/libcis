@@ -21,11 +21,11 @@
 #include "test_macros.h"
 #include "operator_hijacker.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numarray_template_valarray_valarray_assign_value_assign_addressof { // libcis: isolate file-scope helpers
 void test() {
   std::valarray<operator_hijacker> vo;
   std::valarray<operator_hijacker> v;
   v = vo;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numarray_template_valarray_valarray_assign_value_assign_addressof; // libcis
 

@@ -15,7 +15,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_layout { // libcis: isolate file-scope helpers
 template <class T>
 void
 test()
@@ -31,7 +31,7 @@ test()
     assert(a[0] == z.real());
     assert(a[1] == z.imag());
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_layout; // libcis
 
 
 void test_numerics_complex_number_layout()

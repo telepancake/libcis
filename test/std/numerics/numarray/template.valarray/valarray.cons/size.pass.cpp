@@ -19,14 +19,14 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numarray_template_valarray_valarray_cons_size { // libcis: isolate file-scope helpers
 struct S {
     S() : x(1) {}
     ~S() { ++cnt_dtor; }
     int x;
     static std::size_t cnt_dtor;
 };
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numarray_template_valarray_valarray_cons_size; // libcis
 
 
 size_t S::cnt_dtor = 0;

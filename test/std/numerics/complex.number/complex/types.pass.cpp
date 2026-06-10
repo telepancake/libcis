@@ -23,7 +23,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_complex_types { // libcis: isolate file-scope helpers
 template <class T>
 void
 test()
@@ -31,7 +31,7 @@ test()
     typedef std::complex<T> C;
     static_assert((std::is_same<typename C::value_type, T>::value), "");
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_complex_types; // libcis
 
 
 void test_numerics_complex_number_complex_types()

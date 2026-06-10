@@ -20,7 +20,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_eng_rand_eng_lcong_eval { // libcis: isolate file-scope helpers
 template <class T>
 void
 randu()
@@ -74,7 +74,7 @@ Haldir()
     assert(e() == 429714088);
     assert(e() == 217250280);
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_eng_rand_eng_lcong_eval; // libcis
 
 
 void test_numerics_rand_rand_eng_rand_eng_lcong_eval()

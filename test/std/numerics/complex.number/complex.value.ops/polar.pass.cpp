@@ -23,7 +23,7 @@
 #include "test_macros.h"
 #include "../cases.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_complex_value_ops_polar { // libcis: isolate file-scope helpers
 template <class T>
 void
 test(const T& rho, std::complex<T> x)
@@ -108,7 +108,7 @@ void test_edges()
         }
     }
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_complex_value_ops_polar; // libcis
 
 
 void test_numerics_complex_number_complex_value_ops_polar()

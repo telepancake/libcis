@@ -41,7 +41,7 @@
 #include "test_convertible.h"
 #endif
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_device_ctor { // libcis: isolate file-scope helpers
 void check_random_device_valid(const std::string &token) {
   std::random_device r(token);
 }
@@ -57,7 +57,7 @@ void check_random_device_invalid(const std::string &token) {
   ((void)token);
 #endif
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_device_ctor; // libcis
 
 
 void test_numerics_rand_rand_device_ctor() {

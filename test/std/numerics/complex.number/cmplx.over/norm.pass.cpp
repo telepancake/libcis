@@ -21,7 +21,7 @@
 #include "test_macros.h"
 #include "../cases.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_cmplx_over_norm { // libcis: isolate file-scope helpers
 template <class T>
 TEST_CONSTEXPR_CXX20
 void
@@ -50,7 +50,7 @@ test()
     test<T>(10);
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_cmplx_over_norm; // libcis
 
 
 void test_numerics_complex_number_cmplx_over_norm()

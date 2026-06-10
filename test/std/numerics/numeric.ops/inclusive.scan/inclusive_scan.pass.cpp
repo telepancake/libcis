@@ -27,7 +27,7 @@
 #include "test_macros.h"
 #include "test_iterators.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numeric_ops_inclusive_scan_inclusive_scan { // libcis: isolate file-scope helpers
 template <class Iter1, class T>
 TEST_CONSTEXPR_CXX20 void
 test(Iter1 first, Iter1 last, const T *rFirst, const T *rLast)
@@ -112,7 +112,7 @@ test()
 
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numeric_ops_inclusive_scan_inclusive_scan; // libcis
 
 
 void test_numerics_numeric_ops_inclusive_scan_inclusive_scan()

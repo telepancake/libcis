@@ -12,11 +12,11 @@
 
 #include <numbers>
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numbers_user_type { // libcis: isolate file-scope helpers
 struct user {
   int value;
 };
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numbers_user_type; // libcis
 
 
 template <>

@@ -22,7 +22,7 @@
 #include <type_traits>
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numeric_ops_numeric_ops_lcm_lcm { // libcis: isolate file-scope helpers
 constexpr struct {
   int x;
   int y;
@@ -99,7 +99,7 @@ constexpr bool test_limits() {
     assert(std::lcm(std::numeric_limits<T>::max(), std::numeric_limits<T>::max()) == std::numeric_limits<T>::max());
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numeric_ops_numeric_ops_lcm_lcm; // libcis
 
 
 void test_numerics_numeric_ops_numeric_ops_lcm_lcm()

@@ -26,7 +26,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_chisq_eval_param { // libcis: isolate file-scope helpers
 template <class T>
 inline
 T
@@ -34,7 +34,7 @@ sqr(T x)
 {
     return x * x;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_chisq_eval_param; // libcis
 
 
 void test_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_chisq_eval_param()

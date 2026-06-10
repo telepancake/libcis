@@ -26,7 +26,7 @@
 #include "test_convertible.h"
 #endif
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_dist_rand_dist_pois_rand_dist_pois_exp_ctor_double { // libcis: isolate file-scope helpers
 template <class T>
 void test_implicit() {
 #if TEST_STD_VER >= 11
@@ -36,7 +36,7 @@ void test_implicit() {
   static_assert(!test_convertible<D, T>(), "");
 #endif
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_dist_rand_dist_pois_rand_dist_pois_exp_ctor_double; // libcis
 
 
 void test_numerics_rand_rand_dist_rand_dist_pois_rand_dist_pois_exp_ctor_double()

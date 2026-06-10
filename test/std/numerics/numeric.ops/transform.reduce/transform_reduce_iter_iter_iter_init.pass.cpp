@@ -26,7 +26,7 @@
 #include "MoveOnly.h"
 #include "test_iterators.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numeric_ops_transform_reduce_transform_reduce_iter_iter_iter_init { // libcis: isolate file-scope helpers
 template <class Iter1, class Iter2, class T>
 TEST_CONSTEXPR_CXX20 void
 test(Iter1 first1, Iter1 last1, Iter2 first2, T init, T x)
@@ -115,7 +115,7 @@ test()
 
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numeric_ops_transform_reduce_transform_reduce_iter_iter_iter_init; // libcis
 
 
 void test_numerics_numeric_ops_transform_reduce_transform_reduce_iter_iter_iter_init()

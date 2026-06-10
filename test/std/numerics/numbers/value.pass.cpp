@@ -13,7 +13,7 @@
 #include <cassert>
 #include <numbers>
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numbers_value { // libcis: isolate file-scope helpers
 constexpr bool tests() {
   assert(std::numbers::e == 0x1.5bf0a8b145769p+1);
   assert(std::numbers::e_v<double> == 0x1.5bf0a8b145769p+1);
@@ -84,7 +84,7 @@ constexpr bool tests() {
 }
 
 static_assert(tests());
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numbers_value; // libcis
 
 
 void test_numerics_numbers_value() {

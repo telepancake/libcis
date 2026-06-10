@@ -20,7 +20,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_normal_assign { // libcis: isolate file-scope helpers
 void
 test1()
 {
@@ -31,7 +31,7 @@ test1()
     d2 = d1;
     assert(d1 == d2);
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_normal_assign; // libcis
 
 
 void test_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_normal_assign()

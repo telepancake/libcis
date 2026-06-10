@@ -25,7 +25,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_f_eval_param { // libcis: isolate file-scope helpers
 double fac(double x)
 {
     double r = 1;
@@ -49,7 +49,7 @@ f(double x, double m, double n)
 {
     return I(m * x / (m*x + n), static_cast<unsigned>(m/2), static_cast<unsigned>(n/2));
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_f_eval_param; // libcis
 
 
 void test_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_f_eval_param()

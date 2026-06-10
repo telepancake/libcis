@@ -18,7 +18,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_complex_members_real_imag { // libcis: isolate file-scope helpers
 template <class T>
 TEST_CONSTEXPR_CXX20
 void
@@ -61,7 +61,7 @@ test()
     test_constexpr<T>();
     return true;
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_complex_members_real_imag; // libcis
 
 
 void test_numerics_complex_number_complex_members_real_imag() {

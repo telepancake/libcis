@@ -29,7 +29,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_dist_rand_dist_uni_rand_dist_uni_int_eval { // libcis: isolate file-scope helpers
 template <class T>
 T sqr(T x) {
     return x * x;
@@ -94,7 +94,7 @@ template <class ResultType, class EngineType>
 void test_statistics() {
     test_statistics<ResultType, EngineType>(0, std::numeric_limits<ResultType>::max());
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_dist_rand_dist_uni_rand_dist_uni_int_eval; // libcis
 
 
 void test_numerics_rand_rand_dist_rand_dist_uni_rand_dist_uni_int_eval()

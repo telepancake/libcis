@@ -20,7 +20,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_util_rand_util_seedseq_iterator { // libcis: isolate file-scope helpers
 void test()
 {
   {
@@ -69,7 +69,7 @@ void test()
   }
 #endif // TEST_STD_VER >= 11
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_util_rand_util_seedseq_iterator; // libcis
 
 
 void test_numerics_rand_rand_util_rand_util_seedseq_iterator()

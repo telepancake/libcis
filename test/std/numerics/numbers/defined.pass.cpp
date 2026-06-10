@@ -12,7 +12,7 @@
 
 #include <numbers>
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_numbers_defined { // libcis: isolate file-scope helpers
 constexpr bool tests() {
   [[maybe_unused]] const double* dd0{&std::numbers::e};
   [[maybe_unused]] const double* dd1{&std::numbers::log2e};
@@ -74,7 +74,7 @@ constexpr bool tests() {
 }
 
 static_assert(tests());
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_numbers_defined; // libcis
 
 
 void test_numerics_numbers_defined() {

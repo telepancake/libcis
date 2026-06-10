@@ -22,7 +22,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_adapt_rand_adapt_shuf_result_type { // libcis: isolate file-scope helpers
 template <class UIntType, UIntType Min, UIntType Max>
 class rand1
 {
@@ -79,7 +79,7 @@ test2()
         std::shuffle_order_engine<rand1<unsigned long long, 0, 10>, 16>::result_type,
         unsigned long long>::value), "");
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_adapt_rand_adapt_shuf_result_type; // libcis
 
 
 void test_numerics_rand_rand_adapt_rand_adapt_shuf_result_type()

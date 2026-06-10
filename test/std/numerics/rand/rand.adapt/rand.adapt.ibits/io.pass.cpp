@@ -33,7 +33,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_adapt_rand_adapt_ibits_io { // libcis: isolate file-scope helpers
 void
 test1()
 {
@@ -61,7 +61,7 @@ test2()
     is >> e2;
     assert(e1 == e2);
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_adapt_rand_adapt_ibits_io; // libcis
 
 
 void test_numerics_rand_rand_adapt_rand_adapt_ibits_io()

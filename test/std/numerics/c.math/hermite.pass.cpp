@@ -31,7 +31,7 @@
 
 #include "type_algorithms.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_c_math_hermite { // libcis: isolate file-scope helpers
 template <class Real>
 constexpr unsigned get_maximal_order() {
   if constexpr (std::numeric_limits<Real>::is_iec559)
@@ -355,7 +355,7 @@ struct TestInt {
         assert(std::hermite(n, x) == std::hermite(n, static_cast<double>(x)));
   }
 };
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_c_math_hermite; // libcis
 
 
 void test_numerics_c_math_hermite() {

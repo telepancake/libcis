@@ -15,7 +15,7 @@
 #include <complex>
 #include <cassert>
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_complex_number_complex_special_gh_101960_ambiguous_ctor { // libcis: isolate file-scope helpers
 struct NastyConvertible {
   template <class T>
   operator T() const {
@@ -30,7 +30,7 @@ void test() {
   assert(x.real() == T(0));
   assert(x.imag() == T(0));
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_complex_number_complex_special_gh_101960_ambiguous_ctor; // libcis
 
 
 void test_numerics_complex_number_complex_special_gh_101960_ambiguous_ctor() {

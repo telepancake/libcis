@@ -26,7 +26,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_dist_rand_dist_samp_rand_dist_samp_discrete_eval { // libcis: isolate file-scope helpers
 template <class T>
 void tests() {
     typedef long long Frequency;
@@ -298,7 +298,7 @@ void tests() {
                 assert(u[i] == 0);
     }
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_dist_rand_dist_samp_rand_dist_samp_discrete_eval; // libcis
 
 
 void test_numerics_rand_rand_dist_rand_dist_samp_rand_dist_samp_discrete_eval() {

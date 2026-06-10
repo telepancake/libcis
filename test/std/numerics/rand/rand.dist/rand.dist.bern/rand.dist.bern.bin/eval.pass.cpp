@@ -30,7 +30,7 @@
 
 #include "test_macros.h"
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_rand_rand_dist_rand_dist_bern_rand_dist_bern_bin_eval { // libcis: isolate file-scope helpers
 template <class T>
 T sqr(T x) {
     return x * x;
@@ -523,7 +523,7 @@ void tests() {
     test10<T>();
     test11<T>();
 }
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_rand_rand_dist_rand_dist_bern_rand_dist_bern_bin_eval; // libcis
 
 
 void test_numerics_rand_rand_dist_rand_dist_bern_rand_dist_bern_bin_eval() {

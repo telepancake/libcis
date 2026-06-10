@@ -29,12 +29,12 @@
 #include <bit>
 #include <concepts>
 
-namespace { // libcis: isolate file-scope helpers
+namespace libcis_ns_numerics_bit_bit_cast_bit_cast { // libcis: isolate file-scope helpers
 template<class To, class From>
 concept bit_cast_is_valid = requires(From from) {
     { std::bit_cast<To>(from) } -> std::same_as<To>;
 };
-} // anonymous namespace (libcis)
+} using namespace libcis_ns_numerics_bit_bit_cast_bit_cast; // libcis
 
 
 // Types are not the same size
