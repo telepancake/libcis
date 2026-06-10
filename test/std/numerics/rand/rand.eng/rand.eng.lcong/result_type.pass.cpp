@@ -1,0 +1,45 @@
+// AST-transferred from libc++ by tools/transfer.py (slug=numerics_rand_rand_eng_rand_eng_lcong_result_type).
+// main -> test_numerics_rand_rand_eng_rand_eng_lcong_result_type; file-scope helpers isolated in anon namespace.
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// <random>
+
+// template <class UIntType, UIntType a, UIntType c, UIntType m>
+// class linear_congruential_engine
+// {
+// public:
+//     // types
+//     typedef UIntType result_type;
+
+#include <random>
+#include <type_traits>
+
+#include "test_macros.h"
+
+namespace { // libcis: isolate file-scope helpers
+template <class T>
+void
+test()
+{
+    static_assert((std::is_same<
+        typename std::linear_congruential_engine<T, 0, 0, 0>::result_type,
+        T>::value), "");
+}
+} // anonymous namespace (libcis)
+
+
+void test_numerics_rand_rand_eng_rand_eng_lcong_result_type()
+{
+    test<unsigned short>();
+    test<unsigned int>();
+    test<unsigned long>();
+    test<unsigned long long>();
+
+  return;
+}
