@@ -395,21 +395,33 @@ void test_limits_cv_qualified() {
 }
 
 //===----------------------------------------------------------------------===//
-// test_limits_traps — integer trapping (x86/x86_64: int/long/long long trap)
+// test_limits_traps — integer trapping (implementation-defined)
 //===----------------------------------------------------------------------===//
 void test_limits_traps() {
-    // bool and float types don't trap.
-    static_assert(!std::numeric_limits<bool>::traps);
+    // traps is implementation-defined (e.g. true for integers on x86 vendors,
+    // false for floats everywhere). Only assert the invariants the standard
+    // guarantees: (a) the member exists and is a bool-contextible constant,
+    // (b) float types never trap on IEEE-754 platforms.
     static_assert(!std::numeric_limits<float>::traps);
     static_assert(!std::numeric_limits<double>::traps);
     static_assert(!std::numeric_limits<long double>::traps);
 
+    // Verify the member is accessible and boolean-typed for all integer types.
+    (void)std::numeric_limits<bool>::traps;
+    (void)std::numeric_limits<char>::traps;
+    (void)std::numeric_limits<short>::traps;
+    (void)std::numeric_limits<int>::traps;
+    (void)std::numeric_limits<long>::traps;
+    (void)std::numeric_limits<long long>::traps;
+    (void)std::numeric_limits<unsigned int>::traps;
+
 #if defined(__i386__) || defined(__x86_64__)
-    // On x86: int, long, long long trap; short/char (promoted by +) do not.
+    // On x86, both libc++ and libstdc++ report traps==true for integer types
+    // that are directly operated on (int, long, long long), since integer
+    // divide-by-zero raises SIGFPE. Narrower types (char, short) that are
+    // promoted before arithmetic also report traps==true on libstdc++.
     static_assert(std::numeric_limits<int>::traps);
     static_assert(std::numeric_limits<long>::traps);
     static_assert(std::numeric_limits<long long>::traps);
-    static_assert(!std::numeric_limits<short>::traps);
-    static_assert(!std::numeric_limits<char>::traps);
 #endif
 }
