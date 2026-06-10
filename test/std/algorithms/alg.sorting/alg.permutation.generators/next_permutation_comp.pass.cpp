@@ -1,0 +1,82 @@
+// AST-transferred from libc++ by tools/transfer.py (slug=algorithms_alg_sorting_alg_permutation_generators_next_permutation_comp).
+// main -> test_algorithms_alg_sorting_alg_permutation_generators_next_permutation_comp; file-scope helpers isolated in anon namespace.
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// <algorithm>
+
+// template<BidirectionalIterator Iter, StrictWeakOrder<auto, Iter::value_type> Compare>
+//   requires ShuffleIterator<Iter>
+//         && CopyConstructible<Compare>
+//   constexpr bool  // constexpr in C++20
+//   next_permutation(Iter first, Iter last, Compare comp);
+
+#include <algorithm>
+#include <functional>
+#include <cassert>
+
+#include "test_macros.h"
+#include "test_iterators.h"
+
+#include <cstdio>
+
+namespace libcis_ns_algorithms_alg_sorting_alg_permutation_generators_next_permutation_comp { // libcis: isolate file-scope helpers
+TEST_CONSTEXPR_CXX14 int factorial(int x)
+{
+    int r = 1;
+    for (; x; --x)
+        r *= x;
+    return r;
+}
+
+template <class Iter>
+TEST_CONSTEXPR_CXX20 bool
+test()
+{
+    typedef std::greater<int> C;
+    int ia[] = {6, 5, 4, 3, 2, 1};
+    const int sa = sizeof(ia)/sizeof(ia[0]);
+    int prev[sa];
+    for (int e = 0; e <= sa; ++e)
+    {
+        int count = 0;
+        bool x;
+        do
+        {
+            std::copy(ia, ia+e, prev);
+            x = std::next_permutation(Iter(ia), Iter(ia+e), C());
+            if (e > 1)
+            {
+                if (x)
+                    assert(std::lexicographical_compare(prev, prev+e, ia, ia+e, C()));
+                else
+                    assert(std::lexicographical_compare(ia, ia+e, prev, prev+e, C()));
+            }
+            ++count;
+        } while (x);
+        assert(count == factorial(e));
+    }
+    return true;
+}
+} using namespace libcis_ns_algorithms_alg_sorting_alg_permutation_generators_next_permutation_comp; // libcis
+
+
+void test_algorithms_alg_sorting_alg_permutation_generators_next_permutation_comp()
+{
+    test<bidirectional_iterator<int*> >();
+    test<random_access_iterator<int*> >();
+    test<int*>();
+
+#if TEST_STD_VER >= 20
+    static_assert(test<bidirectional_iterator<int*>>());
+    static_assert(test<random_access_iterator<int*>>());
+    static_assert(test<int*>());
+#endif
+
+    return;
+}

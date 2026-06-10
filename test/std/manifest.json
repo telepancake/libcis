@@ -12377,6 +12377,1488 @@
    "slug": "strings_string_view_string_view_template_starts_with_string_view",
    "kind": "run",
    "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.copy/copy_n.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_copy_copy_n",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.copy/ostreambuf.copy.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_copy_ostreambuf_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.c.library/tested_elsewhere.pass.cpp",
+   "slug": "algorithms_alg_c_library_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.copy/copy_if.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_copy_copy_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.fill/fill_n.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_fill_fill_n",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.fill/ranges.fill.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_fill_ranges_fill",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.copy/ranges.copy_if.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_copy_ranges_copy_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.copy/ranges.copy_n.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_copy_ranges_copy_n",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.copy/ranges.copy_n.segmented.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_copy_ranges_copy_n_segmented",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.fill/fill.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_fill_fill",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.fill/ranges.fill_n.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_fill_ranges_fill_n",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.generate/generate.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_generate_generate",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.generate/generate_n.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_generate_generate_n",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.generate/ranges_generate.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_generate_ranges_generate",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.generate/ranges_generate_n.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_generate_ranges_generate_n",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.move/contiguous_trivial_optimization.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_move_contiguous_trivial_optimization",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.copy/ranges.copy.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_copy_ranges_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.copy/ranges.copy.segmented.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_copy_ranges_copy_segmented",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.copy/ranges.copy_backward.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_copy_ranges_copy_backward",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.copy/ranges.copy_backward.segmented.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_copy_ranges_copy_backward_segmented",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.partitions/partition.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_partitions_partition",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.partitions/partition_copy.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_partitions_partition_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.partitions/partition_point.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_partitions_partition_point",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.partitions/ranges_partition.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_partitions_ranges_partition",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.random.sample/ranges_sample.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_random_sample_ranges_sample",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.random.sample/sample.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_random_sample_sample",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.random.sample/sample.stable.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_random_sample_sample_stable",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.partitions/ranges_partition_copy.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_partitions_ranges_partition_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.partitions/ranges_partition_point.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_partitions_ranges_partition_point",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.move/ranges.move.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_move_ranges_move",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.move/ranges.move.segmented.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_move_ranges_move_segmented",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.move/ranges.move_backward.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_move_ranges_move_backward",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.move/ranges.move_backward.segmented.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_move_ranges_move_backward_segmented",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.partitions/is_partitioned.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_partitions_is_partitioned",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.random.shuffle/random_shuffle_urng.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_random_shuffle_random_shuffle_urng",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.random.shuffle/ranges_shuffle.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_random_shuffle_ranges_shuffle",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.remove/ranges.remove.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_remove_ranges_remove",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.remove/remove_copy.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_remove_remove_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.remove/remove_copy_if.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_remove_remove_copy_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.remove/remove_if.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_remove_remove_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.replace/ranges.replace.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_replace_ranges_replace",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.remove/ranges.remove_if.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_remove_ranges_remove_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.remove/ranges_remove_copy.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_remove_ranges_remove_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.remove/ranges_remove_copy_if.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_remove_ranges_remove_copy_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.remove/remove.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_remove_remove",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.replace/replace_copy.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_replace_replace_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.replace/replace_copy_if.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_replace_replace_copy_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.replace/replace_if.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_replace_replace_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.reverse/ranges.reverse.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_reverse_ranges_reverse",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.reverse/ranges.reverse_copy.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_reverse_ranges_reverse_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.reverse/reverse.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_reverse_reverse",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.reverse/reverse_copy.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_reverse_reverse_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.replace/ranges.replace_if.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_replace_ranges_replace_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.replace/ranges_replace_copy.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_replace_ranges_replace_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.replace/ranges_replace_copy_if.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_replace_ranges_replace_copy_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.replace/replace.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_replace_replace",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.rotate/ranges.rotate_copy.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_rotate_ranges_rotate_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.rotate/ranges_rotate.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_rotate_ranges_rotate",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.rotate/rotate.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_rotate_rotate",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.rotate/rotate_copy.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_rotate_rotate_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.shift/shift_left.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_shift_shift_left",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.shift/shift_right.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_shift_shift_right",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.swap/iter_swap.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_swap_iter_swap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.swap/ranges.swap_ranges.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_swap_ranges_swap_ranges",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.transform/binary_transform.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_transform_binary_transform",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.unique/unique.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_unique_unique",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.unique/unique_copy.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_unique_unique_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.unique/unique_copy_pred.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_unique_unique_copy_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.unique/unique_pred.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_unique_unique_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.adjacent.find/adjacent_find.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_adjacent_find_adjacent_find",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.adjacent.find/adjacent_find_pred.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_adjacent_find_adjacent_find_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.adjacent.find/ranges.adjacent_find.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_adjacent_find_ranges_adjacent_find",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.all_of/all_of.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_all_of_all_of",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.transform/ranges.transform.unary.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_transform_ranges_transform_unary",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.transform/unary_transform.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_transform_unary_transform",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.unique/ranges_unique.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_unique_ranges_unique",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.unique/ranges_unique_copy.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_unique_ranges_unique_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.all_of/ranges.all_of.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_all_of_ranges_all_of",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.any_of/any_of.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_any_of_any_of",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.count/count_if.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_count_count_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.equal/equal_pred.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_equal_equal_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.equal/ranges.equal.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_equal_ranges_equal",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find.end/find_end.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_find_end_find_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.any_of/ranges.any_of.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_any_of_ranges_any_of",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.contains/ranges.contains.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_contains_ranges_contains",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.contains/ranges.contains_subrange.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_contains_ranges_contains_subrange",
+   "kind": "run",
+   "flags": [
+    "-fconstexpr-steps=2000000"
+   ]
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find.end/find_end_pred.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_find_end_find_end_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find.end/ranges.find_end.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_find_end_ranges_find_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find.first.of/find_first_of.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_find_first_of_find_first_of",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find.first.of/find_first_of_pred.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_find_first_of_find_first_of_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find.first.of/ranges.find_first_of.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_find_first_of_ranges_find_first_of",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find.last/ranges.find_last.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_find_last_ranges_find_last",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find.last/ranges.find_last_if.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_find_last_ranges_find_last_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find.last/ranges.find_last_if_not.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_find_last_ranges_find_last_if_not",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.count/ranges.count_if.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_count_ranges_count_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.ends_with/ranges.ends_with.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_ends_with_ranges_ends_with",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.equal/equal.segmented.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_equal_equal_segmented",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find/find_if.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_find_find_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find/find_if_not.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_find_find_if_not",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find/ranges.find_if.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_find_ranges_find_if",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.transform/ranges.transform.binary.iterator.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_transform_ranges_transform_binary_iterator",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.transform/ranges.transform.binary.range.pass.cpp",
+   "slug": "algorithms_alg_modifying_operations_alg_transform_ranges_transform_binary_range",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.fold/requirements.compile.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_fold_requirements",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.foreach/for_each.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_foreach_for_each",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find/ranges.find_if_not.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_find_ranges_find_if_not",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.fold/ranges.fold_left.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_fold_ranges_fold_left",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.foreach/for_each_n.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_foreach_for_each_n",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.is_permutation/ranges.is_permutation.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_is_permutation_ranges_is_permutation",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.none_of/none_of.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_none_of_none_of",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.none_of/ranges.none_of.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_none_of_ranges_none_of",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.foreach/ranges.for_each.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_foreach_ranges_for_each",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.foreach/ranges.for_each_n.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_foreach_ranges_for_each_n",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.is_permutation/is_permutation.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_is_permutation_is_permutation",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.is_permutation/is_permutation_pred.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_is_permutation_is_permutation_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/mismatch/ranges_mismatch.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_mismatch_ranges_mismatch",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.binary.search/binary.search/binary_search.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_binary_search_binary_search_binary_search",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.binary.search/binary.search/binary_search_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_binary_search_binary_search_binary_search_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.binary.search/binary.search/ranges.binary_search.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_binary_search_binary_search_ranges_binary_search",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.binary.search/equal.range/equal_range.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_binary_search_equal_range_equal_range",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.binary.search/equal.range/equal_range_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_binary_search_equal_range_equal_range_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.binary.search/equal.range/ranges_equal_range.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_binary_search_equal_range_ranges_equal_range",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.binary.search/lower.bound/lower_bound.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_binary_search_lower_bound_lower_bound",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.search/ranges.search.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_search_ranges_search",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.search/ranges.search_n.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_search_ranges_search_n",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.search/search.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_search_search",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.search/search_n.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_search_search_n",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.binary.search/upper.bound/upper_bound_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_binary_search_upper_bound_upper_bound_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.clamp/clamp.comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_clamp_clamp_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.clamp/clamp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_clamp_clamp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.binary.search/lower.bound/lower_bound_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_binary_search_lower_bound_lower_bound_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.binary.search/lower.bound/ranges.lower_bound.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_binary_search_lower_bound_ranges_lower_bound",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.binary.search/upper.bound/ranges.upper_bound.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_binary_search_upper_bound_ranges_upper_bound",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.binary.search/upper.bound/upper_bound.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_binary_search_upper_bound_upper_bound",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.clamp/ranges.clamp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_clamp_ranges_clamp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/is.heap/is_heap.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_is_heap_is_heap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/is.heap/is_heap_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_is_heap_is_heap_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/is.heap/is_heap_until.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_is_heap_is_heap_until",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.search/search_n_pred.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_search_search_n_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.search/search_pred.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_search_search_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.starts_with/ranges.starts_with.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_alg_starts_with_ranges_starts_with",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/mismatch/mismatch.pass.cpp",
+   "slug": "algorithms_alg_nonmodifying_mismatch_mismatch",
+   "kind": "run",
+   "flags": [
+    "-fconstexpr-steps=50000000"
+   ]
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/make.heap/make_heap_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_make_heap_make_heap_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/make.heap/ranges_make_heap.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_make_heap_ranges_make_heap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/is.heap/is_heap_until_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_is_heap_is_heap_until_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/is.heap/ranges_is_heap.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_is_heap_ranges_is_heap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/is.heap/ranges_is_heap_until.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_is_heap_ranges_is_heap_until",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/make.heap/make_heap.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_make_heap_make_heap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/pop.heap/pop_heap.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_pop_heap_pop_heap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/pop.heap/pop_heap_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_pop_heap_pop_heap_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/pop.heap/ranges_pop_heap.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_pop_heap_ranges_pop_heap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/push.heap/push_heap.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_push_heap_push_heap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/push.heap/push_heap_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_push_heap_push_heap_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/push.heap/ranges_push_heap.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_push_heap_ranges_push_heap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/sort.heap/complexity.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_sort_heap_complexity",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/sort.heap/ranges_sort_heap.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_sort_heap_ranges_sort_heap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/sort.heap/sort_heap.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_sort_heap_sort_heap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/sort.heap/sort_heap_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_heap_operations_sort_heap_sort_heap_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.lex.comparison/lexicographical_compare.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_lex_comparison_lexicographical_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.lex.comparison/lexicographical_compare_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_lex_comparison_lexicographical_compare_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/max_init_list.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_max_init_list",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/max_init_list_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_max_init_list_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/min.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_min",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/min_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_min_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.lex.comparison/ranges.lexicographical_compare.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_lex_comparison_ranges_lexicographical_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.merge/merge.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_merge_merge",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/max.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_max",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/max_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_max_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/max_element.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_max_element",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/max_element_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_max_element_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/min_element.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_min_element",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/min_element_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_min_element_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/min_init_list.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_min_init_list",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/min_init_list_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_min_init_list_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/minmax.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_minmax",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/minmax_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_minmax_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/minmax_element.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_minmax_element",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/minmax_element_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_minmax_element_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/minmax_init_list.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_minmax_init_list",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/minmax_init_list_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_minmax_init_list_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/ranges.max.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_ranges_max",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/ranges.max_element.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_ranges_max_element",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.merge/merge_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_merge_merge_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.merge/ranges_merge.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_merge_ranges_merge",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/ranges.min.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_ranges_min",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/ranges.min_element.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_ranges_min_element",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/ranges.minmax.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_ranges_minmax",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.min.max/ranges.minmax_element.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_min_max_ranges_minmax_element",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.nth.element/nth_element.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_nth_element_nth_element",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.nth.element/nth_element_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_nth_element_nth_element_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.nth.element/ranges_nth_element.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_nth_element_ranges_nth_element",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.permutation.generators/prev_permutation_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_permutation_generators_prev_permutation_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.permutation.generators/ranges.next_permutation.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_permutation_generators_ranges_next_permutation",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.permutation.generators/ranges.prev_permutation.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_permutation_generators_ranges_prev_permutation",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/includes/includes.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_includes_includes",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.partitions/ranges.is_partitioned.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_partitions_ranges_is_partitioned",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.permutation.generators/next_permutation.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_permutation_generators_next_permutation",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.permutation.generators/next_permutation_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_permutation_generators_next_permutation_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.permutation.generators/prev_permutation.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_permutation_generators_prev_permutation",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/includes/includes_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_includes_includes_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/includes/ranges_includes.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_includes_ranges_includes",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/set.difference/ranges_set_difference.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_set_difference_ranges_set_difference",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/set.difference/set_difference.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_set_difference_set_difference",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/set.difference/set_difference_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_set_difference_set_difference_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/set.intersection/ranges_set_intersection.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_set_intersection_ranges_set_intersection",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/set.intersection/set_intersection.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_set_intersection_set_intersection",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/set.intersection/set_intersection_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_set_intersection_set_intersection_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/is.sorted/is_sorted.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_is_sorted_is_sorted",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/is.sorted/is_sorted_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_is_sorted_is_sorted_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/is.sorted/is_sorted_until.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_is_sorted_is_sorted_until",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/is.sorted/is_sorted_until_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_is_sorted_is_sorted_until_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/set.union/ranges_set_union.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_set_union_ranges_set_union",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/set.union/set_union.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_set_union_set_union",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/set.union/set_union_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_set_union_set_union_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/set.union/set_union_move.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_set_union_set_union_move",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/is.sorted/ranges.is_sorted.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_is_sorted_ranges_is_sorted",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/is.sorted/ranges.is_sorted_until.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_is_sorted_ranges_is_sorted_until",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/set.intersection/set_intersection_complexity.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_set_intersection_set_intersection_complexity",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/set.symmetric.difference/ranges_set_symmetric_difference.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_set_symmetric_difference_ranges_set_symmetric_difference",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/set.symmetric.difference/set_symmetric_difference.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_set_symmetric_difference_set_symmetric_difference",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.set.operations/set.symmetric.difference/set_symmetric_difference_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_set_operations_set_symmetric_difference_set_symmetric_difference_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/partial.sort/partial_sort_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_partial_sort_partial_sort_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/partial.sort/ranges_partial_sort.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_partial_sort_ranges_partial_sort",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/sort/ranges.sort.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_sort_ranges_sort",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/partial.sort.copy/partial_sort_copy.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_partial_sort_copy_partial_sort_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/partial.sort.copy/partial_sort_copy_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_partial_sort_copy_partial_sort_copy_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/partial.sort/partial_sort.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_partial_sort_partial_sort",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.three.way/lexicographical_compare_three_way.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_three_way_lexicographical_compare_three_way",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.three.way/lexicographical_compare_three_way_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_three_way_lexicographical_compare_three_way_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/algorithms.general/nothing_to_do.pass.cpp",
+   "slug": "algorithms_algorithms_general_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/algorithms.results/in_found_result.pass.cpp",
+   "slug": "algorithms_algorithms_results_in_found_result",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/algorithms.results/in_fun_result.pass.cpp",
+   "slug": "algorithms_algorithms_results_in_fun_result",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/algorithms.results/in_in_out_result.pass.cpp",
+   "slug": "algorithms_algorithms_results_in_in_out_result",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/algorithms.results/in_in_result.pass.cpp",
+   "slug": "algorithms_algorithms_results_in_in_result",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/algorithms.results/in_out_out_result.pass.cpp",
+   "slug": "algorithms_algorithms_results_in_out_out_result",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/algorithms.results/in_out_result.pass.cpp",
+   "slug": "algorithms_algorithms_results_in_out_result",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/algorithms.results/in_value_result.pass.cpp",
+   "slug": "algorithms_algorithms_results_in_value_result",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/algorithms.results/min_max_result.pass.cpp",
+   "slug": "algorithms_algorithms_results_min_max_result",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/stable.sort/stable_sort_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_stable_sort_stable_sort_comp",
+   "kind": "run",
+   "flags": [
+    "-fconstexpr-steps=200000000"
+   ]
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/sort/sort.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_sort_sort",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/sort/sort_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_sort_sort_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/sort/sort_constexpr.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_sort_sort_constexpr",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/sort/sort_constexpr_comp.pass.cpp",
+   "slug": "algorithms_alg_sorting_alg_sort_sort_sort_constexpr_comp",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/robust_against_adl.compile.pass.cpp",
+   "slug": "algorithms_robust_against_adl",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "algorithms/robust_against_nonbool.compile.pass.cpp",
+   "slug": "algorithms_robust_against_nonbool",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "algorithms/ranges_robust_against_differing_projections.pass.cpp",
+   "slug": "algorithms_ranges_robust_against_differing_projections",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "algorithms/ranges_robust_against_nonbool.compile.pass.cpp",
+   "slug": "algorithms_ranges_robust_against_nonbool",
+   "kind": "compile",
+   "flags": []
   }
  ],
  "skipped": [
@@ -12750,6 +14232,38 @@
   },
   {
    "file": "strings/basic.string/string.capacity/over_max_size.pass.cpp",
+   "reason": "unsupported:no-exceptions"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.copy/pstl.copy.pass.cpp",
+   "reason": "requires-unmet:with-pstl"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.copy/pstl.copy_n.pass.cpp",
+   "reason": "requires-unmet:with-pstl"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.random.shuffle/random_shuffle.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.random.shuffle/random_shuffle_rand.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.clamp/assert.ranges_clamp.pass.cpp",
+   "reason": "requires-unmet:libcpp-hardening-mode={{extensive|debug}}"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/pop.heap/assert.pop_heap.pass.cpp",
+   "reason": "requires-unmet:libcpp-hardening-mode={{extensive|debug}}"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.heap.operations/pop.heap/assert.ranges_pop_heap.pass.cpp",
+   "reason": "requires-unmet:libcpp-hardening-mode={{extensive|debug}}"
+  },
+  {
+   "file": "algorithms/pstl.exception_handling.pass.cpp",
    "reason": "unsupported:no-exceptions"
   }
  ],
@@ -13408,6 +14922,321 @@
    "file": "strings/strings.erasure/erase.pass.cpp",
    "stage": "parse",
    "diag": "/home/user/llvm-project/libcxx/test/std/strings/strings.erasure/erase.pass.cpp:77:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.copy/copy.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.modifying.operations/alg.copy/copy.pass.cpp:268:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.copy/copy_backward.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.modifying.operations/alg.copy/copy_backward.pass.cpp:263:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.fill/pstl.fill.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.fill/pstl.fill_n.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.generate/pstl.generate.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.generate/pstl.generate_n.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.partitions/ranges_stable_partition.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.modifying.operations/alg.partitions/ranges_stable_partition.pass.cpp:253:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.partitions/stable_partition.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.modifying.operations/alg.partitions/stable_partition.pass.cpp:336:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.move/move.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.modifying.operations/alg.move/move.pass.cpp:175:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.move/move_backward.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.modifying.operations/alg.move/move_backward.pass.cpp:172:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.move/pstl.move.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.replace/pstl.replace.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.replace/pstl.replace_copy.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.replace/pstl.replace_copy_if.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.replace/pstl.replace_if.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.rotate/pstl.rotate_copy.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.shift/ranges.shift_left.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.modifying.operations/alg.shift/ranges.shift_left.pass.cpp:36:77: error: no member named 'shift_left' in namespace 'std::ranges'"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.shift/ranges_shift_right.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.modifying.operations/alg.shift/ranges_shift_right.pass.cpp:36:78: error: no member named 'shift_right' in namespace 'std::ranges'"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.swap/swap_ranges.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.modifying.operations/alg.swap/swap_ranges.pass.cpp:186:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.all_of/pstl.all_of.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.any_of/pstl.any_of.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.count/pstl.count.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.count/pstl.count_if.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.count/ranges.count.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/__algorithm/count.h:59:30: error: call to '__libcpp_popcount' is ambiguous"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.equal/pstl.equal.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.count/count.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/__algorithm/count.h:59:30: error: call to '__libcpp_popcount' is ambiguous"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.equal/equal.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.nonmodifying/alg.equal/equal.pass.cpp:290:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find/find.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/__algorithm/find.h:112:56: error: call to '__libcpp_ctz' is ambiguous"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find/pstl.find.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find/pstl.find_if.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find/pstl.find_if_not.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.find/ranges.find.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/__algorithm/find.h:112:56: error: call to '__libcpp_ctz' is ambiguous"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.transform/pstl.transform.binary.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.modifying.operations/alg.transform/pstl.transform.unary.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.fold/ranges.fold_right_last.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.nonmodifying/alg.fold/ranges.fold_right_last.pass.cpp:42:20: error: no member named 'fold_right_last' in namespace 'std::ranges'"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.foreach/for_each.associative.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.nonmodifying/alg.foreach/for_each.associative.pass.cpp:91:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.fold/ranges.fold_left_first.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.nonmodifying/alg.fold/ranges.fold_left_first.pass.cpp:55:20: error: no member named 'fold_left_first' in namespace 'std::ranges'"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.fold/ranges.fold_right.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.nonmodifying/alg.fold/ranges.fold_right.pass.cpp:39:20: error: no member named 'fold_right' in namespace 'std::ranges'"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.foreach/pstl.for_each.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.foreach/pstl.for_each_n.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.foreach/ranges.for_each.associative.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.nonmodifying/alg.foreach/ranges.for_each.associative.pass.cpp:286:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.nonmodifying/alg.none_of/pstl.none_of.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.merge/inplace_merge.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.sorting/alg.merge/inplace_merge.pass.cpp:125:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.merge/inplace_merge_comp.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.sorting/alg.merge/inplace_merge_comp.pass.cpp:179:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.merge/pstl.merge.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.merge/ranges_inplace_merge.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.sorting/alg.merge/ranges_inplace_merge.pass.cpp:340:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.partitions/pstl.is_partitioned.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/is.sorted/pstl.is_sorted.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/is.sorted/pstl.is_sorted_comp.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/sort/pstl.sort.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/partial.sort.copy/ranges_partial_sort_copy.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.sorting/alg.sort/partial.sort.copy/ranges_partial_sort_copy.pass.cpp:94:15: error: static assertion failed"
+  },
+  {
+   "file": "algorithms/algorithms.results/no_unique_address.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/algorithms.results/no_unique_address.compile.pass.cpp:57:35: error: no member named 'out_value_result' in namespace 'std::ranges'"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/stable.sort/pstl.stable_sort.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_execution_policies.h:33:24: error: no member named 'seq' in namespace 'std::execution'"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/stable.sort/ranges.stable.sort.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.sorting/alg.sort/stable.sort/ranges.stable.sort.pass.cpp:271:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/alg.sorting/alg.sort/stable.sort/stable_sort.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/alg.sorting/alg.sort/stable.sort/stable_sort.pass.cpp:264:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/algorithms.results/out_value_result.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/algorithms.results/out_value_result.pass.cpp:20:20: error: no member named 'out_value_result' in namespace 'std::ranges'"
+  },
+  {
+   "file": "algorithms/ranges_result_alias_declarations.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/ranges_result_alias_declarations.compile.pass.cpp:67:30: error: use of undeclared identifier 'out_value_result'"
+  },
+  {
+   "file": "algorithms/ranges_robust_against_dangling.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/ranges_robust_against_dangling.pass.cpp:84:22: error: no member named 'out_value_result' in namespace 'std::ranges'"
+  },
+  {
+   "file": "algorithms/robust_re_difference_type.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/robust_re_difference_type.compile.pass.cpp:267:19: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/robust_against_adl_on_new.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/robust_against_adl_on_new.pass.cpp:43:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/robust_against_proxy_iterators_lifetime_bugs.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/robust_against_proxy_iterators_lifetime_bugs.pass.cpp:765:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/ranges_robust_against_omitting_invoke.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/ranges_robust_against_omitting_invoke.pass.cpp:191:17: error: static assertion expression is not an integral constant expression"
+  },
+  {
+   "file": "algorithms/ranges_robust_against_proxy_iterators.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/ranges_robust_against_proxy_iterators.pass.cpp:112:23: error: no member named 'iota' in namespace 'std::ranges'"
   }
  ],
  "subtrees": [
@@ -13419,6 +15248,7 @@
   "atomics",
   "experimental",
   "iterators",
-  "strings"
+  "strings",
+  "algorithms"
  ]
 }
