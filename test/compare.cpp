@@ -583,14 +583,27 @@ void test_compare_compare_partial_order_fallback_unordered() {
 }
 
 //===----------------------------------------------------------------------===//
-// synth_three_way
+// synth_three_way — exposition-only; not a public std:: name.
+// Replaced by direct <=> tests and compare_weak_order_fallback for the
+// "old-style" case (std::synth_three_way is not in the standard's public API).
 //===----------------------------------------------------------------------===//
 
 void test_compare_synth_three_way() {
-    // For a type with <=>, uses <=>
-    CHECK(std::synth_three_way(1, 2) == std::weak_ordering::less);
-    CHECK(std::synth_three_way(2, 2) == std::weak_ordering::equivalent);
-    CHECK(std::synth_three_way(3, 2) == std::weak_ordering::greater);
+    // For types that support <=>, use operator<=> directly.
+    // The standard does not provide std::synth_three_way as a public name.
+    auto r1 = (1 <=> 2);
+    CHECK(r1 == std::strong_ordering::less);
+    auto r2 = (2 <=> 2);
+    CHECK(r2 == std::strong_ordering::equal);
+    auto r3 = (3 <=> 2);
+    CHECK(r3 == std::strong_ordering::greater);
+    // int <=> int yields strong_ordering; it converts to weak_ordering
+    std::weak_ordering wl = (1 <=> 2);
+    CHECK(wl == std::weak_ordering::less);
+    std::weak_ordering we = (2 <=> 2);
+    CHECK(we == std::weak_ordering::equivalent);
+    std::weak_ordering wg = (3 <=> 2);
+    CHECK(wg == std::weak_ordering::greater);
 }
 
 namespace synth_old_ns {
@@ -602,14 +615,15 @@ namespace synth_old_ns {
 }
 
 void test_compare_synth_three_way_fallback() {
-    // For a type without <=>, falls back to < comparison
+    // For a type without <=>, compare_weak_order_fallback synthesises ordering
+    // from == and < (the same logic std::synth_three_way used internally).
     using synth_old_ns::OldStyle;
     OldStyle a{1}, b{2}, c{2};
-    auto ra = std::synth_three_way(a, b);
+    auto ra = std::compare_weak_order_fallback(a, b);
     CHECK(ra == std::weak_ordering::less);
-    auto rb = std::synth_three_way(b, c);
+    auto rb = std::compare_weak_order_fallback(b, c);
     CHECK(rb == std::weak_ordering::equivalent);
-    auto rc = std::synth_three_way(b, a);
+    auto rc = std::compare_weak_order_fallback(b, a);
     CHECK(rc == std::weak_ordering::greater);
 }
 

@@ -3,6 +3,7 @@
 // so names never collide with other test files.
 // Compile-time checks: static_assert. Runtime checks: CHECK(expr).
 #include <concepts>
+#include <utility>
 #include "test.h"
 
 // A minimal move-only type (replaces std::unique_ptr which requires <memory>)

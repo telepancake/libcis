@@ -95,7 +95,7 @@ void test_advance_distance_next_prev() {
     std::ranges::advance(it, -2);
     CHECK(*it == 1);
 
-    auto d = std::ranges::distance(arr, arr + 5);
+    auto d = std::ranges::distance(arr + 0, arr + 5);
     CHECK(d == 5);
 
     auto d2 = std::ranges::distance(arr);
