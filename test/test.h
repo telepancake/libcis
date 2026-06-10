@@ -11,8 +11,9 @@
 // headers (which would otherwise clash with libcis's own namespace std).
 #pragma once
 
-// One shared definition across all test translation units (C++17 inline var).
-inline unsigned long long libcis_checks_passed = 0;
+// Defined once in the auto-generated main (so test files that use only
+// static_assert and never include this header still link standalone).
+extern unsigned long long libcis_checks_passed;
 
 #define CHECK(...)                                                             \
   do {                                                                         \
