@@ -14,8 +14,8 @@
 //
 // The exception *types* (exception, bad_exception) are ordinary classes with
 // virtual functions; defining them is valid under -fno-exceptions -fno-rtti.
-// terminate/set_terminate/get_terminate are declared here and resolved from
-// the system libstdc++/libsupc++ at link time.
+// terminate/set_terminate/get_terminate are declared here and defined in
+// src/support.cpp (freestanding runtime support — no libstdc++ needed).
 #pragma once
 
 namespace std {
@@ -28,10 +28,9 @@ public:
     exception() noexcept {}
     exception(const exception&) noexcept            = default;
     exception& operator=(const exception&) noexcept = default;
-    // These are defined in libstdc++.so; mark with default visibility so that
-    // references from hidden-visibility code can resolve them.
-    [[gnu::visibility("default")]] virtual ~exception() noexcept;
-    [[gnu::visibility("default")]] [[nodiscard]] virtual const char* what() const noexcept;
+    // Out-of-line definitions (and the vtable) live in src/support.cpp.
+    virtual ~exception() noexcept;
+    [[nodiscard]] virtual const char* what() const noexcept;
 };
 
 //===----------------------------------------------------------------------===//
@@ -49,7 +48,7 @@ public:
 //===----------------------------------------------------------------------===//
 // terminate_handler, set_terminate, get_terminate, terminate
 // (__exception/operations.h, __exception/terminate.h)
-// Declared here; implementations live in libstdc++/libsupc++ (linked normally).
+// Declared here; implementations live in src/support.cpp (freestanding).
 //===----------------------------------------------------------------------===//
 using terminate_handler = void (*)();
 
