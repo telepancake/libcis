@@ -13859,6 +13859,2418 @@
    "slug": "algorithms_ranges_robust_against_nonbool",
    "kind": "compile",
    "flags": []
+  },
+  {
+   "file": "ranges/range.access/empty.pass.cpp",
+   "slug": "ranges_range_access_empty",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.access/end.pass.cpp",
+   "slug": "ranges_range_access_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.access/end.sizezero.pass.cpp",
+   "slug": "ranges_range_access_end_sizezero",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.access/rbegin.pass.cpp",
+   "slug": "ranges_range_access_rbegin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.access/rend.pass.cpp",
+   "slug": "ranges_range_access_rend",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.access/size.pass.cpp",
+   "slug": "ranges_range_access_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.access/ssize.pass.cpp",
+   "slug": "ranges_range_access_ssize",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.access/begin.pass.cpp",
+   "slug": "ranges_range_access_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.access/begin.sizezero.pass.cpp",
+   "slug": "ranges_range_access_begin_sizezero",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.access/data.pass.cpp",
+   "slug": "ranges_range_access_data",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.adaptor.object/range_adaptor_closure.pass.cpp",
+   "slug": "ranges_range_adaptors_range_adaptor_object_range_adaptor_closure",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.all/range.owning.view/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_all_range_owning_view_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.all/range.owning.view/begin_end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_all_range_owning_view_begin_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.all/range.owning.view/borrowing.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_all_range_owning_view_borrowing",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.all/range.owning.view/constructor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_all_range_owning_view_constructor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.all/all.pass.cpp",
+   "slug": "ranges_range_adaptors_range_all_all",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.all/all_t.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_all_all_t",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.all/range.owning.view/data.pass.cpp",
+   "slug": "ranges_range_adaptors_range_all_range_owning_view_data",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.all/range.owning.view/empty.pass.cpp",
+   "slug": "ranges_range_adaptors_range_all_range_owning_view_empty",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.all/range.owning.view/implicit_ctad.pass.cpp",
+   "slug": "ranges_range_adaptors_range_all_range_owning_view_implicit_ctad",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.all/range.owning.view/size.pass.cpp",
+   "slug": "ranges_range_adaptors_range_all_range_owning_view_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.all/range.ref.view/borrowing.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_all_range_ref_view_borrowing",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.all/range.ref.view/range.ref.view.pass.cpp",
+   "slug": "ranges_range_adaptors_range_all_range_ref_view_range_ref_view",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.as.rvalue/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_as_rvalue_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.as.rvalue/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_as_rvalue_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.as.rvalue/ctad.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_as_rvalue_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.as.rvalue/ctor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_as_rvalue_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.as.rvalue/enable_borrowed_range.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_as_rvalue_enable_borrowed_range",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/constraints.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_constraints",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/ctad.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_ctad",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.as.rvalue/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_as_rvalue_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.as.rvalue/size.pass.cpp",
+   "slug": "ranges_range_adaptors_range_as_rvalue_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/adaptor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_adaptor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/ctor.view_pred.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_ctor_view_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/pred.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/range.chunk.by.iter/compare.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_range_chunk_by_iter_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.common.view/borrowing.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_common_view_borrowing",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.common.view/ctad.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_common_view_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.common.view/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_common_view_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.common.view/ctor.view.pass.cpp",
+   "slug": "ranges_range_adaptors_range_common_view_ctor_view",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/range.chunk.by.iter/types.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_range_chunk_by_iter_types",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.common.view/adaptor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_common_view_adaptor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.common.view/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_common_view_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.common.view/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_common_view_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.common.view/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_common_view_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.common.view/size.pass.cpp",
+   "slug": "ranges_range_adaptors_range_common_view_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/range.chunk.by.iter/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_range_chunk_by_iter_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/range.chunk.by.iter/decrement.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_range_chunk_by_iter_decrement",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/range.chunk.by.iter/deref.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_range_chunk_by_iter_deref",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.chunk.by/range.chunk.by.iter/increment.pass.cpp",
+   "slug": "ranges_range_adaptors_range_chunk_by_range_chunk_by_iter_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.counted/counted.pass.cpp",
+   "slug": "ranges_range_adaptors_range_counted_counted",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop.while/adaptor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_while_adaptor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop.while/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_while_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop.while/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_while_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop.while/borrowed.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_while_borrowed",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop.while/ctad.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_while_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop.while/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_while_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop.while/ctor.view.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_while_ctor_view",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop.while/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_while_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop.while/general.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_while_general",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop.while/pred.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_while_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop/ctad.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop/ctor.view.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_ctor_view",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop/dangling.cache.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_dangling_cache",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop.while/range.concept.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_while_range_concept",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop/adaptor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_adaptor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/borrowed.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_borrowed",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop/general.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_general",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.drop/size.pass.cpp",
+   "slug": "ranges_range_adaptors_range_drop_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/adaptor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_adaptor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/ctor.view.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_ctor_view",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/general.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_general",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/iterator/arithmetic.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_iterator_arithmetic",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/iterator/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_iterator_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/iterator/compare.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_iterator_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/iterator/ctor.base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_iterator_ctor_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/iterator/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_iterator_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/iterator/ctor.other.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_iterator_ctor_other",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/iterator/decrement.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_iterator_decrement",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/iterator/deref.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_iterator_deref",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/iterator/increment.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_iterator_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/iterator/member_types.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_iterator_member_types",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/iterator/subscript.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_iterator_subscript",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/range.concept.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_range_concept",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/sentinel/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_sentinel_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/sentinel/ctor.base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_sentinel_ctor_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/sentinel/ctor.convert.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_sentinel_ctor_convert",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/sentinel/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_sentinel_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/sentinel/equality.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_sentinel_equality",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/sentinel/minus.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_sentinel_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.elements/size.pass.cpp",
+   "slug": "ranges_range_adaptors_range_elements_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.empty/borrowing.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_empty_borrowing",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.empty/empty_view.pass.cpp",
+   "slug": "ranges_range_adaptors_range_empty_empty_view",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.empty/views.empty.pass.cpp",
+   "slug": "ranges_range_adaptors_range_empty_views_empty",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/constraints.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_constraints",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/ctad.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_ctad",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/adaptor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_adaptor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/ctor.view_pred.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_ctor_view_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/iterator/arrow.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_iterator_arrow",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/iterator/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_iterator_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/iterator/compare.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_iterator_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/iterator/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_iterator_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/iterator/ctor.parent_iter.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_iterator_ctor_parent_iter",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/iterator/decrement.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_iterator_decrement",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/iterator/types.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_iterator_types",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/pred.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/sentinel/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_sentinel_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/sentinel/compare.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_sentinel_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/iterator/deref.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_iterator_deref",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/iterator/increment.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_iterator_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/iterator/iter_move.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_iterator_iter_move",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/iterator/iter_swap.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_iterator_iter_swap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/sentinel/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_sentinel_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.filter/sentinel/ctor.parent.pass.cpp",
+   "slug": "ranges_range_adaptors_range_filter_sentinel_ctor_parent",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/ctad.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/ctor.view.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_ctor_view",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/adaptor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_adaptor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/general.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_general",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/lwg3698.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_lwg3698",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/range.join.iterator/arrow.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_range_join_iterator_arrow",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/range.join.iterator/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_range_join_iterator_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/range.join.iterator/iter.move.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_range_join_iterator_iter_move",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/range.join.iterator/iter.swap.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_range_join_iterator_iter_swap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/range.join.iterator/member_types.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_range_join_iterator_member_types",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/range.join.iterator/star.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_range_join_iterator_star",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/range.join.sentinel/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_range_join_sentinel_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/range.join.sentinel/ctor.other.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_range_join_sentinel_ctor_other",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/range.join.sentinel/ctor.parent.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_range_join_sentinel_ctor_parent",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/range.join.sentinel/eq.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_range_join_sentinel_eq",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/range.join.iterator/ctor.other.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_range_join_iterator_ctor_other",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/range.join.iterator/decrement.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_range_join_iterator_decrement",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/range.join.iterator/eq.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_range_join_iterator_eq",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.join/range.join.iterator/increment.pass.cpp",
+   "slug": "ranges_range_adaptors_range_join_range_join_iterator_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/adaptor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_adaptor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/constraints.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_constraints",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/ctad.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/ctor.copy_move.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_ctor_copy_move",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/ctor.range.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_ctor_range",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.inner/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_inner_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.inner/ctor.outer_iterator.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_inner_ctor_outer_iterator",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.inner/deref.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_inner_deref",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.inner/equal.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_inner_equal",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.inner/increment.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_inner_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.inner/iter_move.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_inner_iter_move",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.inner/iter_swap.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_inner_iter_swap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.inner/types.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_inner_types",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/ctor.view.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_ctor_view",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/general.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_general",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.inner/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_inner_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.outer.value/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_outer_value_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.outer.value/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_outer_value_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.outer.value/ctor.iter.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_outer_value_ctor_iter",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.outer.value/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_outer_value_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.outer.value/view_interface.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_outer_value_view_interface",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.outer/ctor.copy.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_outer_ctor_copy",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.outer/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_outer_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.outer/ctor.parent.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_outer_ctor_parent",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.reverse/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_reverse_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.reverse/borrowing.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_reverse_borrowing",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.reverse/ctad.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_reverse_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.reverse/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_reverse_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.outer/types.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_outer_types",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/view_interface.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_view_interface",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.reverse/adaptor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_reverse_adaptor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.reverse/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_reverse_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.outer/ctor.parent_base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_outer_ctor_parent_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.outer/deref.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_outer_deref",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.outer/equal.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_outer_equal",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.lazy.split/range.lazy.split.outer/increment.pass.cpp",
+   "slug": "ranges_range_adaptors_range_lazy_split_range_lazy_split_outer_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.reverse/ctor.view.pass.cpp",
+   "slug": "ranges_range_adaptors_range_reverse_ctor_view",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.reverse/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_reverse_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.reverse/range_concept_conformance.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_reverse_range_concept_conformance",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.reverse/size.pass.cpp",
+   "slug": "ranges_range_adaptors_range_reverse_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/ctad.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/ctor.range.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_ctor_range",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/ctor.view.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_ctor_view",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/adaptor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_adaptor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/constraints.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_constraints",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/iterator/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_iterator_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/iterator/deref.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_iterator_deref",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/iterator/equal.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_iterator_equal",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/iterator/increment.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_iterator_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/general.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_general",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/iterator/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_iterator_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/iterator/ctor.base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_iterator_ctor_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/iterator/member_types.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_iterator_member_types",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/sentinel/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_sentinel_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/sentinel/ctor.parent.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_sentinel_ctor_parent",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.split/sentinel/equal.pass.cpp",
+   "slug": "ranges_range_adaptors_range_split_sentinel_equal",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take.while/adaptor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_while_adaptor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take.while/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_while_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take.while/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_while_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take.while/ctad.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_while_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take.while/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_while_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take.while/ctor.view.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_while_ctor_view",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take.while/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_while_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take.while/general.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_while_general",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take.while/pred.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_while_pred",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take.while/range.concept.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_while_range_concept",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take.while/sentinel/ctor.base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_while_sentinel_ctor_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take.while/sentinel/ctor.convert.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_while_sentinel_ctor_convert",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take.while/sentinel/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_while_sentinel_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take.while/sentinel/equality.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_while_sentinel_equality",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take/ctad.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take/ctor.view_count.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_ctor_view_count",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take/range.take.sentinel/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_range_take_sentinel_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take/range.take.sentinel/ctor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_range_take_sentinel_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take/range.take.sentinel/eq.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_range_take_sentinel_eq",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take/range_concept_conformance.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_range_concept_conformance",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take/adaptor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_adaptor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take/borrowing.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_borrowing",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/ctad.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/ctor.view_function.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_ctor_view_function",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.take/size.pass.cpp",
+   "slug": "ranges_range_adaptors_range_take_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/adaptor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_adaptor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/iterator/ctor.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_iterator_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/iterator/deref.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_iterator_deref",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/iterator/plus_minus.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_iterator_plus_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/iterator/requirements.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_iterator_requirements",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/iterator/sentinel.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_iterator_sentinel",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/iterator/subscript.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_iterator_subscript",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/iterator/types.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_iterator_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/size.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/general.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_general",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/iterator/arithmetic.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_iterator_arithmetic",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/iterator/base.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_iterator_base",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.transform/iterator/compare.pass.cpp",
+   "slug": "ranges_range_adaptors_range_transform_iterator_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/begin.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/borrowing.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_borrowing",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/cpo.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_cpo",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/general.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_general",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/iterator/arithmetic.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_iterator_arithmetic",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/iterator/compare.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_iterator_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/iterator/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_iterator_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/ctad.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/ctor.views.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_ctor_views",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/end.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/iterator/ctor.other.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_iterator_ctor_other",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/iterator/decrement.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_iterator_decrement",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/iterator/deref.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_iterator_deref",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/iterator/increment.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_iterator_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/iterator/iter_move.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_iterator_iter_move",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/iterator/iter_swap.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_iterator_iter_swap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/iterator/member_types.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_iterator_member_types",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/assert.ctor.value.bound.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_assert_ctor_value_bound",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/borrowing.compile.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_borrowing",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/ctad.compile.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/ctor.default.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/ctor.first.last.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_ctor_first_last",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/ctor.value.bound.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_ctor_value_bound",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/ctor.value.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_ctor_value",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/sentinel/eq.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_sentinel_eq",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/sentinel/minus.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_sentinel_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/size.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/robust_against_nonbool.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_robust_against_nonbool",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/iterator/ctor.default.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_iterator_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/iterator/ctor.value.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_iterator_ctor_value",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/iterator/decrement.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_iterator_decrement",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/iterator/increment.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_iterator_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/empty.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_empty",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/iterator/compare.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_iterator_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/iterator/subscript.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_iterator_subscript",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/range.concept.compile.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_range_concept",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/sentinel/ctor.default.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_sentinel_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/sentinel/ctor.other.pass.cpp",
+   "slug": "ranges_range_adaptors_range_zip_sentinel_ctor_other",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/iterator/minus.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_iterator_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/iterator/minus_eq.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_iterator_minus_eq",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/iterator/plus.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_iterator_plus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/iterator/plus_eq.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_iterator_plus_eq",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/range_concept_conformance.compile.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_range_concept_conformance",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/sentinel/ctor.default.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_sentinel_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/sentinel/ctor.value.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_sentinel_ctor_value",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/sentinel/eq.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_sentinel_eq",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/sentinel/minus.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_sentinel_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/type.compile.pass.cpp",
+   "slug": "ranges_range_factories_range_iota_view_type",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.istream.view/begin.pass.cpp",
+   "slug": "ranges_range_factories_range_istream_view_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.istream.view/cpo.pass.cpp",
+   "slug": "ranges_range_factories_range_istream_view_cpo",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.istream.view/ctor.pass.cpp",
+   "slug": "ranges_range_factories_range_istream_view_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.istream.view/end.pass.cpp",
+   "slug": "ranges_range_factories_range_istream_view_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.istream.view/general.pass.cpp",
+   "slug": "ranges_range_factories_range_istream_view_general",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.istream.view/iterator/compare.pass.cpp",
+   "slug": "ranges_range_factories_range_istream_view_iterator_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.istream.view/iterator/ctor.pass.cpp",
+   "slug": "ranges_range_factories_range_istream_view_iterator_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.istream.view/iterator/deref.pass.cpp",
+   "slug": "ranges_range_factories_range_istream_view_iterator_deref",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.istream.view/iterator/increment.pass.cpp",
+   "slug": "ranges_range_factories_range_istream_view_iterator_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.istream.view/iterator/member_types.compile.pass.cpp",
+   "slug": "ranges_range_factories_range_istream_view_iterator_member_types",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.istream.view/iterator/special_op.pass.cpp",
+   "slug": "ranges_range_factories_range_istream_view_iterator_special_op",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.istream.view/range.concept.compile.pass.cpp",
+   "slug": "ranges_range_factories_range_istream_view_range_concept",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/begin.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/ctad.compile.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/ctor.default.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/ctor.piecewise.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_ctor_piecewise",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/ctor.value.bound.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_ctor_value_bound",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/end.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/iterator/compare.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_iterator_compare",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/iterator/ctor.default.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_iterator_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/iterator/decrement.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_iterator_decrement",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/iterator/increment.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_iterator_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/iterator/member_typedefs.compile.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_iterator_member_typedefs",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/iterator/minus.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_iterator_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/iterator/minus_eq.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_iterator_minus_eq",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/iterator/plus.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_iterator_plus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/iterator/plus_eq.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_iterator_plus_eq",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/iterator/star.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_iterator_star",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/iterator/subscript.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_iterator_subscript",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/size.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.repeat.view/views_repeat.pass.cpp",
+   "slug": "ranges_range_factories_range_repeat_view_views_repeat",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.single.view/assign.pass.cpp",
+   "slug": "ranges_range_factories_range_single_view_assign",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.single.view/begin.pass.cpp",
+   "slug": "ranges_range_factories_range_single_view_begin",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.single.view/borrowing.compile.pass.cpp",
+   "slug": "ranges_range_factories_range_single_view_borrowing",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.single.view/cpo.pass.cpp",
+   "slug": "ranges_range_factories_range_single_view_cpo",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.single.view/ctad.compile.pass.cpp",
+   "slug": "ranges_range_factories_range_single_view_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.single.view/ctor.default.pass.cpp",
+   "slug": "ranges_range_factories_range_single_view_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.single.view/ctor.in_place.pass.cpp",
+   "slug": "ranges_range_factories_range_single_view_ctor_in_place",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.single.view/ctor.value.pass.cpp",
+   "slug": "ranges_range_factories_range_single_view_ctor_value",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.single.view/data.pass.cpp",
+   "slug": "ranges_range_factories_range_single_view_data",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.single.view/empty.pass.cpp",
+   "slug": "ranges_range_factories_range_single_view_empty",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.single.view/end.pass.cpp",
+   "slug": "ranges_range_factories_range_single_view_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.single.view/range_concept_conformance.compile.pass.cpp",
+   "slug": "ranges_range_factories_range_single_view_range_concept_conformance",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.factories/range.single.view/size.pass.cpp",
+   "slug": "ranges_range_factories_range_single_view_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.range/borrowed_range.compile.pass.cpp",
+   "slug": "ranges_range_req_range_range_borrowed_range",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.range/borrowed_range.subsumption.compile.pass.cpp",
+   "slug": "ranges_range_req_range_range_borrowed_range_subsumption",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.range/enable_borrowed_range.compile.pass.cpp",
+   "slug": "ranges_range_req_range_range_enable_borrowed_range",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.range/helper_aliases.compile.pass.cpp",
+   "slug": "ranges_range_req_range_range_helper_aliases",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.range/iterator_t.compile.pass.cpp",
+   "slug": "ranges_range_req_range_range_iterator_t",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.refinements/common_range.compile.pass.cpp",
+   "slug": "ranges_range_req_range_refinements_common_range",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.refinements/contiguous_range.compile.pass.cpp",
+   "slug": "ranges_range_req_range_refinements_contiguous_range",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.refinements/forward_range.compile.pass.cpp",
+   "slug": "ranges_range_req_range_refinements_forward_range",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.refinements/input_range.compile.pass.cpp",
+   "slug": "ranges_range_req_range_refinements_input_range",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.range/range.compile.pass.cpp",
+   "slug": "ranges_range_req_range_range_range",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.range/range_size_t.compile.pass.cpp",
+   "slug": "ranges_range_req_range_range_range_size_t",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.range/sentinel_t.compile.pass.cpp",
+   "slug": "ranges_range_req_range_range_sentinel_t",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.refinements/bidirectional_range.compile.pass.cpp",
+   "slug": "ranges_range_req_range_refinements_bidirectional_range",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.refinements/output_range.compile.pass.cpp",
+   "slug": "ranges_range_req_range_refinements_output_range",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.refinements/random_access_range.compile.pass.cpp",
+   "slug": "ranges_range_req_range_refinements_random_access_range",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.refinements/subsumption.compile.pass.cpp",
+   "slug": "ranges_range_req_range_refinements_subsumption",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.refinements/viewable_range.compile.pass.cpp",
+   "slug": "ranges_range_req_range_refinements_viewable_range",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.sized/sized_range.compile.pass.cpp",
+   "slug": "ranges_range_req_range_sized_sized_range",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.sized/subsumption.compile.pass.cpp",
+   "slug": "ranges_range_req_range_sized_subsumption",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.view/view.subsumption.compile.pass.cpp",
+   "slug": "ranges_range_req_range_view_view_subsumption",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.req/range.view/view_base.compile.pass.cpp",
+   "slug": "ranges_range_req_range_view_view_base",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.dangling/borrowed_iterator.compile.pass.cpp",
+   "slug": "ranges_range_utility_range_dangling_borrowed_iterator",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.dangling/borrowed_subrange.compile.pass.cpp",
+   "slug": "ranges_range_utility_range_dangling_borrowed_subrange",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/begin_end.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_begin_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/borrowing.compile.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_borrowing",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/ctad.compile.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_ctad",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/ctor.begin_end.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_ctor_begin_end",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.dangling/dangling.pass.cpp",
+   "slug": "ranges_range_utility_range_dangling_dangling",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/advance.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_advance",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/ctor.begin_end_size.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_ctor_begin_end_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/ctor.default.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_ctor_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/ctor.pair_like_conv.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_ctor_pair_like_conv",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/ctor.range.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_ctor_range",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/operator.pair_like.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_operator_pair_like",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/primitives.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_primitives",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/structured_bindings.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_structured_bindings",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.utility.conv/from_range_t.compile.pass.cpp",
+   "slug": "ranges_range_utility_range_utility_conv_from_range_t",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/ctor.range_size.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_ctor_range_size",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/general.compile.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_general",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/get.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_get",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.subrange/lwg3470.pass.cpp",
+   "slug": "ranges_range_utility_range_subrange_lwg3470",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/robust_against_poison_pills.compile.pass.cpp",
+   "slug": "ranges_robust_against_poison_pills",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.utility.conv/to.pass.cpp",
+   "slug": "ranges_range_utility_range_utility_conv_to",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.utility.conv/to_deduction.pass.cpp",
+   "slug": "ranges_range_utility_range_utility_conv_to_deduction",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/range.utility.conv/to_std_containers.pass.cpp",
+   "slug": "ranges_range_utility_range_utility_conv_to_std_containers",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "ranges/range.utility/view.interface/view.interface.pass.cpp",
+   "slug": "ranges_range_utility_view_interface_view_interface",
+   "kind": "run",
+   "flags": []
   }
  ],
  "skipped": [
@@ -14264,6 +16676,22 @@
   },
   {
    "file": "algorithms/pstl.exception_handling.pass.cpp",
+   "reason": "unsupported:no-exceptions"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/iterator/singular.pass.cpp",
+   "reason": "unsupported:no-exceptions"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/iterator/singular.pass.cpp",
+   "reason": "unsupported:no-exceptions"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/iterator/ctor.default.pass.cpp",
+   "reason": "requires-unmet:has-fblocks"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip/iterator/singular.pass.cpp",
    "reason": "unsupported:no-exceptions"
   }
  ],
@@ -15237,6 +17665,886 @@
    "file": "algorithms/ranges_robust_against_proxy_iterators.pass.cpp",
    "stage": "parse",
    "diag": "/home/user/llvm-project/libcxx/test/std/algorithms/ranges_robust_against_proxy_iterators.pass.cpp:112:23: error: no member named 'iota' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.access/include.iterator.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.access/include.iterator.pass.cpp:49:21: error: no member named 'crbegin' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/iterator_robust_against_adl.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/iterator_robust_against_adl.compile.pass.cpp:78:44: error: no member named 'enumerate_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/ctor.default.pass.cpp:40:50: error: no member named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/ctor.views.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/ctor.views.pass.cpp:28:42: error: no member named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/end.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/end.pass.cpp:45:18: error: no member named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/general.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/general.pass.cpp:28:35: error: no member named 'adjacent_transform' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/adaptor.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/adaptor.pass.cpp:40:59: error: no member named 'adjacent_transform' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/base.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/base.pass.cpp:63:37: error: no member named 'adjacent_transform' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/begin.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/begin.pass.cpp:45:29: error: no template named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/iterator/decrement.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/iterator/decrement.pass.cpp:33:36: error: no member named 'adjacent_transform' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/iterator/deref.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/iterator/deref.pass.cpp:45:31: error: no template named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/iterator/increment.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/iterator/increment.pass.cpp:30:40: error: no member named 'adjacent_transform' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/iterator/member_types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/iterator/member_types.compile.pass.cpp:58:18: error: no member named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/iterator/arithmetic.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/iterator/arithmetic.pass.cpp:49:18: error: no member named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/iterator/compare.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/iterator/compare.pass.cpp:70:28: error: no template named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/iterator/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/iterator/ctor.default.pass.cpp:26:29: error: no template named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/iterator/ctor.other.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/iterator/ctor.other.pass.cpp:36:18: error: no member named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/iterator/subscript.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/iterator/subscript.pass.cpp:26:18: error: no member named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/range.concept.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/range.concept.compile.pass.cpp:27:18: error: no member named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/sentinel/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/sentinel/ctor.default.pass.cpp:33:35: error: no template named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/sentinel/ctor.other.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/sentinel/ctor.other.pass.cpp:68:29: error: no template named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/sentinel/eq.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/sentinel/eq.pass.cpp:71:31: error: no template named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/sentinel/minus.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/sentinel/minus.pass.cpp:45:31: error: no template named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent.transform/size.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent.transform/size.pass.cpp:49:16: error: no member named 'adjacent_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/adaptor.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/adaptor.pass.cpp:25:59: error: no member named 'adjacent' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/base.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/base.pass.cpp:61:37: error: no member named 'adjacent' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/begin.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/begin.pass.cpp:47:29: error: no template named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/borrowing.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/borrowing.compile.pass.cpp:34:56: error: no member named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/ctor.default.pass.cpp:37:60: error: no member named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/ctor.views.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/ctor.views.pass.cpp:26:52: error: no member named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/end.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/end.pass.cpp:27:18: error: no member named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/general.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/general.pass.cpp:26:38: error: no member named 'adjacent' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/iterator/arithmetic.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/iterator/arithmetic.pass.cpp:59:18: error: no member named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/iterator/compare.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/iterator/compare.pass.cpp:70:28: error: no template named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/iterator/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/iterator/ctor.default.pass.cpp:45:60: error: no member named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/iterator/ctor.other.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/iterator/ctor.other.pass.cpp:35:18: error: no member named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/iterator/iter_swap.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/iterator/iter_swap.pass.cpp:36:35: error: no member named 'adjacent' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/iterator/member_types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/iterator/member_types.compile.pass.cpp:75:18: error: no member named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/iterator/subscript.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/iterator/subscript.pass.cpp:26:18: error: no member named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/range.concept.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/range.concept.compile.pass.cpp:27:18: error: no member named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/sentinel/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/sentinel/ctor.default.pass.cpp:31:35: error: no template named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/sentinel/ctor.other.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/sentinel/ctor.other.pass.cpp:67:29: error: no template named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/sentinel/eq.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/sentinel/eq.pass.cpp:70:31: error: no template named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/iterator/decrement.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/iterator/decrement.pass.cpp:42:38: error: no member named 'adjacent' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/iterator/deref.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/iterator/deref.pass.cpp:28:88: error: no member named 'adjacent' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/iterator/increment.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/iterator/increment.pass.cpp:39:42: error: no member named 'adjacent' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/iterator/iter_move.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/iterator/iter_move.pass.cpp:73:35: error: no member named 'adjacent' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/sentinel/minus.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/sentinel/minus.pass.cpp:44:31: error: no template named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.adjacent/size.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.adjacent/size.pass.cpp:50:18: error: no member named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.as.rvalue/adaptor.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.as.rvalue/adaptor.pass.cpp:58:15: error: static assertion failed due to requirement '!std::is_invocable_v<const std::ranges::views::__as_rvalue::__fn, std::ranges::subrange<I, std::unreachable_sentinel_t, std::ranges::subrange_kind::unsized>>'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/constraints.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/constraints.pass.cpp:23:55: error: no member named 'concat' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/ctad.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/ctad.pass.cpp:38:18: error: no member named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/ctor.default.pass.cpp:37:34: error: no template named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/ctor.views.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/ctor.views.pass.cpp:27:42: error: no member named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/adaptor.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/adaptor.pass.cpp:25:58: error: no member named 'concat' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/begin.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/types.h:70:60: error: no template named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/end.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/types.h:70:60: error: no template named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/iterator/arithmetic.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/iterator/arithmetic.pass.cpp:132:27: error: no template named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/iterator/compare.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/iterator/compare.pass.cpp:51:18: error: no member named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/iterator/iter_move.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/iterator/../types.h:70:60: error: no template named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/iterator/iter_swap.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/iterator/../types.h:70:60: error: no template named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/iterator/member_types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/iterator/member_types.compile.pass.cpp:71:18: error: no member named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/iterator/subscript.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/iterator/subscript.pass.cpp:25:18: error: no member named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/iterator/ctor.other.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/iterator/ctor.other.pass.cpp:33:18: error: no member named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/iterator/decrement.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/iterator/decrement.pass.cpp:38:18: error: no member named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/iterator/deref.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/iterator/../types.h:70:60: error: no template named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/iterator/increment.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/iterator/increment.pass.cpp:44:18: error: no member named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.concat/size.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.concat/types.h:70:60: error: no template named 'concat_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/ctad.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/ctor.base.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/ctor.default.pass.cpp:38:60: error: no member named 'enumerate_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/enable_borrowed_range.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/enable_borrowed_range.compile.pass.cpp:34:57: error: no member named 'enumerate_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/adaptor.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/base.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/begin.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/end.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/iterator/arithmetic.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/iterator/arithmetic.pass.cpp:58:60: error: no member named 'enumerate_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/iterator/base.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/iterator/../types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/iterator/compare.three_way.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/iterator/../types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/iterator/ctor.convert.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/iterator/../types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/iterator/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/iterator/../types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/iterator/deref.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/iterator/../types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/iterator/equal.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/iterator/../types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/iterator/index.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/iterator/../types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/iterator/iter_move.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/iterator/../types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/iterator/subscript.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/iterator/subscript.pass.cpp:32:64: error: no member named 'enumerate_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/iterator/types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/iterator/../types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/sentinel/base.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/sentinel/../types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/sentinel/ctor.convert.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/sentinel/../types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/sentinel/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/sentinel/../types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/sentinel/equal.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/sentinel/../types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/sentinel/minus.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/sentinel/../types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.enumerate/size.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.enumerate/types.h:49:35: error: no member named '__range_with_movable_references' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.iterator/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.iterator/ctor.default.pass.cpp:32:36: error: no template named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.iterator/ctor.not_const.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.iterator/ctor.not_const.pass.cpp:29:18: error: no member named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.iterator/iter_move.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.iterator/iter_move.pass.cpp:180:34: error: no template named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.iterator/iter_swap.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.iterator/iter_swap.pass.cpp:88:34: error: no template named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.iterator/types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.iterator/types.compile.pass.cpp:40:62: error: no member named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.overview/adaptor.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.overview/adaptor.pass.cpp:79:33: error: no template named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.iterator/decrement.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.iterator/decrement.pass.cpp:49:34: error: no template named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.iterator/deref.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.iterator/deref.pass.cpp:89:34: error: no template named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.iterator/eq.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.iterator/eq.pass.cpp:38:34: error: no template named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.iterator/increment.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.iterator/increment.pass.cpp:42:34: error: no template named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.overview/example.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.overview/example.pass.cpp:30:34: error: no member named 'join_with' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.sentinel/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.sentinel/ctor.default.pass.cpp:23:32: error: no template named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.sentinel/ctor.non_const.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.sentinel/ctor.non_const.pass.cpp:29:18: error: no member named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.sentinel/eq.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.sentinel/eq.pass.cpp:45:32: error: no template named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.view/base.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.view/base.pass.cpp:73:18: error: no member named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.view/begin.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.view/begin.pass.cpp:42:65: error: no template named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.view/constraints.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.view/constraints.compile.pass.cpp:27:64: error: no type named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.view/ctad.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.view/ctad.compile.pass.cpp:74:20: error: no member named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.view/inheritance.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.view/inheritance.compile.pass.cpp:34:35: error: no template named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.view/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.view/ctor.default.pass.cpp:54:18: error: no member named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.view/ctor.range.element.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.view/ctor.range.element.pass.cpp:137:18: error: no member named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.view/ctor.range.pattern.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.view/ctor.range.pattern.pass.cpp:73:20: error: no member named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.join.with/range.join.with.view/end.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.join.with/range.join.with.view/end.pass.cpp:32:63: error: no template named 'join_with_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/adaptor.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/adaptor.pass.cpp:25:45: error: no template named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/base.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/base.pass.cpp:43:24: error: no template named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/begin.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/begin.pass.cpp:45:49: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/borrowing.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/borrowing.compile.pass.cpp:18:64: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/concept.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/concept.compile.pass.cpp:21:49: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/ctad.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/ctad.pass.cpp:44:36: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/ctor.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/ctor.pass.cpp:26:65: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/end.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/end.pass.cpp:70:47: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/base.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/base.pass.cpp:25:54: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/compare.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/compare.pass.cpp:28:62: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/ctor.copy.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/ctor.copy.pass.cpp:72:39: error: no template named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/ctor.default.pass.cpp:34:53: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/decrement.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/decrement.pass.cpp:29:78: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/dereference.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/dereference.pass.cpp:24:31: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/equal.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/equal.pass.cpp:23:64: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/increment.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/increment.pass.cpp:31:78: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/iter_move.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/iter_move.pass.cpp:31:37: error: no template named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/iter_swap.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/iter_swap.pass.cpp:32:37: error: no template named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/minus.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/minus.pass.cpp:41:74: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/minus_equal.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/minus_equal.pass.cpp:25:74: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/plus.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/plus.pass.cpp:32:78: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/plus_equal.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/plus_equal.pass.cpp:28:78: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/subscript.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/subscript.pass.cpp:24:62: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/iterator/types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/iterator/types.compile.pass.cpp:26:36: error: no template named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/size.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/size.pass.cpp:23:54: error: no member named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.stride.view/stride.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.stride.view/stride.pass.cpp:24:22: error: no template named 'stride_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/begin.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/begin.pass.cpp:34:18: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/cpo.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/cpo.pass.cpp:49:57: error: no member named 'zip_transform' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/ctad.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/ctad.compile.pass.cpp:29:54: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/ctor.default.pass.cpp:50:60: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/iterator/compare.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/iterator/compare.pass.cpp:73:30: error: no member named 'zip_transform' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/iterator/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/iterator/ctor.default.pass.cpp:29:51: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/iterator/ctor.other.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/iterator/ctor.other.pass.cpp:34:18: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/iterator/decrement.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/iterator/decrement.pass.cpp:28:18: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/ctor.views.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/ctor.views.pass.cpp:28:52: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/end.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/end.pass.cpp:32:18: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/general.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/general.pass.cpp:25:32: error: no member named 'zip_transform' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/iterator/arithmetic.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/iterator/arithmetic.pass.cpp:53:18: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/iterator/deref.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/iterator/deref.pass.cpp:53:42: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/iterator/increment.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/iterator/increment.pass.cpp:32:16: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/iterator/member_types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/iterator/member_types.compile.pass.cpp:52:18: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/iterator/subscript.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/iterator/subscript.pass.cpp:27:18: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/sentinel/ctor.default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/sentinel/ctor.default.pass.cpp:35:35: error: no template named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/sentinel/ctor.other.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/sentinel/ctor.other.pass.cpp:55:18: error: no type named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/sentinel/eq.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/sentinel/eq.pass.cpp:65:18: error: no type named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/sentinel/minus.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/sentinel/minus.pass.cpp:38:18: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.adaptors/range.zip.transform/size.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.adaptors/range.zip.transform/size.pass.cpp:50:18: error: no member named 'zip_transform_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/begin.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/__ranges/iota_view.h:64:9: error: static assertion failed due to requirement 'sizeof(__int128) <= sizeof(long long)': Found integer-like type that is bigger than largest integer like type."
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/end.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/__ranges/iota_view.h:64:9: error: static assertion failed due to requirement 'sizeof(__int128) <= sizeof(long long)': Found integer-like type that is bigger than largest integer like type."
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/indices.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.factories/range.iota.view/indices.pass.cpp:28:65: error: no member named 'indices' in namespace 'std::ranges::views'"
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/iterator/member_typedefs.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.factories/range.iota.view/iterator/member_typedefs.compile.pass.cpp:112:26: error: static assertion failed"
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/iterator/star.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/__ranges/iota_view.h:64:9: error: static assertion failed due to requirement 'sizeof(__int128) <= sizeof(long long)': Found integer-like type that is bigger than largest integer like type."
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/iterator/subscript.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/__ranges/iota_view.h:64:9: error: static assertion failed due to requirement 'sizeof(__int128) <= sizeof(long long)': Found integer-like type that is bigger than largest integer like type."
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/size.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.factories/range.iota.view/size.pass.cpp:113:23: error: static assertion failed due to requirement '!HasSize<std::ranges::iota_view<char, bool>>'"
+  },
+  {
+   "file": "ranges/range.factories/range.iota.view/views_iota.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/__ranges/iota_view.h:64:9: error: static assertion failed due to requirement 'sizeof(__int128) <= sizeof(long long)': Found integer-like type that is bigger than largest integer like type."
+  },
+  {
+   "file": "ranges/range.req/range.view/enable_view.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.req/range.view/enable_view.compile.pass.cpp:108:15: error: static assertion failed due to requirement 'std::ranges::enable_view<volatile V1>'"
+  },
+  {
+   "file": "ranges/range.req/range.view/view.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.req/range.view/view.compile.pass.cpp:152:15: error: static assertion failed due to requirement 'std::ranges::enable_view<volatile VolatileView2>'"
+  },
+  {
+   "file": "ranges/range.utility/range.elementsof/ctad.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.utility/range.elementsof/ctad.pass.cpp:37:18: error: no member named 'elements_of' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/range.utility/range.elementsof/elements_of.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/range.utility/range.elementsof/elements_of.pass.cpp:45:38: error: no template named 'elements_of' in namespace 'std::ranges'"
+  },
+  {
+   "file": "ranges/ranges_robust_against_no_unique_address.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/ranges/ranges_robust_against_no_unique_address.pass.cpp:59:24: error: no member named 'adjacent_view' in namespace 'std::ranges'"
   }
  ],
  "subtrees": [
@@ -15249,6 +18557,7 @@
   "experimental",
   "iterators",
   "strings",
-  "algorithms"
+  "algorithms",
+  "ranges"
  ]
 }

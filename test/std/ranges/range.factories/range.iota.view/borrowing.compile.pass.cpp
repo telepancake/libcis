@@ -1,0 +1,24 @@
+// AST-transferred from libc++ by tools/transfer.py (slug=ranges_range_factories_range_iota_view_borrowing).
+// no entry point (compile-only); all file-scope decls isolated in anon namespace.
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// UNSUPPORTED: c++03, c++11, c++14, c++17
+
+// template<class W, class Bound>
+//   inline constexpr bool enable_borrowed_range<iota_view<W, Bound>> = true;
+
+#include <ranges>
+
+namespace libcis_ns_ranges_range_factories_range_iota_view_borrowing { // libcis: isolate file-scope helpers
+static_assert(std::ranges::borrowed_range<std::ranges::iota_view<int, int>>);
+static_assert(std::ranges::borrowed_range<std::ranges::iota_view<int, std::unreachable_sentinel_t>>);
+static_assert(std::ranges::borrowed_range<std::ranges::iota_view<int*, int*>>);
+static_assert(std::ranges::borrowed_range<std::ranges::iota_view<int*, std::unreachable_sentinel_t>>);
+} using namespace libcis_ns_ranges_range_factories_range_iota_view_borrowing; // libcis
+

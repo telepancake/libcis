@@ -1,0 +1,73 @@
+// AST-transferred from libc++ by tools/transfer.py (slug=ranges_range_adaptors_range_take_while_pred).
+// main -> test_ranges_range_adaptors_range_take_while_pred; file-scope helpers isolated in anon namespace.
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// UNSUPPORTED: c++03, c++11, c++14, c++17
+
+// constexpr const Pred& pred() const;
+
+#include <cassert>
+#include <ranges>
+#include <type_traits>
+#include <utility>
+
+namespace libcis_ns_ranges_range_adaptors_range_take_while_pred { // libcis: isolate file-scope helpers
+struct View : std::ranges::view_interface<View> {
+  int* begin() const;
+  int* end() const;
+};
+
+struct Pred {
+  int i;
+  bool operator()(int) const;
+};
+
+constexpr bool test() {
+  // &
+  {
+    std::ranges::take_while_view<View, Pred> twv{{}, Pred{5}};
+    decltype(auto) x = twv.pred();
+    static_assert(std::same_as<decltype(x), Pred const&>);
+    assert(x.i == 5);
+  }
+
+  // const &
+  {
+    const std::ranges::take_while_view<View, Pred> twv{{}, Pred{5}};
+    decltype(auto) x = twv.pred();
+    static_assert(std::same_as<decltype(x), Pred const&>);
+    assert(x.i == 5);
+  }
+
+  // &&
+  {
+    std::ranges::take_while_view<View, Pred> twv{{}, Pred{5}};
+    decltype(auto) x = std::move(twv).pred();
+    static_assert(std::same_as<decltype(x), Pred const&>);
+    assert(x.i == 5);
+  }
+
+  // const &&
+  {
+    const std::ranges::take_while_view<View, Pred> twv{{}, Pred{5}};
+    decltype(auto) x = std::move(twv).pred();
+    static_assert(std::same_as<decltype(x), Pred const&>);
+    assert(x.i == 5);
+  }
+
+  return true;
+}
+} using namespace libcis_ns_ranges_range_adaptors_range_take_while_pred; // libcis
+
+
+void test_ranges_range_adaptors_range_take_while_pred() {
+  test();
+  static_assert(test());
+  return;
+}
