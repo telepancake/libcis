@@ -1,0 +1,65 @@
+// AST-transferred from libc++ by tools/transfer.py (slug=language_support_support_limits_limits_numeric_limits_members_is_iec559).
+// main -> test_language_support_support_limits_limits_numeric_limits_members_is_iec559; file-scope helpers isolated in anon namespace.
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// test numeric_limits
+
+// is_iec559
+
+#include <limits>
+
+#include "test_macros.h"
+
+namespace libcis_ns_language_support_support_limits_limits_numeric_limits_members_is_iec559 { // libcis: isolate file-scope helpers
+template <class T, bool expected>
+void
+test()
+{
+    static_assert(std::numeric_limits<T>::is_iec559 == expected, "is_iec559 test 1");
+    static_assert(std::numeric_limits<const T>::is_iec559 == expected, "is_iec559 test 2");
+    static_assert(std::numeric_limits<volatile T>::is_iec559 == expected, "is_iec559 test 3");
+    static_assert(std::numeric_limits<const volatile T>::is_iec559 == expected, "is_iec559 test 4");
+}
+} using namespace libcis_ns_language_support_support_limits_limits_numeric_limits_members_is_iec559; // libcis
+
+
+void test_language_support_support_limits_limits_numeric_limits_members_is_iec559()
+{
+    test<bool, false>();
+    test<char, false>();
+    test<signed char, false>();
+    test<unsigned char, false>();
+    test<wchar_t, false>();
+#if TEST_STD_VER > 17 && defined(__cpp_char8_t)
+    test<char8_t, false>();
+#endif
+    test<char16_t, false>();
+    test<char32_t, false>();
+    test<short, false>();
+    test<unsigned short, false>();
+    test<int, false>();
+    test<unsigned int, false>();
+    test<long, false>();
+    test<unsigned long, false>();
+    test<long long, false>();
+    test<unsigned long long, false>();
+#ifndef TEST_HAS_NO_INT128
+    test<__int128_t, false>();
+    test<__uint128_t, false>();
+#endif
+    test<float, true>();
+    test<double, true>();
+#if defined(__powerpc__) && defined(__LONG_DOUBLE_IBM128__)
+    test<long double, false>();
+#else
+    test<long double, true>();
+#endif
+
+  return;
+}

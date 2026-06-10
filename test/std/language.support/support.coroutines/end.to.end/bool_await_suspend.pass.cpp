@@ -1,0 +1,74 @@
+// AST-transferred from libc++ by tools/transfer.py (slug=language_support_support_coroutines_end_to_end_bool_await_suspend).
+// main -> test_language_support_support_coroutines_end_to_end_bool_await_suspend; file-scope helpers isolated in anon namespace.
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// UNSUPPORTED: c++03, c++11, c++14, c++17
+
+// See https://llvm.org/PR33271
+// UNSUPPORTED: ubsan
+
+#include <coroutine>
+#include <cassert>
+
+#include "test_macros.h"
+
+namespace libcis_ns_language_support_support_coroutines_end_to_end_bool_await_suspend { // libcis: isolate file-scope helpers
+struct coro_t {
+  struct promise_type {
+    coro_t get_return_object() {
+      return std::coroutine_handle<promise_type>::from_promise(*this);
+    }
+    std::suspend_never initial_suspend() { return {}; }
+    std::suspend_never final_suspend() noexcept { return {}; }
+    void return_void() {}
+    void unhandled_exception() {}
+  };
+  coro_t(std::coroutine_handle<promise_type> hh) : h(hh) {}
+  std::coroutine_handle<promise_type> h;
+};
+
+struct NoSuspend {
+  bool await_ready() { return false; }
+  void await_resume() {}
+  template <typename F> bool await_suspend(F) { return false; }
+};
+
+struct DoSuspend {
+  bool await_ready() { return false; }
+  void await_resume() {}
+  template <typename F> bool await_suspend(F) { return true; }
+};
+
+bool f_started, f_resumed = false;
+coro_t f() {
+  f_started = true;
+  co_await DoSuspend{};
+  f_resumed = true;
+}
+
+bool g_started, g_resumed = false;
+coro_t g() {
+  g_started = true;
+  co_await NoSuspend{};
+  g_resumed = true;
+}
+} using namespace libcis_ns_language_support_support_coroutines_end_to_end_bool_await_suspend; // libcis
+
+
+void test_language_support_support_coroutines_end_to_end_bool_await_suspend() {
+  assert(!f_started && !f_resumed && !g_started && !g_resumed);
+  auto fret = f();
+  assert(f_started && !f_resumed);
+  fret.h.destroy();
+  assert(f_started && !f_resumed);
+  g();
+  assert(g_started && g_resumed);
+
+  return;
+}
