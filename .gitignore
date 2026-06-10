@@ -3,3 +3,4 @@ a.out
 *.out
 __pycache__/
 *.pyc
+.claude/
