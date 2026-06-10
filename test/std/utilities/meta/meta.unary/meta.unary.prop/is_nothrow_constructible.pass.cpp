@@ -1,0 +1,100 @@
+// AST-transferred from libc++ by tools/transfer.py (slug=utilities_meta_meta_unary_meta_unary_prop_is_nothrow_constructible).
+// main -> test_utilities_meta_meta_unary_meta_unary_prop_is_nothrow_constructible; file-scope helpers isolated in anon namespace.
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// type_traits
+
+// template <class T, class... Args>
+//   struct is_nothrow_constructible;
+
+#include <type_traits>
+#include "test_macros.h"
+
+#include "common.h"
+
+namespace libcis_ns_utilities_meta_meta_unary_meta_unary_prop_is_nothrow_constructible { // libcis: isolate file-scope helpers
+template <class T>
+void test_is_nothrow_constructible()
+{
+    static_assert(( std::is_nothrow_constructible<T>::value), "");
+#if TEST_STD_VER > 14
+    static_assert(( std::is_nothrow_constructible_v<T>), "");
+#endif
+}
+
+template <class T, class A0>
+void test_is_nothrow_constructible()
+{
+    static_assert(( std::is_nothrow_constructible<T, A0>::value), "");
+#if TEST_STD_VER > 14
+    static_assert(( std::is_nothrow_constructible_v<T, A0>), "");
+#endif
+}
+
+template <class T>
+void test_is_not_nothrow_constructible()
+{
+    static_assert((!std::is_nothrow_constructible<T>::value), "");
+#if TEST_STD_VER > 14
+    static_assert((!std::is_nothrow_constructible_v<T>), "");
+#endif
+}
+
+template <class T, class A0>
+void test_is_not_nothrow_constructible()
+{
+    static_assert((!std::is_nothrow_constructible<T, A0>::value), "");
+#if TEST_STD_VER > 14
+    static_assert((!std::is_nothrow_constructible_v<T, A0>), "");
+#endif
+}
+
+template <class T, class A0, class A1>
+void test_is_not_nothrow_constructible()
+{
+    static_assert((!std::is_nothrow_constructible<T, A0, A1>::value), "");
+#if TEST_STD_VER > 14
+    static_assert((!std::is_nothrow_constructible_v<T, A0, A1>), "");
+#endif
+}
+
+struct C
+{
+    C(C&);  // not const
+    void operator=(C&);  // not const
+};
+
+#if TEST_STD_VER >= 11
+struct Tuple {
+    Tuple(Empty&&) noexcept {}
+};
+} using namespace libcis_ns_utilities_meta_meta_unary_meta_unary_prop_is_nothrow_constructible; // libcis
+
+#endif
+
+void test_utilities_meta_meta_unary_meta_unary_prop_is_nothrow_constructible()
+{
+    test_is_nothrow_constructible<int> ();
+    test_is_nothrow_constructible<int, const int&> ();
+    test_is_nothrow_constructible<Empty> ();
+    test_is_nothrow_constructible<Empty, const Empty&> ();
+
+    test_is_not_nothrow_constructible<A, int> ();
+    test_is_not_nothrow_constructible<A, int, double> ();
+    test_is_not_nothrow_constructible<A> ();
+    test_is_not_nothrow_constructible<C> ();
+#if TEST_STD_VER >= 11
+    test_is_nothrow_constructible<Tuple &&, Empty> (); // See bug #19616.
+
+    static_assert(!std::is_constructible<Tuple&, Empty>::value, "");
+    test_is_not_nothrow_constructible<Tuple &, Empty> (); // See bug #19616.
+#endif
+
+  return;
+}
