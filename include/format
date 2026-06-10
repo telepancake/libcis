@@ -1,0 +1,1454 @@
+// <format> — std::format and friends.
+// Mechanically ported from libc++ include/format and include/__format/*.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Deviations from the standard / libc++:
+//  - format_error never throws; errors call __builtin_trap().
+//  - Floating-point formatting uses snprintf (not std::to_chars for fp),
+//    because gcc-10's <charconv> only covers integers.
+//  - basic_format_string consteval validation is relaxed (gcc-10 consteval
+//    support is limited). Runtime checking still applies.
+//  - No locale / wide-char support.  No chrono/range/tuple formatters.
+#pragma once
+
+#include <string>
+#include <string_view>
+#include <type_traits>
+#include <concepts>
+#include <charconv>
+#include <cstdint>
+#include <array>
+#include <vector>
+#include <iterator>
+#include <cmath>
+#include <cstdio>
+#include <stdexcept>
+#include <variant>  // monostate
+
+namespace std {
+
+// ============================================================
+// 1. format_error
+// ============================================================
+
+class format_error : public runtime_error {
+public:
+    explicit format_error(const string& s) : runtime_error(s.c_str()) {}
+    explicit format_error(const char*   s) : runtime_error(s) {}
+    format_error(const format_error&)            = default;
+    format_error& operator=(const format_error&) = default;
+    ~format_error() noexcept override = default;
+};
+
+[[noreturn]] inline void throw_format_error(const char* msg) {
+    __builtin_printf("format_error: %s\n", msg);
+    __builtin_trap();
+}
+
+// ============================================================
+// 2. formatter primary template (disabled)
+// ============================================================
+
+template<class Tp, class CharT = char>
+struct formatter {
+    formatter()  = delete;
+    ~formatter() = delete;
+};
+
+// ============================================================
+// 3. basic_format_parse_context
+// ============================================================
+
+template<class CharT>
+class basic_format_parse_context {
+public:
+    using char_type      = CharT;
+    using const_iterator = typename basic_string_view<CharT>::const_iterator;
+    using iterator       = const_iterator;
+
+    constexpr explicit basic_format_parse_context(
+            basic_string_view<CharT> fmt, size_t num_args = 0) noexcept
+        : begin_(fmt.begin()), end_(fmt.end()),
+          indexing_(unknown_), next_arg_id_(0), num_args_(num_args) {}
+
+    basic_format_parse_context(const basic_format_parse_context&)            = delete;
+    basic_format_parse_context& operator=(const basic_format_parse_context&) = delete;
+
+    [[nodiscard]] constexpr const_iterator begin() const noexcept { return begin_; }
+    [[nodiscard]] constexpr const_iterator end()   const noexcept { return end_;   }
+    constexpr void advance_to(const_iterator it) { begin_ = it; }
+
+    constexpr size_t next_arg_id() {
+        if (indexing_ == manual_)
+            throw_format_error("Using automatic argument numbering in manual argument numbering mode");
+        if (indexing_ == unknown_)
+            indexing_ = automatic_;
+        return next_arg_id_++;
+    }
+
+    constexpr void check_arg_id(size_t id) {
+        if (indexing_ == automatic_)
+            throw_format_error("Using manual argument numbering in automatic argument numbering mode");
+        if (indexing_ == unknown_)
+            indexing_ = manual_;
+        (void)id;
+    }
+
+private:
+    iterator begin_;
+    iterator end_;
+    enum Indexing { unknown_, manual_, automatic_ };
+    Indexing indexing_;
+    size_t   next_arg_id_;
+    size_t   num_args_;
+};
+
+using format_parse_context = basic_format_parse_context<char>;
+
+// ============================================================
+// 4. format_spec enums & parsed_specs
+// ============================================================
+
+namespace fmt_spec {
+
+enum class alignment : uint8_t {
+    default_, left, center, right, zero_padding
+};
+enum class sign : uint8_t {
+    default_, minus, plus, space
+};
+enum class type : uint8_t {
+    default_ = 0,
+    string_,
+    binary_lower, binary_upper,
+    octal,
+    decimal,
+    hex_lower, hex_upper,
+    pointer_lower, pointer_upper,
+    char_,
+    hexfloat_lower, hexfloat_upper,
+    scientific_lower, scientific_upper,
+    fixed_lower, fixed_upper,
+    general_lower, general_upper,
+};
+
+struct fill_t {
+    char data[4] = {' '};
+};
+
+struct parsed_specs {
+    alignment  align = alignment::default_;
+    sign       sign_ = sign::default_;
+    bool       alt   = false;
+    type       type_ = type::default_;
+    int32_t    width = 0;
+    int32_t    prec  = -1;
+    fill_t     fill;
+
+    bool has_width()     const { return width > 0; }
+    bool has_precision() const { return prec  >= 0; }
+};
+
+struct fields {
+    bool sign         = false;
+    bool alt          = false;
+    bool zero_pad     = false;
+    bool precision    = false;
+    bool locale       = false;
+    bool type_field   = false;
+};
+
+inline constexpr fields fields_bool     = {false,false,false,false,true,true};
+inline constexpr fields fields_integral = {true, true, true, false,true,true};
+inline constexpr fields fields_float    = {true, true, true, true, true,true};
+inline constexpr fields fields_string   = {false,false,false,true, false,true};
+inline constexpr fields fields_pointer  = {false,false,true, false,false,true};
+
+} // namespace fmt_spec
+
+// ============================================================
+// 5. basic_format_arg / basic_format_args
+// ============================================================
+
+// The arg_kind enum — shared representation
+enum class fmt_arg_kind : uint8_t {
+    none,
+    boolean, char_t,
+    int_, long_long, uint_, ullong,
+    float_, double_, ldouble,
+    cstring, strview, ptr, handle
+};
+
+// basic_format_arg<Context> carries one format argument.
+// The handle stores a Context-specific function pointer so it can call
+// formatter<T,CharT>::format without knowing T at this layer.
+template<class Context>
+class basic_format_arg {
+    using CharT = typename Context::char_type;
+public:
+    struct handle_data {
+        const void* ptr;
+        void (*fn)(basic_format_parse_context<CharT>&, Context&, const void*);
+    };
+
+    class handle {
+        handle_data& d_;
+    public:
+        explicit handle(handle_data& d) noexcept : d_(d) {}
+        void format(basic_format_parse_context<CharT>& pc, Context& ctx) const {
+            d_.fn(pc, ctx, d_.ptr);
+        }
+    };
+
+    // Internal storage — left public so helpers can access without friend complications
+    union storage {
+        bool                     b;
+        CharT                    ch;
+        int                      i;
+        unsigned                 u;
+        long long                ll;
+        unsigned long long       ull;
+        float                    f;
+        double                   d;
+        long double              ld;
+        const CharT*             cs;
+        basic_string_view<CharT> sv;
+        const void*              p;
+        handle_data              hd;
+
+        storage() noexcept : i(0) {}
+    };
+
+    fmt_arg_kind kind_ = fmt_arg_kind::none;
+    storage      val_;
+
+    basic_format_arg() noexcept = default;
+    explicit operator bool() const noexcept { return kind_ != fmt_arg_kind::none; }
+
+    // Construction helpers
+    static basic_format_arg make(bool v)                    noexcept { basic_format_arg a; a.kind_=fmt_arg_kind::boolean; a.val_.b=v; return a; }
+    static basic_format_arg make(CharT v)                   noexcept { basic_format_arg a; a.kind_=fmt_arg_kind::char_t;  a.val_.ch=v; return a; }
+    static basic_format_arg make(int v)                     noexcept { basic_format_arg a; a.kind_=fmt_arg_kind::int_;    a.val_.i=v; return a; }
+    static basic_format_arg make(unsigned v)                noexcept { basic_format_arg a; a.kind_=fmt_arg_kind::uint_;   a.val_.u=v; return a; }
+    static basic_format_arg make(long long v)               noexcept { basic_format_arg a; a.kind_=fmt_arg_kind::long_long; a.val_.ll=v; return a; }
+    static basic_format_arg make(unsigned long long v)      noexcept { basic_format_arg a; a.kind_=fmt_arg_kind::ullong;  a.val_.ull=v; return a; }
+    static basic_format_arg make(float v)                   noexcept { basic_format_arg a; a.kind_=fmt_arg_kind::float_;  a.val_.f=v; return a; }
+    static basic_format_arg make(double v)                  noexcept { basic_format_arg a; a.kind_=fmt_arg_kind::double_; a.val_.d=v; return a; }
+    static basic_format_arg make(long double v)             noexcept { basic_format_arg a; a.kind_=fmt_arg_kind::ldouble; a.val_.ld=v; return a; }
+    static basic_format_arg make(const CharT* v)            noexcept { basic_format_arg a; a.kind_=fmt_arg_kind::cstring; a.val_.cs=v; return a; }
+    static basic_format_arg make(basic_string_view<CharT> v)noexcept { basic_format_arg a; a.kind_=fmt_arg_kind::strview; a.val_.sv=v; return a; }
+    static basic_format_arg make(const void* v)             noexcept { basic_format_arg a; a.kind_=fmt_arg_kind::ptr;    a.val_.p=v; return a; }
+    static basic_format_arg make_handle(handle_data hd)     noexcept { basic_format_arg a; a.kind_=fmt_arg_kind::handle;  a.val_.hd=hd; return a; }
+};
+
+// visit_format_arg_impl — dispatches to visitor based on stored type
+template<class Visitor, class Context>
+decltype(auto) visit_format_arg_impl(Visitor&& vis, basic_format_arg<Context> arg) {
+    using K = fmt_arg_kind;
+    switch (arg.kind_) {
+    case K::none:     return std::forward<Visitor>(vis)(monostate{});
+    case K::boolean:  return std::forward<Visitor>(vis)(arg.val_.b);
+    case K::char_t:   return std::forward<Visitor>(vis)(arg.val_.ch);
+    case K::int_:     return std::forward<Visitor>(vis)(arg.val_.i);
+    case K::long_long:return std::forward<Visitor>(vis)(arg.val_.ll);
+    case K::uint_:    return std::forward<Visitor>(vis)(arg.val_.u);
+    case K::ullong:   return std::forward<Visitor>(vis)(arg.val_.ull);
+    case K::float_:   return std::forward<Visitor>(vis)(arg.val_.f);
+    case K::double_:  return std::forward<Visitor>(vis)(arg.val_.d);
+    case K::ldouble:  return std::forward<Visitor>(vis)(arg.val_.ld);
+    case K::cstring:  return std::forward<Visitor>(vis)(arg.val_.cs);
+    case K::strview:  return std::forward<Visitor>(vis)(arg.val_.sv);
+    case K::ptr:      return std::forward<Visitor>(vis)(arg.val_.p);
+    case K::handle:
+        return std::forward<Visitor>(vis)(
+            typename basic_format_arg<Context>::handle{arg.val_.hd});
+    }
+    __builtin_trap();
+}
+
+// Public visit_format_arg (deprecated in C++26 but still provided)
+template<class Visitor, class Context>
+decltype(auto) visit_format_arg(Visitor&& vis, basic_format_arg<Context> arg) {
+    return visit_format_arg_impl(std::forward<Visitor>(vis), arg);
+}
+
+// ============================================================
+// 6. determine_arg_kind + make_basic_format_arg
+// ============================================================
+
+namespace fmt_detail {
+
+// Helper to check if D is a string-like type (has value_type + data/size)
+// without triggering hard errors for non-class types.
+template<class D, class CharT>
+inline constexpr bool is_string_like_v = false;
+
+template<class D, class CharT>
+    requires requires { typename D::value_type; } &&
+             is_same_v<typename D::value_type, CharT>
+inline constexpr bool is_string_like_v<D, CharT> = true;
+
+// Map a decayed type to its arg_kind.
+// IMPORTANT: char arrays (char[N] / const char[N]) must be handled as cstring
+// via decay_t before reaching the handle fallthrough.
+template<class Context, class D>
+constexpr fmt_arg_kind determine_kind() {
+    using CharT = typename Context::char_type;
+    // D is already decay_t<T>
+    if constexpr (is_same_v<D, bool>)            return fmt_arg_kind::boolean;
+    else if constexpr (is_same_v<D, CharT>)      return fmt_arg_kind::char_t;
+    else if constexpr (is_same_v<D, float>)      return fmt_arg_kind::float_;
+    else if constexpr (is_same_v<D, double>)     return fmt_arg_kind::double_;
+    else if constexpr (is_same_v<D, long double>) return fmt_arg_kind::ldouble;
+    // char pointer (incl. decayed char array)
+    else if constexpr (is_same_v<D, const CharT*> || is_same_v<D, CharT*>)
+        return fmt_arg_kind::cstring;
+    // void pointer / nullptr_t
+    else if constexpr (is_same_v<D, nullptr_t> ||
+                       is_same_v<D, void*> ||
+                       is_same_v<D, const void*>)
+        return fmt_arg_kind::ptr;
+    // string / string_view that share the context char_type
+    else if constexpr (is_string_like_v<D, CharT>)
+        return fmt_arg_kind::strview;
+    else if constexpr (signed_integral<D>) {
+        if constexpr (sizeof(D) <= sizeof(int))         return fmt_arg_kind::int_;
+        else                                            return fmt_arg_kind::long_long;
+    }
+    else if constexpr (unsigned_integral<D>) {
+        if constexpr (sizeof(D) <= sizeof(unsigned))    return fmt_arg_kind::uint_;
+        else                                            return fmt_arg_kind::ullong;
+    }
+    else
+        return fmt_arg_kind::handle;
+}
+
+} // namespace fmt_detail
+
+// make_basic_format_arg<Context>(v) — creates a basic_format_arg<Context> for v.
+// T is the unqualified type as stored; D = decay_t<T>.
+template<class Context, class T>
+basic_format_arg<Context> make_basic_format_arg(T& v) noexcept {
+    using D     = decay_t<T>;
+    using CharT = typename Context::char_type;
+    using Arg   = basic_format_arg<Context>;
+
+    constexpr fmt_arg_kind k = fmt_detail::determine_kind<Context, D>();
+
+    if constexpr (k == fmt_arg_kind::char_t)
+        return Arg::make(static_cast<CharT>(v));
+    else if constexpr (k == fmt_arg_kind::int_)
+        return Arg::make(static_cast<int>(v));
+    else if constexpr (k == fmt_arg_kind::long_long)
+        return Arg::make(static_cast<long long>(v));
+    else if constexpr (k == fmt_arg_kind::uint_)
+        return Arg::make(static_cast<unsigned>(v));
+    else if constexpr (k == fmt_arg_kind::ullong)
+        return Arg::make(static_cast<unsigned long long>(v));
+    else if constexpr (k == fmt_arg_kind::strview) {
+        // D has .data()/.size() — safe because this branch is only taken for string-like D
+        const CharT* p2 = v.data();
+        size_t       s2 = v.size();
+        return Arg::make(basic_string_view<CharT>{p2, s2});
+    }
+    else if constexpr (k == fmt_arg_kind::ptr)
+        return Arg::make(static_cast<const void*>(
+            // nullptr_t doesn't convert to const void* directly
+            []<class U>(U x) -> const void* {
+                if constexpr (is_same_v<U, nullptr_t>) return nullptr;
+                else return static_cast<const void*>(x);
+            }(v)));
+    else if constexpr (k == fmt_arg_kind::handle) {
+        typename Arg::handle_data hd{
+            std::addressof(v),
+            [](basic_format_parse_context<CharT>& pc, Context& ctx, const void* p) {
+                using Dp = remove_const_t<T>;
+                typename Context::template formatter_type<Dp> f;
+                pc.advance_to(f.parse(pc));
+                ctx.advance_to(f.format(*const_cast<Dp*>(static_cast<const Dp*>(p)), ctx));
+            }
+        };
+        return Arg::make_handle(hd);
+    }
+    else
+        return Arg::make(v); // boolean, float, double, ldouble, cstring
+}
+
+// ============================================================
+// 7. format_arg_store + basic_format_args
+// ============================================================
+
+// Type-erased format_args that works for any Context.
+// We store basic_format_arg<Context> directly.
+// format_arg_store is a temporary created by make_format_args; it keeps
+// the args alive.  basic_format_args just holds a pointer + size.
+
+template<class Context, class... Args>
+struct format_arg_store {
+    static constexpr size_t N = sizeof...(Args);
+    basic_format_arg<Context> storage[N == 0 ? 1 : N];
+    size_t count = N;
+
+    format_arg_store(Args&... as) noexcept {
+        size_t i = 0;
+        ((storage[i++] = make_basic_format_arg<Context>(as)), ...);
+    }
+};
+
+template<class Context>
+class basic_format_args {
+    const basic_format_arg<Context>* data_ = nullptr;
+    size_t size_                            = 0;
+public:
+    basic_format_args() noexcept = default;
+
+    template<class... Args>
+    basic_format_args(const format_arg_store<Context, Args...>& store) noexcept
+        : data_(store.storage), size_(store.count) {}
+
+    [[nodiscard]] basic_format_arg<Context> get(size_t id) const noexcept {
+        if (id >= size_) return {};
+        return data_[id];
+    }
+    [[nodiscard]] size_t size() const noexcept { return size_; }
+};
+
+// ============================================================
+// 8. basic_format_context
+// ============================================================
+
+template<class Out, class CharT>
+class basic_format_context {
+    Out out_;
+    basic_format_args<basic_format_context> args_;
+public:
+    using iterator  = Out;
+    using char_type = CharT;
+
+    template<class Tp>
+    using formatter_type = formatter<Tp, CharT>;
+
+    explicit basic_format_context(Out out,
+                                  basic_format_args<basic_format_context> args)
+        : out_(std::move(out)), args_(args) {}
+
+    basic_format_context(const basic_format_context&)            = delete;
+    basic_format_context& operator=(const basic_format_context&) = delete;
+
+    [[nodiscard]] basic_format_arg<basic_format_context> arg(size_t id) const noexcept {
+        return args_.get(id);
+    }
+
+    [[nodiscard]] Out out() { return std::move(out_); }
+    void advance_to(Out it) { out_ = std::move(it); }
+};
+
+// format_context = Context with back_insert_iterator<string>
+using format_context = basic_format_context<back_insert_iterator<string>, char>;
+// Convenient alias
+using format_args = basic_format_args<format_context>;
+
+// ============================================================
+// 9. make_format_args
+// ============================================================
+
+template<class Context = format_context, class... Args>
+[[nodiscard]] format_arg_store<Context, Args...> make_format_args(Args&... args) {
+    return format_arg_store<Context, Args...>{args...};
+}
+
+// ============================================================
+// 10. basic_format_string / format_string
+// ============================================================
+
+template<class CharT, class... Args>
+struct basic_format_string {
+    basic_string_view<CharT> str;
+
+    template<class Tp>
+        requires convertible_to<const Tp&, basic_string_view<CharT>>
+    consteval basic_format_string(const Tp& s) : str(s) {}
+
+    constexpr basic_string_view<CharT> get() const noexcept { return str; }
+};
+
+template<class... Args>
+using format_string = basic_format_string<char, type_identity_t<Args>...>;
+
+// ============================================================
+// 11. format_to_n_result
+// ============================================================
+
+template<class Out>
+struct format_to_n_result {
+    Out out;
+    iter_difference_t<Out> size;
+};
+
+// ============================================================
+// 12. Spec parser helpers
+// ============================================================
+
+namespace fmt_detail {
+
+// Width/prec arg substitution
+template<class Context>
+int32_t substitute_arg_id(basic_format_arg<Context> arg) {
+    return visit_format_arg_impl([](auto v) -> int32_t {
+        using T = remove_cvref_t<decltype(v)>;
+        if constexpr (is_same_v<T, int>)               return v;
+        if constexpr (is_same_v<T, unsigned>)          return static_cast<int32_t>(v);
+        if constexpr (is_same_v<T, long long>)         return static_cast<int32_t>(v);
+        if constexpr (is_same_v<T, unsigned long long>) return static_cast<int32_t>(v);
+        throw_format_error("Replacement argument isn't a standard signed or unsigned integer type");
+        return 0;
+    }, arg);
+}
+
+// Number parser
+template<class It>
+struct parse_number_result { It last; uint32_t value; };
+
+template<class It>
+constexpr parse_number_result<It> parse_number(It begin, It end) {
+    using CharT = typename iterator_traits<It>::value_type;
+    It bound = (end - begin > 9) ? begin + 9 : end;
+    uint32_t value = static_cast<uint32_t>(*begin - CharT('0'));
+    while (++begin != bound) {
+        if (*begin < CharT('0') || *begin > CharT('9'))
+            return {begin, value};
+        value = value * 10u + static_cast<uint32_t>(*begin - CharT('0'));
+    }
+    if (begin != end && *begin >= CharT('0') && *begin <= CharT('9')) {
+        uint64_t v2 = uint64_t(value) * 10 + static_cast<uint32_t>(*begin++ - CharT('0'));
+        if (v2 > uint32_t(INT32_MAX) ||
+            (begin != end && *begin >= CharT('0') && *begin <= CharT('9')))
+            throw_format_error("The numeric value of the format specifier is too large");
+        value = static_cast<uint32_t>(v2);
+    }
+    return {begin, value};
+}
+
+template<class It, class ParseCtx>
+constexpr parse_number_result<It> parse_arg_id(It begin, It end, ParseCtx& ctx) {
+    using CharT = typename iterator_traits<It>::value_type;
+    switch (*begin) {
+    case CharT('0'): {
+        ctx.check_arg_id(0);
+        return {++begin, 0};
+    }
+    case CharT(':'):
+    case CharT('}'): {
+        uint32_t v = static_cast<uint32_t>(ctx.next_arg_id());
+        return {begin, v};
+    }
+    default:
+        if (*begin < CharT('0') || *begin > CharT('9'))
+            throw_format_error("The argument index starts with an invalid character");
+        auto r = parse_number(begin, end);
+        ctx.check_arg_id(r.value);
+        return r;
+    }
+}
+
+// parse_specs: parse a std-format-spec into parsed_specs.
+// Returns iterator past consumed chars (should be at '}').
+template<class CharT, class ParseCtx, class FmtCtx>
+typename ParseCtx::iterator
+parse_specs(ParseCtx& pc, FmtCtx& ctx, fmt_spec::fields f,
+            fmt_spec::parsed_specs& out) {
+    auto begin = pc.begin();
+    auto end   = pc.end();
+
+    if (begin == end || *begin == CharT('}'))
+        return begin;
+
+    // fill + align detection
+    auto is_align = [](CharT c, fmt_spec::alignment& al) -> bool {
+        switch (c) {
+        case CharT('<'): al = fmt_spec::alignment::left;   return true;
+        case CharT('^'): al = fmt_spec::alignment::center; return true;
+        case CharT('>'): al = fmt_spec::alignment::right;  return true;
+        }
+        return false;
+    };
+
+    if (begin + 1 != end && is_align(*(begin+1), out.align)) {
+        if (*begin == CharT('{'))
+            throw_format_error("The fill option contains an invalid value");
+        out.fill.data[0] = static_cast<char>(*begin);
+        begin += 2;
+    } else if (is_align(*begin, out.align)) {
+        ++begin;
+    }
+    if (begin == end || *begin == CharT('}')) return begin;
+
+    // sign
+    if (f.sign) {
+        switch (*begin) {
+        case CharT('-'): out.sign_ = fmt_spec::sign::minus;  ++begin; break;
+        case CharT('+'): out.sign_ = fmt_spec::sign::plus;   ++begin; break;
+        case CharT(' '): out.sign_ = fmt_spec::sign::space;  ++begin; break;
+        default: break;
+        }
+        if (begin == end || *begin == CharT('}')) return begin;
+    }
+
+    // alternate form
+    if (f.alt && *begin == CharT('#')) {
+        out.alt = true; ++begin;
+        if (begin == end || *begin == CharT('}')) return begin;
+    }
+
+    // zero-padding
+    if (f.zero_pad && *begin == CharT('0')) {
+        if (out.align == fmt_spec::alignment::default_)
+            out.align = fmt_spec::alignment::zero_padding;
+        ++begin;
+        if (begin == end || *begin == CharT('}')) return begin;
+    }
+
+    // width
+    bool     width_as_arg = false;
+    uint32_t width_arg_id = 0;
+    if (*begin == CharT('{')) {
+        ++begin;
+        auto r = parse_arg_id(begin, end, pc);
+        if (r.last == end || *r.last != CharT('}'))
+            throw_format_error("The argument index is invalid");
+        ++r.last;
+        width_as_arg = true;
+        width_arg_id = r.value;
+        begin = r.last;
+    } else if (*begin >= CharT('1') && *begin <= CharT('9')) {
+        auto r = parse_number(begin, end);
+        out.width = static_cast<int32_t>(r.value);
+        begin = r.last;
+    }
+    if (begin == end || *begin == CharT('}')) {
+        if (width_as_arg) out.width = substitute_arg_id(ctx.arg(width_arg_id));
+        return begin;
+    }
+
+    // precision
+    bool     prec_as_arg = false;
+    uint32_t prec_arg_id = 0;
+    if (f.precision && *begin == CharT('.')) {
+        ++begin;
+        if (begin == end)
+            throw_format_error("End of input while parsing format specifier precision");
+        if (*begin == CharT('{')) {
+            ++begin;
+            auto r = parse_arg_id(begin, end, pc);
+            if (r.last == end || *r.last != CharT('}'))
+                throw_format_error("The argument index is invalid");
+            ++r.last;
+            prec_as_arg = true;
+            prec_arg_id = r.value;
+            begin = r.last;
+        } else if (*begin >= CharT('0') && *begin <= CharT('9')) {
+            auto r = parse_number(begin, end);
+            out.prec = static_cast<int32_t>(r.value);
+            begin = r.last;
+        } else {
+            throw_format_error("The precision option does not contain a value or an argument index");
+        }
+        if (begin == end || *begin == CharT('}')) {
+            if (width_as_arg) out.width = substitute_arg_id(ctx.arg(width_arg_id));
+            if (prec_as_arg)  out.prec  = substitute_arg_id(ctx.arg(prec_arg_id));
+            return begin;
+        }
+    }
+
+    // locale L (skip — no locale support)
+    if (f.locale && *begin == CharT('L')) {
+        ++begin;
+        if (begin == end || *begin == CharT('}')) {
+            if (width_as_arg) out.width = substitute_arg_id(ctx.arg(width_arg_id));
+            if (prec_as_arg)  out.prec  = substitute_arg_id(ctx.arg(prec_arg_id));
+            return begin;
+        }
+    }
+
+    // type
+    if (f.type_field) {
+        switch (static_cast<char>(*begin)) {
+        case 'A': out.type_ = fmt_spec::type::hexfloat_upper;   ++begin; break;
+        case 'B': out.type_ = fmt_spec::type::binary_upper;     ++begin; break;
+        case 'E': out.type_ = fmt_spec::type::scientific_upper; ++begin; break;
+        case 'F': out.type_ = fmt_spec::type::fixed_upper;      ++begin; break;
+        case 'G': out.type_ = fmt_spec::type::general_upper;    ++begin; break;
+        case 'X': out.type_ = fmt_spec::type::hex_upper;        ++begin; break;
+        case 'a': out.type_ = fmt_spec::type::hexfloat_lower;   ++begin; break;
+        case 'b': out.type_ = fmt_spec::type::binary_lower;     ++begin; break;
+        case 'c': out.type_ = fmt_spec::type::char_;            ++begin; break;
+        case 'd': out.type_ = fmt_spec::type::decimal;          ++begin; break;
+        case 'e': out.type_ = fmt_spec::type::scientific_lower; ++begin; break;
+        case 'f': out.type_ = fmt_spec::type::fixed_lower;      ++begin; break;
+        case 'g': out.type_ = fmt_spec::type::general_lower;    ++begin; break;
+        case 'o': out.type_ = fmt_spec::type::octal;            ++begin; break;
+        case 'p': out.type_ = fmt_spec::type::pointer_lower;    ++begin; break;
+        case 'P': out.type_ = fmt_spec::type::pointer_upper;    ++begin; break;
+        case 's': out.type_ = fmt_spec::type::string_;          ++begin; break;
+        case 'x': out.type_ = fmt_spec::type::hex_lower;        ++begin; break;
+        default:  break;
+        }
+    }
+
+    // resolve dynamic width/prec
+    if (width_as_arg) out.width = substitute_arg_id(ctx.arg(width_arg_id));
+    if (prec_as_arg)  out.prec  = substitute_arg_id(ctx.arg(prec_arg_id));
+
+    return begin;
+}
+
+// ============================================================
+// 13. Output helpers
+// ============================================================
+
+struct padding { size_t before; size_t after; };
+
+inline padding calc_padding(size_t sz, size_t w, fmt_spec::alignment align) {
+    size_t fill = w - sz;
+    switch (align) {
+    case fmt_spec::alignment::left:   return {0, fill};
+    case fmt_spec::alignment::center: { size_t b = fill/2; return {b, fill-b}; }
+    default:                          return {fill, 0};  // right / zero
+    }
+}
+
+template<class CharT, class Out>
+Out write_padded(basic_string_view<CharT> sv, Out out,
+                 const fmt_spec::parsed_specs& specs) {
+    auto sz  = static_cast<int32_t>(sv.size());
+    CharT fc = static_cast<CharT>(specs.fill.data[0]);
+
+    if (!specs.has_width() || sz >= specs.width) {
+        for (CharT c : sv) *out++ = c;
+        return out;
+    }
+    auto p = calc_padding(static_cast<size_t>(sz),
+                          static_cast<size_t>(specs.width), specs.align);
+    for (size_t i = 0; i < p.before; ++i) *out++ = fc;
+    for (CharT c : sv)                     *out++ = c;
+    for (size_t i = 0; i < p.after;  ++i) *out++ = fc;
+    return out;
+}
+
+// Integer writer: sign_prefix (e.g. "-0x") + digits, with width/alignment.
+template<class CharT, class Out>
+Out write_int(const char* sp, size_t sp_len,
+              const char* digs, size_t d_len,
+              Out out, const fmt_spec::parsed_specs& specs, bool upper = false) {
+    size_t total = sp_len + d_len;
+    CharT  fc    = static_cast<CharT>(specs.fill.data[0]);
+
+    if (specs.align == fmt_spec::alignment::zero_padding &&
+        specs.has_width() && total < static_cast<size_t>(specs.width)) {
+        // sign/prefix, then zeros, then digits
+        for (size_t i = 0; i < sp_len; ++i) *out++ = static_cast<CharT>(sp[i]);
+        size_t zeros = static_cast<size_t>(specs.width) - total;
+        for (size_t i = 0; i < zeros; ++i)  *out++ = CharT('0');
+        for (size_t i = 0; i < d_len; ++i) {
+            char c = digs[i];
+            if (upper && c >= 'a' && c <= 'f') c = static_cast<char>(c - 'a' + 'A');
+            *out++ = static_cast<CharT>(c);
+        }
+        return out;
+    }
+
+    // Combine into stack buffer
+    char buf[128];
+    size_t pos = 0;
+    for (size_t i = 0; i < sp_len; ++i) buf[pos++] = sp[i];
+    for (size_t i = 0; i < d_len;  ++i) {
+        char c = digs[i];
+        if (upper && c >= 'a' && c <= 'f') c = static_cast<char>(c - 'a' + 'A');
+        buf[pos++] = c;
+    }
+
+    if (!specs.has_width() || static_cast<int32_t>(pos) >= specs.width) {
+        for (size_t i = 0; i < pos; ++i) *out++ = static_cast<CharT>(buf[i]);
+        return out;
+    }
+
+    fmt_spec::alignment eff = specs.align == fmt_spec::alignment::default_
+                               ? fmt_spec::alignment::right : specs.align;
+    auto p = calc_padding(pos, static_cast<size_t>(specs.width), eff);
+    for (size_t i = 0; i < p.before; ++i) *out++ = fc;
+    for (size_t i = 0; i < pos;      ++i) *out++ = static_cast<CharT>(buf[i]);
+    for (size_t i = 0; i < p.after;  ++i) *out++ = fc;
+    return out;
+}
+
+// Integer formatting (both signed/unsigned).
+template<class CharT, class T, class FmtCtx>
+typename FmtCtx::iterator format_integer(T value, FmtCtx& ctx,
+                                          const fmt_spec::parsed_specs& specs) {
+    using namespace fmt_spec;
+
+    // Char display type
+    if (specs.type_ == type::char_) {
+        CharT cv = static_cast<CharT>(value);
+        parsed_specs cs = specs;
+        if (cs.align == alignment::default_) cs.align = alignment::left;
+        auto out = ctx.out();
+        ctx.advance_to(write_padded(basic_string_view<CharT>{&cv, 1}, out, cs));
+        return ctx.out();
+    }
+
+    int base = 10;
+    const char* alt_prefix = nullptr;
+    bool upper = false;
+
+    switch (specs.type_) {
+    case type::binary_lower:  base=2;  if(specs.alt) alt_prefix="0b"; break;
+    case type::binary_upper:  base=2;  if(specs.alt) alt_prefix="0B"; break;
+    case type::octal:         base=8;  if(specs.alt) alt_prefix="0";  break;
+    case type::default_:
+    case type::decimal:       base=10; break;
+    case type::hex_lower:     base=16; if(specs.alt) alt_prefix="0x"; break;
+    case type::hex_upper:     base=16; if(specs.alt) alt_prefix="0X"; upper=true; break;
+    default: throw_format_error("Invalid integer type specifier");
+    }
+
+    // Extract sign + magnitude
+    bool negative = false;
+    using UT = make_unsigned_t<T>;
+    UT uval;
+    if constexpr (is_signed_v<T>) {
+        negative = (value < 0);
+        uval = negative ? static_cast<UT>(UT(0) - static_cast<UT>(value))
+                        : static_cast<UT>(value);
+    } else {
+        uval = static_cast<UT>(value);
+    }
+
+    // Build sign+prefix string
+    char sp[8]; size_t sp_len = 0;
+    if (negative) {
+        sp[sp_len++] = '-';
+    } else {
+        if      (specs.sign_ == sign::plus)  sp[sp_len++] = '+';
+        else if (specs.sign_ == sign::space) sp[sp_len++] = ' ';
+    }
+    // Octal special: no "0" prefix if value==0
+    bool do_alt_prefix = specs.alt && !(specs.type_ == type::octal && uval == 0);
+    if (do_alt_prefix && alt_prefix) {
+        const char* p = alt_prefix;
+        while (*p) sp[sp_len++] = *p++;
+    }
+
+    char digs[72];
+    auto r = std::to_chars(digs, digs + sizeof(digs), uval, base);
+    if (r.ec != std::errc{}) __builtin_trap();
+    size_t d_len = static_cast<size_t>(r.ptr - digs);
+
+    auto out = ctx.out();
+    ctx.advance_to(write_int<CharT>(sp, sp_len, digs, d_len, out, specs, upper));
+    return ctx.out();
+}
+
+// Floating-point formatting via snprintf (gcc-10 has no fp to_chars).
+// DEVIATION: uses snprintf rather than std::to_chars for floating-point.
+template<class CharT, class T, class FmtCtx>
+typename FmtCtx::iterator format_float(T value, FmtCtx& ctx,
+                                        const fmt_spec::parsed_specs& specs) {
+    using namespace fmt_spec;
+
+    // Build printf format string
+    char fmt_buf[32]; int fi = 0;
+    fmt_buf[fi++] = '%';
+    switch (specs.sign_) {
+    case sign::plus:  fmt_buf[fi++] = '+'; break;
+    case sign::space: fmt_buf[fi++] = ' '; break;
+    default: break;
+    }
+    if (specs.alt) fmt_buf[fi++] = '#';
+
+    if (specs.has_precision()) {
+        fmt_buf[fi++] = '.';
+        int p = specs.prec;
+        if (p >= 100) { fmt_buf[fi++] = static_cast<char>('0'+p/100); p%=100; }
+        if (p >=  10) { fmt_buf[fi++] = static_cast<char>('0'+p/10);  p%=10;  }
+        fmt_buf[fi++] = static_cast<char>('0'+p);
+    }
+
+    if constexpr (is_same_v<T, long double>) fmt_buf[fi++] = 'L';
+
+    char conv = 'g';
+    switch (specs.type_) {
+    case type::default_:           conv = 'g';                   break;
+    case type::scientific_lower:   conv = 'e';                   break;
+    case type::scientific_upper:   conv = 'E';                   break;
+    case type::fixed_lower:        conv = 'f';                   break;
+    case type::fixed_upper:        conv = 'F';                   break;
+    case type::general_lower:      conv = 'g';                   break;
+    case type::general_upper:      conv = 'G';                   break;
+    case type::hexfloat_lower:     conv = 'a';                   break;
+    case type::hexfloat_upper:     conv = 'A';                   break;
+    default: throw_format_error("Invalid float type specifier");
+    }
+    fmt_buf[fi++] = conv;
+    fmt_buf[fi]   = '\0';
+
+    char tmp[512]; int n;
+    if constexpr (is_same_v<T, long double>)
+        n = std::snprintf(tmp, sizeof(tmp), fmt_buf, value);
+    else
+        n = std::snprintf(tmp, sizeof(tmp), fmt_buf, static_cast<double>(value));
+
+    if (n < 0 || static_cast<size_t>(n) >= sizeof(tmp))
+        throw_format_error("Float formatting buffer overflow");
+
+    basic_string_view<char> sv{tmp, static_cast<size_t>(n)};
+    auto out = ctx.out();
+
+    // zero-padding: sign/prefix then zeros
+    if (specs.align == alignment::zero_padding &&
+        specs.has_width() && static_cast<int32_t>(sv.size()) < specs.width) {
+        size_t sig_end = 0;
+        if (sv.size() > 0 && (sv[0]=='+' || sv[0]=='-' || sv[0]==' '))
+            sig_end = 1;
+        size_t zeros = static_cast<size_t>(specs.width) - sv.size();
+        for (size_t i = 0; i < sig_end; ++i) *out++ = static_cast<CharT>(sv[i]);
+        for (size_t i = 0; i < zeros;   ++i) *out++ = CharT('0');
+        for (size_t i = sig_end; i < sv.size(); ++i) *out++ = static_cast<CharT>(sv[i]);
+    } else {
+        parsed_specs ps2 = specs;
+        if (ps2.align == alignment::default_) ps2.align = alignment::right;
+        if constexpr (is_same_v<CharT, char>) {
+            out = write_padded(sv, out, ps2);
+        } else {
+            basic_string<CharT> ws;
+            ws.reserve(sv.size());
+            for (char c : sv) ws.push_back(static_cast<CharT>(c));
+            out = write_padded(basic_string_view<CharT>{ws.data(), ws.size()}, out, ps2);
+        }
+    }
+    ctx.advance_to(out);
+    return ctx.out();
+}
+
+} // namespace fmt_detail
+
+// ============================================================
+// 14. Spec-parsing helper for formatters that don't have a real Context
+//     at parse time (we use a dummy context).
+// ============================================================
+
+namespace fmt_detail {
+
+struct dummy_ctx {
+    // Returns an empty basic_format_arg<format_context>
+    basic_format_arg<format_context> arg(size_t) const noexcept {
+        return {};
+    }
+};
+
+} // namespace fmt_detail
+
+// ============================================================
+// 15. formatter specialisations
+// ============================================================
+
+// ---------- bool ----------
+template<class CharT>
+struct formatter<bool, CharT> {
+    fmt_spec::parsed_specs specs_;
+
+    template<class ParseCtx>
+    constexpr typename ParseCtx::iterator parse(ParseCtx& pc) {
+        fmt_detail::dummy_ctx d;
+        auto it = fmt_detail::parse_specs<CharT>(pc, d,
+                      fmt_spec::fields_bool, specs_);
+        pc.advance_to(it);
+        return it;
+    }
+
+    template<class FmtCtx>
+    typename FmtCtx::iterator format(bool value, FmtCtx& ctx) const {
+        using t = fmt_spec::type;
+        fmt_spec::parsed_specs s = specs_;
+        // Resolve dynamic width from ctx
+        // (static parse already happened, dynamic arg-id was resolved in parse_specs)
+
+        if (s.type_ != t::default_ && s.type_ != t::string_) {
+            // format as integer
+            formatter<unsigned, CharT> fi; fi.specs_ = s;
+            return fi.format(static_cast<unsigned>(value), ctx);
+        }
+        // String
+        if (s.align == fmt_spec::alignment::default_)
+            s.align = fmt_spec::alignment::left;
+        basic_string_view<CharT> sv;
+        if constexpr (is_same_v<CharT, char>)
+            sv = value ? basic_string_view<CharT>{"true",4}
+                       : basic_string_view<CharT>{"false",5};
+        auto out = ctx.out();
+        ctx.advance_to(fmt_detail::write_padded(sv, out, s));
+        return ctx.out();
+    }
+};
+
+// ---------- CharT (char) ----------
+template<class CharT>
+struct formatter<CharT, CharT> {
+    fmt_spec::parsed_specs specs_;
+
+    template<class ParseCtx>
+    constexpr typename ParseCtx::iterator parse(ParseCtx& pc) {
+        fmt_detail::dummy_ctx d;
+        auto it = fmt_detail::parse_specs<CharT>(pc, d,
+                      fmt_spec::fields_bool, specs_);
+        pc.advance_to(it);
+        return it;
+    }
+
+    template<class FmtCtx>
+    typename FmtCtx::iterator format(CharT value, FmtCtx& ctx) const {
+        fmt_spec::parsed_specs s = specs_;
+        using t = fmt_spec::type;
+        if (s.type_ != t::default_ && s.type_ != t::char_) {
+            formatter<int, CharT> fi; fi.specs_ = s;
+            return fi.format(static_cast<int>(value), ctx);
+        }
+        if (s.align == fmt_spec::alignment::default_)
+            s.align = fmt_spec::alignment::left;
+        auto out = ctx.out();
+        ctx.advance_to(fmt_detail::write_padded(basic_string_view<CharT>{&value,1}, out, s));
+        return ctx.out();
+    }
+};
+
+// ---------- Signed integers ----------
+namespace fmt_detail {
+template<class T, class CharT>
+struct int_fmt_base {
+    fmt_spec::parsed_specs specs_;
+
+    template<class ParseCtx>
+    constexpr typename ParseCtx::iterator parse(ParseCtx& pc) {
+        dummy_ctx d;
+        auto it = parse_specs<CharT>(pc, d, fmt_spec::fields_integral, specs_);
+        pc.advance_to(it);
+        return it;
+    }
+
+    template<class FmtCtx>
+    typename FmtCtx::iterator format(T value, FmtCtx& ctx) const {
+        return format_integer<CharT>(value, ctx, specs_);
+    }
+};
+} // namespace fmt_detail
+
+template<class C> struct formatter<signed char,  C> : fmt_detail::int_fmt_base<signed char,  C> {};
+template<class C> struct formatter<short,         C> : fmt_detail::int_fmt_base<short,         C> {};
+template<class C> struct formatter<int,           C> : fmt_detail::int_fmt_base<int,           C> {};
+template<class C> struct formatter<long,          C> : fmt_detail::int_fmt_base<long,          C> {};
+template<class C> struct formatter<long long,     C> : fmt_detail::int_fmt_base<long long,     C> {};
+
+template<class C> struct formatter<unsigned char,      C> : fmt_detail::int_fmt_base<unsigned char,      C> {};
+template<class C> struct formatter<unsigned short,     C> : fmt_detail::int_fmt_base<unsigned short,     C> {};
+template<class C> struct formatter<unsigned,           C> : fmt_detail::int_fmt_base<unsigned,           C> {};
+template<class C> struct formatter<unsigned long,      C> : fmt_detail::int_fmt_base<unsigned long,      C> {};
+template<class C> struct formatter<unsigned long long, C> : fmt_detail::int_fmt_base<unsigned long long, C> {};
+
+// ---------- Floating-point ----------
+namespace fmt_detail {
+template<class T, class CharT>
+struct float_fmt_base {
+    fmt_spec::parsed_specs specs_;
+
+    template<class ParseCtx>
+    constexpr typename ParseCtx::iterator parse(ParseCtx& pc) {
+        dummy_ctx d;
+        auto it = parse_specs<CharT>(pc, d, fmt_spec::fields_float, specs_);
+        // Set default precision for explicit format specs
+        switch (specs_.type_) {
+        case fmt_spec::type::scientific_lower:
+        case fmt_spec::type::scientific_upper:
+        case fmt_spec::type::fixed_lower:
+        case fmt_spec::type::fixed_upper:
+        case fmt_spec::type::general_lower:
+        case fmt_spec::type::general_upper:
+            if (!specs_.has_precision()) specs_.prec = 6;
+            break;
+        default: break;
+        }
+        pc.advance_to(it);
+        return it;
+    }
+
+    template<class FmtCtx>
+    typename FmtCtx::iterator format(T value, FmtCtx& ctx) const {
+        return format_float<CharT>(value, ctx, specs_);
+    }
+};
+} // namespace fmt_detail
+
+template<class C> struct formatter<float,       C> : fmt_detail::float_fmt_base<float,       C> {};
+template<class C> struct formatter<double,      C> : fmt_detail::float_fmt_base<double,      C> {};
+template<class C> struct formatter<long double, C> : fmt_detail::float_fmt_base<long double, C> {};
+
+// ---------- Strings ----------
+namespace fmt_detail {
+template<class CharT>
+struct str_fmt_base {
+    fmt_spec::parsed_specs specs_;
+
+    template<class ParseCtx>
+    constexpr typename ParseCtx::iterator parse(ParseCtx& pc) {
+        dummy_ctx d;
+        auto it = parse_specs<CharT>(pc, d, fmt_spec::fields_string, specs_);
+        pc.advance_to(it);
+        return it;
+    }
+
+    template<class FmtCtx>
+    typename FmtCtx::iterator format_sv(basic_string_view<CharT> sv, FmtCtx& ctx) const {
+        fmt_spec::parsed_specs s = specs_;
+        if (s.align == fmt_spec::alignment::default_)
+            s.align = fmt_spec::alignment::left;
+        if (s.has_precision() && static_cast<int32_t>(sv.size()) > s.prec)
+            sv = sv.substr(0, static_cast<size_t>(s.prec));
+        auto out = ctx.out();
+        ctx.advance_to(write_padded(sv, out, s));
+        return ctx.out();
+    }
+};
+} // namespace fmt_detail
+
+template<class C>
+struct formatter<const C*, C> : fmt_detail::str_fmt_base<C> {
+    template<class FmtCtx>
+    typename FmtCtx::iterator format(const C* p, FmtCtx& ctx) const {
+        return this->format_sv(basic_string_view<C>{p}, ctx);
+    }
+};
+
+template<class C>
+struct formatter<C*, C> : fmt_detail::str_fmt_base<C> {
+    template<class FmtCtx>
+    typename FmtCtx::iterator format(C* p, FmtCtx& ctx) const {
+        return this->format_sv(basic_string_view<C>{p}, ctx);
+    }
+};
+
+template<class C, class Tr>
+struct formatter<basic_string_view<C, Tr>, C> : fmt_detail::str_fmt_base<C> {
+    template<class FmtCtx>
+    typename FmtCtx::iterator format(basic_string_view<C, Tr> sv, FmtCtx& ctx) const {
+        return this->format_sv(basic_string_view<C>{sv.data(), sv.size()}, ctx);
+    }
+};
+
+template<class C, class Tr, class A>
+struct formatter<basic_string<C, Tr, A>, C> : fmt_detail::str_fmt_base<C> {
+    template<class FmtCtx>
+    typename FmtCtx::iterator format(const basic_string<C, Tr, A>& s, FmtCtx& ctx) const {
+        return this->format_sv(basic_string_view<C>{s.data(), s.size()}, ctx);
+    }
+};
+
+// ---------- Pointers ----------
+template<class C>
+struct formatter<const void*, C> {
+    fmt_spec::parsed_specs specs_;
+
+    template<class ParseCtx>
+    constexpr typename ParseCtx::iterator parse(ParseCtx& pc) {
+        fmt_detail::dummy_ctx d;
+        auto it = fmt_detail::parse_specs<C>(pc, d, fmt_spec::fields_pointer, specs_);
+        pc.advance_to(it);
+        return it;
+    }
+
+    template<class FmtCtx>
+    typename FmtCtx::iterator format(const void* p, FmtCtx& ctx) const {
+        char buf[32];
+        int n = std::snprintf(buf, sizeof(buf), "%p", p);
+        basic_string_view<char> sv{buf, static_cast<size_t>(n)};
+        fmt_spec::parsed_specs s = specs_;
+        if (s.align == fmt_spec::alignment::default_) s.align = fmt_spec::alignment::right;
+        auto out = ctx.out();
+        if constexpr (is_same_v<C, char>) {
+            ctx.advance_to(fmt_detail::write_padded(sv, out, s));
+        } else {
+            basic_string<C> ws; ws.reserve(static_cast<size_t>(n));
+            for (char c : sv) ws.push_back(static_cast<C>(c));
+            ctx.advance_to(fmt_detail::write_padded(basic_string_view<C>{ws.data(),ws.size()}, out, s));
+        }
+        return ctx.out();
+    }
+};
+
+template<class C>
+struct formatter<void*, C> : formatter<const void*, C> {
+    template<class FmtCtx>
+    typename FmtCtx::iterator format(void* p, FmtCtx& ctx) const {
+        return formatter<const void*, C>::format(static_cast<const void*>(p), ctx);
+    }
+};
+
+template<class C>
+struct formatter<nullptr_t, C> : formatter<const void*, C> {
+    template<class FmtCtx>
+    typename FmtCtx::iterator format(nullptr_t, FmtCtx& ctx) const {
+        return formatter<const void*, C>::format(nullptr, ctx);
+    }
+};
+
+// ============================================================
+// 16. Core vformat engine
+// ============================================================
+
+namespace fmt_detail {
+
+// dispatch_format_arg: format one argument using its stored type.
+// We use a manual switch on arg_kind rather than a generic lambda to avoid
+// the "use before deduction of auto" problem in gcc-10.
+template<class FmtCtx, class ParseCtx>
+void dispatch_format_arg(basic_format_arg<FmtCtx>& arg,
+                          ParseCtx& pc, FmtCtx& ctx, bool has_spec) {
+    using CharT = typename FmtCtx::char_type;
+    using K = fmt_arg_kind;
+
+    auto do_fmt = [&](auto val) {
+        using ArgT = decltype(val);
+        if constexpr (!is_same_v<ArgT, monostate> &&
+                      !is_same_v<ArgT, typename basic_format_arg<FmtCtx>::handle>) {
+            formatter<ArgT, CharT> f;
+            if (has_spec) pc.advance_to(f.parse(pc));
+            ctx.advance_to(f.format(val, ctx));
+        }
+    };
+
+    switch (arg.kind_) {
+    case K::none:
+        throw_format_error("The argument index value is too large");
+    case K::boolean:
+        do_fmt(arg.val_.b); break;
+    case K::char_t:
+        do_fmt(arg.val_.ch); break;
+    case K::int_:
+        do_fmt(arg.val_.i); break;
+    case K::long_long:
+        do_fmt(arg.val_.ll); break;
+    case K::uint_:
+        do_fmt(arg.val_.u); break;
+    case K::ullong:
+        do_fmt(arg.val_.ull); break;
+    case K::float_:
+        do_fmt(arg.val_.f); break;
+    case K::double_:
+        do_fmt(arg.val_.d); break;
+    case K::ldouble:
+        do_fmt(arg.val_.ld); break;
+    case K::cstring:
+        do_fmt(arg.val_.cs); break;
+    case K::strview:
+        do_fmt(arg.val_.sv); break;
+    case K::ptr:
+        do_fmt(arg.val_.p); break;
+    case K::handle: {
+        typename basic_format_arg<FmtCtx>::handle h{arg.val_.hd};
+        h.format(pc, ctx);
+        break;
+    }
+    }
+}
+
+template<class ParseCtx, class FmtCtx>
+typename FmtCtx::iterator vformat_to_impl(ParseCtx& pc, FmtCtx& ctx) {
+    using CharT = typename ParseCtx::char_type;
+    auto begin   = pc.begin();
+    auto end     = pc.end();
+    auto out_it  = ctx.out();
+
+    while (begin != end) {
+        switch (*begin) {
+        case CharT('{'): {
+            ++begin;
+            if (begin == end)
+                throw_format_error("The format string terminates at a '{'");
+
+            if (*begin == CharT('{')) {
+                *out_it++ = CharT('{');
+                ++begin;
+                continue;
+            }
+
+            // replacement field: parse arg-id
+            ctx.advance_to(std::move(out_it));
+            auto r = parse_arg_id(begin, end, pc);
+            begin = r.last;
+            if (begin == end)
+                throw_format_error("The argument index should end with a ':' or a '}'");
+
+            bool has_spec = (*begin == CharT(':'));
+            if (has_spec)
+                pc.advance_to(begin + 1);
+            else
+                pc.advance_to(begin);  // points at '}'
+
+            auto the_arg = ctx.arg(r.value);
+            dispatch_format_arg(the_arg, pc, ctx, has_spec);
+
+            begin = pc.begin();
+            if (begin == end || *begin != CharT('}'))
+                throw_format_error("The replacement field misses a terminating '}'");
+            ++begin;
+            out_it = ctx.out();
+            continue;
+        }
+        case CharT('}'): {
+            ++begin;
+            if (begin == end || *begin != CharT('}'))
+                throw_format_error("The format string contains an invalid escape sequence");
+            *out_it++ = CharT('}');
+            ++begin;
+            continue;
+        }
+        default:
+            *out_it++ = *begin++;
+            continue;
+        }
+    }
+    return out_it;
+}
+
+} // namespace fmt_detail
+
+// ============================================================
+// 17. Public API
+// ============================================================
+
+// vformat_to
+template<class Out>
+Out vformat_to(Out out, string_view fmt,
+               basic_format_args<basic_format_context<Out, char>> args) {
+    basic_format_context<Out, char> ctx{std::move(out), args};
+    basic_format_parse_context<char> pc{fmt, args.size()};
+    return fmt_detail::vformat_to_impl(pc, ctx);
+}
+
+// vformat (builds result in a string)
+[[nodiscard]] inline string vformat(string_view fmt, format_args args) {
+    string result;
+    vformat_to(back_inserter(result), fmt, args);
+    return result;
+}
+
+// format
+template<class... Args>
+[[nodiscard]] string format(format_string<Args...> fmt, Args&&... args) {
+    return vformat(fmt.get(), make_format_args(args...));
+}
+
+// format_to
+template<class Out, class... Args>
+Out format_to(Out out, format_string<Args...> fmt, Args&&... args) {
+    auto store = make_format_args<basic_format_context<Out,char>>(args...);
+    basic_format_args<basic_format_context<Out,char>> fargs{store};
+    return vformat_to(std::move(out), fmt.get(), fargs);
+}
+
+// ============================================================
+// 18. format_to_n
+// ============================================================
+
+// State block for counted_out — held by pointer so copies share state.
+namespace fmt_detail {
+
+template<class Out>
+struct counted_out_state {
+    Out                    out;       // current write position
+    iter_difference_t<Out> remaining; // capacity left
+    iter_difference_t<Out> total;     // total chars requested
+};
+
+// counted_out holds a pointer to shared state so copies are assignable
+// and mutations propagate correctly through the *it++ = v idiom.
+template<class Out>
+struct counted_out {
+    counted_out_state<Out>* state; // pointer — NO reference member (assignable!)
+
+    using iterator_category = output_iterator_tag;
+    using value_type        = void;
+    using difference_type   = iter_difference_t<Out>;
+    using pointer           = void;
+    using reference         = void;
+
+    counted_out& operator=(typename iterator_traits<Out>::value_type v) {
+        if (state->remaining > 0) {
+            *(state->out)++ = v;
+            --(state->remaining);
+        }
+        ++(state->total);
+        return *this;
+    }
+    counted_out& operator*()     { return *this; }
+    counted_out& operator++()    { return *this; }
+    counted_out  operator++(int) { return *this; }
+};
+
+} // namespace fmt_detail
+
+template<class Out, class... Args>
+format_to_n_result<Out>
+format_to_n(Out out, iter_difference_t<Out> n,
+            format_string<Args...> fmt, Args&&... args) {
+    using COut  = fmt_detail::counted_out<Out>;
+    using State = fmt_detail::counted_out_state<Out>;
+
+    State state{std::move(out), n, 0};
+
+    auto store = make_format_args<basic_format_context<COut,char>>(args...);
+    basic_format_args<basic_format_context<COut,char>> fargs{store};
+
+    COut cit{&state};
+    basic_format_context<COut, char> ctx{std::move(cit), fargs};
+    basic_format_parse_context<char> pc{fmt.get(), fargs.size()};
+    fmt_detail::vformat_to_impl(pc, ctx);
+    return {std::move(state.out), state.total};
+}
+
+// ============================================================
+// 19. formatted_size
+// ============================================================
+
+namespace fmt_detail {
+
+struct counting_out {
+    size_t* count; // pointer — keeps the iterator copy-assignable
+
+    using iterator_category = output_iterator_tag;
+    using value_type        = void;
+    using difference_type   = ptrdiff_t;
+    using pointer           = void;
+    using reference         = void;
+
+    counting_out& operator=(char)  { ++(*count); return *this; }
+    counting_out& operator*()      { return *this; }
+    counting_out& operator++()     { return *this; }
+    counting_out  operator++(int)  { return *this; }
+};
+
+} // namespace fmt_detail
+
+template<class... Args>
+[[nodiscard]] size_t formatted_size(format_string<Args...> fmt, Args&&... args) {
+    size_t count = 0;
+    using CO = fmt_detail::counting_out;
+    auto store = make_format_args<basic_format_context<CO,char>>(args...);
+    basic_format_args<basic_format_context<CO,char>> fargs{store};
+
+    CO cit{&count};
+    basic_format_context<CO, char> ctx{std::move(cit), fargs};
+    basic_format_parse_context<char> pc{fmt.get(), fargs.size()};
+    fmt_detail::vformat_to_impl(pc, ctx);
+    return count;
+}
+
+} // namespace std
