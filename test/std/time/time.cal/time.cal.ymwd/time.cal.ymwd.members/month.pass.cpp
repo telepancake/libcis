@@ -1,0 +1,44 @@
+// AST-transferred from libc++ by tools/transfer.py (slug=time_time_cal_time_cal_ymwd_time_cal_ymwd_members_month).
+// main -> test_time_time_cal_time_cal_ymwd_time_cal_ymwd_members_month; file-scope helpers isolated in anon namespace.
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+// UNSUPPORTED: c++03, c++11, c++14, c++17
+
+// <chrono>
+// class year_month_weekday;
+
+// constexpr chrono::month month() const noexcept;
+//  Returns: wd_
+
+#include <chrono>
+#include <cassert>
+#include <type_traits>
+#include <utility>
+
+#include "test_macros.h"
+
+void test_time_time_cal_time_cal_ymwd_time_cal_ymwd_members_month()
+{
+    using year               = std::chrono::year;
+    using month              = std::chrono::month;
+    using weekday_indexed    = std::chrono::weekday_indexed;
+    using year_month_weekday = std::chrono::year_month_weekday;
+
+    ASSERT_NOEXCEPT(                 std::declval<const year_month_weekday>().month());
+    ASSERT_SAME_TYPE(month, decltype(std::declval<const year_month_weekday>().month()));
+
+    static_assert( year_month_weekday{}.month() == month{}, "");
+
+    for (unsigned i = 1; i <= 50; ++i)
+    {
+        year_month_weekday ymd(year{1234}, month{i}, weekday_indexed{});
+        assert( static_cast<unsigned>(ymd.month()) == i);
+    }
+
+  return;
+}

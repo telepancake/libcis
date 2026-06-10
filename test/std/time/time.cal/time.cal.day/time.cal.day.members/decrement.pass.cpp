@@ -1,0 +1,51 @@
+// AST-transferred from libc++ by tools/transfer.py (slug=time_time_cal_time_cal_day_time_cal_day_members_decrement).
+// main -> test_time_time_cal_time_cal_day_time_cal_day_members_decrement; file-scope helpers isolated in anon namespace.
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+// UNSUPPORTED: c++03, c++11, c++14, c++17
+
+// <chrono>
+// class day;
+
+//  constexpr day& operator--() noexcept;
+//  constexpr day operator--(int) noexcept;
+
+#include <chrono>
+#include <cassert>
+#include <type_traits>
+#include <utility>
+
+#include "test_macros.h"
+
+namespace libcis_ns_time_time_cal_time_cal_day_time_cal_day_members_decrement { // libcis: isolate file-scope helpers
+using day = std::chrono::day;
+
+constexpr bool test() {
+  for (unsigned i = 10; i <= 20; ++i) {
+    day d(i);
+    assert(static_cast<unsigned>(--d) == i - 1);
+    assert(static_cast<unsigned>(d--) == i - 1);
+    assert(static_cast<unsigned>(d) == i - 2);
+  }
+  return true;
+}
+} using namespace libcis_ns_time_time_cal_time_cal_day_time_cal_day_members_decrement; // libcis
+
+
+void test_time_time_cal_time_cal_day_time_cal_day_members_decrement() {
+  ASSERT_NOEXCEPT(--(std::declval<day&>()));
+  ASSERT_NOEXCEPT((std::declval<day&>())--);
+
+  ASSERT_SAME_TYPE(day, decltype(std::declval<day&>()--));
+  ASSERT_SAME_TYPE(day&, decltype(--std::declval<day&>()));
+
+  test();
+  static_assert(test());
+
+  return;
+}

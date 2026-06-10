@@ -16271,6 +16271,1842 @@
    "slug": "ranges_range_utility_view_interface_view_interface",
    "kind": "run",
    "flags": []
+  },
+  {
+   "file": "time/days.pass.cpp",
+   "slug": "time_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/hours.pass.cpp",
+   "slug": "time_hours",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/microseconds.pass.cpp",
+   "slug": "time_microseconds",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/milliseconds.pass.cpp",
+   "slug": "time_milliseconds",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/minutes.pass.cpp",
+   "slug": "time_minutes",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/months.pass.cpp",
+   "slug": "time_months",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/nanoseconds.pass.cpp",
+   "slug": "time_nanoseconds",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/seconds.pass.cpp",
+   "slug": "time_seconds",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.day/time.cal.day.members/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_day_time_cal_day_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.day/time.cal.day.members/decrement.pass.cpp",
+   "slug": "time_time_cal_time_cal_day_time_cal_day_members_decrement",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.day/time.cal.day.members/increment.pass.cpp",
+   "slug": "time_time_cal_time_cal_day_time_cal_day_members_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.day/time.cal.day.members/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_day_time_cal_day_members_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.day/time.cal.day.members/plus_minus_equal.pass.cpp",
+   "slug": "time_time_cal_time_cal_day_time_cal_day_members_plus_minus_equal",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.day/time.cal.day.nonmembers/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_day_time_cal_day_nonmembers_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.day/time.cal.day.nonmembers/literals.pass.cpp",
+   "slug": "time_time_cal_time_cal_day_time_cal_day_nonmembers_literals",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.day/time.cal.day.nonmembers/minus.pass.cpp",
+   "slug": "time_time_cal_time_cal_day_time_cal_day_nonmembers_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.md/time.cal.md.members/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_md_time_cal_md_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.md/time.cal.md.members/day.pass.cpp",
+   "slug": "time_time_cal_time_cal_md_time_cal_md_members_day",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.md/time.cal.md.members/month.pass.cpp",
+   "slug": "time_time_cal_time_cal_md_time_cal_md_members_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.md/time.cal.md.members/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_md_time_cal_md_members_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.day/time.cal.day.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_day_time_cal_day_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.day/time.cal.day.nonmembers/plus.pass.cpp",
+   "slug": "time_time_cal_time_cal_day_time_cal_day_nonmembers_plus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.day/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_day_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.last/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_last_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mdlast/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_mdlast_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mdlast/month.pass.cpp",
+   "slug": "time_time_cal_time_cal_mdlast_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mdlast/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_mdlast_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mdlast/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_mdlast_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.md/time.cal.md.nonmembers/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_md_time_cal_md_nonmembers_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.md/time.cal.md.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_md_time_cal_md_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.md/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_md_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mdlast/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_mdlast_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mdlast/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_mdlast_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.month/time.cal.month.members/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_month_time_cal_month_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.month/time.cal.month.members/decrement.pass.cpp",
+   "slug": "time_time_cal_time_cal_month_time_cal_month_members_decrement",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.month/time.cal.month.members/increment.pass.cpp",
+   "slug": "time_time_cal_time_cal_month_time_cal_month_members_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.month/time.cal.month.members/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_month_time_cal_month_members_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.month/time.cal.month.members/plus_minus_equal.pass.cpp",
+   "slug": "time_time_cal_time_cal_month_time_cal_month_members_plus_minus_equal",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.month/time.cal.month.nonmembers/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_month_time_cal_month_nonmembers_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.month/time.cal.month.nonmembers/literals.pass.cpp",
+   "slug": "time_time_cal_time_cal_month_time_cal_month_nonmembers_literals",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mwd/time.cal.mwd.members/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_mwd_time_cal_mwd_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mwd/time.cal.mwd.members/month.pass.cpp",
+   "slug": "time_time_cal_time_cal_mwd_time_cal_mwd_members_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mwd/time.cal.mwd.members/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_mwd_time_cal_mwd_members_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mwd/time.cal.mwd.members/weekday_indexed.pass.cpp",
+   "slug": "time_time_cal_time_cal_mwd_time_cal_mwd_members_weekday_indexed",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.month/time.cal.month.nonmembers/minus.pass.cpp",
+   "slug": "time_time_cal_time_cal_month_time_cal_month_nonmembers_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.month/time.cal.month.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_month_time_cal_month_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.month/time.cal.month.nonmembers/plus.pass.cpp",
+   "slug": "time_time_cal_time_cal_month_time_cal_month_nonmembers_plus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.month/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_month_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mwdlast/time.cal.mwdlast.members/month.pass.cpp",
+   "slug": "time_time_cal_time_cal_mwdlast_time_cal_mwdlast_members_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mwdlast/time.cal.mwdlast.members/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_mwdlast_time_cal_mwdlast_members_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mwdlast/time.cal.mwdlast.members/weekday_last.pass.cpp",
+   "slug": "time_time_cal_time_cal_mwdlast_time_cal_mwdlast_members_weekday_last",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mwdlast/time.cal.mwdlast.nonmembers/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_mwdlast_time_cal_mwdlast_nonmembers_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mwd/time.cal.mwd.nonmembers/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_mwd_time_cal_mwd_nonmembers_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mwd/time.cal.mwd.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_mwd_time_cal_mwd_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mwd/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_mwd_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mwdlast/time.cal.mwdlast.members/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_mwdlast_time_cal_mwdlast_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.operators/month_weekday.pass.cpp",
+   "slug": "time_time_cal_time_cal_operators_month_weekday",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.operators/month_weekday_last.pass.cpp",
+   "slug": "time_time_cal_time_cal_operators_month_weekday_last",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.operators/year_month.pass.cpp",
+   "slug": "time_time_cal_time_cal_operators_year_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.operators/year_month_day.pass.cpp",
+   "slug": "time_time_cal_time_cal_operators_year_month_day",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mwdlast/time.cal.mwdlast.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_mwdlast_time_cal_mwdlast_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.mwdlast/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_mwdlast_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.operators/month_day.pass.cpp",
+   "slug": "time_time_cal_time_cal_operators_month_day",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.operators/month_day_last.pass.cpp",
+   "slug": "time_time_cal_time_cal_operators_month_day_last",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.wdidx/time.cal.wdidx.members/index.pass.cpp",
+   "slug": "time_time_cal_time_cal_wdidx_time_cal_wdidx_members_index",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.wdidx/time.cal.wdidx.members/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_wdidx_time_cal_wdidx_members_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.wdidx/time.cal.wdidx.members/weekday.pass.cpp",
+   "slug": "time_time_cal_time_cal_wdidx_time_cal_wdidx_members_weekday",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.wdidx/time.cal.wdidx.nonmembers/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_wdidx_time_cal_wdidx_nonmembers_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.operators/year_month_day_last.pass.cpp",
+   "slug": "time_time_cal_time_cal_operators_year_month_day_last",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.operators/year_month_weekday.pass.cpp",
+   "slug": "time_time_cal_time_cal_operators_year_month_weekday",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.operators/year_month_weekday_last.pass.cpp",
+   "slug": "time_time_cal_time_cal_operators_year_month_weekday_last",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.wdidx/time.cal.wdidx.members/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_wdidx_time_cal_wdidx_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.wdidx/time.cal.wdidx.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_wdidx_time_cal_wdidx_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.wdidx/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_wdidx_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.wdlast/time.cal.wdlast.members/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_wdlast_time_cal_wdlast_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.wdlast/time.cal.wdlast.members/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_wdlast_time_cal_wdlast_members_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.wdlast/time.cal.wdlast.members/weekday.pass.cpp",
+   "slug": "time_time_cal_time_cal_wdlast_time_cal_wdlast_members_weekday",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.wdlast/time.cal.wdlast.nonmembers/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_wdlast_time_cal_wdlast_nonmembers_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.wdlast/time.cal.wdlast.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_wdlast_time_cal_wdlast_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.wdlast/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_wdlast_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.members/c_encoding.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_members_c_encoding",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.members/ctor.local_days.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_members_ctor_local_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.members/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.members/ctor.sys_days.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_members_ctor_sys_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.members/decrement.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_members_decrement",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.members/increment.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_members_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.members/iso_encoding.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_members_iso_encoding",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.members/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_members_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.members/plus_minus_equal.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_members_plus_minus_equal",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.members/subscript_operator.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_members_subscript_operator",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.nonmembers/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_nonmembers_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.nonmembers/literals.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_nonmembers_literals",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.nonmembers/minus.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_nonmembers_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/time.cal.weekday.nonmembers/plus.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_time_cal_weekday_nonmembers_plus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.weekday/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_weekday_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.year/time.cal.year.members/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_year_time_cal_year_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.year/time.cal.year.members/decrement.pass.cpp",
+   "slug": "time_time_cal_time_cal_year_time_cal_year_members_decrement",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.year/time.cal.year.members/increment.pass.cpp",
+   "slug": "time_time_cal_time_cal_year_time_cal_year_members_increment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.year/time.cal.year.members/is_leap.pass.cpp",
+   "slug": "time_time_cal_time_cal_year_time_cal_year_members_is_leap",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.year/time.cal.year.members/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_year_time_cal_year_members_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.year/time.cal.year.members/plus_minus.pass.cpp",
+   "slug": "time_time_cal_time_cal_year_time_cal_year_members_plus_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.year/time.cal.year.members/plus_minus_equal.pass.cpp",
+   "slug": "time_time_cal_time_cal_year_time_cal_year_members_plus_minus_equal",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.year/time.cal.year.nonmembers/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_year_time_cal_year_nonmembers_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.year/time.cal.year.nonmembers/literals.pass.cpp",
+   "slug": "time_time_cal_time_cal_year_time_cal_year_nonmembers_literals",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.year/time.cal.year.nonmembers/minus.pass.cpp",
+   "slug": "time_time_cal_time_cal_year_time_cal_year_nonmembers_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.year/time.cal.year.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_year_time_cal_year_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.year/time.cal.year.nonmembers/plus.pass.cpp",
+   "slug": "time_time_cal_time_cal_year_time_cal_year_nonmembers_plus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.year/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_year_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ym/time.cal.ym.members/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_ym_time_cal_ym_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ym/time.cal.ym.members/month.pass.cpp",
+   "slug": "time_time_cal_time_cal_ym_time_cal_ym_members_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ym/time.cal.ym.members/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_ym_time_cal_ym_members_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ym/time.cal.ym.members/plus_minus_equal_month.pass.cpp",
+   "slug": "time_time_cal_time_cal_ym_time_cal_ym_members_plus_minus_equal_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ym/time.cal.ym.members/plus_minus_equal_year.pass.cpp",
+   "slug": "time_time_cal_time_cal_ym_time_cal_ym_members_plus_minus_equal_year",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ym/time.cal.ym.members/year.pass.cpp",
+   "slug": "time_time_cal_time_cal_ym_time_cal_ym_members_year",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ym/time.cal.ym.nonmembers/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_ym_time_cal_ym_nonmembers_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ym/time.cal.ym.nonmembers/minus.pass.cpp",
+   "slug": "time_time_cal_time_cal_ym_time_cal_ym_nonmembers_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ym/time.cal.ym.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_ym_time_cal_ym_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ym/time.cal.ym.nonmembers/plus.pass.cpp",
+   "slug": "time_time_cal_time_cal_ym_time_cal_ym_nonmembers_plus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ym/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_ym_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.members/ctor.local_days.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_members_ctor_local_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.members/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.members/ctor.sys_days.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_members_ctor_sys_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.members/ctor.year_month_day_last.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_members_ctor_year_month_day_last",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.members/day.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_members_day",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.members/month.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_members_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.members/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_members_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.members/op.local_days.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_members_op_local_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.members/op.sys_days.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_members_op_sys_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.members/plus_minus_equal_month.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_members_plus_minus_equal_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.members/plus_minus_equal_year.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_members_plus_minus_equal_year",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.members/year.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_members_year",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymdlast/time.cal.ymdlast.members/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymdlast_time_cal_ymdlast_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymdlast/time.cal.ymdlast.members/day.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymdlast_time_cal_ymdlast_members_day",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymdlast/time.cal.ymdlast.members/month.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymdlast_time_cal_ymdlast_members_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.nonmembers/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_nonmembers_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.nonmembers/minus.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_nonmembers_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymd/time.cal.ymd.nonmembers/plus.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymd_time_cal_ymd_nonmembers_plus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymdlast/time.cal.ymdlast.members/month_day_last.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymdlast_time_cal_ymdlast_members_month_day_last",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymdlast/time.cal.ymdlast.members/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymdlast_time_cal_ymdlast_members_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymdlast/time.cal.ymdlast.members/op_local_days.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymdlast_time_cal_ymdlast_members_op_local_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymdlast/time.cal.ymdlast.members/op_sys_days.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymdlast_time_cal_ymdlast_members_op_sys_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymdlast/time.cal.ymdlast.members/plus_minus_equal_month.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymdlast_time_cal_ymdlast_members_plus_minus_equal_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymdlast/time.cal.ymdlast.members/plus_minus_equal_year.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymdlast_time_cal_ymdlast_members_plus_minus_equal_year",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymdlast/time.cal.ymdlast.members/year.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymdlast_time_cal_ymdlast_members_year",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymdlast/time.cal.ymdlast.nonmembers/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymdlast_time_cal_ymdlast_nonmembers_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.members/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.members/ctor.sys_days.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_members_ctor_sys_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.members/index.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_members_index",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.members/month.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_members_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.members/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_members_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.members/op.local_days.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_members_op_local_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.members/op.sys_days.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_members_op_sys_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.members/plus_minus_equal_month.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_members_plus_minus_equal_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymdlast/time.cal.ymdlast.nonmembers/minus.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymdlast_time_cal_ymdlast_nonmembers_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymdlast/time.cal.ymdlast.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymdlast_time_cal_ymdlast_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymdlast/time.cal.ymdlast.nonmembers/plus.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymdlast_time_cal_ymdlast_nonmembers_plus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.members/ctor.local_days.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_members_ctor_local_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.members/plus_minus_equal_year.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_members_plus_minus_equal_year",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.members/weekday.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_members_weekday",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.members/weekday_indexed.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_members_weekday_indexed",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.members/year.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_members_year",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwdlast/time.cal.ymwdlast.members/ctor.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwdlast_time_cal_ymwdlast_members_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwdlast/time.cal.ymwdlast.members/month.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwdlast_time_cal_ymwdlast_members_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwdlast/time.cal.ymwdlast.members/ok.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwdlast_time_cal_ymwdlast_members_ok",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwdlast/time.cal.ymwdlast.members/op_local_days.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwdlast_time_cal_ymwdlast_members_op_local_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwdlast/time.cal.ymwdlast.members/op_sys_days.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwdlast_time_cal_ymwdlast_members_op_sys_days",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwdlast/time.cal.ymwdlast.members/plus_minus_equal_month.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwdlast_time_cal_ymwdlast_members_plus_minus_equal_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwdlast/time.cal.ymwdlast.members/plus_minus_equal_year.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwdlast_time_cal_ymwdlast_members_plus_minus_equal_year",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.nonmembers/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_nonmembers_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.nonmembers/minus.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_nonmembers_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwd/time.cal.ymwd.nonmembers/plus.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwd_time_cal_ymwd_nonmembers_plus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwdlast/time.cal.ymwdlast.members/weekday.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwdlast_time_cal_ymwdlast_members_weekday",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwdlast/time.cal.ymwdlast.members/year.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwdlast_time_cal_ymwdlast_members_year",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwdlast/time.cal.ymwdlast.nonmembers/comparisons.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwdlast_time_cal_ymwdlast_nonmembers_comparisons",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwdlast/time.cal.ymwdlast.nonmembers/minus.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwdlast_time_cal_ymwdlast_nonmembers_minus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwdlast/time.cal.ymwdlast.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwdlast_time_cal_ymwdlast_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwdlast/time.cal.ymwdlast.nonmembers/plus.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwdlast_time_cal_ymwdlast_nonmembers_plus",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.cal/time.cal.ymwdlast/types.pass.cpp",
+   "slug": "time_time_cal_time_cal_ymwdlast_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock.req/nothing_to_do.pass.cpp",
+   "slug": "time_time_clock_req_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.file/rep_signed.pass.cpp",
+   "slug": "time_time_clock_time_clock_file_rep_signed",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.file/to_from_sys.pass.cpp",
+   "slug": "time_time_clock_time_clock_file_to_from_sys",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.hires/consistency.pass.cpp",
+   "slug": "time_time_clock_time_clock_hires_consistency",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.file/consistency.pass.cpp",
+   "slug": "time_time_clock_time_clock_file_consistency",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.file/file_time.pass.cpp",
+   "slug": "time_time_clock_time_clock_file_file_time",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.file/now.pass.cpp",
+   "slug": "time_time_clock_time_clock_file_now",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.file/ostream.pass.cpp",
+   "slug": "time_time_clock_time_clock_file_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.system/consistency.pass.cpp",
+   "slug": "time_time_clock_time_clock_system_consistency",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.system/from_time_t.pass.cpp",
+   "slug": "time_time_clock_time_clock_system_from_time_t",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.system/local_time.types.pass.cpp",
+   "slug": "time_time_clock_time_clock_system_local_time_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.system/now.pass.cpp",
+   "slug": "time_time_clock_time_clock_system_now",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.hires/now.pass.cpp",
+   "slug": "time_time_clock_time_clock_hires_now",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.local/ostream.pass.cpp",
+   "slug": "time_time_clock_time_clock_local_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.steady/consistency.pass.cpp",
+   "slug": "time_time_clock_time_clock_steady_consistency",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.steady/now.pass.cpp",
+   "slug": "time_time_clock_time_clock_steady_now",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.system/to_time_t.pass.cpp",
+   "slug": "time_time_clock_time_clock_system_to_time_t",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.system/rep_signed.pass.cpp",
+   "slug": "time_time_clock_time_clock_system_rep_signed",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.system/sys.time.types.pass.cpp",
+   "slug": "time_time_clock_time_clock_system_sys_time_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.system/sys_date.ostream.pass.cpp",
+   "slug": "time_time_clock_time_clock_system_sys_date_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.clock/time.clock.system/sys_time.ostream.pass.cpp",
+   "slug": "time_time_clock_time_clock_system_sys_time_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/default_ratio.pass.cpp",
+   "slug": "time_time_duration_default_ratio",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.alg/abs.pass.cpp",
+   "slug": "time_time_duration_time_duration_alg_abs",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.arithmetic/op_++.pass.cpp",
+   "slug": "time_time_duration_time_duration_arithmetic_op",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.arithmetic/op_++int.pass.cpp",
+   "slug": "time_time_duration_time_duration_arithmetic_op_int",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.arithmetic/op_+.pass.cpp",
+   "slug": "time_time_duration_time_duration_arithmetic_op",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.arithmetic/op_+=.pass.cpp",
+   "slug": "time_time_duration_time_duration_arithmetic_op",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.arithmetic/op_--.pass.cpp",
+   "slug": "time_time_duration_time_duration_arithmetic_op",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.arithmetic/op_--int.pass.cpp",
+   "slug": "time_time_duration_time_duration_arithmetic_op_int",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.arithmetic/op_-.pass.cpp",
+   "slug": "time_time_duration_time_duration_arithmetic_op",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.arithmetic/op_-=.pass.cpp",
+   "slug": "time_time_duration_time_duration_arithmetic_op",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.arithmetic/op_divide=.pass.cpp",
+   "slug": "time_time_duration_time_duration_arithmetic_op_divide",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.arithmetic/op_mod=duration.pass.cpp",
+   "slug": "time_time_duration_time_duration_arithmetic_op_mod_duration",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.arithmetic/op_mod=rep.pass.cpp",
+   "slug": "time_time_duration_time_duration_arithmetic_op_mod_rep",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.arithmetic/op_times=.pass.cpp",
+   "slug": "time_time_duration_time_duration_arithmetic_op_times",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.cast/ceil.pass.cpp",
+   "slug": "time_time_duration_time_duration_cast_ceil",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.cast/duration_cast.pass.cpp",
+   "slug": "time_time_duration_time_duration_cast_duration_cast",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.cast/floor.pass.cpp",
+   "slug": "time_time_duration_time_duration_cast_floor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.cast/round.pass.cpp",
+   "slug": "time_time_duration_time_duration_cast_round",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.comparisons/compare.three_way.pass.cpp",
+   "slug": "time_time_duration_time_duration_comparisons_compare_three_way",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.comparisons/op_equal.pass.cpp",
+   "slug": "time_time_duration_time_duration_comparisons_op_equal",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.comparisons/op_less.pass.cpp",
+   "slug": "time_time_duration_time_duration_comparisons_op_less",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.cons/convert_exact.pass.cpp",
+   "slug": "time_time_duration_time_duration_cons_convert_exact",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.cons/convert_inexact.pass.cpp",
+   "slug": "time_time_duration_time_duration_cons_convert_inexact",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.cons/convert_int_to_float.pass.cpp",
+   "slug": "time_time_duration_time_duration_cons_convert_int_to_float",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.cons/convert_overflow.pass.cpp",
+   "slug": "time_time_duration_time_duration_cons_convert_overflow",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.cons/default.pass.cpp",
+   "slug": "time_time_duration_time_duration_cons_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.cons/rep.pass.cpp",
+   "slug": "time_time_duration_time_duration_cons_rep",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.cons/rep02.pass.cpp",
+   "slug": "time_time_duration_time_duration_cons_rep02",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.literals/literals.pass.cpp",
+   "slug": "time_time_duration_time_duration_literals_literals",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.literals/literals1.pass.cpp",
+   "slug": "time_time_duration_time_duration_literals_literals1",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.literals/literals2.pass.cpp",
+   "slug": "time_time_duration_time_duration_literals_literals2",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.nonmember/op_+.pass.cpp",
+   "slug": "time_time_duration_time_duration_nonmember_op",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.nonmember/op_-.pass.cpp",
+   "slug": "time_time_duration_time_duration_nonmember_op",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.nonmember/op_divide_duration.pass.cpp",
+   "slug": "time_time_duration_time_duration_nonmember_op_divide_duration",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.nonmember/op_divide_rep.pass.cpp",
+   "slug": "time_time_duration_time_duration_nonmember_op_divide_rep",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.observer/tested_elsewhere.pass.cpp",
+   "slug": "time_time_duration_time_duration_observer_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.special/max.pass.cpp",
+   "slug": "time_time_duration_time_duration_special_max",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.special/min.pass.cpp",
+   "slug": "time_time_duration_time_duration_special_min",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.special/zero.pass.cpp",
+   "slug": "time_time_duration_time_duration_special_zero",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.nonmember/op_mod_duration.pass.cpp",
+   "slug": "time_time_duration_time_duration_nonmember_op_mod_duration",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.nonmember/op_mod_rep.pass.cpp",
+   "slug": "time_time_duration_time_duration_nonmember_op_mod_rep",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/time.duration.nonmember/op_times_rep.pass.cpp",
+   "slug": "time_time_duration_time_duration_nonmember_op_times_rep",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.duration/types.pass.cpp",
+   "slug": "time_time_duration_types",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.hms/time.12/is_am.pass.cpp",
+   "slug": "time_time_hms_time_12_is_am",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.hms/time.12/is_pm.pass.cpp",
+   "slug": "time_time_hms_time_12_is_pm",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.hms/time.12/make12.pass.cpp",
+   "slug": "time_time_hms_time_12_make12",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.hms/time.12/make24.pass.cpp",
+   "slug": "time_time_hms_time_12_make24",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.hms/time.hms.members/hours.pass.cpp",
+   "slug": "time_time_hms_time_hms_members_hours",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.hms/time.hms.members/is_negative.pass.cpp",
+   "slug": "time_time_hms_time_hms_members_is_negative",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.hms/time.hms.members/minutes.pass.cpp",
+   "slug": "time_time_hms_time_hms_members_minutes",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.hms/time.hms.members/precision.pass.cpp",
+   "slug": "time_time_hms_time_hms_members_precision",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.hms/time.hms.members/seconds.pass.cpp",
+   "slug": "time_time_hms_time_hms_members_seconds",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.hms/time.hms.members/subseconds.pass.cpp",
+   "slug": "time_time_hms_time_hms_members_subseconds",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/default_duration.pass.cpp",
+   "slug": "time_time_point_default_duration",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.arithmetic/op_+=.pass.cpp",
+   "slug": "time_time_point_time_point_arithmetic_op",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.arithmetic/op_-=.pass.cpp",
+   "slug": "time_time_point_time_point_arithmetic_op",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.cast/ceil.pass.cpp",
+   "slug": "time_time_point_time_point_cast_ceil",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.hms/time.hms.members/to_duration.pass.cpp",
+   "slug": "time_time_hms_time_hms_members_to_duration",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.hms/time.hms.members/width.pass.cpp",
+   "slug": "time_time_hms_time_hms_members_width",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.hms/time.hms.nonmembers/nothing.to.do.pass.cpp",
+   "slug": "time_time_hms_time_hms_nonmembers_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.hms/time.hms.nonmembers/ostream.pass.cpp",
+   "slug": "time_time_hms_time_hms_nonmembers_ostream",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.cast/floor.pass.cpp",
+   "slug": "time_time_point_time_point_cast_floor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.cast/round.pass.cpp",
+   "slug": "time_time_point_time_point_cast_round",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.comparisons/compare.three_way.pass.cpp",
+   "slug": "time_time_point_time_point_comparisons_compare_three_way",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.comparisons/op_equal.pass.cpp",
+   "slug": "time_time_point_time_point_comparisons_op_equal",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.comparisons/op_less.pass.cpp",
+   "slug": "time_time_point_time_point_comparisons_op_less",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.cons/convert.pass.cpp",
+   "slug": "time_time_point_time_point_cons_convert",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.cons/default.pass.cpp",
+   "slug": "time_time_point_time_point_cons_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.cons/duration.pass.cpp",
+   "slug": "time_time_point_time_point_cons_duration",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.nonmember/op_+.pass.cpp",
+   "slug": "time_time_point_time_point_nonmember_op",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.nonmember/op_-duration.pass.cpp",
+   "slug": "time_time_point_time_point_nonmember_op_duration",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.nonmember/op_-time_point.pass.cpp",
+   "slug": "time_time_point_time_point_nonmember_op_time_point",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.observer/tested_elsewhere.pass.cpp",
+   "slug": "time_time_point_time_point_observer_tested_elsewhere",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.special/max.pass.cpp",
+   "slug": "time_time_point_time_point_special_max",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.point/time.point.special/min.pass.cpp",
+   "slug": "time_time_point_time_point_special_min",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.day.pass.cpp",
+   "slug": "time_time_syn_formatter_day",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.local_time.pass.cpp",
+   "slug": "time_time_syn_formatter_local_time",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.month.pass.cpp",
+   "slug": "time_time_syn_formatter_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.month_day.pass.cpp",
+   "slug": "time_time_syn_formatter_month_day",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.weekday.pass.cpp",
+   "slug": "time_time_syn_formatter_weekday",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.weekday_index.pass.cpp",
+   "slug": "time_time_syn_formatter_weekday_index",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.month_day_last.pass.cpp",
+   "slug": "time_time_syn_formatter_month_day_last",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.month_weekday.pass.cpp",
+   "slug": "time_time_syn_formatter_month_weekday",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.sys_time.pass.cpp",
+   "slug": "time_time_syn_formatter_sys_time",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.duration.pass.cpp",
+   "slug": "time_time_syn_formatter_duration",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.file_time.pass.cpp",
+   "slug": "time_time_syn_formatter_file_time",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.hh_mm_ss.pass.cpp",
+   "slug": "time_time_syn_formatter_hh_mm_ss",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.traits/time.traits.duration_values/max.pass.cpp",
+   "slug": "time_time_traits_time_traits_duration_values_max",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.traits/time.traits.duration_values/min.pass.cpp",
+   "slug": "time_time_traits_time_traits_duration_values_min",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.traits/time.traits.duration_values/zero.pass.cpp",
+   "slug": "time_time_traits_time_traits_duration_values_zero",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.traits/time.traits.is_fp/treat_as_floating_point.pass.cpp",
+   "slug": "time_time_traits_time_traits_is_fp_treat_as_floating_point",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.traits/time.traits.specializations/duration.pass.cpp",
+   "slug": "time_time_traits_time_traits_specializations_duration",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.traits/time.traits.specializations/time_point.pass.cpp",
+   "slug": "time_time_traits_time_traits_specializations_time_point",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.year_month_day_last.pass.cpp",
+   "slug": "time_time_syn_formatter_year_month_day_last",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.year_month_weekday.pass.cpp",
+   "slug": "time_time_syn_formatter_year_month_weekday",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.year_month_weekday_last.pass.cpp",
+   "slug": "time_time_syn_formatter_year_month_weekday_last",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.weekday_last.pass.cpp",
+   "slug": "time_time_syn_formatter_weekday_last",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.year.pass.cpp",
+   "slug": "time_time_syn_formatter_year",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.year_month.pass.cpp",
+   "slug": "time_time_syn_formatter_year_month",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/time.syn/formatter.year_month_day.pass.cpp",
+   "slug": "time_time_syn_formatter_year_month_day",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/years.pass.cpp",
+   "slug": "time_years",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "time/weeks.pass.cpp",
+   "slug": "time_weeks",
+   "kind": "run",
+   "flags": []
   }
  ],
  "skipped": [
@@ -18545,6 +20381,521 @@
    "file": "ranges/ranges_robust_against_no_unique_address.pass.cpp",
    "stage": "parse",
    "diag": "/home/user/llvm-project/libcxx/test/std/ranges/ranges_robust_against_no_unique_address.pass.cpp:59:24: error: no member named 'adjacent_view' in namespace 'std::ranges'"
+  },
+  {
+   "file": "time/time.clock/time.clock.gps/gps_time.ostream.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.gps/gps_time.ostream.pass.cpp:42:62: error: no member named 'gps_time' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.gps/time.clock.gps.members/from_utc.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.gps/time.clock.gps.members/from_utc.pass.cpp:40:14: error: no member named 'gps_clock' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.gps/time.clock.gps.members/now.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.gps/time.clock.gps.members/now.pass.cpp:26:67: error: no type named 'gps_clock' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.gps/time.clock.gps.members/to_utc.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.gps/time.clock.gps.members/to_utc.pass.cpp:34:14: error: no member named 'gps_clock' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.gps/types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.gps/types.compile.pass.cpp:40:58: error: no member named 'gps_clock' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.tai/tai_time.ostream.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.tai/tai_time.ostream.pass.cpp:42:62: error: no member named 'tai_time' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.tai/time.clock.tai.members/from_utc.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.tai/time.clock.tai.members/from_utc.pass.cpp:39:14: error: no member named 'tai_clock' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.tai/time.clock.tai.members/now.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.tai/time.clock.tai.members/now.pass.cpp:26:67: error: no type named 'tai_clock' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.tai/time.clock.tai.members/to_utc.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.tai/time.clock.tai.members/to_utc.pass.cpp:39:14: error: no member named 'tai_clock' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.tai/types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.tai/types.compile.pass.cpp:40:58: error: no member named 'tai_clock' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.utc/get_leap_second_info.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.utc/get_leap_second_info.pass.cpp:31:42: error: no member named 'utc_clock' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.utc/leap_second_info.members.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.utc/leap_second_info.members.pass.cpp:29:50: error: no member named 'leap_second_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.utc/time.clock.utc.members/from_sys.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.utc/time.clock.utc.members/from_sys.pass.cpp:33:28: error: no member named 'utc_clock' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.utc/time.clock.utc.members/now.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.utc/time.clock.utc.members/now.pass.cpp:26:67: error: no type named 'utc_clock' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.utc/time.clock.utc.members/to_sys.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.utc/time.clock.utc.members/to_sys.pass.cpp:31:13: error: variable has incomplete type 'void'"
+  },
+  {
+   "file": "time/time.clock/time.clock.utc/types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.utc/types.compile.pass.cpp:40:58: error: no member named 'utc_clock' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.clock/time.clock.utc/utc_time.ostream.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.clock/time.clock.utc/utc_time.ostream.pass.cpp:42:62: error: no member named 'utc_time' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.duration/time.duration.nonmember/ostream.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.duration/time.duration.nonmember/ostream.pass.cpp:89:61: error: expected ')'"
+  },
+  {
+   "file": "time/time.hash/time.hash_enabled.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.hash/time.hash_enabled.pass.cpp:23:15: error: static assertion failed due to requirement 'std::is_nothrow_invocable_v<std::hash<std::chrono::day>, std::chrono::day>'"
+  },
+  {
+   "file": "time/time.point/time.point.arithmetic/op_++.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.point/time.point.arithmetic/op_++.pass.cpp:25:50: error: cannot increment value of type 'std::chrono::time_point<Clock, Duration>' (aka 'time_point<std::chrono::system_clock, duration<long long, ratio<1LL, 1000LL>>>')"
+  },
+  {
+   "file": "time/time.point/time.point.arithmetic/op_++int.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.point/time.point.arithmetic/op_++int.pass.cpp:25:49: error: cannot increment value of type 'std::chrono::time_point<Clock, Duration>' (aka 'time_point<std::chrono::system_clock, duration<long long, ratio<1LL, 1000LL>>>')"
+  },
+  {
+   "file": "time/time.point/time.point.arithmetic/op_--.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.point/time.point.arithmetic/op_--.pass.cpp:25:50: error: cannot decrement value of type 'std::chrono::time_point<Clock, Duration>' (aka 'time_point<std::chrono::system_clock, duration<long long, ratio<1LL, 1000LL>>>')"
+  },
+  {
+   "file": "time/time.point/time.point.arithmetic/op_--int.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.point/time.point.arithmetic/op_--int.pass.cpp:25:49: error: cannot decrement value of type 'std::chrono::time_point<Clock, Duration>' (aka 'time_point<std::chrono::system_clock, duration<long long, ratio<1LL, 1000LL>>>')"
+  },
+  {
+   "file": "time/time.point/time.point.cast/time_point_cast.pass.cpp",
+   "stage": "parse",
+   "diag": "/usr/include/c++/v1/__chrono/time_point.h:35:17: error: static assertion failed due to requirement '__is_duration_v<int>': Second template parameter of time_point must be a std::chrono::duration"
+  },
+  {
+   "file": "time/time.syn/formatter.local_info.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.syn/formatter.local_info.pass.cpp:56:13: error: no member named 'local_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.syn/formatter.tai_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.syn/formatter.tai_time.pass.cpp:56:50: error: no member named 'tai_seconds' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.syn/formatter.utc_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.syn/formatter.utc_time.pass.cpp:55:59: error: no member named 'utc_seconds' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.syn/formatter.sys_info.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.syn/formatter.sys_info.pass.cpp:53:13: error: no member named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.syn/formatter.gps_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.syn/formatter.gps_time.pass.cpp:56:50: error: no member named 'gps_seconds' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.traits/is.clock.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.traits/is.clock.compile.pass.cpp:169:28: error: no member named 'is_clock' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.db/leap_seconds.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.db/leap_seconds.pass.cpp:65:22: error: no type named 'tzdb' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.syn/formatter.zoned_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.syn/formatter.zoned_time.pass.cpp:45:22: error: no member named 'zoned_time' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.db/time.zone.db.access/current_zone.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.db/time.zone.db.access/current_zone.pass.cpp:49:22: error: no type named 'time_zone' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.db/time.zone.db.access/get_tzdb.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.db/time.zone.db.access/get_tzdb.pass.cpp:26:22: error: no type named 'tzdb' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.db/time.zone.db.access/get_tzdb_list.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.db/time.zone.db.access/get_tzdb_list.pass.cpp:27:22: error: no type named 'tzdb_list' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.db/time.zone.db.access/locate_zone.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.db/time.zone.db.access/locate_zone.pass.cpp:28:22: error: no type named 'time_zone' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.db/time.zone.db.list/erase_after.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.db/time.zone.db.list/erase_after.compile.pass.cpp:31:14: error: no type named 'tzdb_list' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.db/time.zone.db.list/front.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.db/time.zone.db.list/front.pass.cpp:24:22: error: no type named 'tzdb_list' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.db/time.zone.db.list/iterators.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.db/time.zone.db.list/iterators.pass.cpp:30:22: error: no type named 'tzdb_list' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.db/time.zone.db.list/types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.db/time.zone.db.list/types.compile.pass.cpp:35:43: error: no member named 'tzdb_list' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.db/time.zone.db.tzdb/tzdb.members.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.db/time.zone.db.tzdb/tzdb.members.pass.cpp:34:16: error: no type named 'tzdb' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.exception/time.zone.exception.ambig/ctor.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.exception/time.zone.exception.ambig/ctor.pass.cpp:30:70: error: no type named 'local_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.exception/time.zone.exception.ambig/types.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.exception/time.zone.exception.ambig/types.pass.cpp:30:66: error: no member named 'ambiguous_local_time' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.exception/time.zone.exception.nonexist/ctor.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.exception/time.zone.exception.nonexist/ctor.pass.cpp:30:70: error: no type named 'local_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.db/time.zone.db.remote/reload_tzdb.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.db/time.zone.db.remote/reload_tzdb.pass.cpp:30:22: error: no type named 'tzdb_list' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.db/time.zone.db.remote/remote_version.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.db/time.zone.db.remote/remote_version.pass.cpp:26:38: error: no member named 'remote_version' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.db/time.zone.db.tzdb/current_zone.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.db/time.zone.db.tzdb/current_zone.pass.cpp:50:22: error: no type named 'time_zone' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.db/time.zone.db.tzdb/locate_zone.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.db/time.zone.db.tzdb/locate_zone.pass.cpp:30:22: error: no type named 'time_zone' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.exception/time.zone.exception.nonexist/types.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.exception/time.zone.exception.nonexist/types.pass.cpp:31:66: error: no member named 'nonexistent_local_time' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.info/time.zone.info.local/local_info.members.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.info/time.zone.info.local/local_info.members.pass.cpp:36:48: error: no member named 'local_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.info/time.zone.info.local/ostream.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.info/time.zone.info.local/ostream.pass.cpp:39:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.info/time.zone.info.sys/ostream.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.info/time.zone.info.sys/ostream.pass.cpp:39:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.info/time.zone.info.sys/sys_info.members.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.info/time.zone.info.sys/sys_info.members.pass.cpp:32:50: error: no member named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.leap/assign.copy.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_chrono_leap_second.h:37:31: error: no type named 'leap_second' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.leap/cons.copy.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_chrono_leap_second.h:37:31: error: no type named 'leap_second' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.leap/members/date.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_chrono_leap_second.h:37:31: error: no type named 'leap_second' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.leap/members/value.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_chrono_leap_second.h:37:31: error: no type named 'leap_second' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.leap/nonmembers/comparison.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/support/test_chrono_leap_second.h:37:31: error: no type named 'leap_second' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.link/time.zone.link.members/name.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.link/time.zone.link.members/name.pass.cpp:28:22: error: no type named 'tzdb' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.link/time.zone.link.members/target.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.link/time.zone.link.members/target.pass.cpp:28:22: error: no type named 'tzdb' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.link/time.zone.link.nonmembers/comparison.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.link/time.zone.link.nonmembers/comparison.pass.cpp:27:22: error: no type named 'tzdb' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.link/types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.link/types.compile.pass.cpp:34:60: error: no member named 'time_zone_link' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.timezone/time.zone.members/get_info.local_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.timezone/time.zone.members/get_info.local_time.pass.cpp:77:45: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.timezone/time.zone.members/get_info.sys_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.timezone/time.zone.members/get_info.sys_time.pass.cpp:64:45: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.timezone/time.zone.members/name.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.timezone/time.zone.members/name.pass.cpp:28:22: error: no type named 'tzdb' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.timezone/time.zone.members/sys_info.zdump.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.timezone/time.zone.members/sys_info.zdump.pass.cpp:32:39: error: expected class name"
+  },
+  {
+   "file": "time/time.zone/time.zone.timezone/time.zone.members/to_local.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.timezone/time.zone.members/to_local.pass.cpp:37:22: error: no type named 'time_zone' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.timezone/time.zone.members/to_sys.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.timezone/time.zone.members/to_sys.pass.cpp:37:22: error: no type named 'time_zone' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.timezone/time.zone.members/to_sys_choose.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.timezone/time.zone.members/to_sys_choose.pass.cpp:35:22: error: no type named 'time_zone' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.timezone/time.zone.nonmembers/comparison.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.timezone/time.zone.nonmembers/comparison.pass.cpp:27:22: error: no type named 'tzdb' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.timezone/types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.timezone/types.compile.pass.cpp:34:60: error: no member named 'time_zone' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/copy.assign.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/copy.assign.pass.cpp:27:16: error: no member named 'zoned_time' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/copy.ctor.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/copy.ctor.pass.cpp:26:16: error: no member named 'zoned_time' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/deduction.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/string_view.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/string_view_local_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/string_view_local_time_choose.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/string_view_sys_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/string_view_zoned_time_duration2_time_zone_ptr2.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/string_view_zoned_time_duration2_time_zone_ptr2_choose.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/sys_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/time_zone_pointer.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/time_zone_pointer_local_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/time_zone_pointer_local_time_choose.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/time_zone_pointer_sys_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/time_zone_ptr_zoned_time_duration2_time_zone_ptr2.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/time_zone_ptr_zoned_time_duration2_time_zone_ptr2.pass.cpp:30:12: error: explicit specialization of non-template struct 'zoned_traits'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/time_zone_ptr_zoned_time_duration2_time_zone_ptr2_choose.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/time_zone_ptr_zoned_time_duration2_time_zone_ptr2_choose.pass.cpp:30:12: error: explicit specialization of non-template struct 'zoned_traits'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/zoned_time_duration2.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.ctor/zoned_time_duration2.pass.cpp:34:9: error: no member named 'zoned_time' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/assign.local_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/assign.local_time.pass.cpp:48:34: error: no template named 'zoned_time' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/assign.sys_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/assign.sys_time.pass.cpp:33:28: error: no template named 'zoned_time' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/get_info.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/get_info.pass.cpp:30:9: error: no member named 'zoned_time' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/get_local_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/get_sys_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/get_time_zone.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/operator_local_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/operator_sys_time.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.members/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.nonmembers/eq.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.nonmembers/eq.pass.cpp:29:18: error: no type named 'zoned_time' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/time.zone.zonedtime.nonmembers/ostream.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/time.zone.zonedtime.nonmembers/../test_offset_time_zone.h:64:16: error: no type named 'sys_info' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtime/types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtime/types.compile.pass.cpp:35:41: error: no member named 'zoned_time' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtraits/const_time_zone_default_zone.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtraits/const_time_zone_default_zone.pass.cpp:26:35: error: no type named 'time_zone' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtraits/const_time_zone_locate_zone.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtraits/const_time_zone_locate_zone.pass.cpp:29:35: error: no type named 'time_zone' in namespace 'std::chrono'"
+  },
+  {
+   "file": "time/time.zone/time.zone.zonedtraits/types.compile.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/time/time.zone/time.zone.zonedtraits/types.compile.pass.cpp:27:57: error: no member named 'zoned_traits' in namespace 'std::chrono'"
   }
  ],
  "subtrees": [
@@ -18558,6 +20909,7 @@
   "iterators",
   "strings",
   "algorithms",
-  "ranges"
+  "ranges",
+  "time"
  ]
 }

@@ -1,0 +1,51 @@
+// AST-transferred from libc++ by tools/transfer.py (slug=time_time_cal_time_cal_weekday_time_cal_weekday_nonmembers_comparisons).
+// main -> test_time_time_cal_time_cal_weekday_time_cal_weekday_nonmembers_comparisons; file-scope helpers isolated in anon namespace.
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+// UNSUPPORTED: c++03, c++11, c++14, c++17
+
+// <chrono>
+// class weekday;
+
+// constexpr bool operator==(const weekday& x, const weekday& y) noexcept;
+// constexpr bool operator!=(const weekday& x, const weekday& y) noexcept;
+
+
+#include <chrono>
+#include <type_traits>
+#include <cassert>
+#include <concepts>
+
+#include "test_macros.h"
+#include "test_comparisons.h"
+
+namespace libcis_ns_time_time_cal_time_cal_weekday_time_cal_weekday_nonmembers_comparisons { // libcis: isolate file-scope helpers
+static_assert(!std::totally_ordered<std::chrono::weekday>);
+} using namespace libcis_ns_time_time_cal_time_cal_weekday_time_cal_weekday_nonmembers_comparisons; // libcis
+
+
+void test_time_time_cal_time_cal_weekday_time_cal_weekday_nonmembers_comparisons()
+{
+    using weekday = std::chrono::weekday;
+
+    AssertEqualityAreNoexcept<weekday>();
+    AssertEqualityReturnBool<weekday>();
+
+    static_assert(testEqualityValues<weekday>(0U ,0U), "");
+    static_assert(testEqualityValues<weekday>(0U, 1U), "");
+
+    //  Some 'ok' values as well
+    static_assert(testEqualityValues<weekday>(5U, 5U), "");
+    static_assert(testEqualityValues<weekday>(5U, 2U), "");
+
+    for (unsigned i = 0; i < 6; ++i)
+        for (unsigned j = 0; j < 6; ++j)
+            assert(testEqualityValues<weekday>(i, j));
+
+    return;
+}
