@@ -7017,6 +7017,196 @@
    "slug": "language_support_support_limits_support_limits_general_random_version",
    "kind": "compile",
    "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/assert_h.pass.cpp",
+   "slug": "depr_depr_c_headers_assert_h",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/ciso646.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_ciso646",
+   "kind": "compile",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "depr/depr.c.headers/float_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_float_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/inttypes_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_inttypes_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/iso646_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_iso646_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/limits_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_limits_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/stdalign_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_stdalign_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/stdarg_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_stdarg_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/stdbool_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_stdbool_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/stddef_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_stddef_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/stddef_h.nullptr.pass.cpp",
+   "slug": "depr_depr_c_headers_stddef_h_nullptr",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/stdint_h.pass.cpp",
+   "slug": "depr_depr_c_headers_stdint_h",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/stdio_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_stdio_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/stdlib_h.aligned_alloc.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_stdlib_h_aligned_alloc",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/uchar_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_uchar_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/wchar_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_wchar_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/wctype_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_wctype_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/complex_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_complex_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/ctype_h.pass.cpp",
+   "slug": "depr_depr_c_headers_ctype_h",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/errno_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_errno_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/fenv_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_fenv_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/stdlib_h.pass.cpp",
+   "slug": "depr_depr_c_headers_stdlib_h",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/string_h.pass.cpp",
+   "slug": "depr_depr_c_headers_string_h",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/tgmath_h.pass.cpp",
+   "slug": "depr_depr_c_headers_tgmath_h",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/time_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_time_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.ios.members/streamoff.pass.cpp",
+   "slug": "depr_depr_ios_members_streamoff",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.ios.members/streampos.pass.cpp",
+   "slug": "depr_depr_ios_members_streampos",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/locale_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_locale_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/math_h.pass.cpp",
+   "slug": "depr_depr_c_headers_math_h",
+   "kind": "run",
+   "flags": [
+    "-Wno-bool-compare"
+   ]
+  },
+  {
+   "file": "depr/depr.c.headers/setjmp_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_setjmp_h",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "depr/depr.c.headers/signal_h.compile.pass.cpp",
+   "slug": "depr_depr_c_headers_signal_h",
+   "kind": "compile",
+   "flags": []
   }
  ],
  "skipped": [
@@ -7123,6 +7313,194 @@
   {
    "file": "language.support/support.rtti/type.info/type_info_hash.pass.cpp",
    "reason": "unsupported:no-rtti"
+  },
+  {
+   "file": "depr/depr.auto.ptr/auto.ptr/auto.ptr.cons/assignment.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.auto.ptr/auto.ptr/auto.ptr.cons/convert.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.auto.ptr/auto.ptr/auto.ptr.cons/convert_assignment.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.auto.ptr/auto.ptr/auto.ptr.cons/copy.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.auto.ptr/auto.ptr/auto.ptr.cons/pointer.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.auto.ptr/auto.ptr/auto.ptr.conv/assign_from_auto_ptr_ref.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.auto.ptr/auto.ptr/auto.ptr.conv/convert_from_auto_ptr_ref.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.auto.ptr/auto.ptr/auto.ptr.conv/convert_to_auto_ptr.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.auto.ptr/auto.ptr/auto.ptr.conv/convert_to_auto_ptr_ref.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.auto.ptr/auto.ptr/auto.ptr.members/arrow.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.auto.ptr/auto.ptr/auto.ptr.members/deref.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.auto.ptr/auto.ptr/auto.ptr.members/release.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.auto.ptr/auto.ptr/auto.ptr.members/reset.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.auto.ptr/auto.ptr/element_type.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.function.pointer.adaptors/pointer_to_binary_function.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.function.pointer.adaptors/pointer_to_unary_function.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.function.pointer.adaptors/ptr_fun1.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.function.pointer.adaptors/ptr_fun2.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/const_mem_fun.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/const_mem_fun1.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/const_mem_fun1_ref_t.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/const_mem_fun1_t.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/const_mem_fun_ref.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/const_mem_fun_ref1.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/const_mem_fun_ref_t.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/const_mem_fun_t.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/mem_fun.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/mem_fun1.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/mem_fun1_ref_t.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/mem_fun1_t.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/mem_fun_ref.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/mem_fun_ref1.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/mem_fun_ref_t.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.adaptors/depr.member.pointer.adaptors/mem_fun_t.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.base/binary_function.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.function.objects/depr.base/unary_function.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.ios.members/io_state.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.ios.members/open_mode.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.ios.members/seek_dir.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.lib.binders/depr.lib.bind.1st/bind1st.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.lib.binders/depr.lib.bind.2nd/bind2nd.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.lib.binders/depr.lib.binder.1st/binder1st.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/depr.lib.binders/depr.lib.binder.2nd/binder2nd.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/exception.unexpected/unexpected.handler/unexpected_handler.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/exception.unexpected/unexpected/unexpected.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/exception.unexpected/set.unexpected/get_unexpected.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "depr/exception.unexpected/set.unexpected/set_unexpected.pass.cpp",
+   "reason": "requires-unmet:c++03 || c++11 || c++14"
   }
  ],
  "errors": [
@@ -7370,12 +7748,213 @@
    "file": "language.support/support.limits/support.limits.general/queue.version.compile.pass.cpp",
    "stage": "parse",
    "diag": "/home/user/llvm-project/libcxx/test/std/language.support/support.limits/support.limits.general/queue.version.compile.pass.cpp:107:6: error: \"__cpp_lib_constexpr_queue should be defined in c++26\""
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.istrstream/depr.istrstream.cons/ccp.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.istrstream/depr.istrstream.cons/ccp.pass.cpp:27:14: error: no member named 'istrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.istrstream/depr.istrstream.cons/ccp_size.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.istrstream/depr.istrstream.cons/ccp_size.pass.cpp:27:14: error: no member named 'istrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.istrstream/depr.istrstream.cons/cp.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.istrstream/depr.istrstream.cons/cp.pass.cpp:27:14: error: no member named 'istrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.istrstream/depr.istrstream.cons/cp_size.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.istrstream/depr.istrstream.cons/cp_size.pass.cpp:27:14: error: no member named 'istrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.istrstream/depr.istrstream.members/rdbuf.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.istrstream/depr.istrstream.members/rdbuf.pass.cpp:26:20: error: no type named 'istrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.istrstream/depr.istrstream.members/str.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.istrstream/depr.istrstream.members/str.pass.cpp:26:14: error: no member named 'istrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.istrstream/types.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.istrstream/types.pass.cpp:25:55: error: no member named 'istrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.ostrstream/depr.ostrstream.cons/cp_size_mode.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.ostrstream/depr.ostrstream.cons/cp_size_mode.pass.cpp:27:14: error: no member named 'ostrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.ostrstream/depr.ostrstream.cons/default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.ostrstream/depr.ostrstream.cons/default.pass.cpp:25:10: error: no type named 'ostrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.ostrstream/depr.ostrstream.members/freeze.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.ostrstream/depr.ostrstream.members/freeze.pass.cpp:25:14: error: no type named 'ostrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.ostrstream/depr.ostrstream.members/pcount.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.ostrstream/depr.ostrstream.members/pcount.pass.cpp:25:14: error: no type named 'ostrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.ostrstream/depr.ostrstream.members/rdbuf.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.ostrstream/depr.ostrstream.members/rdbuf.pass.cpp:26:20: error: no type named 'ostrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.ostrstream/depr.ostrstream.members/str.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.ostrstream/depr.ostrstream.members/str.pass.cpp:25:14: error: no type named 'ostrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.ostrstream/types.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.ostrstream/types.pass.cpp:25:55: error: no member named 'ostrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstream/depr.strstream.cons/cp_size_mode.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstream/depr.strstream.cons/cp_size_mode.pass.cpp:27:14: error: no member named 'strstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstream/depr.strstream.cons/default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstream/depr.strstream.cons/default.pass.cpp:26:10: error: no type named 'strstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstream/depr.strstream.dest/rdbuf.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstream/depr.strstream.dest/rdbuf.pass.cpp:26:20: error: no type named 'strstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstream/depr.strstream.oper/freeze.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstream/depr.strstream.oper/freeze.pass.cpp:25:14: error: no type named 'strstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstream/depr.strstream.oper/pcount.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstream/depr.strstream.oper/pcount.pass.cpp:25:14: error: no type named 'strstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstream/depr.strstream.oper/str.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstream/depr.strstream.oper/str.pass.cpp:25:14: error: no type named 'strstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstream/types.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstream/types.pass.cpp:30:56: error: no member named 'strstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/ccp_size.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/ccp_size.pass.cpp:26:14: error: no member named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/cp_size_cp.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/cp_size_cp.pass.cpp:27:14: error: no member named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/cscp_size.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/cscp_size.pass.cpp:26:14: error: no member named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/cucp_size.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/cucp_size.pass.cpp:26:14: error: no member named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/custom_alloc.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/custom_alloc.pass.cpp:37:12: error: expected class name"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/default.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/default.pass.cpp:30:14: error: no type named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/scp_size_scp.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/scp_size_scp.pass.cpp:27:14: error: no member named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/ucp_size_ucp.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.cons/ucp_size_ucp.pass.cpp:27:14: error: no member named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.members/freeze.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.members/freeze.pass.cpp:25:14: error: no type named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.virtuals/underflow.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.virtuals/underflow.pass.cpp:23:19: error: expected class name"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/types.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/types.pass.cpp:23:57: error: no member named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.virtuals/pbackfail.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.virtuals/pbackfail.pass.cpp:23:19: error: expected class name"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.virtuals/seekoff.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.virtuals/seekoff.pass.cpp:27:14: error: no member named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.virtuals/seekpos.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.virtuals/seekpos.pass.cpp:27:14: error: no member named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.virtuals/setbuf.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.virtuals/setbuf.pass.cpp:26:14: error: no member named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.members/overflow.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.members/overflow.pass.cpp:24:8: error: no type named 'ostrstream' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.members/pcount.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.members/pcount.pass.cpp:25:14: error: no type named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.members/str.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.members/str.pass.cpp:25:14: error: no type named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.virtuals/overflow.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.virtuals/overflow.pass.cpp:26:14: error: no member named 'strstreambuf' in namespace 'std'"
   }
  ],
  "subtrees": [
   "numerics",
   "concepts",
   "diagnostics",
-  "language.support"
+  "language.support",
+  "depr"
  ]
 }
