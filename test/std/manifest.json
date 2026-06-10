@@ -7207,6 +7207,670 @@
    "slug": "depr_depr_c_headers_signal_h",
    "kind": "compile",
    "flags": []
+  },
+  {
+   "file": "atomics/atomics.fences/atomic_signal_fence.pass.cpp",
+   "slug": "atomics_atomics_fences_atomic_signal_fence",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.fences/atomic_thread_fence.pass.cpp",
+   "slug": "atomics_atomics_fences_atomic_thread_fence",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.flag/atomic_flag_clear.pass.cpp",
+   "slug": "atomics_atomics_flag_atomic_flag_clear",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.flag/atomic_flag_clear_explicit.pass.cpp",
+   "slug": "atomics_atomics_flag_atomic_flag_clear_explicit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.flag/clear.pass.cpp",
+   "slug": "atomics_atomics_flag_clear",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.flag/default.pass.cpp",
+   "slug": "atomics_atomics_flag_default",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.flag/init.pass.cpp",
+   "slug": "atomics_atomics_flag_init",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.flag/test_and_set.pass.cpp",
+   "slug": "atomics_atomics_flag_test_and_set",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.flag/atomic_flag_test.pass.cpp",
+   "slug": "atomics_atomics_flag_atomic_flag_test",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.flag/atomic_flag_test_and_set.pass.cpp",
+   "slug": "atomics_atomics_flag_atomic_flag_test_and_set",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.flag/atomic_flag_test_and_set_explicit.pass.cpp",
+   "slug": "atomics_atomics_flag_atomic_flag_test_and_set_explicit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.flag/atomic_flag_test_explicit.pass.cpp",
+   "slug": "atomics_atomics_flag_atomic_flag_test_explicit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.general/replace_failure_order.pass.cpp",
+   "slug": "atomics_atomics_general_replace_failure_order",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.lockfree/is_always_lock_free.pass.cpp",
+   "slug": "atomics_atomics_lockfree_is_always_lock_free",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.lockfree/lockfree.pass.cpp",
+   "slug": "atomics_atomics_lockfree_lockfree",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.order/kill_dependency.pass.cpp",
+   "slug": "atomics_atomics_order_kill_dependency",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.order/memory_order.pass.cpp",
+   "slug": "atomics_atomics_order_memory_order",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.order/memory_order_new.pass.cpp",
+   "slug": "atomics_atomics_order_memory_order_new",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/assign.pass.cpp",
+   "slug": "atomics_atomics_ref_assign",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/fetch_sub.pass.cpp",
+   "slug": "atomics_atomics_ref_fetch_sub",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/fetch_xor.pass.cpp",
+   "slug": "atomics_atomics_ref_fetch_xor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/increment_decrement.pass.cpp",
+   "slug": "atomics_atomics_ref_increment_decrement",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/is_always_lock_free.pass.cpp",
+   "slug": "atomics_atomics_ref_is_always_lock_free",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/exchange.pass.cpp",
+   "slug": "atomics_atomics_ref_exchange",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/fetch_add.pass.cpp",
+   "slug": "atomics_atomics_ref_fetch_add",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/fetch_and.pass.cpp",
+   "slug": "atomics_atomics_ref_fetch_and",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/fetch_or.pass.cpp",
+   "slug": "atomics_atomics_ref_fetch_or",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/bitwise_and_assign.pass.cpp",
+   "slug": "atomics_atomics_ref_bitwise_and_assign",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/bitwise_or_assign.pass.cpp",
+   "slug": "atomics_atomics_ref_bitwise_or_assign",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/bitwise_xor_assign.pass.cpp",
+   "slug": "atomics_atomics_ref_bitwise_xor_assign",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/compare_exchange_strong.pass.cpp",
+   "slug": "atomics_atomics_ref_compare_exchange_strong",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/compare_exchange_weak.pass.cpp",
+   "slug": "atomics_atomics_ref_compare_exchange_weak",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/convert.pass.cpp",
+   "slug": "atomics_atomics_ref_convert",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/ctor.pass.cpp",
+   "slug": "atomics_atomics_ref_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/deduction.pass.cpp",
+   "slug": "atomics_atomics_ref_deduction",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/load.pass.cpp",
+   "slug": "atomics_atomics_ref_load",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/member_types.compile.pass.cpp",
+   "slug": "atomics_atomics_ref_member_types",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/notify_all.pass.cpp",
+   "slug": "atomics_atomics_ref_notify_all",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/notify_one.pass.cpp",
+   "slug": "atomics_atomics_ref_notify_one",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/wait.pass.cpp",
+   "slug": "atomics_atomics_ref_wait",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.syn/nothing_to_do.pass.cpp",
+   "slug": "atomics_atomics_syn_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/address.pass.cpp",
+   "slug": "atomics_atomics_types_generic_address",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/assign.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_assign",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/compare_exchange_strong.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_compare_exchange_strong",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/compare_exchange_weak.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_compare_exchange_weak",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/copy.compile.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_copy",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/ctor.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/operator_minus_equals.pass.cpp",
+   "slug": "atomics_atomics_ref_operator_minus_equals",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/operator_plus_equals.pass.cpp",
+   "slug": "atomics_atomics_ref_operator_plus_equals",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/required_alignment.pass.cpp",
+   "slug": "atomics_atomics_ref_required_alignment",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.ref/store.pass.cpp",
+   "slug": "atomics_atomics_ref_store",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/lockfree.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_lockfree",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/notify_all.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_notify_all",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/notify_one.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_notify_one",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/operator.float.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_operator_float",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/wait.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_wait",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/bool.pass.cpp",
+   "slug": "atomics_atomics_types_generic_bool",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/cas_non_power_of_2.pass.cpp",
+   "slug": "atomics_atomics_types_generic_cas_non_power_of_2",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/constexpr_noexcept.compile.pass.cpp",
+   "slug": "atomics_atomics_types_generic_constexpr_noexcept",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/copy_semantics_traits.pass.cpp",
+   "slug": "atomics_atomics_types_generic_copy_semantics_traits",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/cstdint_typedefs.pass.cpp",
+   "slug": "atomics_atomics_types_generic_cstdint_typedefs",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/general.compile.pass.cpp",
+   "slug": "atomics_atomics_types_generic_general",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/integral.pass.cpp",
+   "slug": "atomics_atomics_types_generic_integral",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/integral_typedefs.pass.cpp",
+   "slug": "atomics_atomics_types_generic_integral_typedefs",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/pointer.compile.pass.cpp",
+   "slug": "atomics_atomics_types_generic_pointer",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/standard_layout.compile.pass.cpp",
+   "slug": "atomics_atomics_types_generic_standard_layout",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/operator.minus_equals.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_operator_minus_equals",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/operator.plus_equals.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_operator_plus_equals",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/store.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_store",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/types.compile.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_types",
+   "kind": "compile",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/trivially_copyable.pass.cpp",
+   "slug": "atomics_atomics_types_generic_trivially_copyable",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.arith/nothing_to_do.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_arith_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.general/nothing_to_do.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_general_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.pointer/nothing_to_do.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_pointer_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_compare_exchange_strong.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_compare_exchange_strong",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_compare_exchange_strong_explicit.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_compare_exchange_strong_explicit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_compare_exchange_weak.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_compare_exchange_weak",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_compare_exchange_weak_explicit.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_compare_exchange_weak_explicit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/exchange.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_exchange",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/fetch_add.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_fetch_add",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/fetch_sub.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_fetch_sub",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.generic/atomics.types.float/load.pass.cpp",
+   "slug": "atomics_atomics_types_generic_atomics_types_float_load",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_exchange.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_exchange",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_exchange_explicit.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_exchange_explicit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_fetch_add.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_fetch_add",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_fetch_add_explicit.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_fetch_add_explicit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_fetch_and.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_fetch_and",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_fetch_and_explicit.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_fetch_and_explicit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_fetch_or.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_fetch_or",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_fetch_or_explicit.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_fetch_or_explicit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_init.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_init",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_is_lock_free.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_is_lock_free",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_load.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_load",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_load_explicit.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_load_explicit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_fetch_sub.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_fetch_sub",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_fetch_sub_explicit.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_fetch_sub_explicit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_fetch_xor.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_fetch_xor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_fetch_xor_explicit.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_fetch_xor_explicit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_store.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_store",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_store_explicit.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_store_explicit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/atomic_var_init.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_atomic_var_init",
+   "kind": "run",
+   "flags": [
+    "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS"
+   ]
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/ctor.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_ctor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.req/dtor.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_req_dtor",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.templ/nothing_to_do.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_templ_nothing_to_do",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.wait/atomic_notify_all.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_wait_atomic_notify_all",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.wait/atomic_notify_one.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_wait_atomic_notify_one",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.wait/atomic_wait.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_wait_atomic_wait",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.wait/atomic_wait_explicit.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_wait_atomic_wait_explicit",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/atomics.types.operations/atomics.types.operations.wait/lost_wakeup.pass.cpp",
+   "slug": "atomics_atomics_types_operations_atomics_types_operations_wait_lost_wakeup",
+   "kind": "run",
+   "flags": []
+  },
+  {
+   "file": "atomics/stdatomic.h.syn/types.compile.pass.cpp",
+   "slug": "atomics_stdatomic_h_syn_types",
+   "kind": "compile",
+   "flags": []
   }
  ],
  "skipped": [
@@ -7501,6 +8165,10 @@
   {
    "file": "depr/exception.unexpected/set.unexpected/set_unexpected.pass.cpp",
    "reason": "requires-unmet:c++03 || c++11 || c++14"
+  },
+  {
+   "file": "atomics/atomics.types.generic/throw.pass.cpp",
+   "reason": "unsupported:no-exceptions"
   }
  ],
  "errors": [
@@ -7948,6 +8616,16 @@
    "file": "depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.virtuals/overflow.pass.cpp",
    "stage": "parse",
    "diag": "/home/user/llvm-project/libcxx/test/std/depr/depr.str.strstreams/depr.strstreambuf/depr.strstreambuf.virtuals/overflow.pass.cpp:26:14: error: no member named 'strstreambuf' in namespace 'std'"
+  },
+  {
+   "file": "atomics/atomics.ref/address.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/atomics/atomics.ref/address.pass.cpp:59:55: error: no member named 'address' in 'std::atomic_ref<char>'"
+  },
+  {
+   "file": "atomics/types.pass.cpp",
+   "stage": "parse",
+   "diag": "/home/user/llvm-project/libcxx/test/std/atomics/types.pass.cpp:51:19: error: static assertion failed due to requirement '!has_difference_type<std::atomic<bool>, void>::value': "
   }
  ],
  "subtrees": [
@@ -7955,6 +8633,7 @@
   "concepts",
   "diagnostics",
   "language.support",
-  "depr"
+  "depr",
+  "atomics"
  ]
 }
