@@ -3,8 +3,8 @@
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //
 // Type identity for any_cast is performed via a per-type static int address
-// (unique_typeinfo<T>::id) instead of typeid(). This is the libc++ fallback
-// path that is already present upstream when _LIBCPP_HAS_RTTI is false.
+// (unique_typeinfo<T>::id) instead of typeid(). This is the no-RTTI path:
+// type comparison uses pointer identity rather than the RTTI runtime.
 //
 // any::type() is OMITTED — it returns a type_info reference which requires
 // RTTI. The member is commented out below.

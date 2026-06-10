@@ -26,12 +26,9 @@ template<class CharT, class Traits> class basic_streambuf;
 // Forward-declare basic_ostream (defined in <ostream>).
 template<class CharT, class Traits> class basic_ostream;
 
-// streamoff / streamsize — also defined in <streambuf>; guard with a tag.
-#ifndef LIBCIS_STREAMTYPES_DEFINED
-#define LIBCIS_STREAMTYPES_DEFINED
+// streamoff / streamsize — canonical definitions; <streambuf> gets them via #include <ios>.
 using streamoff  = long long;
 using streamsize = ptrdiff_t;
-#endif
 
 //===----------------------------------------------------------------------===//
 // fpos<StateT>
