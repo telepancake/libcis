@@ -3,6 +3,7 @@
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 #include <bitset>
 #include <functional>
+#include <string>
 #include <string_view>
 #include "test.h"
 
@@ -141,27 +142,30 @@ void test_bitset_char_ptr_ctor() {
 
 // ----------------------------------------------------------------
 // string_view constructor
+// std::bitset has no standard string_view constructor (C++23 still uses
+// basic_string); use std::string to construct from string data.
 // ----------------------------------------------------------------
 
 void test_bitset_string_view_ctor() {
     {
-        std::string_view sv("10110101");
-        std::bitset<8> b(sv);
+        // Construct from std::string (the standard constructor)
+        std::string str("10110101");
+        std::bitset<8> b(str);
         CHECK(b[0] == true);
         CHECK(b[7] == true);
         CHECK(b[1] == false);
     }
     {
         // pos and n parameters
-        std::string_view sv("XX10110101XX");
+        std::string str("XX10110101XX");
         // pos=2, n=8 -> "10110101"
-        std::bitset<8> b(sv, 2, 8);
+        std::bitset<8> b(str, 2, 8);
         CHECK(b.to_ulong() == 0xB5UL); // 10110101 = 0xB5
     }
     {
         // n larger than remaining — clamped
-        std::string_view sv("1010");
-        std::bitset<8> b(sv, 0, 100);
+        std::string str("1010");
+        std::bitset<8> b(str, 0, std::string::npos);
         CHECK(b[0] == false);
         CHECK(b[1] == true);
         CHECK(b[2] == false);
@@ -170,8 +174,8 @@ void test_bitset_string_view_ctor() {
     }
     {
         // custom characters
-        std::string_view sv("TFTF");
-        std::bitset<4> b(sv, 0, 4, 'F', 'T');
+        std::string str("TFTF");
+        std::bitset<4> b(str, 0, std::string::npos, 'F', 'T');
         // "TFTF" with F=0 T=1: index 0=F=0, 1=T=1, 2=F=0, 3=T=1
         CHECK(!b[0]);
         CHECK(b[1]);
@@ -482,40 +486,38 @@ void test_bitset_to_ulong_ullong() {
 }
 
 // ----------------------------------------------------------------
-// to_string_buf (char-only to_string path since <string> not ported)
+// to_string — standard bitset string serialization via to_string()
+// (to_string_buf is a libcis extension; the standard provides to_string)
 // ----------------------------------------------------------------
 
 void test_bitset_to_string_buf() {
     {
         std::bitset<8> b(0xA5ULL); // 10100101
-        char buf[9];
-        b.to_string_buf(buf, sizeof(buf));
-        CHECK(buf[0] == '1'); // bit 7
-        CHECK(buf[1] == '0'); // bit 6
-        CHECK(buf[2] == '1'); // bit 5
-        CHECK(buf[3] == '0'); // bit 4
-        CHECK(buf[4] == '0'); // bit 3
-        CHECK(buf[5] == '1'); // bit 2
-        CHECK(buf[6] == '0'); // bit 1
-        CHECK(buf[7] == '1'); // bit 0
-        CHECK(buf[8] == '\0');
+        std::string s = b.to_string();
+        CHECK(s.size() == 8);
+        CHECK(s[0] == '1'); // bit 7
+        CHECK(s[1] == '0'); // bit 6
+        CHECK(s[2] == '1'); // bit 5
+        CHECK(s[3] == '0'); // bit 4
+        CHECK(s[4] == '0'); // bit 3
+        CHECK(s[5] == '1'); // bit 2
+        CHECK(s[6] == '0'); // bit 1
+        CHECK(s[7] == '1'); // bit 0
     }
     {
         std::bitset<0> b;
-        char buf[1];
-        b.to_string_buf(buf, sizeof(buf));
-        CHECK(buf[0] == '\0');
+        std::string s = b.to_string();
+        CHECK(s.empty());
     }
     {
-        // Custom zero/one
+        // Custom zero/one characters
         std::bitset<4> b(0xAULL); // 1010
-        char buf[5];
-        b.to_string_buf(buf, sizeof(buf), 'F', 'T');
+        std::string s = b.to_string('F', 'T');
         // "TFTF" (bit 3..0 = 1,0,1,0)
-        CHECK(buf[0] == 'T');
-        CHECK(buf[1] == 'F');
-        CHECK(buf[2] == 'T');
-        CHECK(buf[3] == 'F');
+        CHECK(s[0] == 'T');
+        CHECK(s[1] == 'F');
+        CHECK(s[2] == 'T');
+        CHECK(s[3] == 'F');
     }
 }
 

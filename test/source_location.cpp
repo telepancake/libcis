@@ -5,6 +5,7 @@
 // __impl struct *does* carry the column field, so column() returns a valid
 // (non-zero) value. No workaround is needed in the library.
 #include <source_location>
+#include <cstdint>
 #include "test.h"
 
 // ---- default construction ----------------------------------------------

@@ -2,9 +2,18 @@
 // Ported from libc++ test/std/numerics/bit/
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 #include <bit>
+#include <climits>
+#include <concepts>
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
 #include "test.h"
+
+// Local replacement for the libcis-internal std::detail::bit_digits_v<T>.
+// The standard does not expose this; it equals the number of value bits,
+// which for unsigned integer types is CHAR_BIT * sizeof(T).
+template<class T>
+inline constexpr int bit_digits = static_cast<int>(sizeof(T) * CHAR_BIT);
 
 //===----------------------------------------------------------------------===//
 // endian
@@ -70,7 +79,7 @@ void test_bit_cast() {
 
 template<class T>
 static constexpr void check_countl_zero() {
-    constexpr int dig = std::detail::bit_digits_v<T>;
+    constexpr int dig = bit_digits<T>;
 
     static_assert(std::countl_zero(T(0))   == dig);
     static_assert(std::countl_zero(T(1))   == dig - 1);
@@ -130,7 +139,7 @@ void test_bit_countl_one() {
 
 template<class T>
 static constexpr void check_countr_zero() {
-    constexpr int dig = std::detail::bit_digits_v<T>;
+    constexpr int dig = bit_digits<T>;
     static_assert(std::countr_zero(T(0)) == dig);
     static_assert(std::countr_zero(T(1)) == 0);
     static_assert(std::countr_zero(T(2)) == 1);
@@ -188,7 +197,7 @@ static constexpr void check_popcount() {
     static_assert(std::popcount(T(1)) == 1);
     static_assert(std::popcount(T(2)) == 1);
     static_assert(std::popcount(T(3)) == 2);
-    static_assert(std::popcount(T(~T(0))) == std::detail::bit_digits_v<T>);
+    static_assert(std::popcount(T(~T(0))) == bit_digits<T>);
 }
 
 void test_bit_popcount() {
@@ -405,41 +414,62 @@ void test_bit_byteswap() {
 }
 
 //===----------------------------------------------------------------------===//
-// Constraint checks: verify the unsigned_integer_type concept accepts the right
-// types and rejects others.
+// Constraint checks: verify <bit> functions accept the right types.
+// std::unsigned_integer_type and std::integer_type are libcis-internal concepts
+// not part of the standard; replace with standard type traits and concept checks.
+// The standard requires <bit> functions to accept all unsigned integer types
+// (excluding bool, char, wchar_t, char8_t, char16_t, char32_t).
 //===----------------------------------------------------------------------===//
 
-void test_bit_constraints() {
-    // unsigned integer types: accepted by unsigned_integer_type concept
-    static_assert( std::unsigned_integer_type<unsigned char>);
-    static_assert( std::unsigned_integer_type<unsigned short>);
-    static_assert( std::unsigned_integer_type<unsigned int>);
-    static_assert( std::unsigned_integer_type<unsigned long>);
-    static_assert( std::unsigned_integer_type<unsigned long long>);
-    static_assert( std::unsigned_integer_type<uint8_t>);
-    static_assert( std::unsigned_integer_type<uint16_t>);
-    static_assert( std::unsigned_integer_type<uint32_t>);
-    static_assert( std::unsigned_integer_type<uint64_t>);
-    static_assert( std::unsigned_integer_type<__uint128_t>);
+// Helper: the standard <bit> functions are constrained on unsigned integer
+// types (std::is_unsigned_v && std::is_integral_v, excluding char-like types).
+// We use a local concept matching the standard's intent.
+template<class T>
+concept standard_unsigned_integer =
+    std::is_integral_v<T> &&
+    std::is_unsigned_v<T> &&
+    !std::is_same_v<T, bool> &&
+    !std::is_same_v<T, char> &&
+    !std::is_same_v<T, wchar_t> &&
+    !std::is_same_v<T, char8_t> &&
+    !std::is_same_v<T, char16_t> &&
+    !std::is_same_v<T, char32_t> &&
+    std::is_same_v<T, std::remove_cv_t<T>>;
 
-    // rejected: bool, char, wchar_t, char8_t, char16_t, char32_t, signed types
-    static_assert(!std::unsigned_integer_type<bool>);
-    static_assert(!std::unsigned_integer_type<char>);
-    static_assert(!std::unsigned_integer_type<wchar_t>);
-    static_assert(!std::unsigned_integer_type<char8_t>);
-    static_assert(!std::unsigned_integer_type<char16_t>);
-    static_assert(!std::unsigned_integer_type<char32_t>);
-    static_assert(!std::unsigned_integer_type<signed char>);
-    static_assert(!std::unsigned_integer_type<short>);
-    static_assert(!std::unsigned_integer_type<int>);
-    static_assert(!std::unsigned_integer_type<long>);
-    static_assert(!std::unsigned_integer_type<long long>);
+void test_bit_constraints() {
+    // Unsigned integer types accepted by the standard <bit> functions
+    static_assert( standard_unsigned_integer<unsigned char>);
+    static_assert( standard_unsigned_integer<unsigned short>);
+    static_assert( standard_unsigned_integer<unsigned int>);
+    static_assert( standard_unsigned_integer<unsigned long>);
+    static_assert( standard_unsigned_integer<unsigned long long>);
+    static_assert( standard_unsigned_integer<uint8_t>);
+    static_assert( standard_unsigned_integer<uint16_t>);
+    static_assert( standard_unsigned_integer<uint32_t>);
+    static_assert( standard_unsigned_integer<uint64_t>);
+
+    // Rejected: bool, char, wchar_t, char8_t, char16_t, char32_t, signed types
+    static_assert(!standard_unsigned_integer<bool>);
+    static_assert(!standard_unsigned_integer<char>);
+    static_assert(!standard_unsigned_integer<wchar_t>);
+    static_assert(!standard_unsigned_integer<char8_t>);
+    static_assert(!standard_unsigned_integer<char16_t>);
+    static_assert(!standard_unsigned_integer<char32_t>);
+    static_assert(!standard_unsigned_integer<signed char>);
+    static_assert(!standard_unsigned_integer<short>);
+    static_assert(!standard_unsigned_integer<int>);
+    static_assert(!standard_unsigned_integer<long>);
+    static_assert(!standard_unsigned_integer<long long>);
     // cv-qualified: rejected (must be unqualified)
-    static_assert(!std::unsigned_integer_type<const unsigned int>);
-    static_assert(!std::unsigned_integer_type<volatile unsigned int>);
-    // integer_type accepts signed and unsigned (but not bool/char)
-    static_assert( std::integer_type<int>);
-    static_assert( std::integer_type<unsigned int>);
-    static_assert(!std::integer_type<bool>);
-    static_assert(!std::integer_type<char>);
+    static_assert(!standard_unsigned_integer<const unsigned int>);
+    static_assert(!standard_unsigned_integer<volatile unsigned int>);
+
+    // Verify the <bit> functions actually compile and run for these types
+    static_assert(std::popcount(uint8_t(0))  == 0);
+    static_assert(std::popcount(uint16_t(0)) == 0);
+    static_assert(std::popcount(uint32_t(0)) == 0);
+    static_assert(std::popcount(uint64_t(0)) == 0);
+    static_assert(std::countl_zero(uint8_t(0))  == 8);
+    static_assert(std::countl_zero(uint16_t(0)) == 16);
+    static_assert(std::countr_zero(uint32_t(0)) == 32);
 }

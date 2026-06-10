@@ -4,6 +4,7 @@
 #include "test.h"
 #include <span>
 #include <array>
+#include <iterator>
 #include <type_traits>
 #include <cstddef>
 
@@ -29,7 +30,10 @@ void test_span_types() {
     static_assert(std::is_same_v<S::const_pointer,   const int*>);
     static_assert(std::is_same_v<S::reference,       int&>);
     static_assert(std::is_same_v<S::const_reference, const int&>);
-    static_assert(std::is_same_v<S::iterator,        int*>);
+    // iterator is an implementation-defined type; verify the standard properties
+    // rather than pinning the exact type (vendors use wrapper iterators).
+    static_assert(std::contiguous_iterator<S::iterator>);
+    static_assert(std::is_same_v<std::iter_value_t<S::iterator>, int>);
     static_assert(S::extent == 3);
 
     using D = std::span<int>;
@@ -234,8 +238,11 @@ void test_span_iterators() {
     int arr[5] = {1, 2, 3, 4, 5};
 
     std::span<int, 5> s(arr);
-    CHECK(s.begin() == arr);
-    CHECK(s.end()   == arr + 5);
+    // Vendors use wrapper iterators, so compare via to_address / &*it rather
+    // than directly against raw pointers.
+    CHECK(&*s.begin() == arr);
+    CHECK(std::to_address(s.begin()) == arr);
+    CHECK(std::to_address(s.end())   == arr + 5);
 
     int sum = 0;
     for (int x : s) sum += x;
@@ -248,8 +255,8 @@ void test_span_iterators() {
     CHECK(rsum == 15);
 
     std::span<int> d(arr, 5);
-    CHECK(d.begin() == arr);
-    CHECK(d.end()   == arr + 5);
+    CHECK(std::to_address(d.begin()) == arr);
+    CHECK(std::to_address(d.end())   == arr + 5);
 
     sum = 0;
     for (int x : d) sum += x;
