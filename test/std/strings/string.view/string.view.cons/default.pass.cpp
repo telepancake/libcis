@@ -1,0 +1,56 @@
+// AST-transferred from libc++ by tools/transfer.py (slug=strings_string_view_string_view_cons_default).
+// main -> test_strings_string_view_string_view_cons_default; file-scope helpers isolated in anon namespace.
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// UNSUPPORTED: !stdlib=libc++ && (c++03 || c++11 || c++14)
+
+// <string_view>
+
+// constexpr basic_string_view () noexcept;
+
+#include <string_view>
+#include <cassert>
+
+#include "test_macros.h"
+
+namespace libcis_ns_strings_string_view_string_view_cons_default { // libcis: isolate file-scope helpers
+template <typename T>
+void test() {
+#if TEST_STD_VER > 11
+  {
+    ASSERT_NOEXCEPT(T());
+
+    constexpr T sv1;
+    static_assert(sv1.size() == 0, "");
+    static_assert(sv1.empty(), "");
+  }
+#endif
+
+  {
+    T sv1;
+    assert(sv1.size() == 0);
+    assert(sv1.empty());
+  }
+}
+} using namespace libcis_ns_strings_string_view_string_view_cons_default; // libcis
+
+
+void test_strings_string_view_string_view_cons_default() {
+  test<std::string_view>();
+  test<std::u16string_view>();
+#ifndef TEST_HAS_NO_CHAR8_T
+  test<std::u8string_view>();
+#endif
+  test<std::u32string_view>();
+#ifndef TEST_HAS_NO_WIDE_CHARACTERS
+  test<std::wstring_view>();
+#endif
+
+  return;
+}
