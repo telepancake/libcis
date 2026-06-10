@@ -858,7 +858,7 @@ inline bool operator==(const list<T, Alloc>& x, const list<T, Alloc>& y) {
 template<class T, class Alloc>
 inline auto operator<=>(const list<T, Alloc>& x, const list<T, Alloc>& y) {
     return lexicographical_compare_three_way(x.begin(), x.end(), y.begin(), y.end(),
-                                             synth_three_way);
+                                             detail::synth_three_way);
 }
 
 // ============================================================

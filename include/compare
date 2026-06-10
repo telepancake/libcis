@@ -784,14 +784,16 @@ inline constexpr auto compare_partial_order_fallback = cpo_compare_partial_order
 
 //===----------------------------------------------------------------------===//
 // synth_three_way (from __compare/synth_three_way.h)
-// An exposition-only helper used by containers and algorithms.
+// Exposition-only: placed in std::detail so it is not a public std:: name.
 //===----------------------------------------------------------------------===//
+
+namespace detail {
 
 inline constexpr auto synth_three_way =
     []<class T, class U>(const T& t, const U& u)
         requires requires {
-            { t < u } -> detail::boolean_testable;
-            { u < t } -> detail::boolean_testable;
+            { t < u } -> boolean_testable;
+            { u < t } -> boolean_testable;
         }
     {
         if constexpr (three_way_comparable_with<T, U>) {
@@ -806,5 +808,7 @@ inline constexpr auto synth_three_way =
 template<class T, class U = T>
 using synth_three_way_result =
     decltype(synth_three_way(declval<T&>(), declval<U&>()));
+
+} // namespace detail
 
 } // namespace std

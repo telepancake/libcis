@@ -610,9 +610,9 @@ constexpr bool operator==(const tuple<Ts...>& x, const tuple<Us...>& y) {
 
 template<class... Ts, class... Us>
     requires (sizeof...(Ts) == sizeof...(Us))
-constexpr common_comparison_category_t<synth_three_way_result<Ts, Us>...>
+constexpr common_comparison_category_t<detail::synth_three_way_result<Ts, Us>...>
 operator<=>(const tuple<Ts...>& x, const tuple<Us...>& y) {
-    using Ret = common_comparison_category_t<synth_three_way_result<Ts, Us>...>;
+    using Ret = common_comparison_category_t<detail::synth_three_way_result<Ts, Us>...>;
     return detail::tuple_compare_three_way<Ret>(x, y, index_sequence_for<Ts...>{});
 }
 
