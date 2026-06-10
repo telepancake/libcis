@@ -670,12 +670,13 @@ private:
     std::string_view filename_sv() const noexcept {
         if (pn_.empty())
             return {};
-        // Trailing separator means empty filename
-        if (pn_.back() == '/' && pn_.size() > 1)
+        // Per [fs.path.decompose]: filename() == relative_path().empty() ? path() : *--end()
+        // If relative_path is empty (e.g. path is just "/"), filename is empty.
+        if (relative_path_sv().empty())
             return {};
-        // If path is just '/', filename is '/'
-        if (pn_ == "/")
-            return std::string_view(pn_.data(), 1);
+        // Trailing separator means empty filename (e.g. "/foo/")
+        if (pn_.back() == '/')
+            return {};
         // Find last '/'
         auto pos = pn_.rfind('/');
         if (pos == std::string::npos)
