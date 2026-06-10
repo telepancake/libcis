@@ -454,13 +454,11 @@ void test_optional_hash() {
     std::optional<int> b(42);
     CHECK(std::hash<std::optional<int>>{}(a) == std::hash<std::optional<int>>{}(b));
 
-    // Two disengaged optionals must hash equal (both return 0).
+    // Two disengaged optionals must hash equal (standard guarantees consistent hash
+    // within a program execution; exact value is implementation-defined, not 0).
     std::optional<int> empty1;
     std::optional<int> empty2;
     CHECK(std::hash<std::optional<int>>{}(empty1) == std::hash<std::optional<int>>{}(empty2));
-
-    // Disengaged optional returns 0.
-    CHECK(std::hash<std::optional<int>>{}(empty1) == 0);
 
     // An engaged optional with a different value should (very likely) differ.
     std::optional<int> c(99);

@@ -2,6 +2,7 @@
 // Each test is a free function void test_list_<case>().
 // No progress printing; CHECK traps on failure.
 #include <list>
+#include <functional>
 #include "test.h"
 
 // ============================================================

@@ -101,11 +101,16 @@ void test_memory_allocator() {
     std::allocator<int> c;
     CHECK(a == c);
 
-    // allocate_at_least
-    auto res = a.allocate_at_least(3);
-    CHECK(res.ptr != nullptr);
-    CHECK(res.count == 3);
-    a.deallocate(res.ptr, res.count);
+    // allocate_at_least — standard only guarantees count >= requested
+    // Guarded because g++-13 libstdc++ does not yet ship allocator::allocate_at_least
+#ifdef __cpp_lib_allocate_at_least
+    {
+        auto res = a.allocate_at_least(3);
+        CHECK(res.ptr != nullptr);
+        CHECK(res.count >= 3);
+        a.deallocate(res.ptr, res.count);
+    }
+#endif
 }
 
 //===----------------------------------------------------------------------===//
@@ -156,6 +161,9 @@ void test_memory_allocator_traits() {
 //===----------------------------------------------------------------------===//
 
 void test_memory_allocation_result() {
+    // std::allocate_at_least and std::allocation_result are C++23 features;
+    // guard with the feature-test macro as g++-13 libstdc++ does not ship them.
+#ifdef __cpp_lib_allocate_at_least
     std::allocator<int> a;
     auto res = std::allocate_at_least(a, 5);
     CHECK(res.ptr != nullptr);
@@ -164,6 +172,7 @@ void test_memory_allocation_result() {
 
     static_assert(std::is_same_v<decltype(res.ptr), int*>);
     static_assert(std::is_same_v<decltype(res.count), std::size_t>);
+#endif
 }
 
 //===----------------------------------------------------------------------===//
@@ -551,8 +560,8 @@ void test_memory_assume_aligned() {
     int* p = std::assume_aligned<16>(x);
     CHECK(p == x);
     CHECK(p[0] == 1);
-
-    static_assert(noexcept(std::assume_aligned<16>(x)));
+    // std::assume_aligned is not required to be noexcept by the standard;
+    // the noexcept property is implementation-defined.
 }
 
 //===----------------------------------------------------------------------===//

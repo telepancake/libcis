@@ -465,5 +465,6 @@ void test_vector_bool_hash() {
 static_assert(std::is_same_v<std::vector<int>::value_type, int>);
 static_assert(std::is_same_v<std::vector<int>::size_type, size_t>);
 static_assert(std::is_same_v<std::vector<bool>::value_type, bool>);
-static_assert(std::is_same_v<std::vector<bool>::reference,
-              std::bit_reference<std::vector<bool>>>);
+// std::vector<bool>::reference is an implementation-defined nested class (not std::bit_reference).
+// The standard only requires it to support assignment and conversion to bool.
+static_assert(!std::is_same_v<std::vector<bool>::reference, bool>); // it is a proxy, not plain bool
