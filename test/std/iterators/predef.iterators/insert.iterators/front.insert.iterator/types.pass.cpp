@@ -1,0 +1,81 @@
+// AST-transferred from libc++ by tools/transfer.py (slug=iterators_predef_iterators_insert_iterators_front_insert_iterator_types).
+// main -> test_iterators_predef_iterators_insert_iterators_front_insert_iterator_types; file-scope helpers isolated in anon namespace.
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// <iterator>
+
+// front_insert_iterator
+
+// Test nested types and data member:
+
+// template <class Container>
+// class front_insert_iterator
+//  : public iterator<output_iterator_tag, void, void, void, void> // until C++17
+// {
+// protected:
+//   Container* container;
+// public:
+//   typedef Container                   container_type;
+//   typedef void                        value_type;
+//   typedef void                        difference_type; // until C++20
+//   typedef ptrdiff_t                   difference_type; // since C++20
+//   typedef void                        reference;
+//   typedef void                        pointer;
+//   typedef output_iterator_tag         iterator_category;
+// };
+
+#include <cstddef>
+#include <iterator>
+#include <type_traits>
+#include <vector>
+
+#include "test_macros.h"
+
+namespace libcis_ns_iterators_predef_iterators_insert_iterators_front_insert_iterator_types { // libcis: isolate file-scope helpers
+template <class C>
+struct find_container
+    : private std::front_insert_iterator<C>
+{
+    explicit find_container(C& c) : std::front_insert_iterator<C>(c) {}
+    void test() {this->container = 0;}
+};
+
+template <class C>
+void
+test()
+{
+    typedef std::front_insert_iterator<C> R;
+    C c;
+    find_container<C> q(c);
+    q.test();
+    static_assert((std::is_same<typename R::container_type, C>::value), "");
+    static_assert((std::is_same<typename R::value_type, void>::value), "");
+#if TEST_STD_VER > 17
+    static_assert((std::is_same<typename R::difference_type, std::ptrdiff_t>::value), "");
+#else
+    static_assert((std::is_same<typename R::difference_type, void>::value), "");
+#endif
+    static_assert((std::is_same<typename R::reference, void>::value), "");
+    static_assert((std::is_same<typename R::pointer, void>::value), "");
+    static_assert((std::is_same<typename R::iterator_category, std::output_iterator_tag>::value), "");
+
+#if TEST_STD_VER <= 14
+    typedef std::iterator<std::output_iterator_tag, void, void, void, void> iterator_base;
+    static_assert((std::is_base_of<iterator_base, R>::value), "");
+#endif
+}
+} using namespace libcis_ns_iterators_predef_iterators_insert_iterators_front_insert_iterator_types; // libcis
+
+
+void test_iterators_predef_iterators_insert_iterators_front_insert_iterator_types()
+{
+    test<std::vector<int> >();
+
+  return;
+}
