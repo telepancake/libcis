@@ -1,0 +1,80 @@
+// AST-transferred from libc++ by tools/transfer.py (slug=concepts_concepts_lang_concept_destructible_destructible).
+// no entry point (compile-only); all file-scope decls isolated in anon namespace.
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// UNSUPPORTED: c++03, c++11, c++14, c++17
+
+// template<class T>
+// concept destructible = is_nothrow_destructible_v<T>;
+
+#include <concepts>
+#include <type_traits>
+
+namespace libcis_ns_concepts_concepts_lang_concept_destructible_destructible { // libcis: isolate file-scope helpers
+struct Empty {};
+
+struct Defaulted {
+  ~Defaulted() = default;
+};
+struct Deleted {
+  ~Deleted() = delete;
+};
+
+struct Noexcept {
+  ~Noexcept() noexcept;
+};
+struct NoexceptTrue {
+  ~NoexceptTrue() noexcept(true);
+};
+struct NoexceptFalse {
+  ~NoexceptFalse() noexcept(false);
+};
+
+struct Protected {
+protected:
+  ~Protected() = default;
+};
+struct Private {
+private:
+  ~Private() = default;
+};
+
+template <class T>
+struct NoexceptDependant {
+  ~NoexceptDependant() noexcept(std::is_same_v<T, int>);
+};
+
+template <class T>
+void test() {
+  static_assert(std::destructible<T> == std::is_nothrow_destructible_v<T>);
+}
+
+void test() {
+  test<Empty>();
+
+  test<Defaulted>();
+  test<Deleted>();
+
+  test<Noexcept>();
+  test<NoexceptTrue>();
+  test<NoexceptFalse>();
+
+  test<Protected>();
+  test<Private>();
+
+  test<NoexceptDependant<int> >();
+  test<NoexceptDependant<double> >();
+
+  test<bool>();
+  test<char>();
+  test<int>();
+  test<double>();
+}
+} using namespace libcis_ns_concepts_concepts_lang_concept_destructible_destructible; // libcis
+
