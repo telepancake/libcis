@@ -54,6 +54,25 @@ template<class Facet> bool has_facet(const locale&) noexcept;
 //===----------------------------------------------------------------------===//
 // locale
 //===----------------------------------------------------------------------===//
+//
+// Design: libcis locale has two facet lookup layers:
+//   1. A per-locale "imp" (shared, refcounted) that holds injected facets.
+//      Created only by locale(const locale&, Facet*).  Shared by copy/assign.
+//   2. The global static facet_registry for the classic-locale built-in facets.
+//
+// use_facet / has_facet check the per-locale imp first, then fall back to
+// the global registry.  This preserves the existing classic-locale fast path.
+//
+// Ported semantics from:
+//   /home/user/llvm-project/libcxx/include/__locale  — locale class, template
+//     <class Facet> locale(const locale&, Facet*) [line 171],
+//     combine<Facet> [line 92], has_facet/use_facet [lines 176-183].
+//   /home/user/llvm-project/libcxx/src/locale.cpp   — __install_ctor [line 532],
+//     facet ownership / refcounting [lines 425-452, 561].
+//
+// Ownership: facet::refs_ mirrors libc++'s __shared_count semantics:
+//   refs_==0 (default) → locale takes ownership (will delete on last ref drop).
+//   refs_>=1 → caller retains ownership; locale does not delete.
 class locale {
 public:
     // --- nested class id ---
@@ -85,6 +104,8 @@ public:
         facet& operator=(const facet&) = delete;
     private:
         friend class locale;
+        // refs_ == 0: locale owns this facet (will delete when refcount reaches 0)
+        // refs_ >= 1: externally owned / pinned (classic-locale statics use refs_=1)
         size_t refs_;
     };
 
@@ -99,18 +120,97 @@ public:
     static constexpr category messages = 0x200;
     static constexpr category all      = collate | ctype | monetary | numeric | time | messages;
 
+    // -----------------------------------------------------------------------
+    // imp: shared per-locale facet table for injected facets.
+    // Ported from libc++ locale::__imp (locale.cpp); simplified to a plain
+    // refcounted struct because we don't need the full category machinery.
+    // -----------------------------------------------------------------------
+    struct imp {
+        // Small per-locale override table for injected facets.
+        // Indexed by facet id (same namespace as global registry).
+        static constexpr size_t max_facets = 64;
+        const facet* table[max_facets] = {};
+        // owns[i] is true when table[i] is owned by this imp and must be
+        // deleted when this imp is destroyed.
+        bool owns[max_facets] = {};
+        // Shared refcount — starts at 1 (the constructing locale).
+        size_t refs = 1;
+
+        void add_ref() noexcept { ++refs; }
+        // Returns true if this imp should be deleted.
+        bool release() noexcept { return --refs == 0; }
+
+        ~imp() {
+            for (size_t i = 0; i < max_facets; ++i) {
+                if (table[i] && owns[i])
+                    release_facet(const_cast<facet*>(table[i]));
+            }
+        }
+
+        // Install a facet at slot id.  Takes ownership iff f->refs_ == 0.
+        void install(size_t id, facet* f) {
+            if (id == 0 || id >= max_facets) return;
+            if (table[id] && owns[id])
+                release_facet(const_cast<facet*>(table[id]));
+            table[id] = f;
+            owns[id]  = (f->refs_ == 0);
+            // Bump refs_ so caller can't double-delete even if refs_==0.
+            ++f->refs_;
+        }
+
+        // Release a facet we own: call its virtual destructor then free.
+        // We use explicit dtor + ::operator delete(void*) rather than
+        // delete-expression so that test instrumentation overriding
+        // operator delete(void*) intercepts the deallocation.  A plain
+        // delete-expression on a base pointer would generate a sized-delete
+        // call (C++14) which is a separate symbol not overridden by libc++
+        // test helpers.
+        static void release_facet(facet* f) {
+            f->~facet();                  // virtual dispatch → derived dtor
+            ::operator delete(f);         // unsized delete, interceptable by tests
+        }
+
+        const facet* get(size_t id) const noexcept {
+            if (id == 0 || id >= max_facets) return nullptr;
+            return table[id];
+        }
+    };
+
+    // Free an imp that we own: explicit dtor + unsized ::operator delete.
+    // Mirrors the same rationale as imp::release_facet.
+    static void release_imp(imp* p) {
+        p->~imp();
+        ::operator delete(p);
+    }
+
     // --- construct/copy/destroy ---
 
     // default: the current global locale (for libcis, always "C")
-    locale() noexcept : name_("C") {}
-    locale(const locale& other) noexcept = default;
-    locale& operator=(const locale& other) noexcept = default;
-    ~locale() = default;
+    locale() noexcept : name_("C"), imp_(nullptr) {}
+
+    locale(const locale& other) noexcept
+        : name_(other.name_), imp_(other.imp_) {
+        if (imp_) imp_->add_ref();
+    }
+
+    locale& operator=(const locale& other) noexcept {
+        if (this != &other) {
+            if (imp_ && imp_->release()) release_imp(imp_);
+            name_ = other.name_;
+            imp_  = other.imp_;
+            if (imp_) imp_->add_ref();
+        }
+        return *this;
+    }
+
+    ~locale() {
+        if (imp_ && imp_->release()) release_imp(imp_);
+    }
 
     // named constructors — only "C" and "" (empty = system default = "C") are
     // supported on this freestanding target.  Any other name would throw
     // runtime_error per the standard; we __builtin_trap() instead.
-    explicit locale(const char* name) {
+    explicit locale(const char* name) : imp_(nullptr) {
         if (name == nullptr)
             __builtin_trap(); // would throw runtime_error
         if (name[0] == '\0' || (name[0] == 'C' && name[1] == '\0')) {
@@ -124,7 +224,7 @@ public:
     // Replace selected categories of one locale with those from a named locale.
     // For libcis only "C" / "" are supported; category is ignored since all
     // facets are the same.
-    locale(const locale& other, const char* name, category) {
+    locale(const locale& other, const char* name, category) : imp_(nullptr) {
         if (name == nullptr)
             __builtin_trap(); // would throw runtime_error
         if (name[0] == '\0' || (name[0] == 'C' && name[1] == '\0')) {
@@ -136,12 +236,59 @@ public:
     locale(const locale& other, const string& name, category cat)
         : locale(other, name.c_str(), cat) {}
 
+    // [locale.cons]p14: locale(const locale& other, Facet* f)
+    // Result is a copy of other with f installed as its Facet facet.
+    // If f is null, the result is a plain copy of other.
+    // The locale takes ownership of f if f->refs_ == 0 (f was heap-allocated
+    // with refs=0); otherwise the caller retains ownership.
+    // The resulting locale's name() is "*" (unnamed) per the standard.
+    //
+    // Ported from: libc++ include/__locale line 171 (template body) and
+    // src/locale.cpp line 532 (__install_ctor).
+    template<class Facet>
+    locale(const locale& other, Facet* f) : locale(other) {
+        if (!f) return;  // null f → plain copy (name unchanged)
+        // Need our own imp so we don't mutate the shared one from 'other'.
+        imp* new_imp = new imp();
+        // Copy any existing per-locale overrides from other.
+        if (other.imp_) {
+            for (size_t i = 0; i < imp::max_facets; ++i) {
+                if (other.imp_->table[i]) {
+                    new_imp->table[i] = other.imp_->table[i];
+                    new_imp->owns[i]  = false; // shared reference; we don't own
+                    // Keep the facet's refs_ bumped so it survives.
+                    const_cast<facet*>(other.imp_->table[i])->refs_++;
+                }
+            }
+        }
+        // Release the imp we inherited from the copy of 'other'.
+        if (imp_ && imp_->release()) release_imp(imp_);
+        imp_ = new_imp;
+        // Install f.
+        size_t fid = Facet::id.__get();
+        imp_->install(fid, f);
+        name_ = "*";
+    }
+
+    // locale::combine<Facet>(other): return a copy of *this with Facet from other.
+    // Ported from: libc++ include/__locale line 92.
+    template<class Facet>
+    locale combine(const locale& other) const {
+        if (!has_facet<Facet>(other))
+            __builtin_trap(); // would throw runtime_error per standard
+        return locale(*this, &const_cast<Facet&>(use_facet<Facet>(other)));
+    }
+
     // --- observers ---
 
     string name() const { return name_; }
 
     bool operator==(const locale& other) const noexcept {
-        // Both "C" → equal; anything else → name comparison.
+        // Both locales point to the same imp → equal.
+        // Named locales (non-"*"): compare by name.
+        // Unnamed ("*"): only equal if same imp.
+        if (imp_ && other.imp_ && imp_ == other.imp_) return true;
+        if (name_ == "*" || other.name_ == "*") return false;
         return name_ == other.name_;
     }
     bool operator!=(const locale& other) const noexcept { return !(*this == other); }
@@ -158,14 +305,22 @@ public:
         return prev;
     }
 
-    // use_facet / has_facet support: store a small table of facet pointers
-    // indexed by locale::id.  Since we only ever have the classic locale,
-    // we keep one static registry.
+    // use_facet / has_facet support: global static registry for classic facets.
     static const facet* __get_facet(size_t id) noexcept;
     static void __register_facet(size_t id, const facet* f) noexcept;
 
+    // Per-locale lookup: checks this locale's injected table, then global registry.
+    const facet* __lookup_facet(size_t id) const noexcept {
+        if (imp_) {
+            const facet* f = imp_->get(id);
+            if (f) return f;
+        }
+        return __get_facet(id);
+    }
+
 private:
     string name_;
+    imp*   imp_;   // nullptr for classic/named locales with no injected facets
 
     static locale& global_locale() {
         static locale g;
@@ -193,18 +348,21 @@ inline void locale::__register_facet(size_t id, const locale::facet* f) noexcept
 
 //===----------------------------------------------------------------------===//
 // has_facet / use_facet
+// Ported from: libc++ include/__locale lines 176-183.
+// Extended to check per-locale injected table (locale::__lookup_facet) before
+// falling back to the global static registry.
 //===----------------------------------------------------------------------===//
 
 template<class Facet>
-bool has_facet(const locale&) noexcept {
+bool has_facet(const locale& loc) noexcept {
     size_t id = Facet::id.__get();
-    return locale::__get_facet(id) != nullptr;
+    return loc.__lookup_facet(id) != nullptr;
 }
 
 template<class Facet>
-const Facet& use_facet(const locale& /*loc*/) {
+const Facet& use_facet(const locale& loc) {
     size_t id = Facet::id.__get();
-    const locale::facet* f = locale::__get_facet(id);
+    const locale::facet* f = loc.__lookup_facet(id);
     if (!f) __builtin_trap(); // facet not installed — unreachable in well-formed code
     return static_cast<const Facet&>(*f);
 }
