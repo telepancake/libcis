@@ -51,8 +51,15 @@ DST_SUPPORT = os.path.join(DST_ROOT, "support")
 # #ifndef TEST_HAS_NO_EXCEPTIONS guarded arms drop out, like they will under
 # g++-10 -fno-exceptions).  Whatever hostile construct survives preprocessing
 # here is exactly what breaks the target build -> that is what we adapt.
+# gnu++20: the dialect the tests will actually see on the target.  TEST_STD_VER
+# becomes 20, so >=23/26 arms drop out of the AST exactly as they will under
+# g++-10.  Tests of post-C++20 library features are SKIPPED (reason recorded in
+# the manifest as requires-unmet/unsupported); when libcis implements such a
+# feature on the C++20 dialect, re-transfer its subtree with --std to lift the
+# gate deliberately rather than wholesale.
+STD_MODE = "c++20"
 PARSE_ARGS = [
-    "-std=gnu++2c", "-stdlib=libc++",
+    "-std=gnu++20", "-stdlib=libc++",
     "-DTEST_HAS_NO_EXCEPTIONS", "-DTEST_HAS_NO_RTTI",
     "-I", SRC_SUPPORT,
 ]
@@ -93,15 +100,15 @@ def build_pch():
 # lit feature model: features TRUE under our (newest-vendor) config.
 # ---------------------------------------------------------------------------
 TRUE_FEATURES = {
-    "c++26", "c++23", "c++20",
-    "std-at-least-c++17", "std-at-least-c++20", "std-at-least-c++23",
-    "std-at-least-c++26",
+    "c++20",
+    "std-at-least-c++17", "std-at-least-c++20",
     "long_tests", "has-fconstexpr-steps", "has-unix-headers",
     "locale.en_US.UTF-8", "locale.fr_FR.UTF-8", "locale.ru_RU.UTF-8",
     "locale.zh_CN.UTF-8", "locale.ja_JP.UTF-8", "locale.cs_CZ.ISO8859-2",
     "has-1024-bit-extended-precision", "linux", "x86_64",
 }
-FALSE_STD_MODES = {"c++03", "c++11", "c++14", "c++17"}
+FALSE_STD_MODES = {"c++03", "c++11", "c++14", "c++17", "c++23", "c++26",
+                   "std-at-least-c++23", "std-at-least-c++26"}
 
 # Features our build actually enables (see check.sh): a test that declares
 # itself UNSUPPORTED under these can NOT be adapted -- its purpose is the
@@ -160,12 +167,12 @@ def decide(text: str):
     d = parse_directives(text)
     if d["FILE_DEPENDENCIES"]:
         return False, "file-dependencies", []
+    # lit semantics: any satisfied UNSUPPORTED clause gates the test.  Features
+    # we don't have (no-threads, no-localization, ...) evaluate false, so those
+    # tags do not skip; std modes other than c++20 evaluate false likewise.
     for clause in d["UNSUPPORTED"]:
-        bare = clause.strip()
-        if bare in ACTIVE_NO_FEATURES:
-            return False, f"unsupported:{bare}", []
-        if any(nf in bare for nf in ACTIVE_NO_FEATURES) and eval_clause(clause):
-            return False, f"unsupported:{bare}", []
+        if eval_clause(clause):
+            return False, f"unsupported:{clause.strip()}", []
     for clause in d["REQUIRES"]:
         if not eval_clause(clause):
             return False, f"requires-unmet:{clause.strip()}", []
