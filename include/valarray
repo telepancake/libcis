@@ -464,6 +464,38 @@ public:
     requires is_val_expr<E>::value
   valarray& operator>>=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t >>= val_get(v,i); return *this; }
 
+  // computed assignment (proxy array types: slice_array, gslice_array, mask_array, indirect_array)
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator*=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t *= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator/=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t /= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator%=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t %= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator+=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t += val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator-=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t -= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator^=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t ^= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator|=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t |= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator&=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t &= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator<<=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t <<= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator>>=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t >>= val_get(v,i); return *this; }
+
   // member functions
   void swap(valarray& v) noexcept {
     std::swap(begin_, v.begin_);
@@ -553,6 +585,7 @@ public:
 
   val_expr<indirect_expr<ValExpr>> operator[](const valarray<size_t>& vs) const;
   val_expr<mask_expr<ValExpr>>     operator[](const valarray<bool>& vb) const;
+  val_expr<indirect_expr<ValExpr>> operator[](const gslice& gs) const;
 
   val_expr<UnaryOp<unary_plus_op<value_type>,  ValExpr>> operator+() const {
     using Op = UnaryOp<unary_plus_op<value_type>, ValExpr>;
@@ -1245,6 +1278,13 @@ val_expr<mask_expr<ValExpr>>
 val_expr<ValExpr>::operator[](const valarray<bool>& vb) const {
   using E = mask_expr<ValExpr>;
   return val_expr<E>(E(vb, expr_));
+}
+
+template <class ValExpr>
+val_expr<indirect_expr<ValExpr>>
+val_expr<ValExpr>::operator[](const gslice& gs) const {
+  using E = indirect_expr<ValExpr>;
+  return val_expr<E>(E(gs.d1_, expr_));
 }
 
 // ─── swap ────────────────────────────────────────────────────────────────────
