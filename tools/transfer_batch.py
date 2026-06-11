@@ -3,13 +3,14 @@
 granularity the group TUs consume), so one Python+libclang+PCH startup serves
 ~7 files instead of 1 (~3-4x on a full pass).
 
-  transfer_batch.py --edge-dir DIR_REL OUT_DIRREC SRC...
+  transfer_batch.py --edge-dir DIR_LABEL SRC...
 
-Writes build/recs/<rel>.rec.json per file (same records as transfer.py
---worker) plus OUT_DIRREC as the edge's declared output.  Crash isolation is
-preserved with attribution: the batch runs in ONE child process; if the child
-dies or hangs, the parent falls back to per-file children for exactly this
-directory, so a segfaulting input costs its file, not the directory.
+The edge DECLARES every build/recs/<rel>.rec.json it writes as a ninja output
+(a multi-output edge), so downstream group edges that depend on individual
+recs resolve.  Crash isolation with attribution: the batch runs in ONE child;
+if it dies or hangs, the parent redoes the directory's missing recs per-file
+(transfer_batch falls back to transfer.cmd_edge, which always writes a rec),
+so every declared output exists even after a segfault.
 """
 import json
 import os
@@ -40,11 +41,10 @@ def main():
         run_batch_child(pairs)
         return
     assert sys.argv[1] == "--edge-dir"
-    dirrec, srcs = sys.argv[2], sys.argv[3:]
+    label, srcs = sys.argv[2], sys.argv[3:]
     pairs = [(s, os.path.relpath(os.path.abspath(s), T.SRC_STD)) for s in srcs]
 
-    plan = os.path.join(T.ROOT, "build", "recs", ".plan." +
-                        os.path.basename(dirrec) + ".json")
+    plan = os.path.join(T.ROOT, "build", "recs", ".plan." + label + ".json")
     os.makedirs(os.path.dirname(plan), exist_ok=True)
     json.dump(pairs, open(plan, "w"))
     try:
@@ -55,29 +55,19 @@ def main():
     except subprocess.TimeoutExpired as ex:
         p, crashed = ex, True
     if crashed:
-        # the batch died mid-directory; the echoed progress names the last
-        # file it started.  Redo every file lacking a rec via the per-file
-        # isolated path (which attributes crash/timeout to the file itself).
-        done = set((p.stdout or "").split()[:-1])  # last name = the culprit-or-victim
+        # batch died mid-directory; redo every file lacking a rec via the
+        # per-file isolated path (cmd_edge attributes crash/timeout to the
+        # file itself and always writes a rec).
         for src, rel in pairs:
-            if rel not in done or not os.path.exists(rec_path(rel)):
+            if not os.path.exists(rec_path(rel)):
                 T.cmd_edge(src, rel, rec_path(rel))
     os.unlink(plan)
-
-    # the directory record is the edge's declared output: it lists the per-file
-    # recs and changes iff any of them changed (content hash), so downstream
-    # (manifest) rebuilds exactly when results moved.
-    import hashlib
-    h = hashlib.sha1()
-    for _, rel in sorted(pairs):
-        rp = rec_path(rel)
-        h.update(rel.encode())
-        h.update(open(rp, "rb").read() if os.path.exists(rp) else b"?")
-    os.makedirs(os.path.dirname(dirrec), exist_ok=True)
-    with open(dirrec, "w") as fh:
-        json.dump({"files": [rel for _, rel in pairs],
-                   "digest": h.hexdigest()}, fh)
+    # every declared output must now exist
+    for _, rel in pairs:
+        if not os.path.exists(rec_path(rel)):
+            T.cmd_edge(*[s for s in pairs if s[1] == rel][0], rec_path(rel))
 
 
 if __name__ == "__main__":
     main()
+

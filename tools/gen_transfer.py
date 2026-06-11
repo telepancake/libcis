@@ -81,19 +81,21 @@ def main():
         for src, rel in T.list_inputs(sub):
             bydir.setdefault(os.path.dirname(rel), []).append((src, rel))
 
-    dirrecs, recs = [], []
+    recs = []
     for d in sorted(bydir):
-        dirrec = os.path.relpath(
-            os.path.join(REC_DIR, d.replace("/", "_") + ".dirrec.json"), ROOT)
+        label = d.replace("/", "_")
         srcs = " ".join(os.path.relpath(s, ROOT) for s, _ in bydir[d])
-        L += [f"build {dirrec}: xferdir {srcs} | {py} {pyb} {pch}",
-              f"  dir = {d}"]
-        dirrecs.append(dirrec)
-        recs += [os.path.relpath(os.path.join(REC_DIR, rel + ".rec.json"), ROOT)
-                 for _, rel in bydir[d]]
+        outs = [os.path.relpath(os.path.join(REC_DIR, rel + ".rec.json"), ROOT)
+                for _, rel in bydir[d]]
+        # multi-output edge: ALL the directory's per-file recs are declared
+        # outputs (written by transfer_batch), so group edges depending on
+        # individual recs resolve; one Python+PCH startup serves the directory.
+        L += ["build " + " $\n    ".join(outs) + f": xferdir {srcs} | {py} {pyb} {pch}",
+              f"  dir = {label}"]
+        recs += outs
 
     man = os.path.relpath(os.path.join(T.DST_ROOT, "manifest.json"), ROOT)
-    L.append(f"build {man}: aggregate " + " $\n    ".join(dirrecs))
+    L.append(f"build {man}: aggregate " + " $\n    ".join(recs))
     L.append("  recs = " + " ".join(recs))
     L += [f"build build/tripwire.ok: tripwire {man} | {tooldir}/tripwire.py",
           "default build/tripwire.ok", ""]
@@ -101,7 +103,7 @@ def main():
     out = os.path.join(ROOT, "build", "transfer.ninja")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     open(out, "w").write("\n".join(L))
-    print(f"{out}: {len(recs)} files in {len(dirrecs)} directory edges")
+    print(f"{out}: {len(recs)} files in {len(bydir)} directory edges")
 
     # root graph: transfer stage + ninja-regenerated groups stage.  ninja sees
     # groups.ninja is an out-of-date output of the gengroups edge, rebuilds it
