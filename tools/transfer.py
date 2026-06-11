@@ -57,6 +57,38 @@ PARSE_ARGS = [
     "-I", SRC_SUPPORT,
 ]
 
+# A PCH of every top-level libc++ header, built once: each of the ~10k test
+# parses (plus its verify re-parse) then skips the std headers entirely
+# instead of re-chewing them.
+PCH_PATH = os.path.join(ROOT, "build", "transfer.pch")
+PER_FILE_TIMEOUT = 60  # seconds; a stuck/crashed libclang parse must not stall the suite
+
+
+def build_pch():
+    cand = ["/usr/lib/llvm-20/include/c++/v1", "/usr/include/c++/v1"]
+    inc_dir = next((d for d in cand if os.path.isdir(d)), None)
+    if inc_dir is None:
+        return []  # no libc++ headers found; parse without PCH
+    hdrs = sorted(h for h in os.listdir(inc_dir)
+                  if "." not in h and not h.startswith("__")
+                  and os.path.isfile(os.path.join(inc_dir, h)))
+    mega = os.path.join(ROOT, "build", "transfer_mega.h")
+    os.makedirs(os.path.dirname(mega), exist_ok=True)
+    with open(mega, "w") as fh:
+        fh.write("".join(f"#include <{h}>\n" for h in hdrs))
+        fh.write('#include "test_macros.h"\n')
+    idx = ci.Index.create()
+    # -x c++-header: libclang would otherwise treat the .h as a C header,
+    # which is fatal together with -std=gnu++2c.
+    tu = idx.parse(mega, args=["-x", "c++-header"] + PARSE_ARGS,
+                   options=ci.TranslationUnit.PARSE_INCOMPLETE)
+    hard = [d for d in tu.diagnostics if d.severity >= ci.Diagnostic.Error]
+    if hard:
+        print(f"PCH: build failed ({hard[0]}); parsing without PCH", flush=True)
+        return []
+    tu.save(PCH_PATH)
+    return ["-include-pch", PCH_PATH]
+
 # ---------------------------------------------------------------------------
 # lit feature model: features TRUE under our (newest-vendor) config.
 # ---------------------------------------------------------------------------
@@ -330,10 +362,15 @@ def transform(text: str, tu, path: str, slug: str):
             + note + out, entry, counts)
 
 
+def parse_args():
+    extra = ["-include-pch", PCH_PATH] if os.path.exists(PCH_PATH) else []
+    return PARSE_ARGS + extra
+
+
 def verify(out_text: str, ref_path: str):
     """Re-parse the rewritten source; transfer fails on any hard diagnostic."""
     idx = ci.Index.create()
-    tu = idx.parse(ref_path, args=PARSE_ARGS, unsaved_files=[(ref_path, out_text)])
+    tu = idx.parse(ref_path, args=parse_args(), unsaved_files=[(ref_path, out_text)])
     return [d for d in tu.diagnostics if d.severity >= ci.Diagnostic.Error]
 
 
@@ -374,7 +411,7 @@ def process_one(args):
     slug = slug_for(rel)
     try:
         idx = _worker_idx()
-        tu = idx.parse(src, args=PARSE_ARGS)
+        tu = idx.parse(src, args=parse_args())
         hard = [d for d in tu.diagnostics if d.severity >= ci.Diagnostic.Error]
         if hard:
             return {"status": "error", "file": rel, "stage": "parse",
@@ -424,9 +461,42 @@ def save_manifest(m):
     os.replace(tmp, os.path.join(DST_ROOT, "manifest.json"))
 
 
+def run_pool(inputs, jobs, sub):
+    """Process inputs in a worker pool that cannot stall the suite: spawn
+    start-method (libclang threads make fork() unsafe), ORDERED results with a
+    per-file timeout -- a hung parse is attributed to its input, recorded as
+    an error, and the pool is rebuilt to continue with the rest."""
+    import multiprocessing as mp
+    ctx = mp.get_context("spawn")
+    results = []
+    i = 0
+    while i < len(inputs):
+        pool = ctx.Pool(processes=jobs)
+        it = pool.imap(process_one, inputs[i:], chunksize=1)
+        try:
+            while i < len(inputs):
+                try:
+                    rec = it.next(timeout=PER_FILE_TIMEOUT)
+                except mp.TimeoutError:
+                    rec = {"status": "error", "file": inputs[i][1],
+                           "stage": "timeout",
+                           "diag": f"parse exceeded {PER_FILE_TIMEOUT}s"}
+                    print(f"  [{sub}] TIMEOUT {inputs[i][1]}", flush=True)
+                    results.append(rec)
+                    i += 1
+                    break  # rebuild the pool, resume after the hung input
+                results.append(rec)
+                i += 1
+                if i % 200 == 0:
+                    print(f"  [{sub}] {i}/{len(inputs)}", flush=True)
+        finally:
+            pool.terminate()
+            pool.join()
+    return results
+
+
 def main():
     import argparse
-    import multiprocessing as mp
     from collections import Counter
 
     ap = argparse.ArgumentParser()
@@ -441,6 +511,11 @@ def main():
     os.makedirs(DST_ROOT, exist_ok=True)
     if not os.path.isdir(DST_SUPPORT):
         shutil.copytree(SRC_SUPPORT, DST_SUPPORT)
+
+    import time
+    t0 = time.time()
+    if build_pch():
+        print(f"PCH built in {time.time()-t0:.1f}s -> {PCH_PATH}", flush=True)
 
     manifest = load_manifest()
 
@@ -457,12 +532,7 @@ def main():
         inputs = list_inputs(sub)
         print(f"[{sub}] {len(inputs)} inputs, -j{args.jobs}", flush=True)
         nt = ns = ne = 0
-        results = []
-        with mp.Pool(processes=args.jobs) as pool:
-            for i, rec in enumerate(pool.imap_unordered(process_one, inputs, chunksize=4)):
-                results.append(rec)
-                if (i + 1) % 200 == 0:
-                    print(f"  [{sub}] {i+1}/{len(inputs)}", flush=True)
+        results = run_pool(inputs, args.jobs, sub)
         for rec in results:
             st = rec["status"]
             if st == "ok":
