@@ -1,0 +1,70 @@
+// <iosfwd> — stream position types + (single home for) fpos/streamoff.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Provides the lightweight position vocabulary that <string_view>'s
+// char_traits and <ios> both need, in ONE place so they cannot redefine each
+// other when both are included:
+//   streamoff  (long long — POSIX/Linux, matches libc++ __fwd/ios.h)
+//   fpos<State>
+//   streampos, wstreampos, u8/u16/u32streampos
+//
+// NOTE: the stream-template forward-declarations ([iosfwd.syn] basic_ios,
+// basic_istream, ...) intentionally live in the actual stream headers (<ios>,
+// <istream>, ...), not here: declaring them with their default Traits/Allocator
+// args here would redefine the defaults the definitions already carry.  Pull in
+// <ios> etc. directly if you need an incomplete stream type.
+#pragma once
+
+#include <cwchar>   // mbstate_t
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// streamoff — implementation-defined signed offset type (glibc/Linux: long long)
+//===----------------------------------------------------------------------===//
+using streamoff = long long;
+
+//===----------------------------------------------------------------------===//
+// fpos<State>  [fpos]
+//===----------------------------------------------------------------------===//
+template<class State>
+class fpos {
+    State     st_;
+    streamoff off_;
+public:
+    fpos(streamoff off = streamoff()) : st_(), off_(off) {}
+
+    operator streamoff() const { return off_; }
+
+    [[nodiscard]] State state() const { return st_; }
+    void state(State st) { st_ = st; }
+
+    fpos& operator+=(streamoff off) { off_ += off; return *this; }
+    fpos& operator-=(streamoff off) { off_ -= off; return *this; }
+    [[nodiscard]] fpos operator+(streamoff off) const { fpos t(*this); t += off; return t; }
+    [[nodiscard]] fpos operator-(streamoff off) const { fpos t(*this); t -= off; return t; }
+};
+
+template<class State>
+[[nodiscard]] inline streamoff operator-(const fpos<State>& x, const fpos<State>& y) {
+    return streamoff(x) - streamoff(y);
+}
+template<class State>
+inline bool operator==(const fpos<State>& x, const fpos<State>& y) {
+    return streamoff(x) == streamoff(y);
+}
+template<class State>
+inline bool operator!=(const fpos<State>& x, const fpos<State>& y) {
+    return streamoff(x) != streamoff(y);
+}
+
+//===----------------------------------------------------------------------===//
+// Stream position typedefs ([iosfwd.syn])
+//===----------------------------------------------------------------------===//
+using streampos    = fpos<mbstate_t>;
+using wstreampos   = fpos<mbstate_t>;
+using u8streampos  = fpos<mbstate_t>;
+using u16streampos = fpos<mbstate_t>;
+using u32streampos = fpos<mbstate_t>;
+
+} // namespace std

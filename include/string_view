@@ -28,6 +28,7 @@
 #include <limits>
 #include <cstdio>   // EOF
 #include <cwchar>   // WEOF, wint_t, mbstate_t
+#include <iosfwd>   // streamoff, fpos, streampos, u8/u16/u32streampos, wstreampos
 #include <functional>
 
 namespace std {
@@ -65,8 +66,8 @@ template<>
 struct char_traits<char> {
     using char_type  = char;
     using int_type   = int;
-    using off_type   = long;          // streamoff equivalent, avoids <iosfwd>
-    using pos_type   = long;          // streampos equivalent
+    using off_type   = streamoff;
+    using pos_type   = streampos;
     using state_type = mbstate_t;
     using comparison_category = strong_ordering;
 
@@ -175,8 +176,8 @@ template<class CharT, class IntT, IntT EOFVal>
 struct char_traits_base {
     using char_type  = CharT;
     using int_type   = IntT;
-    using off_type   = long;
-    using pos_type   = long;
+    using off_type   = streamoff;
+    using pos_type   = fpos<mbstate_t>;
     using state_type = mbstate_t;
     using comparison_category = strong_ordering;
 

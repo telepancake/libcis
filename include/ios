@@ -14,6 +14,7 @@
 // Hide all our symbols to prevent ABI conflict with libstdc++ shared library.
 #pragma GCC visibility push(hidden)
 
+#include <iosfwd>        // streamoff, fpos<>, streampos/wstreampos, stream fwd-decls
 #include <locale>        // locale, ctype<>
 #include <system_error>  // error_code, error_condition, system_error
 #include <cstddef>       // ptrdiff_t, size_t
@@ -26,45 +27,8 @@ template<class CharT, class Traits> class basic_streambuf;
 // Forward-declare basic_ostream (defined in <ostream>).
 template<class CharT, class Traits> class basic_ostream;
 
-// streamoff / streamsize — canonical definitions; <streambuf> gets them via #include <ios>.
-using streamoff  = long long;
+// streamoff, fpos<>, streampos/wstreampos now come from <iosfwd> (single home).
 using streamsize = ptrdiff_t;
-
-//===----------------------------------------------------------------------===//
-// fpos<StateT>
-//===----------------------------------------------------------------------===//
-template<class StateT>
-class fpos {
-public:
-    fpos(streamoff off = streamoff()) : st_(), off_(off) {}
-    operator streamoff() const { return off_; }
-    [[nodiscard]] StateT state() const { return st_; }
-    void state(StateT s)               { st_ = s; }
-
-    fpos& operator+=(streamoff off) { off_ += off; return *this; }
-    fpos& operator-=(streamoff off) { off_ -= off; return *this; }
-    [[nodiscard]] fpos operator+(streamoff off) const { fpos t(*this); t += off; return t; }
-    [[nodiscard]] fpos operator-(streamoff off) const { fpos t(*this); t -= off; return t; }
-private:
-    StateT    st_;
-    streamoff off_;
-};
-
-template<class StateT>
-[[nodiscard]] inline streamoff operator-(const fpos<StateT>& x, const fpos<StateT>& y) {
-    return streamoff(x) - streamoff(y);
-}
-template<class StateT>
-inline bool operator==(const fpos<StateT>& x, const fpos<StateT>& y) {
-    return streamoff(x) == streamoff(y);
-}
-template<class StateT>
-inline bool operator!=(const fpos<StateT>& x, const fpos<StateT>& y) {
-    return streamoff(x) != streamoff(y);
-}
-
-using streampos  = fpos<mbstate_t>;
-using wstreampos = fpos<mbstate_t>;
 
 //===----------------------------------------------------------------------===//
 // io_errc
