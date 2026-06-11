@@ -8,10 +8,15 @@
 #   - target of a run is a real <group>.result file (captured output + exit=N),
 #     not a stamp.
 # Usage: tools/gen_groups.py <backend> [subtree ...]
-import json, os, re, sys
+import hashlib, json, os, re, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
+
+def gkey(d):
+    # injective: libc++ has sibling dirs (op++ / op= / op*) that collide under
+    # plain punctuation->_ sanitizing, so append a hash of the real path.
+    return re.sub(r"[^0-9A-Za-z]+", "_", d) + "_" + hashlib.sha1(d.encode()).hexdigest()[:8]
 
 BACKENDS = {
     "libcis":    ("g++-10",     "-std=gnu++20 -fno-exceptions -fno-rtti -nostdinc++ -Iinclude -Itest/std/support -O0 -w", True),
@@ -56,7 +61,7 @@ def gen(backend, subtrees):
     gdir = f"build/groups/{backend}"
     os.makedirs(gdir, exist_ok=True)
     for d, files in groups.items():
-        src = f"{gdir}/" + re.sub(r"[^0-9A-Za-z]+", "_", d) + ".cpp"
+        src = f"{gdir}/" + gkey(d) + ".cpp"
         open(src, "w").write(group_source(sorted(files)))
 
     L = ["ninja_required_version = 1.10", "builddir = build",
@@ -76,7 +81,7 @@ def gen(backend, subtrees):
           "  description = RUN $in", ""]
     stamps = []
     for d, files in sorted(groups.items()):
-        key = re.sub(r"[^0-9A-Za-z]+", "_", d)
+        key = gkey(d)
         src, exe, res = f"{gdir}/{key}.cpp", f"{gdir}/{key}.exe", f"{gdir}/{key}.result"
         order = f" | {sup}" if sup else ""
         L.append(f"build {exe}: link {src}{order}")
