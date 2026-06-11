@@ -672,4 +672,21 @@ template<class T>
     __builtin_unreachable();
 }
 
+//===----------------------------------------------------------------------===//
+// [depr.rel_ops] — relational operators derived from == and < (deprecated in
+// C++20).  Ported from libc++ __utility/rel_ops.h.
+//===----------------------------------------------------------------------===//
+namespace rel_ops {
+
+template<class T>
+[[deprecated]] inline bool operator!=(const T& x, const T& y) { return !(x == y); }
+template<class T>
+[[deprecated]] inline bool operator>(const T& x, const T& y) { return y < x; }
+template<class T>
+[[deprecated]] inline bool operator<=(const T& x, const T& y) { return !(y < x); }
+template<class T>
+[[deprecated]] inline bool operator>=(const T& x, const T& y) { return !(x < y); }
+
+} // namespace rel_ops
+
 } // namespace std
