@@ -152,3 +152,29 @@ translation unit. Therefore:
   copying the definition locally or adding `#ifndef` guard macros. Duplicated
   definitions of the same template in one TU are an ODR violation and a latent
   build break.
+
+### Port from the libc++ sources, never from memory
+
+The reference checkout lives at `/home/user/llvm-project/libcxx/include/`.
+When implementing or completing ANY nontrivial component — especially the
+machinery-heavy ones (`type_traits`, `functional`, `variant`, `optional`,
+`tuple`, `string`, `vector`, `unordered_*`, `memory`, `algorithm`, `locale`
+facets, `chrono` formatting):
+
+1. OPEN the corresponding libc++ source first (`include/<header>` plus its
+   `include/__<header>/...` detail headers) and port from it mechanically,
+   collapsing `_LIBCPP_*` macros and renaming reserved identifiers per the
+   rules above.
+2. Keep libc++'s REPRESENTATION and dispatch choices, not just its observable
+   behavior: SSO in `string`, EBO/`compressed_pair` patterns, `variant`'s
+   table-based visitation, hash policies, growth factors, iterator unwrapping
+   in `algorithm`, allocator-aware fast paths. Conformance tests cannot tell a
+   faithful port from a naive reimplementation — performance and memory
+   efficiency live entirely in these choices, so "passes the tests" is NOT the
+   bar; "is the libc++ algorithm/layout, adapted" is.
+3. A DIY implementation is acceptable ONLY when the libc++ one fundamentally
+   cannot work on this target (gcc-10.2 / -fno-exceptions / -fno-rtti), and
+   then the deviation and its reason must be stated in a comment at the site
+   and in your report.
+4. In your report, name the libc++ file(s)/sections you ported from, so the
+   reviewer can diff intent against source.
