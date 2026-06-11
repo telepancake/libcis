@@ -393,16 +393,6 @@ def list_inputs(sub):
     return sorted(out, key=lambda t: t[1])
 
 
-_WORKER_IDX = None
-
-
-def _worker_idx():
-    global _WORKER_IDX
-    if _WORKER_IDX is None:
-        _WORKER_IDX = ci.Index.create()
-    return _WORKER_IDX
-
-
 def process_one(args):
     src, rel = args
     try:
@@ -417,7 +407,7 @@ def process_one(args):
 
     slug = slug_for(rel)
     try:
-        idx = _worker_idx()
+        idx = ci.Index.create()
         tu = idx.parse(src, args=parse_args())
         hard = [d for d in tu.diagnostics if d.severity >= ci.Diagnostic.Error]
         if hard:
@@ -450,130 +440,90 @@ def copy_sibling_headers(sub):
             shutil.copyfile(os.path.join(dirpath, f), os.path.join(dd, f))
 
 
-def load_manifest():
-    p = os.path.join(DST_ROOT, "manifest.json")
-    if os.path.exists(p):
-        with open(p) as fh:
-            m = json.load(fh)
-        for k in ("transferred", "skipped", "errors", "subtrees"):
-            m.setdefault(k, [])
-        return m
-    return {"transferred": [], "skipped": [], "errors": [], "subtrees": []}
+def write_rec(rec_path, rec):
+    os.makedirs(os.path.dirname(rec_path), exist_ok=True)
+    text = rec.pop("_text", None)
+    if rec["status"] == "ok":
+        dst = os.path.join(DST_ROOT, rec["file"])
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        with open(dst, "w") as fh:
+            fh.write(text)
+    with open(rec_path, "w") as fh:
+        json.dump(rec, fh)
 
 
-def save_manifest(m):
-    tmp = os.path.join(DST_ROOT, "manifest.json.tmp")
-    with open(tmp, "w") as fh:
-        json.dump(m, fh, indent=1)
-    os.replace(tmp, os.path.join(DST_ROOT, "manifest.json"))
+def cmd_worker(src, rel, rec_path):
+    """One ninja edge's inner work: transform a single file, write the .cpp on
+    success, and ALWAYS write its record.  May segfault/hang inside libclang --
+    that is why --edge runs this under `timeout` in a child process."""
+    write_rec(rec_path, process_one((src, rel)))
 
 
-def run_pool(inputs, jobs, sub):
-    """Process inputs in a worker pool that cannot stall the suite: spawn
-    start-method (libclang threads make fork() unsafe), ORDERED results with a
-    per-file timeout -- a hung parse is attributed to its input, recorded as
-    an error, and the pool is rebuilt to continue with the rest."""
-    import multiprocessing as mp
-    ctx = mp.get_context("spawn")
-    results = []
-    i = 0
-    while i < len(inputs):
-        pool = ctx.Pool(processes=jobs)
-        it = pool.imap(process_one, inputs[i:], chunksize=1)
+def cmd_edge(src, rel, rec_path):
+    """ninja edge wrapper: ninja has no per-command timeout, so run --worker in
+    a child under a wall-clock limit.  A crash (non-zero rc) or hang (timeout)
+    is captured AS the record, so the edge always produces its output and the
+    build keeps going.  Always exits 0."""
+    import subprocess
+    try:
+        p = subprocess.run(
+            [sys.executable, __file__, "--worker", src, rel, rec_path],
+            timeout=PER_FILE_TIMEOUT, capture_output=True, text=True)
+        if p.returncode == 0 and os.path.exists(rec_path):
+            return
+        diag = f"rc={p.returncode} {p.stderr.strip()[-160:]}"
+        stage = "crash"
+    except subprocess.TimeoutExpired:
+        diag, stage = f"exceeded {PER_FILE_TIMEOUT}s", "timeout"
+    write_rec(rec_path, {"status": "error", "file": rel, "stage": stage, "diag": diag})
+
+
+def cmd_aggregate(manifest_path, rec_paths):
+    """Aggregate edge: fold every per-file record into manifest.json."""
+    m = {"transferred": [], "skipped": [], "errors": [], "subtrees": []}
+    subs = set()
+    for rp in rec_paths:
         try:
-            while i < len(inputs):
-                try:
-                    rec = it.next(timeout=PER_FILE_TIMEOUT)
-                except mp.TimeoutError:
-                    rec = {"status": "error", "file": inputs[i][1],
-                           "stage": "timeout",
-                           "diag": f"parse exceeded {PER_FILE_TIMEOUT}s"}
-                    print(f"  [{sub}] TIMEOUT {inputs[i][1]}", flush=True)
-                    results.append(rec)
-                    i += 1
-                    break  # rebuild the pool, resume after the hung input
-                results.append(rec)
-                i += 1
-                if i % 200 == 0:
-                    print(f"  [{sub}] {i}/{len(inputs)}", flush=True)
-        finally:
-            pool.terminate()
-            pool.join()
-    return results
+            r = json.load(open(rp))
+        except Exception:
+            continue
+        subs.add(r["file"].split("/")[0])
+        if r["status"] == "ok":
+            m["transferred"].append({k: r[k] for k in
+                                     ("file", "slug", "kind", "entry", "flags", "adapted")})
+        elif r["status"] == "skipped":
+            m["skipped"].append({"file": r["file"], "reason": r["reason"]})
+        else:
+            m["errors"].append({"file": r["file"], "stage": r["stage"], "diag": r["diag"]})
+    m["subtrees"] = sorted(subs)
+    with open(manifest_path, "w") as fh:
+        json.dump(m, fh, indent=1)
+    from collections import Counter
+    print(f"manifest: transferred={len(m['transferred'])} "
+          f"(adapted={sum(1 for r in m['transferred'] if r.get('adapted'))}) "
+          f"skipped={len(m['skipped'])} errors={len(m['errors'])}")
+    for r, c in Counter(e["stage"] for e in m["errors"]).most_common(10):
+        print(f"   err[{r}] = {c}")
 
 
 def main():
-    import argparse
-    from collections import Counter
-
-    ap = argparse.ArgumentParser()
-    ap.add_argument("subtrees", nargs="*", default=["numerics"])
-    ap.add_argument("-j", "--jobs", type=int, default=max(1, (os.cpu_count() or 1)))
-    ap.add_argument("--fresh", action="store_true")
-    args = ap.parse_args()
-    subtrees = args.subtrees or ["numerics"]
-
-    if args.fresh and os.path.isdir(DST_ROOT):
-        shutil.rmtree(DST_ROOT)
-    os.makedirs(DST_ROOT, exist_ok=True)
-    if not os.path.isdir(DST_SUPPORT):
-        shutil.copytree(SRC_SUPPORT, DST_SUPPORT)
-
-    import time
-    t0 = time.time()
-    if build_pch():
-        print(f"PCH built in {time.time()-t0:.1f}s -> {PCH_PATH}", flush=True)
-
-    manifest = load_manifest()
-
-    def in_target(rel):
-        return any(rel == sub or rel.startswith(sub + "/") for sub in subtrees)
-    for k in ("transferred", "skipped", "errors"):
-        manifest[k] = [r for r in manifest[k] if not in_target(r["file"])]
-    for sub in subtrees:
-        if sub not in manifest["subtrees"]:
-            manifest["subtrees"].append(sub)
-
-    n_adapted = 0
-    for sub in subtrees:
-        inputs = list_inputs(sub)
-        print(f"[{sub}] {len(inputs)} inputs, -j{args.jobs}", flush=True)
-        nt = ns = ne = 0
-        results = run_pool(inputs, args.jobs, sub)
-        for rec in results:
-            st = rec["status"]
-            if st == "ok":
-                out = rec.pop("_text")
-                dst = os.path.join(DST_ROOT, rec["file"])
-                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                with open(dst, "w") as fh:
-                    fh.write(out)
-                manifest["transferred"].append(
-                    {k: rec[k] for k in
-                     ("file", "slug", "kind", "entry", "flags", "adapted")})
-                nt += 1
-                if rec["adapted"]:
-                    n_adapted += 1
-            elif st == "skipped":
-                manifest["skipped"].append({"file": rec["file"], "reason": rec["reason"]})
-                ns += 1
-            else:
-                manifest["errors"].append(
-                    {"file": rec["file"], "stage": rec["stage"], "diag": rec["diag"]})
-                ne += 1
-        copy_sibling_headers(sub)
-        save_manifest(manifest)
-        print(f"[{sub}] transferred={nt} skipped={ns} errors={ne} "
-              f"(of {len(inputs)})", flush=True)
-
-    nt, ns, ne = (len(manifest["transferred"]), len(manifest["skipped"]),
-                  len(manifest["errors"]))
-    na = sum(1 for r in manifest["transferred"] if r.get("adapted"))
-    print(f"TOTAL transferred={nt} (adapted={na}) skipped={ns} errors={ne}")
-    for r, c in Counter(s["reason"].split(":")[0] for s in manifest["skipped"]).most_common(12):
-        print(f"   skip[{r}] = {c}")
-    for r, c in Counter(e["stage"] for e in manifest["errors"]).most_common(12):
-        print(f"   err[{r}] = {c}")
+    # transfer.py is the WORK, invoked one edge at a time by ninja (generated by
+    # tools/gen_transfer.py).  ninja owns scheduling/parallelism/incrementality/
+    # keep-going; these modes are the per-edge work + the one thing ninja lacks
+    # (a per-command timeout, handled by --edge).
+    mode = sys.argv[1] if len(sys.argv) > 1 else ""
+    if mode == "--build-pch":
+        if not build_pch():
+            sys.exit("PCH build failed")
+    elif mode == "--worker":
+        cmd_worker(sys.argv[2], sys.argv[3], sys.argv[4])
+    elif mode == "--edge":
+        cmd_edge(sys.argv[2], sys.argv[3], sys.argv[4])
+    elif mode == "--aggregate":
+        cmd_aggregate(sys.argv[2], sys.argv[3:])
+    else:
+        sys.exit("usage: transfer.py --build-pch|--worker|--edge|--aggregate ...\n"
+                 "       (generate the build with tools/gen_transfer.py)")
 
 
 if __name__ == "__main__":

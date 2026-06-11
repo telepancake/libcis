@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Emit build/transfer.ninja: the libc++ -> libcis test transfer as a real,
+incremental dependency graph instead of a hand-rolled process pool.
+
+Graph:
+    tools/transfer.py  --(implicit dep of every edge below)
+        build/transfer.pch                         (rule pch)
+        build/recs/<rel>.rec.json : <src> | py pch  (rule xfer, per test file)
+        test/std/manifest.json    : <all recs>      (rule aggregate)
+
+Why ninja: it already does the scheduling, per-edge process isolation (a
+libclang segfault is one failed... actually a captured-crash edge), keep-going,
+and -- the part the pool never had -- INCREMENTAL rebuild: editing one test
+source re-transfers one file; touching transfer.py or the PCH re-transfers
+everything, because they are declared deps.  ninja's one gap (no per-command
+timeout) is covered by `transfer.py --edge`, which runs the worker under a
+wall-clock limit and records a crash/timeout instead of hanging the build.
+
+Usage: tools/gen_transfer.py [SUBTREE ...]   (default: every std/ subtree)
+"""
+import os
+import shutil
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import transfer as T  # noqa: E402
+
+ROOT = T.ROOT
+REC_DIR = os.path.join(ROOT, "build", "recs")
+
+
+def copy_support(subtrees):
+    """Static file copies (support harness + each subtree's sibling .h) done at
+    generation time -- they are inputs, not transformed artifacts."""
+    if not os.path.isdir(T.DST_SUPPORT):
+        shutil.copytree(T.SRC_SUPPORT, T.DST_SUPPORT)
+    for sub in subtrees:
+        T.copy_sibling_headers(sub)
+
+
+def main():
+    subtrees = sys.argv[1:] or sorted(
+        d for d in os.listdir(T.SRC_STD) if os.path.isdir(os.path.join(T.SRC_STD, d)))
+    os.makedirs(T.DST_ROOT, exist_ok=True)
+    copy_support(subtrees)
+
+    py = os.path.relpath(os.path.join(os.path.dirname(__file__), "transfer.py"), ROOT)
+    pch = os.path.relpath(T.PCH_PATH, ROOT)
+    L = [
+        "ninja_required_version = 1.10",
+        f"py = python3 {py}",
+        "",
+        "rule pch",
+        "  command = $py --build-pch",
+        "  description = PCH $out",
+        "rule xfer",
+        "  command = $py --edge $src $rel $out",
+        "  description = XFER $rel",
+        "  restat = 1",
+        "rule aggregate",
+        "  command = $py --aggregate $out $in",
+        "  description = MANIFEST $out",
+        "",
+        f"build {pch}: pch | {py}",
+        "",
+    ]
+    recs = []
+    for sub in subtrees:
+        for src, rel in T.list_inputs(sub):
+            rec = os.path.relpath(os.path.join(REC_DIR, rel + ".rec.json"), ROOT)
+            srel = os.path.relpath(src, ROOT)
+            L += [f"build {rec}: xfer {srel} | {py} {pch}",
+                  f"  src = {srel}",
+                  f"  rel = {rel}"]
+            recs.append(rec)
+    man = os.path.relpath(os.path.join(T.DST_ROOT, "manifest.json"), ROOT)
+    L.append(f"build {man}: aggregate $\n    " + " $\n    ".join(recs))
+    L += ["default " + man, ""]
+
+    out = os.path.join(ROOT, "build", "transfer.ninja")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    open(out, "w").write("\n".join(L))
+    print(f"{out}: {len(recs)} test files in {len(subtrees)} subtrees")
+
+
+if __name__ == "__main__":
+    main()
