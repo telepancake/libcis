@@ -1,0 +1,391 @@
+// <codecvt> — deprecated UTF conversion facets (C++11, deprecated C++17, removed C++26).
+// Mechanically ported from libc++ include/codecvt + src/locale.cpp.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// DESIGN NOTE:
+//   This header provides codecvt_mode, codecvt_utf8<Elem>, codecvt_utf16<Elem>,
+//   and codecvt_utf8_utf16<Elem> as inline template classes that delegate to the
+//   conversion helpers already defined in <locale>'s std::detail namespace.
+//   Enabled by -D_LIBCPP_ENABLE_CXX26_REMOVED_CODECVT (the test uses that macro).
+//
+// All implementations are inline; no .cpp file needed.
+#pragma once
+
+#pragma GCC visibility push(hidden)
+
+#include <locale>   // codecvt base + detail helpers
+#include <cstdint>  // uint8_t, uint16_t, uint32_t
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// codecvt_mode
+//===----------------------------------------------------------------------===//
+enum codecvt_mode {
+    consume_header  = 4,
+    generate_header = 2,
+    little_endian   = 1
+};
+
+//===----------------------------------------------------------------------===//
+// codecvt_utf8<Elem, Maxcode, Mode>
+//
+// Converts between UTF-8 (extern = char) and:
+//   Elem = char32_t  → UCS-4  (32-bit codepoints)
+//   Elem = char16_t  → UCS-2  (16-bit codepoints, BMP only)
+//   Elem = wchar_t   → UCS-4 on this target (32-bit wchar_t)
+//
+// Inherits from codecvt<Elem, char, mbstate_t>.
+//===----------------------------------------------------------------------===//
+
+// Implementation base — not directly instantiated by users.
+template<class Elem, bool IsUCS2>
+class codecvt_utf8_impl : public codecvt<Elem, char, mbstate_t> {
+    unsigned long maxcode_;
+    int           mode_;   // raw codecvt_mode bits
+
+public:
+    typedef Elem                    intern_type;
+    typedef char                    extern_type;
+    typedef mbstate_t               state_type;
+    typedef codecvt_base::result    result;
+
+    explicit codecvt_utf8_impl(size_t refs, unsigned long maxcode, int mode)
+        : codecvt<Elem, char, mbstate_t>(refs), maxcode_(maxcode), mode_(mode) {}
+
+protected:
+    ~codecvt_utf8_impl() override = default;
+
+    result do_out(state_type&,
+                  const intern_type* frm, const intern_type* frm_end, const intern_type*& frm_nxt,
+                  extern_type* to, extern_type* to_end, extern_type*& to_nxt) const override
+    {
+        uint8_t* uto     = reinterpret_cast<uint8_t*>(to);
+        uint8_t* uto_end = reinterpret_cast<uint8_t*>(to_end);
+        uint8_t* uto_nxt = uto;
+        result r = codecvt_base::ok;
+        if constexpr (IsUCS2) {
+            const uint16_t* ufrm     = reinterpret_cast<const uint16_t*>(frm);
+            const uint16_t* ufrm_end = reinterpret_cast<const uint16_t*>(frm_end);
+            const uint16_t* ufrm_nxt = ufrm;
+            r = detail::ucs2_to_utf8(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            frm_nxt = frm + (ufrm_nxt - ufrm);
+        } else {
+            const uint32_t* ufrm     = reinterpret_cast<const uint32_t*>(frm);
+            const uint32_t* ufrm_end = reinterpret_cast<const uint32_t*>(frm_end);
+            const uint32_t* ufrm_nxt = ufrm;
+            r = detail::ucs4_to_utf8(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            frm_nxt = frm + (ufrm_nxt - ufrm);
+        }
+        to_nxt = to + (uto_nxt - uto);
+        return r;
+    }
+
+    result do_in(state_type&,
+                 const extern_type* frm, const extern_type* frm_end, const extern_type*& frm_nxt,
+                 intern_type* to, intern_type* to_end, intern_type*& to_nxt) const override
+    {
+        const uint8_t* ufrm     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* ufrm_end = reinterpret_cast<const uint8_t*>(frm_end);
+        const uint8_t* ufrm_nxt = ufrm;
+        result r = codecvt_base::ok;
+        if constexpr (IsUCS2) {
+            uint16_t* uto     = reinterpret_cast<uint16_t*>(to);
+            uint16_t* uto_end = reinterpret_cast<uint16_t*>(to_end);
+            uint16_t* uto_nxt = uto;
+            r = detail::utf8_to_ucs2(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            to_nxt = to + (uto_nxt - uto);
+        } else {
+            uint32_t* uto     = reinterpret_cast<uint32_t*>(to);
+            uint32_t* uto_end = reinterpret_cast<uint32_t*>(to_end);
+            uint32_t* uto_nxt = uto;
+            r = detail::utf8_to_ucs4(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            to_nxt = to + (uto_nxt - uto);
+        }
+        frm_nxt = frm + (ufrm_nxt - ufrm);
+        return r;
+    }
+
+    result do_unshift(state_type&, extern_type* to, extern_type*, extern_type*& to_nxt) const override {
+        to_nxt = to;
+        return codecvt_base::noconv;
+    }
+
+    int  do_encoding()     const noexcept override { return 0; }
+    bool do_always_noconv() const noexcept override { return false; }
+
+    int do_length(state_type&, const extern_type* frm, const extern_type* frm_end, size_t mx) const override {
+        const uint8_t* ufrm     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* ufrm_end = reinterpret_cast<const uint8_t*>(frm_end);
+        if constexpr (IsUCS2)
+            return detail::utf8_to_ucs2_length(ufrm, ufrm_end, mx, maxcode_, mode_);
+        else
+            return detail::utf8_to_ucs4_length(ufrm, ufrm_end, mx, maxcode_, mode_);
+    }
+
+    int do_max_length() const noexcept override {
+        // consume_header = 4 means we eat a 3-byte BOM → +3 bytes max
+        if constexpr (IsUCS2)
+            return (mode_ & 4) ? 6 : 3;
+        else
+            return (mode_ & 4) ? 7 : 4;
+    }
+};
+
+// Public template: pick IsUCS2 based on sizeof(Elem)
+template<class Elem, unsigned long Maxcode = 0x10ffff, codecvt_mode Mode = (codecvt_mode)0>
+class codecvt_utf8
+    : public codecvt_utf8_impl<Elem, sizeof(Elem) == 2>
+{
+public:
+    explicit codecvt_utf8(size_t refs = 0)
+        : codecvt_utf8_impl<Elem, sizeof(Elem) == 2>(refs, Maxcode, static_cast<int>(Mode)) {}
+    ~codecvt_utf8() = default;
+};
+
+//===----------------------------------------------------------------------===//
+// codecvt_utf16<Elem, Maxcode, Mode>
+//
+// Converts between UTF-16 byte sequences (extern = char, stored as raw bytes
+// in big-endian or little-endian order based on Mode & little_endian) and:
+//   Elem = char32_t  → UCS-4
+//   Elem = char16_t  → UCS-2
+//   Elem = wchar_t   → UCS-4 (32-bit wchar_t on this target)
+//===----------------------------------------------------------------------===//
+
+// Implementation base parameterised on Elem and whether little-endian.
+template<class Elem, bool LittleEndian, bool IsUCS2>
+class codecvt_utf16_impl : public codecvt<Elem, char, mbstate_t> {
+    unsigned long maxcode_;
+    int           mode_;
+
+public:
+    typedef Elem                    intern_type;
+    typedef char                    extern_type;
+    typedef mbstate_t               state_type;
+    typedef codecvt_base::result    result;
+
+    explicit codecvt_utf16_impl(size_t refs, unsigned long maxcode, int mode)
+        : codecvt<Elem, char, mbstate_t>(refs), maxcode_(maxcode), mode_(mode) {}
+
+protected:
+    ~codecvt_utf16_impl() override = default;
+
+    result do_out(state_type&,
+                  const intern_type* frm, const intern_type* frm_end, const intern_type*& frm_nxt,
+                  extern_type* to, extern_type* to_end, extern_type*& to_nxt) const override
+    {
+        uint8_t* uto     = reinterpret_cast<uint8_t*>(to);
+        uint8_t* uto_end = reinterpret_cast<uint8_t*>(to_end);
+        uint8_t* uto_nxt = uto;
+        result r = codecvt_base::ok;
+        if constexpr (IsUCS2) {
+            const uint16_t* ufrm     = reinterpret_cast<const uint16_t*>(frm);
+            const uint16_t* ufrm_end = reinterpret_cast<const uint16_t*>(frm_end);
+            const uint16_t* ufrm_nxt = ufrm;
+            if constexpr (LittleEndian)
+                r = detail::ucs2_to_utf16le(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            else
+                r = detail::ucs2_to_utf16be(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            frm_nxt = frm + (ufrm_nxt - ufrm);
+        } else {
+            const uint32_t* ufrm     = reinterpret_cast<const uint32_t*>(frm);
+            const uint32_t* ufrm_end = reinterpret_cast<const uint32_t*>(frm_end);
+            const uint32_t* ufrm_nxt = ufrm;
+            if constexpr (LittleEndian)
+                r = detail::ucs4_to_utf16le(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            else
+                r = detail::ucs4_to_utf16be(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            frm_nxt = frm + (ufrm_nxt - ufrm);
+        }
+        to_nxt = to + (uto_nxt - uto);
+        return r;
+    }
+
+    result do_in(state_type&,
+                 const extern_type* frm, const extern_type* frm_end, const extern_type*& frm_nxt,
+                 intern_type* to, intern_type* to_end, intern_type*& to_nxt) const override
+    {
+        const uint8_t* ufrm     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* ufrm_end = reinterpret_cast<const uint8_t*>(frm_end);
+        const uint8_t* ufrm_nxt = ufrm;
+        result r = codecvt_base::ok;
+        if constexpr (IsUCS2) {
+            uint16_t* uto     = reinterpret_cast<uint16_t*>(to);
+            uint16_t* uto_end = reinterpret_cast<uint16_t*>(to_end);
+            uint16_t* uto_nxt = uto;
+            if constexpr (LittleEndian)
+                r = detail::utf16le_to_ucs2(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            else
+                r = detail::utf16be_to_ucs2(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            to_nxt = to + (uto_nxt - uto);
+        } else {
+            uint32_t* uto     = reinterpret_cast<uint32_t*>(to);
+            uint32_t* uto_end = reinterpret_cast<uint32_t*>(to_end);
+            uint32_t* uto_nxt = uto;
+            if constexpr (LittleEndian)
+                r = detail::utf16le_to_ucs4(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            else
+                r = detail::utf16be_to_ucs4(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            to_nxt = to + (uto_nxt - uto);
+        }
+        frm_nxt = frm + (ufrm_nxt - ufrm);
+        return r;
+    }
+
+    result do_unshift(state_type&, extern_type* to, extern_type*, extern_type*& to_nxt) const override {
+        to_nxt = to;
+        return codecvt_base::noconv;
+    }
+
+    int  do_encoding()     const noexcept override { return 0; }
+    bool do_always_noconv() const noexcept override { return false; }
+
+    int do_length(state_type&, const extern_type* frm, const extern_type* frm_end, size_t mx) const override {
+        const uint8_t* ufrm     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* ufrm_end = reinterpret_cast<const uint8_t*>(frm_end);
+        if constexpr (IsUCS2) {
+            if constexpr (LittleEndian)
+                return detail::utf16le_to_ucs2_length(ufrm, ufrm_end, mx, maxcode_, mode_);
+            else
+                return detail::utf16be_to_ucs2_length(ufrm, ufrm_end, mx, maxcode_, mode_);
+        } else {
+            if constexpr (LittleEndian)
+                return detail::utf16le_to_ucs4_length(ufrm, ufrm_end, mx, maxcode_, mode_);
+            else
+                return detail::utf16be_to_ucs4_length(ufrm, ufrm_end, mx, maxcode_, mode_);
+        }
+    }
+
+    int do_max_length() const noexcept override {
+        // consume_header = 4 means we eat a 2-byte BOM → +2 bytes max
+        if constexpr (IsUCS2)
+            return (mode_ & 4) ? 4 : 2;
+        else
+            return (mode_ & 4) ? 6 : 4;
+    }
+};
+
+// Public template: LittleEndian = (Mode & little_endian), IsUCS2 = sizeof(Elem)==2
+template<class Elem, unsigned long Maxcode = 0x10ffff, codecvt_mode Mode = (codecvt_mode)0>
+class codecvt_utf16
+    : public codecvt_utf16_impl<Elem, (Mode & little_endian) != 0, sizeof(Elem) == 2>
+{
+public:
+    explicit codecvt_utf16(size_t refs = 0)
+        : codecvt_utf16_impl<Elem,
+                              (Mode & little_endian) != 0,
+                              sizeof(Elem) == 2>(refs, Maxcode, static_cast<int>(Mode)) {}
+    ~codecvt_utf16() = default;
+};
+
+//===----------------------------------------------------------------------===//
+// codecvt_utf8_utf16<Elem, Maxcode, Mode>
+//
+// Converts between UTF-8 (extern = char) and UTF-16 (intern = Elem).
+// The intern type holds UTF-16 code units, so:
+//   Elem = char16_t → 16-bit units
+//   Elem = char32_t → 32-bit units (treated as UTF-16, not UCS-4)
+//   Elem = wchar_t  → 32-bit units on this target
+//===----------------------------------------------------------------------===//
+
+template<class Elem, bool IsNarrow>
+class codecvt_utf8_utf16_impl : public codecvt<Elem, char, mbstate_t> {
+    unsigned long maxcode_;
+    int           mode_;
+
+public:
+    typedef Elem                    intern_type;
+    typedef char                    extern_type;
+    typedef mbstate_t               state_type;
+    typedef codecvt_base::result    result;
+
+    explicit codecvt_utf8_utf16_impl(size_t refs, unsigned long maxcode, int mode)
+        : codecvt<Elem, char, mbstate_t>(refs), maxcode_(maxcode), mode_(mode) {}
+
+protected:
+    ~codecvt_utf8_utf16_impl() override = default;
+
+    result do_out(state_type&,
+                  const intern_type* frm, const intern_type* frm_end, const intern_type*& frm_nxt,
+                  extern_type* to, extern_type* to_end, extern_type*& to_nxt) const override
+    {
+        uint8_t* uto     = reinterpret_cast<uint8_t*>(to);
+        uint8_t* uto_end = reinterpret_cast<uint8_t*>(to_end);
+        uint8_t* uto_nxt = uto;
+        result r = codecvt_base::ok;
+        if constexpr (IsNarrow) {
+            const uint16_t* ufrm     = reinterpret_cast<const uint16_t*>(frm);
+            const uint16_t* ufrm_end = reinterpret_cast<const uint16_t*>(frm_end);
+            const uint16_t* ufrm_nxt = ufrm;
+            r = detail::utf16_to_utf8(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            frm_nxt = frm + (ufrm_nxt - ufrm);
+        } else {
+            const uint32_t* ufrm     = reinterpret_cast<const uint32_t*>(frm);
+            const uint32_t* ufrm_end = reinterpret_cast<const uint32_t*>(frm_end);
+            const uint32_t* ufrm_nxt = ufrm;
+            r = detail::utf16_to_utf8(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            frm_nxt = frm + (ufrm_nxt - ufrm);
+        }
+        to_nxt = to + (uto_nxt - uto);
+        return r;
+    }
+
+    result do_in(state_type&,
+                 const extern_type* frm, const extern_type* frm_end, const extern_type*& frm_nxt,
+                 intern_type* to, intern_type* to_end, intern_type*& to_nxt) const override
+    {
+        const uint8_t* ufrm     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* ufrm_end = reinterpret_cast<const uint8_t*>(frm_end);
+        const uint8_t* ufrm_nxt = ufrm;
+        result r = codecvt_base::ok;
+        if constexpr (IsNarrow) {
+            uint16_t* uto     = reinterpret_cast<uint16_t*>(to);
+            uint16_t* uto_end = reinterpret_cast<uint16_t*>(to_end);
+            uint16_t* uto_nxt = uto;
+            r = detail::utf8_to_utf16(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            to_nxt = to + (uto_nxt - uto);
+        } else {
+            uint32_t* uto     = reinterpret_cast<uint32_t*>(to);
+            uint32_t* uto_end = reinterpret_cast<uint32_t*>(to_end);
+            uint32_t* uto_nxt = uto;
+            r = detail::utf8_to_utf16(ufrm, ufrm_end, ufrm_nxt, uto, uto_end, uto_nxt, maxcode_, mode_);
+            to_nxt = to + (uto_nxt - uto);
+        }
+        frm_nxt = frm + (ufrm_nxt - ufrm);
+        return r;
+    }
+
+    result do_unshift(state_type&, extern_type* to, extern_type*, extern_type*& to_nxt) const override {
+        to_nxt = to;
+        return codecvt_base::noconv;
+    }
+
+    int  do_encoding()     const noexcept override { return 0; }
+    bool do_always_noconv() const noexcept override { return false; }
+
+    int do_length(state_type&, const extern_type* frm, const extern_type* frm_end, size_t mx) const override {
+        const uint8_t* ufrm     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* ufrm_end = reinterpret_cast<const uint8_t*>(frm_end);
+        return detail::utf8_to_utf16_length(ufrm, ufrm_end, mx, maxcode_, mode_);
+    }
+
+    int do_max_length() const noexcept override {
+        return (mode_ & 4) ? 7 : 4;
+    }
+};
+
+// Public template: IsNarrow = sizeof(Elem)==2
+template<class Elem, unsigned long Maxcode = 0x10ffff, codecvt_mode Mode = (codecvt_mode)0>
+class codecvt_utf8_utf16
+    : public codecvt_utf8_utf16_impl<Elem, sizeof(Elem) == 2>
+{
+public:
+    explicit codecvt_utf8_utf16(size_t refs = 0)
+        : codecvt_utf8_utf16_impl<Elem, sizeof(Elem) == 2>(refs, Maxcode, static_cast<int>(Mode)) {}
+    ~codecvt_utf8_utf16() = default;
+};
+
+} // namespace std
+
+#pragma GCC visibility pop

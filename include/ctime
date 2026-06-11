@@ -1,0 +1,33 @@
+// <ctime> -- C time functions and types in namespace std.
+// Mechanically ported from libc++ include/ctime.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Includes <time.h> (reachable via the system include path even with
+// -nostdinc++) and re-exports the [ctime.syn] types and functions into
+// namespace std.  The macros (NULL, CLOCKS_PER_SEC, TIME_UTC) remain in the
+// global namespace as provided by <time.h>; the standard only requires them
+// there.
+#pragma once
+
+#include <time.h>
+
+namespace std {
+
+using ::clock_t;
+using ::size_t;
+using ::time_t;
+using ::timespec;
+using ::tm;
+
+using ::asctime;
+using ::clock;
+using ::ctime;
+using ::difftime;
+using ::gmtime;
+using ::localtime;
+using ::mktime;
+using ::strftime;
+using ::time;
+using ::timespec_get;
+
+} // namespace std

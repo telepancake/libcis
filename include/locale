@@ -1,17 +1,35 @@
-// <locale> — MINIMAL locale implementation for <ios>.
+// <locale> — locale + codecvt base/specialisations for <ios> and <codecvt>.
 // Mechanically ported from libc++ include/__locale + include/locale (selective).
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //
 // DESIGN NOTE (libcis reduced iostreams):
-//   This is intentionally minimal: locale holds a "classic C" identity only.
+//   This is intentionally minimal: only "C" and "" (system default, treated as
+//   "C") locale names are fully supported.  A named constructor receiving any
+//   other name traps (would throw runtime_error per the standard; per libcis
+//   convention: __builtin_trap() // would throw runtime_error).
+//
 //   Facets provided: ctype_base, ctype<char>, ctype<wchar_t>,
-//                    numpunct<char>, numpunct<wchar_t>.
+//                    numpunct<char>, numpunct<wchar_t>,
+//                    codecvt_base, codecvt<char,char,mbstate_t>,
+//                    codecvt<char16_t,char,mbstate_t>,
+//                    codecvt<char32_t,char,mbstate_t>,
+//                    codecvt<char16_t,char8_t,mbstate_t>,
+//                    codecvt<char32_t,char8_t,mbstate_t>.
 //   Intentionally OMITTED: collate, num_get, num_put, money_*, time_*,
-//   messages, codecvt, wbuffer_convert, wstring_convert.
-//   Number formatting is handled directly by <ostream>/<istream>, not num_put.
-//   locale::name(), locale(const char*), locale(const string&), combine(),
-//   operator() (string collation) are all stubbed / not provided.
+//   messages, codecvt<wchar_t,char,mbstate_t> (needs newlocale/mbrtowc).
+//
+//   locale::name() returns "C" for classic/default, "*" for unnamed.
+//   locale(const char*) / locale(const string&) accept "C" and "" (treated
+//   as classic); any other name traps.
 #pragma once
+
+// C system headers must be included BEFORE the visibility push so their symbol
+// declarations (like 'extern FILE *stderr') stay at default (global) visibility.
+// This prevents the linker error "hidden symbol 'stderr' isn't defined".
+#pragma GCC visibility push(default)
+#include <stdio.h>   // FILE*, stderr, etc. (pulled in transitively via <string>/<cstdio>)
+#include <wchar.h>   // wint_t, mbstate_t, iswspace etc.
+#pragma GCC visibility pop
 
 // Hide all our symbols so they don't conflict with libstdc++.so symbols at runtime.
 // libstdc++ links in as a shared lib; without hidden visibility our weak std::locale,
@@ -21,7 +39,10 @@
 #include <cstddef>   // size_t
 #include <cctype>    // isspace, isdigit, etc.
 #include <cwchar>    // wint_t
+#include <cstring>   // strcmp
+#include <string>    // std::string
 #include <type_traits>
+#include <cstdint>   // uint8_t, uint16_t, uint32_t
 
 namespace std {
 
@@ -31,7 +52,7 @@ template<class Facet> const Facet& use_facet(const locale&);
 template<class Facet> bool has_facet(const locale&) noexcept;
 
 //===----------------------------------------------------------------------===//
-// locale::id
+// locale
 //===----------------------------------------------------------------------===//
 class locale {
 public:
@@ -78,17 +99,57 @@ public:
     static constexpr category messages = 0x200;
     static constexpr category all      = collate | ctype | monetary | numeric | time | messages;
 
-    // construct/copy/destroy — only classic/default supported
-    locale() noexcept : classic_(true) {}
-    locale(const locale&) noexcept = default;
-    locale& operator=(const locale&) noexcept = default;
+    // --- construct/copy/destroy ---
+
+    // default: the current global locale (for libcis, always "C")
+    locale() noexcept : name_("C") {}
+    locale(const locale& other) noexcept = default;
+    locale& operator=(const locale& other) noexcept = default;
     ~locale() = default;
 
-    bool operator==(const locale& other) const noexcept { return classic_ == other.classic_; }
+    // named constructors — only "C" and "" (empty = system default = "C") are
+    // supported on this freestanding target.  Any other name would throw
+    // runtime_error per the standard; we __builtin_trap() instead.
+    explicit locale(const char* name) {
+        if (name == nullptr)
+            __builtin_trap(); // would throw runtime_error
+        if (name[0] == '\0' || (name[0] == 'C' && name[1] == '\0')) {
+            name_ = "C";
+        } else {
+            __builtin_trap(); // would throw runtime_error: unsupported locale name
+        }
+    }
+    explicit locale(const string& name) : locale(name.c_str()) {}
+
+    // Replace selected categories of one locale with those from a named locale.
+    // For libcis only "C" / "" are supported; category is ignored since all
+    // facets are the same.
+    locale(const locale& other, const char* name, category) {
+        if (name == nullptr)
+            __builtin_trap(); // would throw runtime_error
+        if (name[0] == '\0' || (name[0] == 'C' && name[1] == '\0')) {
+            name_ = other.name_;
+        } else {
+            __builtin_trap(); // would throw runtime_error: unsupported locale name
+        }
+    }
+    locale(const locale& other, const string& name, category cat)
+        : locale(other, name.c_str(), cat) {}
+
+    // --- observers ---
+
+    string name() const { return name_; }
+
+    bool operator==(const locale& other) const noexcept {
+        // Both "C" → equal; anything else → name comparison.
+        return name_ == other.name_;
+    }
     bool operator!=(const locale& other) const noexcept { return !(*this == other); }
 
+    // --- statics ---
+
     static const locale& classic() noexcept {
-        static locale inst;
+        static locale inst;  // default-constructed → "C"
         return inst;
     }
     static locale global(const locale& loc) {
@@ -104,7 +165,7 @@ public:
     static void __register_facet(size_t id, const facet* f) noexcept;
 
 private:
-    bool classic_ = true;
+    string name_;
 
     static locale& global_locale() {
         static locale g;
@@ -147,6 +208,1367 @@ const Facet& use_facet(const locale& /*loc*/) {
     if (!f) __builtin_trap(); // facet not installed — unreachable in well-formed code
     return static_cast<const Facet&>(*f);
 }
+
+//===----------------------------------------------------------------------===//
+// codecvt_base
+//===----------------------------------------------------------------------===//
+class codecvt_base {
+public:
+    codecvt_base() = default;
+    enum result { ok, partial, error, noconv };
+};
+
+//===----------------------------------------------------------------------===//
+// codecvt<InternT, ExternT, StateT> — primary template (unimplemented)
+//===----------------------------------------------------------------------===//
+template<class InternT, class ExternT, class StateT>
+class codecvt;
+
+//===----------------------------------------------------------------------===//
+// Internal UTF conversion helpers (header-only: must be inline, not static)
+// Ported directly from libc++ src/locale.cpp, stripping leading-underscore names.
+//===----------------------------------------------------------------------===//
+namespace detail {
+
+// UTF-16 (as uint16_t pairs) → UTF-8
+inline codecvt_base::result utf16_to_utf8(
+    const uint16_t* frm, const uint16_t* frm_end, const uint16_t*& frm_nxt,
+    uint8_t* to, uint8_t* to_end, uint8_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    // mode bits: generate_header=2, little_endian=1, consume_header=4
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 2) { // generate_header
+        if (to_end - to_nxt < 3) return codecvt_base::partial;
+        *to_nxt++ = 0xEF; *to_nxt++ = 0xBB; *to_nxt++ = 0xBF;
+    }
+    for (; frm_nxt < frm_end; ++frm_nxt) {
+        uint16_t wc1 = *frm_nxt;
+        if (wc1 > Maxcode) return codecvt_base::error;
+        if (wc1 < 0x0080) {
+            if (to_end - to_nxt < 1) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(wc1);
+        } else if (wc1 < 0x0800) {
+            if (to_end - to_nxt < 2) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(0xC0 | (wc1 >> 6));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | (wc1 & 0x3F));
+        } else if (wc1 < 0xD800) {
+            if (to_end - to_nxt < 3) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(0xE0 | (wc1 >> 12));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | ((wc1 & 0x0FC0) >> 6));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | (wc1 & 0x003F));
+        } else if (wc1 < 0xDC00) {
+            if (frm_end - frm_nxt < 2) return codecvt_base::partial;
+            uint16_t wc2 = frm_nxt[1];
+            if ((wc2 & 0xFC00) != 0xDC00) return codecvt_base::error;
+            if (to_end - to_nxt < 4) return codecvt_base::partial;
+            if (((((wc1 & 0x03C0UL) >> 6) + 1) << 16) + ((wc1 & 0x003FUL) << 10) + (wc2 & 0x03FF) > Maxcode)
+                return codecvt_base::error;
+            ++frm_nxt;
+            uint8_t z = static_cast<uint8_t>(((wc1 & 0x03C0) >> 6) + 1);
+            *to_nxt++ = static_cast<uint8_t>(0xF0 | (z >> 2));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | ((z & 0x03) << 4) | ((wc1 & 0x003C) >> 2));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | ((wc1 & 0x0003) << 4) | ((wc2 & 0x03C0) >> 6));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | (wc2 & 0x003F));
+        } else if (wc1 < 0xE000) {
+            return codecvt_base::error;
+        } else {
+            if (to_end - to_nxt < 3) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(0xE0 | (wc1 >> 12));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | ((wc1 & 0x0FC0) >> 6));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | (wc1 & 0x003F));
+        }
+    }
+    return codecvt_base::ok;
+}
+
+// UTF-16 (as uint32_t, each holding a uint16_t value) → UTF-8
+inline codecvt_base::result utf16_to_utf8(
+    const uint32_t* frm, const uint32_t* frm_end, const uint32_t*& frm_nxt,
+    uint8_t* to, uint8_t* to_end, uint8_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 2) {
+        if (to_end - to_nxt < 3) return codecvt_base::partial;
+        *to_nxt++ = 0xEF; *to_nxt++ = 0xBB; *to_nxt++ = 0xBF;
+    }
+    for (; frm_nxt < frm_end; ++frm_nxt) {
+        uint16_t wc1 = static_cast<uint16_t>(*frm_nxt);
+        if (wc1 > Maxcode) return codecvt_base::error;
+        if (wc1 < 0x0080) {
+            if (to_end - to_nxt < 1) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(wc1);
+        } else if (wc1 < 0x0800) {
+            if (to_end - to_nxt < 2) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(0xC0 | (wc1 >> 6));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | (wc1 & 0x3F));
+        } else if (wc1 < 0xD800) {
+            if (to_end - to_nxt < 3) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(0xE0 | (wc1 >> 12));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | ((wc1 & 0x0FC0) >> 6));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | (wc1 & 0x003F));
+        } else if (wc1 < 0xDC00) {
+            if (frm_end - frm_nxt < 2) return codecvt_base::partial;
+            uint16_t wc2 = static_cast<uint16_t>(frm_nxt[1]);
+            if ((wc2 & 0xFC00) != 0xDC00) return codecvt_base::error;
+            if (to_end - to_nxt < 4) return codecvt_base::partial;
+            if (((((wc1 & 0x03C0UL) >> 6) + 1) << 16) + ((wc1 & 0x003FUL) << 10) + (wc2 & 0x03FF) > Maxcode)
+                return codecvt_base::error;
+            ++frm_nxt;
+            uint8_t z = static_cast<uint8_t>(((wc1 & 0x03C0) >> 6) + 1);
+            *to_nxt++ = static_cast<uint8_t>(0xF0 | (z >> 2));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | ((z & 0x03) << 4) | ((wc1 & 0x003C) >> 2));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | ((wc1 & 0x0003) << 4) | ((wc2 & 0x03C0) >> 6));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | (wc2 & 0x003F));
+        } else if (wc1 < 0xE000) {
+            return codecvt_base::error;
+        } else {
+            if (to_end - to_nxt < 3) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(0xE0 | (wc1 >> 12));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | ((wc1 & 0x0FC0) >> 6));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | (wc1 & 0x003F));
+        }
+    }
+    return codecvt_base::ok;
+}
+
+// UTF-8 → UTF-16 (output as uint16_t)
+inline codecvt_base::result utf8_to_utf16(
+    const uint8_t* frm, const uint8_t* frm_end, const uint8_t*& frm_nxt,
+    uint16_t* to, uint16_t* to_end, uint16_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 4) { // consume_header
+        if (frm_end - frm_nxt >= 3 && frm_nxt[0] == 0xEF && frm_nxt[1] == 0xBB && frm_nxt[2] == 0xBF)
+            frm_nxt += 3;
+    }
+    for (; frm_nxt < frm_end && to_nxt < to_end; ++to_nxt) {
+        uint8_t c1 = *frm_nxt;
+        if (c1 > Maxcode) return codecvt_base::error;
+        if (c1 < 0x80) {
+            *to_nxt = static_cast<uint16_t>(c1); ++frm_nxt;
+        } else if (c1 < 0xC2) {
+            return codecvt_base::error;
+        } else if (c1 < 0xE0) {
+            if (frm_end - frm_nxt < 2) return codecvt_base::partial;
+            uint8_t c2 = frm_nxt[1];
+            if ((c2 & 0xC0) != 0x80) return codecvt_base::error;
+            uint16_t t = static_cast<uint16_t>(((c1 & 0x1F) << 6) | (c2 & 0x3F));
+            if (t > Maxcode) return codecvt_base::error;
+            *to_nxt = t; frm_nxt += 2;
+        } else if (c1 < 0xF0) {
+            if (frm_end - frm_nxt < 2) return codecvt_base::partial;
+            uint8_t c2 = frm_nxt[1];
+            switch (c1) {
+            case 0xE0: if ((c2 & 0xE0) != 0xA0) return codecvt_base::error; break;
+            case 0xED: if ((c2 & 0xE0) != 0x80) return codecvt_base::error; break;
+            default:   if ((c2 & 0xC0) != 0x80) return codecvt_base::error; break;
+            }
+            if (frm_end - frm_nxt < 3) return codecvt_base::partial;
+            uint8_t c3 = frm_nxt[2];
+            if ((c3 & 0xC0) != 0x80) return codecvt_base::error;
+            uint16_t t = static_cast<uint16_t>(((c1 & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F));
+            if (t > Maxcode) return codecvt_base::error;
+            *to_nxt = t; frm_nxt += 3;
+        } else if (c1 < 0xF5) {
+            if (frm_end - frm_nxt < 2) return codecvt_base::partial;
+            uint8_t c2 = frm_nxt[1];
+            switch (c1) {
+            case 0xF0: if (!(0x90 <= c2 && c2 <= 0xBF)) return codecvt_base::error; break;
+            case 0xF4: if ((c2 & 0xF0) != 0x80) return codecvt_base::error; break;
+            default:   if ((c2 & 0xC0) != 0x80) return codecvt_base::error; break;
+            }
+            if (frm_end - frm_nxt < 3) return codecvt_base::partial;
+            uint8_t c3 = frm_nxt[2];
+            if ((c3 & 0xC0) != 0x80) return codecvt_base::error;
+            if (frm_end - frm_nxt < 4) return codecvt_base::partial;
+            uint8_t c4 = frm_nxt[3];
+            if ((c4 & 0xC0) != 0x80) return codecvt_base::error;
+            if (to_end - to_nxt < 2) return codecvt_base::partial;
+            if ((((c1 & 7UL) << 18) + ((c2 & 0x3FUL) << 12) + ((c3 & 0x3FUL) << 6) + (c4 & 0x3F)) > Maxcode)
+                return codecvt_base::error;
+            *to_nxt = static_cast<uint16_t>(
+                0xD800 | (((((c1 & 0x07) << 2) | ((c2 & 0x30) >> 4)) - 1) << 6) |
+                ((c2 & 0x0F) << 2) | ((c3 & 0x30) >> 4));
+            *++to_nxt = static_cast<uint16_t>(0xDC00 | ((c3 & 0x0F) << 6) | (c4 & 0x3F));
+            frm_nxt += 4;
+        } else {
+            return codecvt_base::error;
+        }
+    }
+    return frm_nxt < frm_end ? codecvt_base::partial : codecvt_base::ok;
+}
+
+// UTF-8 → UTF-16 (output as uint32_t holding uint16_t pairs)
+inline codecvt_base::result utf8_to_utf16(
+    const uint8_t* frm, const uint8_t* frm_end, const uint8_t*& frm_nxt,
+    uint32_t* to, uint32_t* to_end, uint32_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 4) {
+        if (frm_end - frm_nxt >= 3 && frm_nxt[0] == 0xEF && frm_nxt[1] == 0xBB && frm_nxt[2] == 0xBF)
+            frm_nxt += 3;
+    }
+    for (; frm_nxt < frm_end && to_nxt < to_end; ++to_nxt) {
+        uint8_t c1 = *frm_nxt;
+        if (c1 > Maxcode) return codecvt_base::error;
+        if (c1 < 0x80) {
+            *to_nxt = c1; ++frm_nxt;
+        } else if (c1 < 0xC2) {
+            return codecvt_base::error;
+        } else if (c1 < 0xE0) {
+            if (frm_end - frm_nxt < 2) return codecvt_base::partial;
+            uint8_t c2 = frm_nxt[1];
+            if ((c2 & 0xC0) != 0x80) return codecvt_base::error;
+            uint32_t t = static_cast<uint32_t>(((c1 & 0x1F) << 6) | (c2 & 0x3F));
+            if (t > Maxcode) return codecvt_base::error;
+            *to_nxt = t; frm_nxt += 2;
+        } else if (c1 < 0xF0) {
+            if (frm_end - frm_nxt < 2) return codecvt_base::partial;
+            uint8_t c2 = frm_nxt[1];
+            switch (c1) {
+            case 0xE0: if ((c2 & 0xE0) != 0xA0) return codecvt_base::error; break;
+            case 0xED: if ((c2 & 0xE0) != 0x80) return codecvt_base::error; break;
+            default:   if ((c2 & 0xC0) != 0x80) return codecvt_base::error; break;
+            }
+            if (frm_end - frm_nxt < 3) return codecvt_base::partial;
+            uint8_t c3 = frm_nxt[2];
+            if ((c3 & 0xC0) != 0x80) return codecvt_base::error;
+            uint32_t t = static_cast<uint32_t>(((c1 & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F));
+            if (t > Maxcode) return codecvt_base::error;
+            *to_nxt = t; frm_nxt += 3;
+        } else if (c1 < 0xF5) {
+            if (frm_end - frm_nxt < 2) return codecvt_base::partial;
+            uint8_t c2 = frm_nxt[1];
+            switch (c1) {
+            case 0xF0: if (!(0x90 <= c2 && c2 <= 0xBF)) return codecvt_base::error; break;
+            case 0xF4: if ((c2 & 0xF0) != 0x80) return codecvt_base::error; break;
+            default:   if ((c2 & 0xC0) != 0x80) return codecvt_base::error; break;
+            }
+            if (frm_end - frm_nxt < 3) return codecvt_base::partial;
+            uint8_t c3 = frm_nxt[2];
+            if ((c3 & 0xC0) != 0x80) return codecvt_base::error;
+            if (frm_end - frm_nxt < 4) return codecvt_base::partial;
+            uint8_t c4 = frm_nxt[3];
+            if ((c4 & 0xC0) != 0x80) return codecvt_base::error;
+            if (to_end - to_nxt < 2) return codecvt_base::partial;
+            if ((((c1 & 7UL) << 18) + ((c2 & 0x3FUL) << 12) + ((c3 & 0x3FUL) << 6) + (c4 & 0x3F)) > Maxcode)
+                return codecvt_base::error;
+            *to_nxt = static_cast<uint32_t>(
+                0xD800 | (((((c1 & 0x07) << 2) | ((c2 & 0x30) >> 4)) - 1) << 6) |
+                ((c2 & 0x0F) << 2) | ((c3 & 0x30) >> 4));
+            *++to_nxt = static_cast<uint32_t>(0xDC00 | ((c3 & 0x0F) << 6) | (c4 & 0x3F));
+            frm_nxt += 4;
+        } else {
+            return codecvt_base::error;
+        }
+    }
+    return frm_nxt < frm_end ? codecvt_base::partial : codecvt_base::ok;
+}
+
+inline int utf8_to_utf16_length(
+    const uint8_t* frm, const uint8_t* frm_end, size_t mx,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    const uint8_t* frm_nxt = frm;
+    if (mode & 4) {
+        if (frm_end - frm_nxt >= 3 && frm_nxt[0] == 0xEF && frm_nxt[1] == 0xBB && frm_nxt[2] == 0xBF)
+            frm_nxt += 3;
+    }
+    for (size_t nchar16 = 0; frm_nxt < frm_end && nchar16 < mx; ++nchar16) {
+        uint8_t c1 = *frm_nxt;
+        if (c1 > Maxcode) break;
+        if (c1 < 0x80) {
+            ++frm_nxt;
+        } else if (c1 < 0xC2) {
+            break;
+        } else if (c1 < 0xE0) {
+            if ((frm_end - frm_nxt < 2) || (frm_nxt[1] & 0xC0) != 0x80) break;
+            uint16_t t = static_cast<uint16_t>(((c1 & 0x1F) << 6) | (frm_nxt[1] & 0x3F));
+            if (t > Maxcode) break;
+            frm_nxt += 2;
+        } else if (c1 < 0xF0) {
+            if (frm_end - frm_nxt < 3) break;
+            uint8_t c2 = frm_nxt[1], c3 = frm_nxt[2];
+            switch (c1) {
+            case 0xE0: if ((c2 & 0xE0) != 0xA0) return static_cast<int>(frm_nxt - frm); break;
+            case 0xED: if ((c2 & 0xE0) != 0x80) return static_cast<int>(frm_nxt - frm); break;
+            default:   if ((c2 & 0xC0) != 0x80) return static_cast<int>(frm_nxt - frm); break;
+            }
+            if ((c3 & 0xC0) != 0x80) break;
+            if ((((c1 & 0x0Fu) << 12) | ((c2 & 0x3Fu) << 6) | (c3 & 0x3Fu)) > Maxcode) break;
+            frm_nxt += 3;
+        } else if (c1 < 0xF5) {
+            if (frm_end - frm_nxt < 4 || mx - nchar16 < 2) break;
+            uint8_t c2 = frm_nxt[1], c3 = frm_nxt[2], c4 = frm_nxt[3];
+            switch (c1) {
+            case 0xF0: if (!(0x90 <= c2 && c2 <= 0xBF)) return static_cast<int>(frm_nxt - frm); break;
+            case 0xF4: if ((c2 & 0xF0) != 0x80) return static_cast<int>(frm_nxt - frm); break;
+            default:   if ((c2 & 0xC0) != 0x80) return static_cast<int>(frm_nxt - frm); break;
+            }
+            if ((c3 & 0xC0) != 0x80 || (c4 & 0xC0) != 0x80) break;
+            if ((((c1 & 7UL) << 18) + ((c2 & 0x3FUL) << 12) + ((c3 & 0x3FUL) << 6) + (c4 & 0x3F)) > Maxcode) break;
+            ++nchar16; frm_nxt += 4;
+        } else {
+            break;
+        }
+    }
+    return static_cast<int>(frm_nxt - frm);
+}
+
+// UCS-4 (uint32_t) → UTF-8
+inline codecvt_base::result ucs4_to_utf8(
+    const uint32_t* frm, const uint32_t* frm_end, const uint32_t*& frm_nxt,
+    uint8_t* to, uint8_t* to_end, uint8_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 2) {
+        if (to_end - to_nxt < 3) return codecvt_base::partial;
+        *to_nxt++ = 0xEF; *to_nxt++ = 0xBB; *to_nxt++ = 0xBF;
+    }
+    for (; frm_nxt < frm_end; ++frm_nxt) {
+        uint32_t wc = *frm_nxt;
+        if ((wc & 0xFFFFF800) == 0x00D800 || wc > Maxcode) return codecvt_base::error;
+        if (wc < 0x000080) {
+            if (to_end - to_nxt < 1) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(wc);
+        } else if (wc < 0x000800) {
+            if (to_end - to_nxt < 2) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(0xC0 | (wc >> 6));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | (wc & 0x3F));
+        } else if (wc < 0x010000) {
+            if (to_end - to_nxt < 3) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(0xE0 | (wc >> 12));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | ((wc & 0x0FC0) >> 6));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | (wc & 0x003F));
+        } else {
+            if (to_end - to_nxt < 4) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(0xF0 | (wc >> 18));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | ((wc & 0x03F000) >> 12));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | ((wc & 0x000FC0) >> 6));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | (wc & 0x00003F));
+        }
+    }
+    return codecvt_base::ok;
+}
+
+// UTF-8 → UCS-4 (uint32_t)
+inline codecvt_base::result utf8_to_ucs4(
+    const uint8_t* frm, const uint8_t* frm_end, const uint8_t*& frm_nxt,
+    uint32_t* to, uint32_t* to_end, uint32_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 4) {
+        if (frm_end - frm_nxt >= 3 && frm_nxt[0] == 0xEF && frm_nxt[1] == 0xBB && frm_nxt[2] == 0xBF)
+            frm_nxt += 3;
+    }
+    for (; frm_nxt < frm_end && to_nxt < to_end; ++to_nxt) {
+        uint8_t c1 = static_cast<uint8_t>(*frm_nxt);
+        if (c1 < 0x80) {
+            if (c1 > Maxcode) return codecvt_base::error;
+            *to_nxt = c1; ++frm_nxt;
+        } else if (c1 < 0xC2) {
+            return codecvt_base::error;
+        } else if (c1 < 0xE0) {
+            if (frm_end - frm_nxt < 2) return codecvt_base::partial;
+            uint8_t c2 = frm_nxt[1];
+            if ((c2 & 0xC0) != 0x80) return codecvt_base::error;
+            uint32_t t = static_cast<uint32_t>(((c1 & 0x1F) << 6) | (c2 & 0x3F));
+            if (t > Maxcode) return codecvt_base::error;
+            *to_nxt = t; frm_nxt += 2;
+        } else if (c1 < 0xF0) {
+            if (frm_end - frm_nxt < 2) return codecvt_base::partial;
+            uint8_t c2 = frm_nxt[1];
+            switch (c1) {
+            case 0xE0: if ((c2 & 0xE0) != 0xA0) return codecvt_base::error; break;
+            case 0xED: if ((c2 & 0xE0) != 0x80) return codecvt_base::error; break;
+            default:   if ((c2 & 0xC0) != 0x80) return codecvt_base::error; break;
+            }
+            if (frm_end - frm_nxt < 3) return codecvt_base::partial;
+            uint8_t c3 = frm_nxt[2];
+            if ((c3 & 0xC0) != 0x80) return codecvt_base::error;
+            uint32_t t = static_cast<uint32_t>(((c1 & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F));
+            if (t > Maxcode) return codecvt_base::error;
+            *to_nxt = t; frm_nxt += 3;
+        } else if (c1 < 0xF5) {
+            if (frm_end - frm_nxt < 2) return codecvt_base::partial;
+            uint8_t c2 = frm_nxt[1];
+            switch (c1) {
+            case 0xF0: if (!(0x90 <= c2 && c2 <= 0xBF)) return codecvt_base::error; break;
+            case 0xF4: if ((c2 & 0xF0) != 0x80) return codecvt_base::error; break;
+            default:   if ((c2 & 0xC0) != 0x80) return codecvt_base::error; break;
+            }
+            if (frm_end - frm_nxt < 3) return codecvt_base::partial;
+            uint8_t c3 = frm_nxt[2];
+            if ((c3 & 0xC0) != 0x80) return codecvt_base::error;
+            if (frm_end - frm_nxt < 4) return codecvt_base::partial;
+            uint8_t c4 = frm_nxt[3];
+            if ((c4 & 0xC0) != 0x80) return codecvt_base::error;
+            uint32_t t = static_cast<uint32_t>(((c1 & 0x07) << 18) | ((c2 & 0x3F) << 12) | ((c3 & 0x3F) << 6) | (c4 & 0x3F));
+            if (t > Maxcode) return codecvt_base::error;
+            *to_nxt = t; frm_nxt += 4;
+        } else {
+            return codecvt_base::error;
+        }
+    }
+    return frm_nxt < frm_end ? codecvt_base::partial : codecvt_base::ok;
+}
+
+inline int utf8_to_ucs4_length(
+    const uint8_t* frm, const uint8_t* frm_end, size_t mx,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    const uint8_t* frm_nxt = frm;
+    if (mode & 4) {
+        if (frm_end - frm_nxt >= 3 && frm_nxt[0] == 0xEF && frm_nxt[1] == 0xBB && frm_nxt[2] == 0xBF)
+            frm_nxt += 3;
+    }
+    for (size_t nchar32 = 0; frm_nxt < frm_end && nchar32 < mx; ++nchar32) {
+        uint8_t c1 = static_cast<uint8_t>(*frm_nxt);
+        if (c1 < 0x80) {
+            if (c1 > Maxcode) break;
+            ++frm_nxt;
+        } else if (c1 < 0xC2) {
+            break;
+        } else if (c1 < 0xE0) {
+            if ((frm_end - frm_nxt < 2) || ((frm_nxt[1] & 0xC0) != 0x80)) break;
+            if ((((c1 & 0x1Fu) << 6) | (frm_nxt[1] & 0x3Fu)) > Maxcode) break;
+            frm_nxt += 2;
+        } else if (c1 < 0xF0) {
+            if (frm_end - frm_nxt < 3) break;
+            uint8_t c2 = frm_nxt[1], c3 = frm_nxt[2];
+            switch (c1) {
+            case 0xE0: if ((c2 & 0xE0) != 0xA0) return static_cast<int>(frm_nxt - frm); break;
+            case 0xED: if ((c2 & 0xE0) != 0x80) return static_cast<int>(frm_nxt - frm); break;
+            default:   if ((c2 & 0xC0) != 0x80) return static_cast<int>(frm_nxt - frm); break;
+            }
+            if ((c3 & 0xC0) != 0x80) break;
+            if ((((c1 & 0x0Fu) << 12) | ((c2 & 0x3Fu) << 6) | (c3 & 0x3Fu)) > Maxcode) break;
+            frm_nxt += 3;
+        } else if (c1 < 0xF5) {
+            if (frm_end - frm_nxt < 4) break;
+            uint8_t c2 = frm_nxt[1], c3 = frm_nxt[2], c4 = frm_nxt[3];
+            switch (c1) {
+            case 0xF0: if (!(0x90 <= c2 && c2 <= 0xBF)) return static_cast<int>(frm_nxt - frm); break;
+            case 0xF4: if ((c2 & 0xF0) != 0x80) return static_cast<int>(frm_nxt - frm); break;
+            default:   if ((c2 & 0xC0) != 0x80) return static_cast<int>(frm_nxt - frm); break;
+            }
+            if ((c3 & 0xC0) != 0x80 || (c4 & 0xC0) != 0x80) break;
+            if ((((c1 & 7UL) << 18) + ((c2 & 0x3FUL) << 12) + ((c3 & 0x3FUL) << 6) + (c4 & 0x3F)) > Maxcode) break;
+            frm_nxt += 4;
+        } else {
+            break;
+        }
+    }
+    return static_cast<int>(frm_nxt - frm);
+}
+
+// UCS-2 (uint16_t, no surrogates) → UTF-8
+inline codecvt_base::result ucs2_to_utf8(
+    const uint16_t* frm, const uint16_t* frm_end, const uint16_t*& frm_nxt,
+    uint8_t* to, uint8_t* to_end, uint8_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 2) {
+        if (to_end - to_nxt < 3) return codecvt_base::partial;
+        *to_nxt++ = 0xEF; *to_nxt++ = 0xBB; *to_nxt++ = 0xBF;
+    }
+    for (; frm_nxt < frm_end; ++frm_nxt) {
+        uint16_t wc = *frm_nxt;
+        if ((wc & 0xF800) == 0xD800 || wc > Maxcode) return codecvt_base::error;
+        if (wc < 0x0080) {
+            if (to_end - to_nxt < 1) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(wc);
+        } else if (wc < 0x0800) {
+            if (to_end - to_nxt < 2) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(0xC0 | (wc >> 6));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | (wc & 0x3F));
+        } else {
+            if (to_end - to_nxt < 3) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(0xE0 | (wc >> 12));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | ((wc & 0x0FC0) >> 6));
+            *to_nxt++ = static_cast<uint8_t>(0x80 | (wc & 0x003F));
+        }
+    }
+    return codecvt_base::ok;
+}
+
+// UTF-8 → UCS-2 (uint16_t, no surrogates allowed)
+inline codecvt_base::result utf8_to_ucs2(
+    const uint8_t* frm, const uint8_t* frm_end, const uint8_t*& frm_nxt,
+    uint16_t* to, uint16_t* to_end, uint16_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 4) {
+        if (frm_end - frm_nxt >= 3 && frm_nxt[0] == 0xEF && frm_nxt[1] == 0xBB && frm_nxt[2] == 0xBF)
+            frm_nxt += 3;
+    }
+    for (; frm_nxt < frm_end && to_nxt < to_end; ++to_nxt) {
+        uint8_t c1 = static_cast<uint8_t>(*frm_nxt);
+        if (c1 < 0x80) {
+            if (c1 > Maxcode) return codecvt_base::error;
+            *to_nxt = c1; ++frm_nxt;
+        } else if (c1 < 0xC2) {
+            return codecvt_base::error;
+        } else if (c1 < 0xE0) {
+            if (frm_end - frm_nxt < 2) return codecvt_base::partial;
+            uint8_t c2 = frm_nxt[1];
+            if ((c2 & 0xC0) != 0x80) return codecvt_base::error;
+            uint16_t t = static_cast<uint16_t>(((c1 & 0x1F) << 6) | (c2 & 0x3F));
+            if (t > Maxcode) return codecvt_base::error;
+            *to_nxt = t; frm_nxt += 2;
+        } else if (c1 < 0xF0) {
+            if (frm_end - frm_nxt < 2) return codecvt_base::partial;
+            uint8_t c2 = frm_nxt[1];
+            switch (c1) {
+            case 0xE0: if ((c2 & 0xE0) != 0xA0) return codecvt_base::error; break;
+            case 0xED: if ((c2 & 0xE0) != 0x80) return codecvt_base::error; break;
+            default:   if ((c2 & 0xC0) != 0x80) return codecvt_base::error; break;
+            }
+            if (frm_end - frm_nxt < 3) return codecvt_base::partial;
+            uint8_t c3 = frm_nxt[2];
+            if ((c3 & 0xC0) != 0x80) return codecvt_base::error;
+            uint16_t t = static_cast<uint16_t>(((c1 & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F));
+            if (t > Maxcode) return codecvt_base::error;
+            *to_nxt = t; frm_nxt += 3;
+        } else {
+            return codecvt_base::error;
+        }
+    }
+    return frm_nxt < frm_end ? codecvt_base::partial : codecvt_base::ok;
+}
+
+inline int utf8_to_ucs2_length(
+    const uint8_t* frm, const uint8_t* frm_end, size_t mx,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    const uint8_t* frm_nxt = frm;
+    if (mode & 4) {
+        if (frm_end - frm_nxt >= 3 && frm_nxt[0] == 0xEF && frm_nxt[1] == 0xBB && frm_nxt[2] == 0xBF)
+            frm_nxt += 3;
+    }
+    for (size_t nchar32 = 0; frm_nxt < frm_end && nchar32 < mx; ++nchar32) {
+        uint8_t c1 = static_cast<uint8_t>(*frm_nxt);
+        if (c1 < 0x80) {
+            if (c1 > Maxcode) break;
+            ++frm_nxt;
+        } else if (c1 < 0xC2) {
+            break;
+        } else if (c1 < 0xE0) {
+            if ((frm_end - frm_nxt < 2) || ((frm_nxt[1] & 0xC0) != 0x80)) break;
+            if ((((c1 & 0x1Fu) << 6) | (frm_nxt[1] & 0x3Fu)) > Maxcode) break;
+            frm_nxt += 2;
+        } else if (c1 < 0xF0) {
+            if (frm_end - frm_nxt < 3) break;
+            uint8_t c2 = frm_nxt[1], c3 = frm_nxt[2];
+            switch (c1) {
+            case 0xE0: if ((c2 & 0xE0) != 0xA0) return static_cast<int>(frm_nxt - frm); break;
+            case 0xED: if ((c2 & 0xE0) != 0x80) return static_cast<int>(frm_nxt - frm); break;
+            default:   if ((c2 & 0xC0) != 0x80) return static_cast<int>(frm_nxt - frm); break;
+            }
+            if ((c3 & 0xC0) != 0x80) break;
+            if ((((c1 & 0x0Fu) << 12) | ((c2 & 0x3Fu) << 6) | (c3 & 0x3Fu)) > Maxcode) break;
+            frm_nxt += 3;
+        } else {
+            break;
+        }
+    }
+    return static_cast<int>(frm_nxt - frm);
+}
+
+// UCS-4 → UTF-16 big-endian (pairs of bytes)
+inline codecvt_base::result ucs4_to_utf16be(
+    const uint32_t* frm, const uint32_t* frm_end, const uint32_t*& frm_nxt,
+    uint8_t* to, uint8_t* to_end, uint8_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 2) {
+        if (to_end - to_nxt < 2) return codecvt_base::partial;
+        *to_nxt++ = 0xFE; *to_nxt++ = 0xFF;
+    }
+    for (; frm_nxt < frm_end; ++frm_nxt) {
+        uint32_t wc = *frm_nxt;
+        if ((wc & 0xFFFFF800) == 0x00D800 || wc > Maxcode) return codecvt_base::error;
+        if (wc < 0x010000) {
+            if (to_end - to_nxt < 2) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(wc >> 8);
+            *to_nxt++ = static_cast<uint8_t>(wc);
+        } else {
+            if (to_end - to_nxt < 4) return codecvt_base::partial;
+            uint32_t z = wc - 0x10000;
+            uint32_t s1 = 0xD800 | (z >> 10);
+            uint32_t s2 = 0xDC00 | (z & 0x3FF);
+            *to_nxt++ = static_cast<uint8_t>(s1 >> 8);
+            *to_nxt++ = static_cast<uint8_t>(s1);
+            *to_nxt++ = static_cast<uint8_t>(s2 >> 8);
+            *to_nxt++ = static_cast<uint8_t>(s2);
+        }
+    }
+    return codecvt_base::ok;
+}
+
+// UTF-16 big-endian → UCS-4
+inline codecvt_base::result utf16be_to_ucs4(
+    const uint8_t* frm, const uint8_t* frm_end, const uint8_t*& frm_nxt,
+    uint32_t* to, uint32_t* to_end, uint32_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 4) {
+        if (frm_end - frm_nxt >= 2 &&
+            ((frm_nxt[0] == 0xFE && frm_nxt[1] == 0xFF)))
+            frm_nxt += 2;
+    }
+    for (; frm_nxt < frm_end - 1 && to_nxt < to_end; ++to_nxt) {
+        uint16_t c1 = static_cast<uint16_t>((frm_nxt[0] << 8) | frm_nxt[1]);
+        if ((c1 & 0xFC00) == 0xDC00) return codecvt_base::error;
+        if ((c1 & 0xFC00) == 0xD800) {
+            if (frm_end - frm_nxt < 4) return codecvt_base::partial;
+            uint16_t c2 = static_cast<uint16_t>((frm_nxt[2] << 8) | frm_nxt[3]);
+            if ((c2 & 0xFC00) != 0xDC00) return codecvt_base::error;
+            uint32_t t = static_cast<uint32_t>(((c1 & 0x3FF) << 10) | (c2 & 0x3FF)) + 0x10000;
+            if (t > Maxcode) return codecvt_base::error;
+            *to_nxt = t; frm_nxt += 4;
+        } else {
+            if (c1 > Maxcode) return codecvt_base::error;
+            *to_nxt = c1; frm_nxt += 2;
+        }
+    }
+    if (frm_nxt < frm_end) return codecvt_base::partial;
+    return codecvt_base::ok;
+}
+
+inline int utf16be_to_ucs4_length(
+    const uint8_t* frm, const uint8_t* frm_end, size_t mx,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    const uint8_t* frm_nxt = frm;
+    if (mode & 4) {
+        if (frm_end - frm_nxt >= 2 && frm_nxt[0] == 0xFE && frm_nxt[1] == 0xFF)
+            frm_nxt += 2;
+    }
+    for (size_t nchar32 = 0; frm_nxt < frm_end - 1 && nchar32 < mx; ++nchar32) {
+        uint16_t c1 = static_cast<uint16_t>((frm_nxt[0] << 8) | frm_nxt[1]);
+        if ((c1 & 0xFC00) == 0xDC00) break;
+        if ((c1 & 0xFC00) == 0xD800) {
+            if (frm_end - frm_nxt < 4) break;
+            uint16_t c2 = static_cast<uint16_t>((frm_nxt[2] << 8) | frm_nxt[3]);
+            if ((c2 & 0xFC00) != 0xDC00) break;
+            uint32_t t = static_cast<uint32_t>(((c1 & 0x3FF) << 10) | (c2 & 0x3FF)) + 0x10000;
+            if (t > Maxcode) break;
+            frm_nxt += 4;
+        } else {
+            if (c1 > Maxcode) break;
+            frm_nxt += 2;
+        }
+    }
+    return static_cast<int>(frm_nxt - frm);
+}
+
+// UCS-4 → UTF-16 little-endian
+inline codecvt_base::result ucs4_to_utf16le(
+    const uint32_t* frm, const uint32_t* frm_end, const uint32_t*& frm_nxt,
+    uint8_t* to, uint8_t* to_end, uint8_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 2) {
+        if (to_end - to_nxt < 2) return codecvt_base::partial;
+        *to_nxt++ = 0xFF; *to_nxt++ = 0xFE;
+    }
+    for (; frm_nxt < frm_end; ++frm_nxt) {
+        uint32_t wc = *frm_nxt;
+        if ((wc & 0xFFFFF800) == 0x00D800 || wc > Maxcode) return codecvt_base::error;
+        if (wc < 0x010000) {
+            if (to_end - to_nxt < 2) return codecvt_base::partial;
+            *to_nxt++ = static_cast<uint8_t>(wc);
+            *to_nxt++ = static_cast<uint8_t>(wc >> 8);
+        } else {
+            if (to_end - to_nxt < 4) return codecvt_base::partial;
+            uint32_t z = wc - 0x10000;
+            uint32_t s1 = 0xD800 | (z >> 10);
+            uint32_t s2 = 0xDC00 | (z & 0x3FF);
+            *to_nxt++ = static_cast<uint8_t>(s1);
+            *to_nxt++ = static_cast<uint8_t>(s1 >> 8);
+            *to_nxt++ = static_cast<uint8_t>(s2);
+            *to_nxt++ = static_cast<uint8_t>(s2 >> 8);
+        }
+    }
+    return codecvt_base::ok;
+}
+
+// UTF-16 little-endian → UCS-4
+inline codecvt_base::result utf16le_to_ucs4(
+    const uint8_t* frm, const uint8_t* frm_end, const uint8_t*& frm_nxt,
+    uint32_t* to, uint32_t* to_end, uint32_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 4) {
+        if (frm_end - frm_nxt >= 2 && frm_nxt[0] == 0xFF && frm_nxt[1] == 0xFE)
+            frm_nxt += 2;
+    }
+    for (; frm_nxt < frm_end - 1 && to_nxt < to_end; ++to_nxt) {
+        uint16_t c1 = static_cast<uint16_t>(frm_nxt[0] | (frm_nxt[1] << 8));
+        if ((c1 & 0xFC00) == 0xDC00) return codecvt_base::error;
+        if ((c1 & 0xFC00) == 0xD800) {
+            if (frm_end - frm_nxt < 4) return codecvt_base::partial;
+            uint16_t c2 = static_cast<uint16_t>(frm_nxt[2] | (frm_nxt[3] << 8));
+            if ((c2 & 0xFC00) != 0xDC00) return codecvt_base::error;
+            uint32_t t = static_cast<uint32_t>(((c1 & 0x3FF) << 10) | (c2 & 0x3FF)) + 0x10000;
+            if (t > Maxcode) return codecvt_base::error;
+            *to_nxt = t; frm_nxt += 4;
+        } else {
+            if (c1 > Maxcode) return codecvt_base::error;
+            *to_nxt = c1; frm_nxt += 2;
+        }
+    }
+    if (frm_nxt < frm_end) return codecvt_base::partial;
+    return codecvt_base::ok;
+}
+
+inline int utf16le_to_ucs4_length(
+    const uint8_t* frm, const uint8_t* frm_end, size_t mx,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    const uint8_t* frm_nxt = frm;
+    if (mode & 4) {
+        if (frm_end - frm_nxt >= 2 && frm_nxt[0] == 0xFF && frm_nxt[1] == 0xFE)
+            frm_nxt += 2;
+    }
+    for (size_t nchar32 = 0; frm_nxt < frm_end - 1 && nchar32 < mx; ++nchar32) {
+        uint16_t c1 = static_cast<uint16_t>(frm_nxt[0] | (frm_nxt[1] << 8));
+        if ((c1 & 0xFC00) == 0xDC00) break;
+        if ((c1 & 0xFC00) == 0xD800) {
+            if (frm_end - frm_nxt < 4) break;
+            uint16_t c2 = static_cast<uint16_t>(frm_nxt[2] | (frm_nxt[3] << 8));
+            if ((c2 & 0xFC00) != 0xDC00) break;
+            uint32_t t = static_cast<uint32_t>(((c1 & 0x3FF) << 10) | (c2 & 0x3FF)) + 0x10000;
+            if (t > Maxcode) break;
+            frm_nxt += 4;
+        } else {
+            if (c1 > Maxcode) break;
+            frm_nxt += 2;
+        }
+    }
+    return static_cast<int>(frm_nxt - frm);
+}
+
+// UCS-2 → UTF-16 big-endian
+inline codecvt_base::result ucs2_to_utf16be(
+    const uint16_t* frm, const uint16_t* frm_end, const uint16_t*& frm_nxt,
+    uint8_t* to, uint8_t* to_end, uint8_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 2) {
+        if (to_end - to_nxt < 2) return codecvt_base::partial;
+        *to_nxt++ = 0xFE; *to_nxt++ = 0xFF;
+    }
+    for (; frm_nxt < frm_end; ++frm_nxt) {
+        uint16_t wc = *frm_nxt;
+        if ((wc & 0xF800) == 0xD800 || wc > Maxcode) return codecvt_base::error;
+        if (to_end - to_nxt < 2) return codecvt_base::partial;
+        *to_nxt++ = static_cast<uint8_t>(wc >> 8);
+        *to_nxt++ = static_cast<uint8_t>(wc);
+    }
+    return codecvt_base::ok;
+}
+
+// UTF-16 big-endian → UCS-2
+inline codecvt_base::result utf16be_to_ucs2(
+    const uint8_t* frm, const uint8_t* frm_end, const uint8_t*& frm_nxt,
+    uint16_t* to, uint16_t* to_end, uint16_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 4) {
+        if (frm_end - frm_nxt >= 2 && frm_nxt[0] == 0xFE && frm_nxt[1] == 0xFF)
+            frm_nxt += 2;
+    }
+    for (; frm_nxt < frm_end - 1 && to_nxt < to_end; ++to_nxt) {
+        uint16_t c1 = static_cast<uint16_t>((frm_nxt[0] << 8) | frm_nxt[1]);
+        if ((c1 & 0xF800) == 0xD800 || c1 > Maxcode) return codecvt_base::error;
+        *to_nxt = c1; frm_nxt += 2;
+    }
+    if (frm_nxt < frm_end) return codecvt_base::partial;
+    return codecvt_base::ok;
+}
+
+inline int utf16be_to_ucs2_length(
+    const uint8_t* frm, const uint8_t* frm_end, size_t mx,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    const uint8_t* frm_nxt = frm;
+    if (mode & 4) {
+        if (frm_end - frm_nxt >= 2 && frm_nxt[0] == 0xFE && frm_nxt[1] == 0xFF)
+            frm_nxt += 2;
+    }
+    for (size_t nchar16 = 0; frm_nxt < frm_end - 1 && nchar16 < mx; ++nchar16) {
+        uint16_t c1 = static_cast<uint16_t>((frm_nxt[0] << 8) | frm_nxt[1]);
+        if ((c1 & 0xF800) == 0xD800 || c1 > Maxcode) break;
+        frm_nxt += 2;
+    }
+    return static_cast<int>(frm_nxt - frm);
+}
+
+// UCS-2 → UTF-16 little-endian
+inline codecvt_base::result ucs2_to_utf16le(
+    const uint16_t* frm, const uint16_t* frm_end, const uint16_t*& frm_nxt,
+    uint8_t* to, uint8_t* to_end, uint8_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 2) {
+        if (to_end - to_nxt < 2) return codecvt_base::partial;
+        *to_nxt++ = 0xFF; *to_nxt++ = 0xFE;
+    }
+    for (; frm_nxt < frm_end; ++frm_nxt) {
+        uint16_t wc = *frm_nxt;
+        if ((wc & 0xF800) == 0xD800 || wc > Maxcode) return codecvt_base::error;
+        if (to_end - to_nxt < 2) return codecvt_base::partial;
+        *to_nxt++ = static_cast<uint8_t>(wc);
+        *to_nxt++ = static_cast<uint8_t>(wc >> 8);
+    }
+    return codecvt_base::ok;
+}
+
+// UTF-16 little-endian → UCS-2
+inline codecvt_base::result utf16le_to_ucs2(
+    const uint8_t* frm, const uint8_t* frm_end, const uint8_t*& frm_nxt,
+    uint16_t* to, uint16_t* to_end, uint16_t*& to_nxt,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    frm_nxt = frm; to_nxt = to;
+    if (mode & 4) {
+        if (frm_end - frm_nxt >= 2 && frm_nxt[0] == 0xFF && frm_nxt[1] == 0xFE)
+            frm_nxt += 2;
+    }
+    for (; frm_nxt < frm_end - 1 && to_nxt < to_end; ++to_nxt) {
+        uint16_t c1 = static_cast<uint16_t>(frm_nxt[0] | (frm_nxt[1] << 8));
+        if ((c1 & 0xF800) == 0xD800 || c1 > Maxcode) return codecvt_base::error;
+        *to_nxt = c1; frm_nxt += 2;
+    }
+    if (frm_nxt < frm_end) return codecvt_base::partial;
+    return codecvt_base::ok;
+}
+
+inline int utf16le_to_ucs2_length(
+    const uint8_t* frm, const uint8_t* frm_end, size_t mx,
+    unsigned long Maxcode = 0x10FFFF, int mode = 0)
+{
+    const uint8_t* frm_nxt = frm;
+    if (mode & 4) {
+        if (frm_end - frm_nxt >= 2 && frm_nxt[0] == 0xFF && frm_nxt[1] == 0xFE)
+            frm_nxt += 2;
+    }
+    for (size_t nchar16 = 0; frm_nxt < frm_end - 1 && nchar16 < mx; ++nchar16) {
+        uint16_t c1 = static_cast<uint16_t>(frm_nxt[0] | (frm_nxt[1] << 8));
+        if ((c1 & 0xF800) == 0xD800 || c1 > Maxcode) break;
+        frm_nxt += 2;
+    }
+    return static_cast<int>(frm_nxt - frm);
+}
+
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
+// codecvt<char, char, mbstate_t> — identity conversion
+//===----------------------------------------------------------------------===//
+template<>
+class codecvt<char, char, mbstate_t> : public locale::facet, public codecvt_base {
+public:
+    typedef char       intern_type;
+    typedef char       extern_type;
+    typedef mbstate_t  state_type;
+
+    static locale::id id;
+
+    explicit codecvt(size_t refs = 0) : locale::facet(refs) {}
+
+    result out(state_type& st, const intern_type* frm, const intern_type* frm_end,
+               const intern_type*& frm_nxt, extern_type* to, extern_type* to_end,
+               extern_type*& to_nxt) const {
+        return do_out(st, frm, frm_end, frm_nxt, to, to_end, to_nxt);
+    }
+    result in(state_type& st, const extern_type* frm, const extern_type* frm_end,
+              const extern_type*& frm_nxt, intern_type* to, intern_type* to_end,
+              intern_type*& to_nxt) const {
+        return do_in(st, frm, frm_end, frm_nxt, to, to_end, to_nxt);
+    }
+    result unshift(state_type& st, extern_type* to, extern_type* to_end,
+                   extern_type*& to_nxt) const {
+        return do_unshift(st, to, to_end, to_nxt);
+    }
+    int encoding() const noexcept { return do_encoding(); }
+    bool always_noconv() const noexcept { return do_always_noconv(); }
+    int length(state_type& st, const extern_type* frm, const extern_type* end, size_t mx) const {
+        return do_length(st, frm, end, mx);
+    }
+    int max_length() const noexcept { return do_max_length(); }
+
+~codecvt() override = default;
+
+protected:
+
+    virtual result do_out(state_type&, const intern_type* frm, const intern_type*,
+                          const intern_type*& frm_nxt, extern_type* to, extern_type*,
+                          extern_type*& to_nxt) const {
+        frm_nxt = frm; to_nxt = to; return noconv;
+    }
+    virtual result do_in(state_type&, const extern_type* frm, const extern_type*,
+                         const extern_type*& frm_nxt, intern_type* to, intern_type*,
+                         intern_type*& to_nxt) const {
+        frm_nxt = frm; to_nxt = to; return noconv;
+    }
+    virtual result do_unshift(state_type&, extern_type* to, extern_type*,
+                              extern_type*& to_nxt) const {
+        to_nxt = to; return noconv;
+    }
+    virtual int  do_encoding() const noexcept { return 1; }
+    virtual bool do_always_noconv() const noexcept { return true; }
+    virtual int  do_length(state_type&, const extern_type* frm, const extern_type* end,
+                           size_t mx) const {
+        size_t n = static_cast<size_t>(end - frm);
+        return static_cast<int>(n < mx ? n : mx);
+    }
+    virtual int  do_max_length() const noexcept { return 1; }
+};
+
+inline locale::id codecvt<char, char, mbstate_t>::id;
+
+//===----------------------------------------------------------------------===//
+// codecvt<char16_t, char, mbstate_t> — UTF-8 ↔ UTF-16
+//===----------------------------------------------------------------------===//
+template<>
+class codecvt<char16_t, char, mbstate_t> : public locale::facet, public codecvt_base {
+public:
+    typedef char16_t  intern_type;
+    typedef char      extern_type;
+    typedef mbstate_t state_type;
+
+    static locale::id id;
+
+    explicit codecvt(size_t refs = 0) : locale::facet(refs) {}
+
+    result out(state_type& st, const intern_type* frm, const intern_type* frm_end,
+               const intern_type*& frm_nxt, extern_type* to, extern_type* to_end,
+               extern_type*& to_nxt) const {
+        return do_out(st, frm, frm_end, frm_nxt, to, to_end, to_nxt);
+    }
+    result in(state_type& st, const extern_type* frm, const extern_type* frm_end,
+              const extern_type*& frm_nxt, intern_type* to, intern_type* to_end,
+              intern_type*& to_nxt) const {
+        return do_in(st, frm, frm_end, frm_nxt, to, to_end, to_nxt);
+    }
+    result unshift(state_type& st, extern_type* to, extern_type* to_end,
+                   extern_type*& to_nxt) const {
+        return do_unshift(st, to, to_end, to_nxt);
+    }
+    int encoding() const noexcept { return do_encoding(); }
+    bool always_noconv() const noexcept { return do_always_noconv(); }
+    int length(state_type& st, const extern_type* frm, const extern_type* end, size_t mx) const {
+        return do_length(st, frm, end, mx);
+    }
+    int max_length() const noexcept { return do_max_length(); }
+
+~codecvt() override = default;
+
+protected:
+
+    virtual result do_out(state_type&, const intern_type* frm, const intern_type* frm_end,
+                          const intern_type*& frm_nxt, extern_type* to, extern_type* to_end,
+                          extern_type*& to_nxt) const {
+        const uint16_t* f     = reinterpret_cast<const uint16_t*>(frm);
+        const uint16_t* f_end = reinterpret_cast<const uint16_t*>(frm_end);
+        const uint16_t* f_nxt = f;
+        uint8_t* t     = reinterpret_cast<uint8_t*>(to);
+        uint8_t* t_end = reinterpret_cast<uint8_t*>(to_end);
+        uint8_t* t_nxt = t;
+        result r = detail::utf16_to_utf8(f, f_end, f_nxt, t, t_end, t_nxt);
+        frm_nxt = frm + (f_nxt - f);
+        to_nxt  = to  + (t_nxt - t);
+        return r;
+    }
+    virtual result do_in(state_type&, const extern_type* frm, const extern_type* frm_end,
+                         const extern_type*& frm_nxt, intern_type* to, intern_type* to_end,
+                         intern_type*& to_nxt) const {
+        const uint8_t* f     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* f_end = reinterpret_cast<const uint8_t*>(frm_end);
+        const uint8_t* f_nxt = f;
+        uint16_t* t     = reinterpret_cast<uint16_t*>(to);
+        uint16_t* t_end = reinterpret_cast<uint16_t*>(to_end);
+        uint16_t* t_nxt = t;
+        result r = detail::utf8_to_utf16(f, f_end, f_nxt, t, t_end, t_nxt);
+        frm_nxt = frm + (f_nxt - f);
+        to_nxt  = to  + (t_nxt - t);
+        return r;
+    }
+    virtual result do_unshift(state_type&, extern_type* to, extern_type*,
+                              extern_type*& to_nxt) const {
+        to_nxt = to; return noconv;
+    }
+    virtual int  do_encoding() const noexcept { return 0; }
+    virtual bool do_always_noconv() const noexcept { return false; }
+    virtual int  do_length(state_type&, const extern_type* frm, const extern_type* frm_end,
+                           size_t mx) const {
+        const uint8_t* f     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* f_end = reinterpret_cast<const uint8_t*>(frm_end);
+        return detail::utf8_to_utf16_length(f, f_end, mx);
+    }
+    virtual int  do_max_length() const noexcept { return 4; }
+};
+
+inline locale::id codecvt<char16_t, char, mbstate_t>::id;
+
+//===----------------------------------------------------------------------===//
+// codecvt<char32_t, char, mbstate_t> — UTF-8 ↔ UTF-32 (UCS-4)
+//===----------------------------------------------------------------------===//
+template<>
+class codecvt<char32_t, char, mbstate_t> : public locale::facet, public codecvt_base {
+public:
+    typedef char32_t  intern_type;
+    typedef char      extern_type;
+    typedef mbstate_t state_type;
+
+    static locale::id id;
+
+    explicit codecvt(size_t refs = 0) : locale::facet(refs) {}
+
+    result out(state_type& st, const intern_type* frm, const intern_type* frm_end,
+               const intern_type*& frm_nxt, extern_type* to, extern_type* to_end,
+               extern_type*& to_nxt) const {
+        return do_out(st, frm, frm_end, frm_nxt, to, to_end, to_nxt);
+    }
+    result in(state_type& st, const extern_type* frm, const extern_type* frm_end,
+              const extern_type*& frm_nxt, intern_type* to, intern_type* to_end,
+              intern_type*& to_nxt) const {
+        return do_in(st, frm, frm_end, frm_nxt, to, to_end, to_nxt);
+    }
+    result unshift(state_type& st, extern_type* to, extern_type* to_end,
+                   extern_type*& to_nxt) const {
+        return do_unshift(st, to, to_end, to_nxt);
+    }
+    int encoding() const noexcept { return do_encoding(); }
+    bool always_noconv() const noexcept { return do_always_noconv(); }
+    int length(state_type& st, const extern_type* frm, const extern_type* end, size_t mx) const {
+        return do_length(st, frm, end, mx);
+    }
+    int max_length() const noexcept { return do_max_length(); }
+
+~codecvt() override = default;
+
+protected:
+
+    virtual result do_out(state_type&, const intern_type* frm, const intern_type* frm_end,
+                          const intern_type*& frm_nxt, extern_type* to, extern_type* to_end,
+                          extern_type*& to_nxt) const {
+        const uint32_t* f     = reinterpret_cast<const uint32_t*>(frm);
+        const uint32_t* f_end = reinterpret_cast<const uint32_t*>(frm_end);
+        const uint32_t* f_nxt = f;
+        uint8_t* t     = reinterpret_cast<uint8_t*>(to);
+        uint8_t* t_end = reinterpret_cast<uint8_t*>(to_end);
+        uint8_t* t_nxt = t;
+        result r = detail::ucs4_to_utf8(f, f_end, f_nxt, t, t_end, t_nxt);
+        frm_nxt = frm + (f_nxt - f);
+        to_nxt  = to  + (t_nxt - t);
+        return r;
+    }
+    virtual result do_in(state_type&, const extern_type* frm, const extern_type* frm_end,
+                         const extern_type*& frm_nxt, intern_type* to, intern_type* to_end,
+                         intern_type*& to_nxt) const {
+        const uint8_t* f     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* f_end = reinterpret_cast<const uint8_t*>(frm_end);
+        const uint8_t* f_nxt = f;
+        uint32_t* t     = reinterpret_cast<uint32_t*>(to);
+        uint32_t* t_end = reinterpret_cast<uint32_t*>(to_end);
+        uint32_t* t_nxt = t;
+        result r = detail::utf8_to_ucs4(f, f_end, f_nxt, t, t_end, t_nxt);
+        frm_nxt = frm + (f_nxt - f);
+        to_nxt  = to  + (t_nxt - t);
+        return r;
+    }
+    virtual result do_unshift(state_type&, extern_type* to, extern_type*,
+                              extern_type*& to_nxt) const {
+        to_nxt = to; return noconv;
+    }
+    virtual int  do_encoding() const noexcept { return 0; }
+    virtual bool do_always_noconv() const noexcept { return false; }
+    virtual int  do_length(state_type&, const extern_type* frm, const extern_type* frm_end,
+                           size_t mx) const {
+        const uint8_t* f     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* f_end = reinterpret_cast<const uint8_t*>(frm_end);
+        return detail::utf8_to_ucs4_length(f, f_end, mx);
+    }
+    virtual int  do_max_length() const noexcept { return 4; }
+};
+
+inline locale::id codecvt<char32_t, char, mbstate_t>::id;
+
+//===----------------------------------------------------------------------===//
+// codecvt<char16_t, char8_t, mbstate_t> — UTF-8 ↔ UTF-16 (C++20 char8_t)
+//===----------------------------------------------------------------------===//
+template<>
+class codecvt<char16_t, char8_t, mbstate_t> : public locale::facet, public codecvt_base {
+public:
+    typedef char16_t  intern_type;
+    typedef char8_t   extern_type;
+    typedef mbstate_t state_type;
+
+    static locale::id id;
+
+    explicit codecvt(size_t refs = 0) : locale::facet(refs) {}
+
+    result out(state_type& st, const intern_type* frm, const intern_type* frm_end,
+               const intern_type*& frm_nxt, extern_type* to, extern_type* to_end,
+               extern_type*& to_nxt) const {
+        return do_out(st, frm, frm_end, frm_nxt, to, to_end, to_nxt);
+    }
+    result in(state_type& st, const extern_type* frm, const extern_type* frm_end,
+              const extern_type*& frm_nxt, intern_type* to, intern_type* to_end,
+              intern_type*& to_nxt) const {
+        return do_in(st, frm, frm_end, frm_nxt, to, to_end, to_nxt);
+    }
+    result unshift(state_type& st, extern_type* to, extern_type* to_end,
+                   extern_type*& to_nxt) const {
+        return do_unshift(st, to, to_end, to_nxt);
+    }
+    int encoding() const noexcept { return do_encoding(); }
+    bool always_noconv() const noexcept { return do_always_noconv(); }
+    int length(state_type& st, const extern_type* frm, const extern_type* end, size_t mx) const {
+        return do_length(st, frm, end, mx);
+    }
+    int max_length() const noexcept { return do_max_length(); }
+
+~codecvt() override = default;
+
+protected:
+
+    virtual result do_out(state_type&, const intern_type* frm, const intern_type* frm_end,
+                          const intern_type*& frm_nxt, extern_type* to, extern_type* to_end,
+                          extern_type*& to_nxt) const {
+        const uint16_t* f     = reinterpret_cast<const uint16_t*>(frm);
+        const uint16_t* f_end = reinterpret_cast<const uint16_t*>(frm_end);
+        const uint16_t* f_nxt = f;
+        uint8_t* t     = reinterpret_cast<uint8_t*>(to);
+        uint8_t* t_end = reinterpret_cast<uint8_t*>(to_end);
+        uint8_t* t_nxt = t;
+        result r = detail::utf16_to_utf8(f, f_end, f_nxt, t, t_end, t_nxt);
+        frm_nxt = frm + (f_nxt - f);
+        to_nxt  = to  + (t_nxt - t);
+        return r;
+    }
+    virtual result do_in(state_type&, const extern_type* frm, const extern_type* frm_end,
+                         const extern_type*& frm_nxt, intern_type* to, intern_type* to_end,
+                         intern_type*& to_nxt) const {
+        const uint8_t* f     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* f_end = reinterpret_cast<const uint8_t*>(frm_end);
+        const uint8_t* f_nxt = f;
+        uint16_t* t     = reinterpret_cast<uint16_t*>(to);
+        uint16_t* t_end = reinterpret_cast<uint16_t*>(to_end);
+        uint16_t* t_nxt = t;
+        result r = detail::utf8_to_utf16(f, f_end, f_nxt, t, t_end, t_nxt);
+        frm_nxt = frm + (f_nxt - f);
+        to_nxt  = to  + (t_nxt - t);
+        return r;
+    }
+    virtual result do_unshift(state_type&, extern_type* to, extern_type*,
+                              extern_type*& to_nxt) const {
+        to_nxt = to; return noconv;
+    }
+    virtual int  do_encoding() const noexcept { return 0; }
+    virtual bool do_always_noconv() const noexcept { return false; }
+    virtual int  do_length(state_type&, const extern_type* frm, const extern_type* frm_end,
+                           size_t mx) const {
+        const uint8_t* f     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* f_end = reinterpret_cast<const uint8_t*>(frm_end);
+        return detail::utf8_to_utf16_length(f, f_end, mx);
+    }
+    virtual int  do_max_length() const noexcept { return 4; }
+};
+
+inline locale::id codecvt<char16_t, char8_t, mbstate_t>::id;
+
+//===----------------------------------------------------------------------===//
+// codecvt<char32_t, char8_t, mbstate_t> — UTF-8 ↔ UTF-32 (C++20 char8_t)
+//===----------------------------------------------------------------------===//
+template<>
+class codecvt<char32_t, char8_t, mbstate_t> : public locale::facet, public codecvt_base {
+public:
+    typedef char32_t  intern_type;
+    typedef char8_t   extern_type;
+    typedef mbstate_t state_type;
+
+    static locale::id id;
+
+    explicit codecvt(size_t refs = 0) : locale::facet(refs) {}
+
+    result out(state_type& st, const intern_type* frm, const intern_type* frm_end,
+               const intern_type*& frm_nxt, extern_type* to, extern_type* to_end,
+               extern_type*& to_nxt) const {
+        return do_out(st, frm, frm_end, frm_nxt, to, to_end, to_nxt);
+    }
+    result in(state_type& st, const extern_type* frm, const extern_type* frm_end,
+              const extern_type*& frm_nxt, intern_type* to, intern_type* to_end,
+              intern_type*& to_nxt) const {
+        return do_in(st, frm, frm_end, frm_nxt, to, to_end, to_nxt);
+    }
+    result unshift(state_type& st, extern_type* to, extern_type* to_end,
+                   extern_type*& to_nxt) const {
+        return do_unshift(st, to, to_end, to_nxt);
+    }
+    int encoding() const noexcept { return do_encoding(); }
+    bool always_noconv() const noexcept { return do_always_noconv(); }
+    int length(state_type& st, const extern_type* frm, const extern_type* end, size_t mx) const {
+        return do_length(st, frm, end, mx);
+    }
+    int max_length() const noexcept { return do_max_length(); }
+
+~codecvt() override = default;
+
+protected:
+
+    virtual result do_out(state_type&, const intern_type* frm, const intern_type* frm_end,
+                          const intern_type*& frm_nxt, extern_type* to, extern_type* to_end,
+                          extern_type*& to_nxt) const {
+        const uint32_t* f     = reinterpret_cast<const uint32_t*>(frm);
+        const uint32_t* f_end = reinterpret_cast<const uint32_t*>(frm_end);
+        const uint32_t* f_nxt = f;
+        uint8_t* t     = reinterpret_cast<uint8_t*>(to);
+        uint8_t* t_end = reinterpret_cast<uint8_t*>(to_end);
+        uint8_t* t_nxt = t;
+        result r = detail::ucs4_to_utf8(f, f_end, f_nxt, t, t_end, t_nxt);
+        frm_nxt = frm + (f_nxt - f);
+        to_nxt  = to  + (t_nxt - t);
+        return r;
+    }
+    virtual result do_in(state_type&, const extern_type* frm, const extern_type* frm_end,
+                         const extern_type*& frm_nxt, intern_type* to, intern_type* to_end,
+                         intern_type*& to_nxt) const {
+        const uint8_t* f     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* f_end = reinterpret_cast<const uint8_t*>(frm_end);
+        const uint8_t* f_nxt = f;
+        uint32_t* t     = reinterpret_cast<uint32_t*>(to);
+        uint32_t* t_end = reinterpret_cast<uint32_t*>(to_end);
+        uint32_t* t_nxt = t;
+        result r = detail::utf8_to_ucs4(f, f_end, f_nxt, t, t_end, t_nxt);
+        frm_nxt = frm + (f_nxt - f);
+        to_nxt  = to  + (t_nxt - t);
+        return r;
+    }
+    virtual result do_unshift(state_type&, extern_type* to, extern_type*,
+                              extern_type*& to_nxt) const {
+        to_nxt = to; return noconv;
+    }
+    virtual int  do_encoding() const noexcept { return 0; }
+    virtual bool do_always_noconv() const noexcept { return false; }
+    virtual int  do_length(state_type&, const extern_type* frm, const extern_type* frm_end,
+                           size_t mx) const {
+        const uint8_t* f     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* f_end = reinterpret_cast<const uint8_t*>(frm_end);
+        return detail::utf8_to_ucs4_length(f, f_end, mx);
+    }
+    virtual int  do_max_length() const noexcept { return 4; }
+};
+
+inline locale::id codecvt<char32_t, char8_t, mbstate_t>::id;
+
+//===----------------------------------------------------------------------===//
+// codecvt<wchar_t, char, mbstate_t>
+// On this target wchar_t is 32-bit → same as UCS-4 ↔ UTF-8.
+// Not registered in the classic locale (omitted per DESIGN NOTE), but the type
+// must be complete so that codecvt_utf8<wchar_t>, codecvt_utf16<wchar_t>, and
+// codecvt_utf8_utf16<wchar_t> can inherit from it.
+//===----------------------------------------------------------------------===//
+template<>
+class codecvt<wchar_t, char, mbstate_t> : public locale::facet, public codecvt_base {
+public:
+    typedef wchar_t   intern_type;
+    typedef char      extern_type;
+    typedef mbstate_t state_type;
+
+    static locale::id id;
+
+    explicit codecvt(size_t refs = 0) : locale::facet(refs) {}
+
+    result out(state_type& st, const intern_type* frm, const intern_type* frm_end,
+               const intern_type*& frm_nxt, extern_type* to, extern_type* to_end,
+               extern_type*& to_nxt) const {
+        return do_out(st, frm, frm_end, frm_nxt, to, to_end, to_nxt);
+    }
+    result in(state_type& st, const extern_type* frm, const extern_type* frm_end,
+              const extern_type*& frm_nxt, intern_type* to, intern_type* to_end,
+              intern_type*& to_nxt) const {
+        return do_in(st, frm, frm_end, frm_nxt, to, to_end, to_nxt);
+    }
+    result unshift(state_type& st, extern_type* to, extern_type* to_end,
+                   extern_type*& to_nxt) const {
+        return do_unshift(st, to, to_end, to_nxt);
+    }
+    int encoding() const noexcept { return do_encoding(); }
+    bool always_noconv() const noexcept { return do_always_noconv(); }
+    int length(state_type& st, const extern_type* frm, const extern_type* end, size_t mx) const {
+        return do_length(st, frm, end, mx);
+    }
+    int max_length() const noexcept { return do_max_length(); }
+
+~codecvt() override = default;
+
+protected:
+
+    virtual result do_out(state_type&, const intern_type* frm, const intern_type* frm_end,
+                          const intern_type*& frm_nxt, extern_type* to, extern_type* to_end,
+                          extern_type*& to_nxt) const {
+        // wchar_t (32-bit) treated as UCS-4
+        const uint32_t* f     = reinterpret_cast<const uint32_t*>(frm);
+        const uint32_t* f_end = reinterpret_cast<const uint32_t*>(frm_end);
+        const uint32_t* f_nxt = f;
+        uint8_t* t     = reinterpret_cast<uint8_t*>(to);
+        uint8_t* t_end = reinterpret_cast<uint8_t*>(to_end);
+        uint8_t* t_nxt = t;
+        result r = detail::ucs4_to_utf8(f, f_end, f_nxt, t, t_end, t_nxt);
+        frm_nxt = frm + (f_nxt - f);
+        to_nxt  = to  + (t_nxt - t);
+        return r;
+    }
+    virtual result do_in(state_type&, const extern_type* frm, const extern_type* frm_end,
+                         const extern_type*& frm_nxt, intern_type* to, intern_type* to_end,
+                         intern_type*& to_nxt) const {
+        const uint8_t* f     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* f_end = reinterpret_cast<const uint8_t*>(frm_end);
+        const uint8_t* f_nxt = f;
+        uint32_t* t     = reinterpret_cast<uint32_t*>(to);
+        uint32_t* t_end = reinterpret_cast<uint32_t*>(to_end);
+        uint32_t* t_nxt = t;
+        result r = detail::utf8_to_ucs4(f, f_end, f_nxt, t, t_end, t_nxt);
+        frm_nxt = frm + (f_nxt - f);
+        to_nxt  = to  + (t_nxt - t);
+        return r;
+    }
+    virtual result do_unshift(state_type&, extern_type* to, extern_type*,
+                              extern_type*& to_nxt) const {
+        to_nxt = to; return noconv;
+    }
+    virtual int  do_encoding() const noexcept { return 0; }
+    virtual bool do_always_noconv() const noexcept { return false; }
+    virtual int  do_length(state_type&, const extern_type* frm, const extern_type* frm_end,
+                           size_t mx) const {
+        const uint8_t* f     = reinterpret_cast<const uint8_t*>(frm);
+        const uint8_t* f_end = reinterpret_cast<const uint8_t*>(frm_end);
+        return detail::utf8_to_ucs4_length(f, f_end, mx);
+    }
+    virtual int  do_max_length() const noexcept { return 4; }
+};
+
+inline locale::id codecvt<wchar_t, char, mbstate_t>::id;
 
 //===----------------------------------------------------------------------===//
 // ctype_base — character classification masks
@@ -420,6 +1842,11 @@ inline ctype<char>    classic_ctype_char{nullptr, false, 1};
 inline ctype<wchar_t> classic_ctype_wchar{1};
 inline numpunct<char>    classic_numpunct_char{1};
 inline numpunct<wchar_t> classic_numpunct_wchar{1};
+inline codecvt<char, char, mbstate_t>       classic_codecvt_cc{1};
+inline codecvt<char16_t, char, mbstate_t>   classic_codecvt_c16c{1};
+inline codecvt<char32_t, char, mbstate_t>   classic_codecvt_c32c{1};
+inline codecvt<char16_t, char8_t, mbstate_t> classic_codecvt_c16c8{1};
+inline codecvt<char32_t, char8_t, mbstate_t> classic_codecvt_c32c8{1};
 
 struct locale_classic_init {
     locale_classic_init() {
@@ -427,6 +1854,16 @@ struct locale_classic_init {
         locale::__register_facet(ctype<wchar_t>::id.__get(),    &classic_ctype_wchar);
         locale::__register_facet(numpunct<char>::id.__get(),    &classic_numpunct_char);
         locale::__register_facet(numpunct<wchar_t>::id.__get(), &classic_numpunct_wchar);
+        locale::__register_facet(codecvt<char, char, mbstate_t>::id.__get(),
+                                 &classic_codecvt_cc);
+        locale::__register_facet(codecvt<char16_t, char, mbstate_t>::id.__get(),
+                                 &classic_codecvt_c16c);
+        locale::__register_facet(codecvt<char32_t, char, mbstate_t>::id.__get(),
+                                 &classic_codecvt_c32c);
+        locale::__register_facet(codecvt<char16_t, char8_t, mbstate_t>::id.__get(),
+                                 &classic_codecvt_c16c8);
+        locale::__register_facet(codecvt<char32_t, char8_t, mbstate_t>::id.__get(),
+                                 &classic_codecvt_c32c8);
     }
 };
 inline locale_classic_init locale_classic_init_instance;
