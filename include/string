@@ -168,7 +168,9 @@ private:
     };
 
     rep_t          rep_;
-    allocator_type alloc_;
+    // EBO for empty allocators: keeps sizeof(string) at 24 (3 words) like
+    // libc++, not 32.  (vector uses the same attribute on its allocator.)
+    [[no_unique_address]] allocator_type alloc_;
 
     // -------------------------------------------------------------------------
     // rep accessors
