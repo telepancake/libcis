@@ -58,6 +58,12 @@ DST_SUPPORT = os.path.join(DST_ROOT, "support")
 # feature on the C++20 dialect, re-transfer its subtree with --std to lift the
 # gate deliberately rather than wholesale.
 STD_MODE = "c++20"
+# Parse against the INSTALLED clang-20 libc++ (the in-tree headers need
+# clang>=21).  The installed reference is older than the tests, so tests of
+# post-release fixes can carry SEMANTIC diagnostics (failing constexpr
+# static_asserts); those do NOT block transfer -- the AST is structurally
+# intact and adaptation works -- they are recorded as soft_errors and the
+# backends judge the test.  Only structural failures (missing headers) block.
 PARSE_ARGS = [
     "-std=gnu++20", "-stdlib=libc++",
     "-DTEST_HAS_NO_EXCEPTIONS", "-DTEST_HAS_NO_RTTI",
@@ -75,7 +81,7 @@ def build_pch():
     cand = ["/usr/lib/llvm-20/include/c++/v1", "/usr/include/c++/v1"]
     inc_dir = next((d for d in cand if os.path.isdir(d)), None)
     if inc_dir is None:
-        return []  # no libc++ headers found; parse without PCH
+        return []
     hdrs = sorted(h for h in os.listdir(inc_dir)
                   if "." not in h and not h.startswith("__")
                   and os.path.isfile(os.path.join(inc_dir, h)))
@@ -374,11 +380,29 @@ def parse_args():
     return PARSE_ARGS + extra
 
 
-def verify(out_text: str, ref_path: str):
-    """Re-parse the rewritten source; transfer fails on any hard diagnostic."""
+STRUCTURAL_ERRORS = ("file not found",)
+
+
+def hard_errors(tu):
+    return [d for d in tu.diagnostics if d.severity >= ci.Diagnostic.Error]
+
+
+def verify(out_text: str, ref_path: str, allowed):
+    """Re-parse the rewritten source: every hard diagnostic must already have
+    been present in the input (same spelling) -- the rewrite may fix things,
+    never break them."""
     idx = ci.Index.create()
     tu = idx.parse(ref_path, args=parse_args(), unsaved_files=[(ref_path, out_text)])
-    return [d for d in tu.diagnostics if d.severity >= ci.Diagnostic.Error]
+    budget = {}
+    for d in allowed:
+        budget[d.spelling] = budget.get(d.spelling, 0) + 1
+    new = []
+    for d in hard_errors(tu):
+        if budget.get(d.spelling, 0) > 0:
+            budget[d.spelling] -= 1
+        else:
+            new.append(d)
+    return new
 
 
 def list_inputs(sub):
@@ -409,12 +433,18 @@ def process_one(args):
     try:
         idx = ci.Index.create()
         tu = idx.parse(src, args=parse_args())
-        hard = [d for d in tu.diagnostics if d.severity >= ci.Diagnostic.Error]
-        if hard:
+        hard = hard_errors(tu)
+        # structural failures (missing header etc.) leave no usable AST; pure
+        # semantic failures (e.g. a constexpr static_assert the OLDER installed
+        # reference can't satisfy) do -- transfer those, record the noise, and
+        # let the backends judge.
+        structural = [d for d in hard
+                      if any(s in d.spelling for s in STRUCTURAL_ERRORS)]
+        if structural:
             return {"status": "error", "file": rel, "stage": "parse",
-                    "diag": str(hard[0])}
+                    "diag": str(structural[0])}
         out, entry, counts = transform(text, tu, src, slug)
-        bad = verify(out, src)
+        bad = verify(out, src, hard)
         if bad:
             return {"status": "error", "file": rel, "stage": "verify",
                     "diag": str(bad[0])}
@@ -425,7 +455,8 @@ def process_one(args):
 
     kind = "run" if (entry and not rel.endswith(".compile.pass.cpp")) else "compile"
     return {"status": "ok", "file": rel, "slug": slug, "kind": kind,
-            "entry": entry, "flags": flags, "adapted": counts, "_text": out}
+            "entry": entry, "flags": flags, "adapted": counts,
+            "soft_errors": len(hard), "_text": out}
 
 
 def copy_sibling_headers(sub):
