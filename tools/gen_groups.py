@@ -104,9 +104,25 @@ def group_source(members):
                 body.append(ln)
         bodies.append("".join(body) + "\n")
         if r["kind"] == "run" and r.get("entry"):
-            calls.append(f"  {r['entry']};")
-    return ("".join(inc) + "\n" + "".join(bodies)
-            + "\nint main(){\n" + "\n".join(calls) + "\n  return 0;\n}\n")
+            # fork-per-test: each test runs in its own child, so an abort/
+            # crash (assert, segfault, throw-under-fno-exceptions) is contained
+            # and attributed instead of blanking the whole consolidated group,
+            # and per-test global state cannot leak between tests.
+            calls.append(f'  libcis_run([]() -> int {{ return {r["entry"]}; }}, "{r["slug"]}");')
+    harness = (
+        "#include <cstdio>\n#include <unistd.h>\n#include <sys/wait.h>\n"
+        "static int libcis_fails = 0;\n"
+        "template<class F> static void libcis_run(F f, const char* name) {\n"
+        "  ::pid_t p = ::fork();\n"
+        "  if (p == 0) { ::_exit(f()); }  // propagate the test's own exit code\n"
+        "  int st = 0; ::waitpid(p, &st, 0);\n"
+        "  bool ok = WIFEXITED(st) && WEXITSTATUS(st) == 0;\n"
+        "  if (!ok) { ++libcis_fails; ::fprintf(stderr, \"LIBCIS-FAIL %s (status=%d)\\n\", name, st); }\n"
+        "}\n")
+    return ("".join(inc) + "\n" + harness + "".join(bodies)
+            + "\nint main(){\n" + "\n".join(calls)
+            + "\n  if (libcis_fails) ::fprintf(stderr, \"LIBCIS-FAILS=%d\\n\", libcis_fails);\n"
+            + "  return libcis_fails ? 1 : 0;\n}\n")
 
 
 def write_if_changed(path, text):
