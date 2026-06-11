@@ -285,11 +285,7 @@ def excision_edits(text, hostile):
 # AST isolation: per-file namespace so files consolidate into one TU.
 # ---------------------------------------------------------------------------
 _UNWRAPPABLE_KINDS = {
-    ci.CursorKind.NAMESPACE,
-    ci.CursorKind.USING_DIRECTIVE,
-    ci.CursorKind.USING_DECLARATION,
-    ci.CursorKind.NAMESPACE_ALIAS,
-    ci.CursorKind.LINKAGE_SPEC,
+    ci.CursorKind.LINKAGE_SPEC,          # extern "C" -> genuinely global symbols
     ci.CursorKind.MACRO_DEFINITION,
     ci.CursorKind.MACRO_INSTANTIATION,
     ci.CursorKind.INCLUSION_DIRECTIVE,
@@ -297,9 +293,17 @@ _UNWRAPPABLE_KINDS = {
 
 
 def is_wrappable(c) -> bool:
-    # only decls that introduce a name at TU scope may move into a namespace;
-    # out-of-line definitions / explicit specializations (semantic_parent is
-    # some other namespace, e.g. std) and namespace reopens must stay put.
+    # Wrap the whole file body in the per-file namespace so consolidated
+    # siblings can't collide.  libc++ tests love a named OR anonymous helper
+    # namespace (`namespace N11 {...}`, `namespace {...}`) plus `using
+    # namespace`/aliases referring to it -- all of that must move TOGETHER into
+    # libcis_ns_<slug>, or two files reopening the same name (or both using an
+    # anonymous namespace) redefine each other when concatenated.
+    if c.kind == ci.CursorKind.NAMESPACE:
+        # Only a `std` reopen/specialization must stay at TU scope (you cannot
+        # specialize std:: from inside another namespace); named + anonymous
+        # user namespaces are wrapped.
+        return c.spelling != "std"
     if c.kind in _UNWRAPPABLE_KINDS:
         return False
     sp = c.semantic_parent
