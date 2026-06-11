@@ -26,8 +26,11 @@ BACKENDS = {
 LINK_CIS = "-nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc"
 
 def group_source(files):
+    # transfer.py already isolates each file in its own libcis_ns_<slug>
+    # namespace (selectively -- std:: reopens stay at TU scope), so bodies are
+    # concatenated verbatim; only #includes are hoisted+deduped.
     inc, seen, bodies, calls = [], set(), [], []
-    for i, (rel, slug, kind) in enumerate(files):
+    for rel, slug, kind, entry in files:
         body = []
         for ln in open(os.path.join("test/std", rel), errors="replace").read().splitlines(True):
             if re.match(r"\s*#\s*include", ln):
@@ -35,9 +38,9 @@ def group_source(files):
                     seen.add(ln.strip()); inc.append(ln if ln.endswith("\n") else ln + "\n")
             else:
                 body.append(ln)
-        bodies.append(f"namespace t{i} {{\n{''.join(body)}\n}}\n")
-        if kind == "run":
-            calls.append(f"  t{i}::test_{slug}();")
+        bodies.append("".join(body) + "\n")
+        if kind == "run" and entry:
+            calls.append(f"  {entry};")
     return "".join(inc) + "\n" + "".join(bodies) + "\nint main(){\n" + "\n".join(calls) + "\n  return 0;\n}\n"
 
 def gen(backend, subtrees):
@@ -55,7 +58,7 @@ def gen(backend, subtrees):
     flags = {}
     for r in tests:
         d = os.path.dirname(r["file"])
-        groups.setdefault(d, []).append((r["file"], r["slug"], r["kind"]))
+        groups.setdefault(d, []).append((r["file"], r["slug"], r["kind"], r.get("entry")))
         flags.setdefault(d, set()).update(r.get("flags", []))
 
     gdir = f"build/groups/{backend}"
