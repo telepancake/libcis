@@ -1,0 +1,21 @@
+// <csignal> -- C signal handling in namespace std.
+// Mechanically ported from libc++ include/csignal.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Includes <signal.h> (reachable via the system include path even with
+// -nostdinc++) and re-exports sig_atomic_t and the signal/raise functions
+// into namespace std.
+// The macros (SIG_DFL, SIG_ERR, SIG_IGN, SIGABRT, SIGFPE, SIGILL, SIGINT,
+// SIGSEGV, SIGTERM, SIG_ATOMIC_MIN, SIG_ATOMIC_MAX) remain in the global
+// namespace as provided by <signal.h>; the standard only requires them there.
+#pragma once
+
+#include <signal.h>
+
+namespace std {
+
+using ::sig_atomic_t;
+using ::signal;
+using ::raise;
+
+} // namespace std
