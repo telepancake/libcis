@@ -80,7 +80,13 @@ using promote_t = decltype((detail::promote_impl(Args()) + ...));
 using ::float_t;
 using ::double_t;
 
-using ::abs;
+using ::abs;   // C stdlib.h: abs(int), abs(long), abs(long long)
+// [cmath.syn] also requires the floating-point std::abs overloads.  C <math.h>
+// supplies fabs (not abs) for floats, so without these a `std::abs(1.5)` binds
+// abs(int) and truncates.
+inline float       abs(float x)       { return __builtin_fabsf(x); }
+inline double      abs(double x)      { return __builtin_fabs(x); }
+inline long double abs(long double x) { return __builtin_fabsl(x); }
 
 using ::acos;
 using ::acosf;
@@ -163,6 +169,10 @@ using ::cbrtl;
 using ::copysign;
 using ::copysignf;
 using ::copysignl;
+// C++ overloads for copysign: ensure float/long double variants call the
+// correct C function rather than promoting to double (which corrupts NaN payloads).
+inline float copysign(float x, float y) noexcept { return ::copysignf(x, y); }
+inline long double copysign(long double x, long double y) noexcept { return ::copysignl(x, y); }
 using ::erf;
 using ::erff;
 using ::erfl;
