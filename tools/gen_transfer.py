@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
-"""Emit build/transfer.ninja: the libc++ -> libcis test transfer as a real,
-incremental dependency graph instead of a hand-rolled process pool.
+"""Emit build/transfer.ninja + the root build/build.ninja: the libc++ ->
+libcis test transfer as a real, incremental dependency graph.
 
 Graph:
-    tools/transfer.py  --(implicit dep of every edge below)
-        build/transfer.pch                         (rule pch)
-        build/recs/<rel>.rec.json : <src> | py pch  (rule xfer, per test file)
-        test/std/manifest.json    : <all recs>      (rule aggregate)
+    tools/transfer.py, tools/transfer_batch.py  (implicit deps of the edges)
+        build/transfer.pch                            (rule pch)
+        build/recs/<dir>.dirrec.json : <dir srcs> | py pch   (rule xferdir)
+            ... which writes build/recs/<rel>.rec.json per file
+        test/std/manifest.json : <all dirrecs>        (rule aggregate, rspfile)
+        build/tripwire.ok      : manifest             (rule tripwire)
+        build/groups.ninja     : manifest, tripwire   (generator, then subninja)
 
-Why ninja: it already does the scheduling, per-edge process isolation (a
-libclang segfault is one failed... actually a captured-crash edge), keep-going,
-and -- the part the pool never had -- INCREMENTAL rebuild: editing one test
-source re-transfers one file; touching transfer.py or the PCH re-transfers
-everything, because they are declared deps.  ninja's one gap (no per-command
-timeout) is covered by `transfer.py --edge`, which runs the worker under a
-wall-clock limit and records a crash/timeout instead of hanging the build.
+One edge per source DIRECTORY (the granularity the group TUs consume): one
+Python+libclang+PCH startup serves ~7 files instead of 1.  Crash isolation
+keeps per-file attribution: the batch child writes each rec as it goes, and on
+a crash/hang the parent redoes the directory's missing recs per-file under
+individual timeouts (transfer_batch.py).
+
+The tripwire (tools/tripwire.py) asserts known fixtures (adaptation excised
+RTTI sites, entries recorded, suite-level run-test counts) so a regression
+that degrades the AST stage to a copy FAILS the build instead of producing
+green recs of unmodified files.
 
 Usage: tools/gen_transfer.py [SUBTREE ...]   (default: every std/ subtree)
 """
@@ -44,53 +50,62 @@ def main():
     os.makedirs(T.DST_ROOT, exist_ok=True)
     copy_support(subtrees)
 
-    py = os.path.relpath(os.path.join(os.path.dirname(__file__), "transfer.py"), ROOT)
+    tooldir = os.path.relpath(os.path.dirname(os.path.abspath(__file__)), ROOT)
+    py = f"{tooldir}/transfer.py"
+    pyb = f"{tooldir}/transfer_batch.py"
     pch = os.path.relpath(T.PCH_PATH, ROOT)
     L = [
         "ninja_required_version = 1.10",
-        f"py = python3 {py}",
         "",
         "rule pch",
-        "  command = $py --build-pch",
+        f"  command = python3 {py} --build-pch",
         "  description = PCH $out",
-        # no restat: the rec is the freshness carrier for downstream group TUs
-        # (its content can be unchanged while the emitted .cpp text changed, so
-        # pruning here would leave groups stale; pruning happens at the group
-        # edge instead, which is write-if-changed).
-        "rule xfer",
-        "  command = $py --edge $src $rel $out",
-        "  description = XFER $rel",
-        # 7950 rec paths exceed ARG_MAX; pass them via a response file
+        "rule xferdir",
+        f"  command = python3 {pyb} --edge-dir $out $in",
+        "  description = XFER $dir",
+        # 1100+ dirrec paths can exceed ARG_MAX; use a response file
         "rule aggregate",
-        "  command = $py --aggregate $out @$out.rsp",
+        f"  command = python3 {py} --aggregate $out @$out.rsp",
         "  rspfile = $out.rsp",
-        "  rspfile_content = $in",
+        "  rspfile_content = $recs",
         "  description = MANIFEST $out",
+        "rule tripwire",
+        f"  command = python3 {tooldir}/tripwire.py $out",
+        "  description = TRIPWIRE",
         "",
         f"build {pch}: pch | {py}",
         "",
     ]
-    recs = []
+    bydir = {}
     for sub in subtrees:
         for src, rel in T.list_inputs(sub):
-            rec = os.path.relpath(os.path.join(REC_DIR, rel + ".rec.json"), ROOT)
-            srel = os.path.relpath(src, ROOT)
-            L += [f"build {rec}: xfer {srel} | {py} {pch}",
-                  f"  src = {srel}",
-                  f"  rel = {rel}"]
-            recs.append(rec)
+            bydir.setdefault(os.path.dirname(rel), []).append((src, rel))
+
+    dirrecs, recs = [], []
+    for d in sorted(bydir):
+        dirrec = os.path.relpath(
+            os.path.join(REC_DIR, d.replace("/", "_") + ".dirrec.json"), ROOT)
+        srcs = " ".join(os.path.relpath(s, ROOT) for s, _ in bydir[d])
+        L += [f"build {dirrec}: xferdir {srcs} | {py} {pyb} {pch}",
+              f"  dir = {d}"]
+        dirrecs.append(dirrec)
+        recs += [os.path.relpath(os.path.join(REC_DIR, rel + ".rec.json"), ROOT)
+                 for _, rel in bydir[d]]
+
     man = os.path.relpath(os.path.join(T.DST_ROOT, "manifest.json"), ROOT)
-    L.append(f"build {man}: aggregate $\n    " + " $\n    ".join(recs))
-    L += ["default " + man, ""]
+    L.append(f"build {man}: aggregate " + " $\n    ".join(dirrecs))
+    L.append("  recs = " + " ".join(recs))
+    L += [f"build build/tripwire.ok: tripwire {man} | {tooldir}/tripwire.py",
+          "default build/tripwire.ok", ""]
 
     out = os.path.join(ROOT, "build", "transfer.ninja")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     open(out, "w").write("\n".join(L))
-    print(f"{out}: {len(recs)} test files in {len(subtrees)} subtrees")
+    print(f"{out}: {len(recs)} files in {len(dirrecs)} directory edges")
 
     # root graph: transfer stage + ninja-regenerated groups stage.  ninja sees
     # groups.ninja is an out-of-date output of the gengroups edge, rebuilds it
-    # (after its manifest.json dep), and reloads -- the whole pipeline
+    # (after manifest + tripwire), and reloads -- the whole pipeline
     # libc++ src -> rec -> manifest -> group.cpp -> exe -> .result is ONE graph.
     groups_ninja = os.path.join(ROOT, "build", "groups.ninja")
     if not os.path.exists(groups_ninja):
@@ -103,12 +118,12 @@ def main():
         "  command = python3 tools/gen_groups.py --ninja",
         "  generator = 1",
         "  restat = 1",
-        f"build build/groups.ninja: gengroups {man} | tools/gen_groups.py",
+        f"build build/groups.ninja: gengroups {man} | tools/gen_groups.py build/tripwire.ok",
         "subninja build/groups.ninja",
         "",
     ])
     open(os.path.join(ROOT, "build", "build.ninja"), "w").write(root)
-    print("build/build.ninja: root graph (transfer + groups)")
+    print("build/build.ninja: root graph (transfer + tripwire + groups)")
 
 
 if __name__ == "__main__":
