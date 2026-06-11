@@ -89,6 +89,13 @@ template<class T, class U>
 struct is_same : bool_constant<is_same_v<T, U>> {};
 
 //===----------------------------------------------------------------------===//
+// is_constant_evaluated (C++20)
+//===----------------------------------------------------------------------===//
+[[nodiscard]] constexpr bool is_constant_evaluated() noexcept {
+    return __builtin_is_constant_evaluated();
+}
+
+//===----------------------------------------------------------------------===//
 // remove_const, remove_volatile, remove_cv (remove_const.h etc.)
 // __remove_cv NOT in gcc-10.2 — template specialisation.
 //===----------------------------------------------------------------------===//
