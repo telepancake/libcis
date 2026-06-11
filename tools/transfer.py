@@ -360,8 +360,15 @@ def transform(text: str, tu, path: str, slug: str):
             j += 1
         if j < len(text) and text[j] == ";":
             we = j + 1
+        # NO `using namespace` re-export: each file (its helpers AND its main)
+        # stays inside libcis_ns_<slug>; the group driver calls main qualified.
+        # Re-exporting dragged every file's helpers to global scope, so sibling
+        # files in a consolidated TU collided (6 different `enum ClassicEnum`s
+        # -> ambiguous). Within a file, unqualified lookup is unaffected (all
+        # its decls share the namespace); ADL still finds operators via the
+        # type's own (now namespaced) home.
         edits.append((ws, ws, f"namespace {ns} {{ // libcis\n"))
-        edits.append((we, we, f"\n}} using namespace {ns}; // libcis\n"))
+        edits.append((we, we, f"\n}} // {ns} (libcis)\n"))
 
     edits.sort(key=lambda e: (e[0], e[1]), reverse=True)
     out = text
