@@ -1,0 +1,21 @@
+// <clocale> -- C locale functions in namespace std.
+// Mechanically ported from libc++ include/clocale.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Includes <locale.h> (reachable via the system include path even with
+// -nostdinc++) and re-exports lconv, setlocale, and localeconv into namespace
+// std.
+// The macros (LC_ALL, LC_COLLATE, LC_CTYPE, LC_MONETARY, LC_NUMERIC, LC_TIME,
+// NULL) remain in the global namespace as provided by <locale.h>; the standard
+// only requires them there.
+#pragma once
+
+#include <locale.h>
+
+namespace std {
+
+using ::lconv;
+using ::setlocale;
+using ::localeconv;
+
+} // namespace std
