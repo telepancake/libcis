@@ -13,18 +13,13 @@
 //   decremented and the block is freed when it reaches -1.
 //   (libc++ uses 0 for "one live owner" so the threshold is < 0, not == 0.)
 //
-// Deferred constructors (const std::string&):
-//   The explicit xxx_error(const string&) overloads are intentionally omitted.
-//   <string> is not yet ported, and <string> will depend on <stdexcept>.
-//   These overloads will be added when <string> lands.
-//
 // The __throw_xxx helpers from libc++ are also included below, adapted for
 // -fno-exceptions: they call __builtin_trap() instead of throw.
 #pragma once
 
 #include <exception>
-#include <stdlib.h>   // malloc, free — pulled in directly to avoid <cstdlib>
-                      // namespace pollution while <string> is absent
+#include <string>     // std::string — no cycle: <string> does not include <stdexcept>
+#include <stdlib.h>   // malloc, free
 
 namespace std {
 
@@ -98,8 +93,8 @@ private:
     refstring imp;
 
 public:
-    // const std::string& overload deferred until <string> is ported.
     explicit logic_error(const char* msg) : imp(msg) {}
+    explicit logic_error(const string& msg) : imp(msg.c_str()) {}
 
     logic_error(const logic_error&) noexcept            = default;
     logic_error& operator=(const logic_error&) noexcept = default;
@@ -117,8 +112,8 @@ private:
     refstring imp;
 
 public:
-    // const std::string& overload deferred until <string> is ported.
     explicit runtime_error(const char* msg) : imp(msg) {}
+    explicit runtime_error(const string& msg) : imp(msg.c_str()) {}
 
     runtime_error(const runtime_error&) noexcept            = default;
     runtime_error& operator=(const runtime_error&) noexcept = default;
@@ -134,6 +129,7 @@ public:
 class domain_error : public logic_error {
 public:
     explicit domain_error(const char* msg) : logic_error(msg) {}
+    explicit domain_error(const string& msg) : logic_error(msg) {}
     domain_error(const domain_error&) noexcept            = default;
     domain_error& operator=(const domain_error&) noexcept = default;
     ~domain_error() noexcept override {}
@@ -142,6 +138,7 @@ public:
 class invalid_argument : public logic_error {
 public:
     explicit invalid_argument(const char* msg) : logic_error(msg) {}
+    explicit invalid_argument(const string& msg) : logic_error(msg) {}
     invalid_argument(const invalid_argument&) noexcept            = default;
     invalid_argument& operator=(const invalid_argument&) noexcept = default;
     ~invalid_argument() noexcept override {}
@@ -150,6 +147,7 @@ public:
 class length_error : public logic_error {
 public:
     explicit length_error(const char* msg) : logic_error(msg) {}
+    explicit length_error(const string& msg) : logic_error(msg) {}
     length_error(const length_error&) noexcept            = default;
     length_error& operator=(const length_error&) noexcept = default;
     ~length_error() noexcept override {}
@@ -158,6 +156,7 @@ public:
 class out_of_range : public logic_error {
 public:
     explicit out_of_range(const char* msg) : logic_error(msg) {}
+    explicit out_of_range(const string& msg) : logic_error(msg) {}
     out_of_range(const out_of_range&) noexcept            = default;
     out_of_range& operator=(const out_of_range&) noexcept = default;
     ~out_of_range() noexcept override {}
@@ -169,6 +168,7 @@ public:
 class range_error : public runtime_error {
 public:
     explicit range_error(const char* msg) : runtime_error(msg) {}
+    explicit range_error(const string& msg) : runtime_error(msg) {}
     range_error(const range_error&) noexcept            = default;
     range_error& operator=(const range_error&) noexcept = default;
     ~range_error() noexcept override {}
@@ -177,6 +177,7 @@ public:
 class overflow_error : public runtime_error {
 public:
     explicit overflow_error(const char* msg) : runtime_error(msg) {}
+    explicit overflow_error(const string& msg) : runtime_error(msg) {}
     overflow_error(const overflow_error&) noexcept            = default;
     overflow_error& operator=(const overflow_error&) noexcept = default;
     ~overflow_error() noexcept override {}
@@ -185,6 +186,7 @@ public:
 class underflow_error : public runtime_error {
 public:
     explicit underflow_error(const char* msg) : runtime_error(msg) {}
+    explicit underflow_error(const string& msg) : runtime_error(msg) {}
     underflow_error(const underflow_error&) noexcept            = default;
     underflow_error& operator=(const underflow_error&) noexcept = default;
     ~underflow_error() noexcept override {}
