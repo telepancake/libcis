@@ -1031,14 +1031,15 @@ template<class T> using decay_t = typename decay<T>::type;
 // is_swappable (is_swappable.h)
 //===----------------------------------------------------------------------===//
 // Forward declarations of swap so the swappable checks below can find them
+// (constexpr, as C++20 requires; definitions in <utility> match).
 template<class T>
     requires (is_move_constructible_v<T> && is_move_assignable_v<T>)
-void swap(T& x, T& y)
+constexpr void swap(T& x, T& y)
     noexcept(is_nothrow_move_constructible_v<T> && is_nothrow_move_assignable_v<T>);
 
 template<class T, size_t N>
     requires (is_move_constructible_v<T> && is_move_assignable_v<T>)
-void swap(T (&a)[N], T (&b)[N])
+constexpr void swap(T (&a)[N], T (&b)[N])
     noexcept(noexcept(swap(*a, *b)));
 
 namespace detail {
