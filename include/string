@@ -1882,15 +1882,30 @@ inline string int_to_string(const char* fmt, T v) {
     int n = snprintf(buf, sizeof(buf), fmt, v);
     return string(buf, static_cast<string::size_type>(n));
 }
-template<class T>
-inline string flt_to_string(const char* fmt, T v) {
+// Ported from libc++ src/string.cpp: as_string() / to_string() float overloads.
+// libc++ uses snprintf with "%f"/"%Lf" (not "%.6g") so that trailing zeros
+// are always printed, matching the C standard [string.conversions] requirement
+// that to_string(float) behaves as if by sprintf(buf, "%f", val).
+// The (double) cast in the original libcis code was also wrong for long double;
+// pass v directly so the format specifier controls promotion.
+inline string flt_to_string(const char* fmt, double v) {
     char buf[64];
-    int n = snprintf(buf, sizeof(buf), fmt, (double)v);
+    int n = snprintf(buf, sizeof(buf), fmt, v);
     if (n < 0 || static_cast<size_t>(n) >= sizeof(buf)) {
-        // fallback: allocate
-        int n2 = snprintf(nullptr, 0, fmt, (double)v);
+        int n2 = snprintf(nullptr, 0, fmt, v);
         string s(static_cast<string::size_type>(n2), '\0');
-        snprintf(s.data(), static_cast<size_t>(n2) + 1, fmt, (double)v);
+        snprintf(s.data(), static_cast<size_t>(n2) + 1, fmt, v);
+        return s;
+    }
+    return string(buf, static_cast<string::size_type>(n));
+}
+inline string flt_to_string_ld(const char* fmt, long double v) {
+    char buf[64];
+    int n = snprintf(buf, sizeof(buf), fmt, v);
+    if (n < 0 || static_cast<size_t>(n) >= sizeof(buf)) {
+        int n2 = snprintf(nullptr, 0, fmt, v);
+        string s(static_cast<string::size_type>(n2), '\0');
+        snprintf(s.data(), static_cast<size_t>(n2) + 1, fmt, v);
         return s;
     }
     return string(buf, static_cast<string::size_type>(n));
@@ -1904,9 +1919,9 @@ inline string to_string(long               val) { return detail::int_to_string("
 inline string to_string(unsigned long      val) { return detail::int_to_string("%lu",  val); }
 inline string to_string(long long          val) { return detail::int_to_string("%lld", val); }
 inline string to_string(unsigned long long val) { return detail::int_to_string("%llu", val); }
-inline string to_string(float              val) { return detail::flt_to_string("%.6g", (double)val); }
-inline string to_string(double             val) { return detail::flt_to_string("%.6g", val); }
-inline string to_string(long double        val) { return detail::flt_to_string("%.6Lg", (long double)val); }
+inline string to_string(float              val) { return detail::flt_to_string("%f",  static_cast<double>(val)); }
+inline string to_string(double             val) { return detail::flt_to_string("%f",  val); }
+inline string to_string(long double        val) { return detail::flt_to_string_ld("%Lf", val); }
 
 namespace detail {
 
@@ -1916,12 +1931,22 @@ inline wstring int_to_wstring(const wchar_t* fmt, T v) {
     int n = swprintf(buf, sizeof(buf)/sizeof(wchar_t), fmt, v);
     return wstring(buf, static_cast<wstring::size_type>(n));
 }
-template<class T>
-inline wstring flt_to_wstring(const wchar_t* fmt, T v) {
+// Ported from libc++ src/string.cpp: as_string() / to_wstring() float overloads.
+// Uses "%f"/"%Lf" (not "%.6g") so trailing zeros are always present.
+inline wstring flt_to_wstring(const wchar_t* fmt, double v) {
     wchar_t buf[64];
     int n = swprintf(buf, sizeof(buf)/sizeof(wchar_t), fmt, v);
     if (n < 0 || static_cast<size_t>(n) >= sizeof(buf)/sizeof(wchar_t)) {
-        // Shouldn't happen for reasonable numbers — fallback to narrow
+        // fallback: convert narrow string to wstring
+        string ns = to_string(v);
+        return wstring(ns.begin(), ns.end());
+    }
+    return wstring(buf, static_cast<wstring::size_type>(n));
+}
+inline wstring flt_to_wstring_ld(const wchar_t* fmt, long double v) {
+    wchar_t buf[64];
+    int n = swprintf(buf, sizeof(buf)/sizeof(wchar_t), fmt, v);
+    if (n < 0 || static_cast<size_t>(n) >= sizeof(buf)/sizeof(wchar_t)) {
         string ns = to_string(v);
         return wstring(ns.begin(), ns.end());
     }
@@ -1936,9 +1961,9 @@ inline wstring to_wstring(long               val) { return detail::int_to_wstrin
 inline wstring to_wstring(unsigned long      val) { return detail::int_to_wstring(L"%lu",  val); }
 inline wstring to_wstring(long long          val) { return detail::int_to_wstring(L"%lld", val); }
 inline wstring to_wstring(unsigned long long val) { return detail::int_to_wstring(L"%llu", val); }
-inline wstring to_wstring(float              val) { return detail::flt_to_wstring(L"%.6g", (double)val); }
-inline wstring to_wstring(double             val) { return detail::flt_to_wstring(L"%.6g", val); }
-inline wstring to_wstring(long double        val) { return detail::flt_to_wstring(L"%.6Lg", val); }
+inline wstring to_wstring(float              val) { return detail::flt_to_wstring(L"%f",  static_cast<double>(val)); }
+inline wstring to_wstring(double             val) { return detail::flt_to_wstring(L"%f",  val); }
+inline wstring to_wstring(long double        val) { return detail::flt_to_wstring_ld(L"%Lf", val); }
 
 // DEFERRED: getline, operator<< and operator>>  (require <istream> / <ostream>)
 
