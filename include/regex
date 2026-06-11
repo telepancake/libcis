@@ -1,0 +1,224 @@
+// <regex> — Regular expressions.
+// Mechanically ported from:
+//   /home/user/llvm-project/libcxx/include/regex  (lines 846–1001 for stage 1)
+//   /home/user/llvm-project/libcxx/src/regex.cpp  (lines 16–64 for stage 1)
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Stage 1: regex_constants (syntax_option_type, match_flag_type, error_type)
+//          + class regex_error.
+// Stages 2–6 will append to this file.
+#pragma once
+
+#include <stdexcept>   // runtime_error
+
+namespace std {
+
+// ============================================================================
+// namespace regex_constants
+// Ported from libc++ include/regex lines 846–982
+// ============================================================================
+namespace regex_constants {
+
+// ---------------------------------------------------------------------------
+// syntax_option_type  (libc++ lines 850–867)
+// ---------------------------------------------------------------------------
+enum syntax_option_type {
+    icase      = 1 << 0,
+    nosubs     = 1 << 1,
+    optimize   = 1 << 2,
+    collate    = 1 << 3,
+    ECMAScript = 0,       // libc++ non-ABI-break default: 0
+    basic      = 1 << 4,
+    extended   = 1 << 5,
+    awk        = 1 << 6,
+    grep       = 1 << 7,
+    egrep      = 1 << 8,
+    // 1 << 9 reserved for ECMAScript alternate ABI
+    multiline  = 1 << 10,
+};
+
+// Internal helper: extract the grammar bits (libc++ lines 869–875, non-ABI-break path)
+inline constexpr syntax_option_type get_grammar(syntax_option_type g) {
+    return static_cast<syntax_option_type>(static_cast<int>(g) & 0x1F0);
+}
+
+inline constexpr syntax_option_type operator~(syntax_option_type x) {
+    return syntax_option_type(~int(x) & 0x7FF);
+}
+inline constexpr syntax_option_type operator&(syntax_option_type x, syntax_option_type y) {
+    return syntax_option_type(int(x) & int(y));
+}
+inline constexpr syntax_option_type operator|(syntax_option_type x, syntax_option_type y) {
+    return syntax_option_type(int(x) | int(y));
+}
+inline constexpr syntax_option_type operator^(syntax_option_type x, syntax_option_type y) {
+    return syntax_option_type(int(x) ^ int(y));
+}
+inline syntax_option_type& operator&=(syntax_option_type& x, syntax_option_type y) {
+    x = x & y; return x;
+}
+inline syntax_option_type& operator|=(syntax_option_type& x, syntax_option_type y) {
+    x = x | y; return x;
+}
+inline syntax_option_type& operator^=(syntax_option_type& x, syntax_option_type y) {
+    x = x ^ y; return x;
+}
+
+// ---------------------------------------------------------------------------
+// match_flag_type  (libc++ lines 913–928)
+//
+// Two internal flags (no_update_pos, full_match) are kept but renamed
+// (strip leading underscores per CONVENTIONS).
+// ---------------------------------------------------------------------------
+enum match_flag_type {
+    match_default     = 0,
+    match_not_bol     = 1 << 0,
+    match_not_eol     = 1 << 1,
+    match_not_bow     = 1 << 2,
+    match_not_eow     = 1 << 3,
+    match_any         = 1 << 4,
+    match_not_null    = 1 << 5,
+    match_continuous  = 1 << 6,
+    match_prev_avail  = 1 << 7,
+    format_default    = 0,
+    format_sed        = 1 << 8,
+    format_no_copy    = 1 << 9,
+    format_first_only = 1 << 10,
+    // internal flags (renamed from __no_update_pos / __full_match)
+    no_update_pos     = 1 << 11,
+    full_match        = 1 << 12,
+};
+
+inline constexpr match_flag_type operator~(match_flag_type x) {
+    return match_flag_type(~int(x) & 0x0FFF);
+}
+inline constexpr match_flag_type operator&(match_flag_type x, match_flag_type y) {
+    return match_flag_type(int(x) & int(y));
+}
+inline constexpr match_flag_type operator|(match_flag_type x, match_flag_type y) {
+    return match_flag_type(int(x) | int(y));
+}
+inline constexpr match_flag_type operator^(match_flag_type x, match_flag_type y) {
+    return match_flag_type(int(x) ^ int(y));
+}
+inline match_flag_type& operator&=(match_flag_type& x, match_flag_type y) {
+    x = x & y; return x;
+}
+inline match_flag_type& operator|=(match_flag_type& x, match_flag_type y) {
+    x = x | y; return x;
+}
+inline match_flag_type& operator^=(match_flag_type& x, match_flag_type y) {
+    x = x ^ y; return x;
+}
+
+// ---------------------------------------------------------------------------
+// error_type  (libc++ lines 962–980)
+//
+// Internal enumerators __re_err_grammar/__re_err_empty/__re_err_unknown/
+// __re_err_parse renamed to re_err_grammar/re_err_empty/re_err_unknown/
+// re_err_parse per CONVENTIONS (no leading underscores).
+// ---------------------------------------------------------------------------
+enum error_type {
+    error_collate    = 1,
+    error_ctype,
+    error_escape,
+    error_backref,
+    error_brack,
+    error_paren,
+    error_brace,
+    error_badbrace,
+    error_range,
+    error_space,
+    error_badrepeat,
+    error_complexity,
+    error_stack,
+    // internal parser error codes
+    re_err_grammar,
+    re_err_empty,
+    re_err_unknown,
+    re_err_parse,
+};
+
+} // namespace regex_constants
+
+// ============================================================================
+// class regex_error
+// Ported from libc++ include/regex lines 984–1001 (declaration)
+//                   src/regex.cpp lines 16–64 (constructor body with messages)
+//
+// Under -fno-exceptions regex_error is never thrown; the throw helper below
+// calls __builtin_trap() instead, matching the house convention used in
+// include/stdexcept.
+// ============================================================================
+
+namespace detail {
+inline const char* regex_error_string(regex_constants::error_type ecode) noexcept {
+    switch (ecode) {
+    case regex_constants::error_collate:
+        return "The expression contained an invalid collating element name.";
+    case regex_constants::error_ctype:
+        return "The expression contained an invalid character class name.";
+    case regex_constants::error_escape:
+        return "The expression contained an invalid escaped character, or a "
+               "trailing escape.";
+    case regex_constants::error_backref:
+        return "The expression contained an invalid back reference.";
+    case regex_constants::error_brack:
+        return "The expression contained mismatched [ and ].";
+    case regex_constants::error_paren:
+        return "The expression contained mismatched ( and ).";
+    case regex_constants::error_brace:
+        return "The expression contained mismatched { and }.";
+    case regex_constants::error_badbrace:
+        return "The expression contained an invalid range in a {} expression.";
+    case regex_constants::error_range:
+        return "The expression contained an invalid character range, "
+               "such as [b-a] in most encodings.";
+    case regex_constants::error_space:
+        return "There was insufficient memory to convert the expression into "
+               "a finite state machine.";
+    case regex_constants::error_badrepeat:
+        return "One of *?+{ was not preceded by a valid regular expression.";
+    case regex_constants::error_complexity:
+        return "The complexity of an attempted match against a regular "
+               "expression exceeded a pre-set level.";
+    case regex_constants::error_stack:
+        return "There was insufficient memory to determine whether the regular "
+               "expression could match the specified character sequence.";
+    case regex_constants::re_err_grammar:
+        return "An invalid regex grammar has been requested.";
+    case regex_constants::re_err_empty:
+        return "An empty regex is not allowed in the POSIX grammar.";
+    case regex_constants::re_err_parse:
+        return "The parser did not consume the entire regular expression.";
+    default:
+        break;
+    }
+    return "Unknown error type";
+}
+} // namespace detail
+
+class regex_error : public runtime_error {
+    regex_constants::error_type code_;
+
+public:
+    explicit regex_error(regex_constants::error_type ecode)
+        : runtime_error(detail::regex_error_string(ecode)), code_(ecode) {}
+
+    regex_error(const regex_error&) noexcept = default;
+
+    ~regex_error() noexcept override {}
+
+    [[nodiscard]] regex_constants::error_type code() const noexcept { return code_; }
+};
+
+// Internal helper used by later stages: raises a regex_error.
+// Under -fno-exceptions we trap (matching include/stdexcept convention).
+template<regex_constants::error_type Ev>
+[[noreturn]] inline void throw_regex_error() {
+    // -fno-exceptions: cannot throw; abort.
+    __builtin_trap();
+    __builtin_unreachable();
+}
+
+} // namespace std
