@@ -34,7 +34,11 @@ if r:
           f"{f}: entry={r.get('entry')}")
     txt = open("test/std/" + f).read()
     check(txt.count("libcis: removed") >= 4, f"{f}: excision comments missing")
-    check("} using namespace libcis_ns_" in txt, f"{f}: not namespace-wrapped")
+    # current wrapper: `namespace libcis_ns_<slug> { ... } // ...` (the file
+    # body is namespaced; no `using namespace` re-export -- siblings must not
+    # collide on consolidation).
+    check("namespace libcis_ns_" in txt and "using namespace libcis_ns_" not in txt,
+          f"{f}: not namespace-wrapped (or stale re-export present)")
 
 # 2. suite-level: a copy-regression zeroes these
 runs = sum(1 for r in man["transferred"] if r["kind"] == "run")
