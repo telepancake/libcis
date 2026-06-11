@@ -111,17 +111,20 @@ def group_source(members):
             calls.append(f'  libcis_run([]() -> int {{ return {r["entry"]}; }}, "{r["slug"]}");')
     harness = (
         "#include <cstdio>\n#include <unistd.h>\n#include <sys/wait.h>\n"
-        "static int libcis_fails = 0;\n"
+        "static int libcis_total = 0, libcis_fails = 0;\n"
         "template<class F> static void libcis_run(F f, const char* name) {\n"
+        "  ++libcis_total;\n"
         "  ::pid_t p = ::fork();\n"
-        "  if (p == 0) { ::_exit(f()); }  // propagate the test's own exit code\n"
+        "  if (p == 0) { ::alarm(30); ::_exit(f()); }  // per-test wall clock + own exit code\n"
         "  int st = 0; ::waitpid(p, &st, 0);\n"
         "  bool ok = WIFEXITED(st) && WEXITSTATUS(st) == 0;\n"
         "  if (!ok) { ++libcis_fails; ::fprintf(stderr, \"LIBCIS-FAIL %s (status=%d)\\n\", name, st); }\n"
         "}\n")
+    # the trailing LIBCIS-DONE line lets the board count per-TEST and detect
+    # groups that crashed/hung before finishing (no DONE line == incomplete).
     return ("".join(inc) + "\n" + harness + "".join(bodies)
             + "\nint main(){\n" + "\n".join(calls)
-            + "\n  if (libcis_fails) ::fprintf(stderr, \"LIBCIS-FAILS=%d\\n\", libcis_fails);\n"
+            + '\n  ::fprintf(stderr, "LIBCIS-DONE total=%d fails=%d\\n", libcis_total, libcis_fails);\n'
             + "  return libcis_fails ? 1 : 0;\n}\n")
 
 
