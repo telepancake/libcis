@@ -32,13 +32,28 @@ SRC_DIR = "build/groups/src"
 RUN_TIMEOUT = 120  # seconds per test binary
 
 BACKENDS = {
-    "libcis":    ("g++-10",     "-std=gnu++20 -fno-exceptions -fno-rtti -nostdinc++ -Iinclude -Itest/std/support -O0 -w", True),
-    "libcxx":    ("clang++-20", "-std=gnu++20 -stdlib=libc++ -fno-exceptions -fno-rtti -Itest/std/support -O0 -w", False),
-    "libstdcxx": ("g++-14",     "-std=gnu++20 -fno-exceptions -fno-rtti -Itest/std/support -O0 -w", False),
+    "libcis":    ("g++-10",     "-std=gnu++20 -fno-exceptions -fno-rtti -nostdinc++ -Iinclude -Itest/std -Itest/std/support -O0 -w", True),
+    "libcxx":    ("clang++-20", "-std=gnu++20 -stdlib=libc++ -fno-exceptions -fno-rtti -Itest/std -Itest/std/support -O0 -w", False),
+    "libstdcxx": ("g++-14",     "-std=gnu++20 -fno-exceptions -fno-rtti -Itest/std -Itest/std/support -O0 -w", False),
     # discriminator: gcc-10 with its OWN libstdc++.  A test red here and red on
     # libcis is a gcc-10 limitation; red only on libcis is a libcis bug.
-    "gcc10std":  ("g++-10",     "-std=gnu++20 -fno-exceptions -fno-rtti -Itest/std/support -O0 -w", False),
+    "gcc10std":  ("g++-10",     "-std=gnu++20 -fno-exceptions -fno-rtti -Itest/std -Itest/std/support -O0 -w", False),
 }
+
+
+def backend_flags(fl, be):
+    """ADDITIONAL_COMPILE_FLAGS are written for clang; translate per backend."""
+    out = []
+    for f in fl:
+        if be != "libcxx":
+            m = re.match(r"-fconstexpr-steps=(\d+)", f)
+            if m:
+                out.append(f"-fconstexpr-ops-limit={m.group(1)}")
+                continue
+            if f.startswith(("-Wno-", "-fsized-deallocation", "-faligned-allocation")):
+                continue  # clang spellings g++-10 may reject; tests run with -w anyway
+        out.append(f)
+    return out
 LINK_CIS = "-nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc"
 
 
@@ -54,17 +69,34 @@ def load_groups():
         if r["file"] in seen:
             continue
         seen.add(r["file"])
-        d = os.path.dirname(r["file"])
+        # one TU per lib FEATURE (e.g. utilities/optional, containers/sequences),
+        # not per leaf clause-directory: ~200 executables instead of ~1300.
+        d = "/".join(os.path.dirname(r["file"]).split("/")[:2])
         groups.setdefault(d, []).append(r)
     return groups
+
+
+def resolve_quote_include(line, filedir):
+    """Hoisting moves #include lines away from the file whose directory
+    anchors them; re-anchor relative quote-includes ("../types.h", "types.h")
+    to a test/std-rooted path so they survive consolidation."""
+    m = re.match(r'(\s*#\s*include\s*)"([^"]+)"(.*)$', line, re.S)
+    if not m:
+        return line
+    rel = os.path.normpath(os.path.join("test/std", filedir, m.group(2)))
+    if os.path.exists(rel):
+        return f'{m.group(1)}"{os.path.relpath(rel, "test/std")}"{m.group(3)}'
+    return line
 
 
 def group_source(members):
     inc, seen, bodies, calls = [], set(), [], []
     for r in sorted(members, key=lambda r: r["file"]):
+        filedir = os.path.dirname(r["file"])
         body = []
         for ln in open(os.path.join("test/std", r["file"]), errors="replace").read().splitlines(True):
             if re.match(r"\s*#\s*include", ln):
+                ln = resolve_quote_include(ln, filedir)
                 if ln.strip() not in seen:
                     seen.add(ln.strip())
                     inc.append(ln if ln.endswith("\n") else ln + "\n")
@@ -127,11 +159,11 @@ def emit_ninja():
         recs = " ".join(f"build/recs/{r['file']}.rec.json" for r in groups[d])
         L += [f"build {src}: gengroup {recs} | tools/gen_groups.py {MANIFEST}",
               f"  key = {key}"]
-        fl = " ".join(flags[d])
         for be in BACKENDS:
             dep = f" | {sup}" if be == "libcis" else ""
             exe, res = f"build/groups/{be}/{key}.exe", f"build/groups/{be}/{key}.result"
             L.append(f"build {exe}: link_{be} {src}{dep}")
+            fl = " ".join(backend_flags(flags[d], be))
             if fl:
                 L.append(f"  flags = {fl}")
             L.append(f"build {res}: run {exe}")
