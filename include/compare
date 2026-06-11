@@ -4,8 +4,8 @@
 //
 // All __compare/*.h fragments are folded inline; no include/bits/ file needed.
 // Depends on <type_traits>, <bit> (bit_cast), <limits> (numeric_limits).
-// std::bit_cast for floats: non-constexpr memcpy path (gcc-10 lacks
-// __builtin_bit_cast); strong_order float path is therefore non-constexpr.
+// std::bit_cast is non-constexpr on gcc-10 (no __builtin_bit_cast); the
+// strong_order float path uses it only at runtime (guarded by !is_constant_evaluated()).
 #pragma once
 
 #include <type_traits>
@@ -32,8 +32,9 @@ namespace detail {
     using make_const_lvalue_ref = const remove_reference_t<T>&;
 } // namespace detail
 
-// Note: std::bit_cast (from <bit>) is non-constexpr on gcc-10 (no
-// __builtin_bit_cast); the strong_order float path uses it at runtime only.
+// Note: std::bit_cast (from <bit>) is non-constexpr on gcc-10 (no __builtin_bit_cast).
+// The strong_order float go() guards bit_cast with !is_constant_evaluated() so the
+// whole CPO machinery is constexpr end-to-end.
 
 //===----------------------------------------------------------------------===//
 // [cmp.categories] — ordering category types (from __compare/ordering.h)
@@ -446,57 +447,71 @@ struct fn {
         return strong_ordering(strong_order(static_cast<T&&>(t), static_cast<U&&>(u)));
     }
 
-    // (2) Floating-point: IEC 559 bit-level total order (non-constexpr; bit_cast
-    //     is non-constexpr on gcc-10).  Only float/double (32/64-bit); long double falls through.
+    // (2) Floating-point: IEC 559 bit-level total order.
+    //     The function is constexpr end-to-end; at runtime we use the fast
+    //     bit_cast path (bit_cast is non-constexpr on gcc-10, so we guard it
+    //     with is_constant_evaluated()).
     template<class T, class U, class D = decay_t<T>>
         requires is_same_v<D, decay_t<U>> && is_floating_point_v<D>
-    static strong_ordering go(T&& t, U&& u, detail::priority_tag<1>) noexcept {
-        if constexpr (numeric_limits<D>::is_iec559 &&
-                      (sizeof(D) == sizeof(int32_t) || sizeof(D) == sizeof(int64_t))) {
-            using int_t = conditional_t<sizeof(D) == sizeof(int32_t), int32_t, int64_t>;
-            int_t rx = bit_cast<int_t>(static_cast<D>(t));
-            int_t ry = bit_cast<int_t>(static_cast<D>(u));
-            // IEEE 754: flip sign bit of negative values to make integer comparison work
-            using uint_t = make_unsigned_t<int_t>;
-            const int_t min_val = int_t(uint_t(1) << (sizeof(int_t)*8 - 1));
-            rx = (rx < 0) ? (min_val - rx - 1) : rx;
-            ry = (ry < 0) ? (min_val - ry - 1) : ry;
-            return (rx <=> ry);
-        } else {
-            // Fallback for long double and non-IEC559 types
-            D td = static_cast<D>(t);
-            D ud = static_cast<D>(u);
-            if (td < ud)       return strong_ordering::less;
-            if (td > ud)       return strong_ordering::greater;
-            if (td == ud) {
-                return __builtin_signbit(ud) <=> __builtin_signbit(td);
-            } else {
-                // NaN case
-                bool t_nan = __builtin_isnan(td);
-                bool u_nan = __builtin_isnan(ud);
-                bool t_neg = __builtin_signbit(td);
-                bool u_neg = __builtin_signbit(ud);
-                if (t_nan && u_nan) {
-                    if (t_neg != u_neg)
-                        return u_neg <=> t_neg;
-                    // both same sign NaN: order by bit pattern (runtime only)
-                    if constexpr (sizeof(D) == sizeof(int32_t)) {
-                        int32_t a = bit_cast<int32_t>(td);
-                        int32_t b = bit_cast<int32_t>(ud);
-                        return a <=> b;
-                    } else if constexpr (sizeof(D) == sizeof(int64_t)) {
-                        int64_t a = bit_cast<int64_t>(td);
-                        int64_t b = bit_cast<int64_t>(ud);
-                        return a <=> b;
-                    } else {
-                        // Can't compare by bit pattern for other sizes: treat equal
-                        return strong_ordering::equal;
-                    }
-                } else if (t_nan) {
-                    return t_neg ? strong_ordering::less : strong_ordering::greater;
+    static constexpr strong_ordering go(T&& t, U&& u, detail::priority_tag<1>) noexcept {
+        D td = static_cast<D>(t);
+        D ud = static_cast<D>(u);
+
+        // At runtime, use the fast bit-manipulation path for IEC 559 float/double.
+        if (!is_constant_evaluated()) {
+            if constexpr (numeric_limits<D>::is_iec559 &&
+                          (sizeof(D) == sizeof(int32_t) || sizeof(D) == sizeof(int64_t))) {
+                using int_t = conditional_t<sizeof(D) == sizeof(int32_t), int32_t, int64_t>;
+                int_t rx = bit_cast<int_t>(td);
+                int_t ry = bit_cast<int_t>(ud);
+                // IEEE 754 total order: flip sign bit of negative values so that
+                // integer comparison gives the right total order.
+                using uint_t = make_unsigned_t<int_t>;
+                const int_t min_val = int_t(uint_t(1) << (sizeof(int_t)*8 - 1));
+                rx = (rx < 0) ? (min_val - rx - 1) : rx;
+                ry = (ry < 0) ? (min_val - ry - 1) : ry;
+                return (rx <=> ry);
+            }
+        }
+
+        // Constexpr path (and runtime fallback for long double / non-IEC559).
+        // NaN comparisons are undefined in constant expressions (GCC rejects them),
+        // so callers must not pass NaN in a constant-expression context; the test
+        // guards all NaN checks with !std::is_constant_evaluated().
+        if (td < ud)  return strong_ordering::less;
+        if (td > ud)  return strong_ordering::greater;
+        if (td == ud) {
+            // Distinguish -0 from +0: signbit(-0) > signbit(+0) in the total order,
+            // so -0 < +0 means we need (signbit(td) > signbit(ud)).
+            return __builtin_signbit(ud) <=> __builtin_signbit(td);
+        }
+        // td and ud are unordered (at least one NaN).
+        // This branch is never reached in a constant-expression (GCC forbids NaN
+        // comparisons there); it is reachable only at runtime.
+        {
+            bool t_nan = __builtin_isnan(td);
+            bool u_nan = __builtin_isnan(ud);
+            bool t_neg = __builtin_signbit(td);
+            bool u_neg = __builtin_signbit(ud);
+            if (t_nan && u_nan) {
+                if (t_neg != u_neg)
+                    return u_neg <=> t_neg;
+                // Both same-sign NaN: order by raw bit pattern.
+                if constexpr (sizeof(D) == sizeof(int32_t)) {
+                    int32_t a = bit_cast<int32_t>(td);
+                    int32_t b = bit_cast<int32_t>(ud);
+                    return a <=> b;
+                } else if constexpr (sizeof(D) == sizeof(int64_t)) {
+                    int64_t a = bit_cast<int64_t>(td);
+                    int64_t b = bit_cast<int64_t>(ud);
+                    return a <=> b;
                 } else {
-                    return u_neg ? strong_ordering::greater : strong_ordering::less;
+                    return strong_ordering::equal;
                 }
+            } else if (t_nan) {
+                return t_neg ? strong_ordering::less : strong_ordering::greater;
+            } else {
+                return u_neg ? strong_ordering::greater : strong_ordering::less;
             }
         }
     }
