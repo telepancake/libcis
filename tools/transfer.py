@@ -176,23 +176,12 @@ MAX_EXCISIONS = 25
 def find_hostile(tu, path):
     """[(stmt_cursor_to_remove, why)] for every unguarded hostile construct in
     the main file; raises TransformError if one is not inside a removable
-    statement (-> caller skips the file)."""
+    statement (-> caller skips the file).  Walks ONLY the test file's own
+    top-level subtrees, never the included headers' AST."""
     out = []
+    stack = []
 
-    def walk(cur, stack):
-        for ch in cur.get_children():
-            if ch.kind in HOSTILE and ch.location.file is not None \
-                    and os.path.abspath(str(ch.location.file.name)) == path:
-                stmt = enclosing_stmt(stack + [cur], ch)
-                if stmt is None:
-                    raise TransformError(
-                        f"unremovable {HOSTILE[ch.kind]} construct at "
-                        f"{ch.location.line}:{ch.location.column}")
-                out.append((stmt, HOSTILE[ch.kind]))
-                continue  # whole statement goes; no need to descend
-            walk(ch, stack + [cur])
-
-    def enclosing_stmt(stack, node):
+    def enclosing_stmt(node):
         # smallest ancestor (or node itself) whose parent is a CompoundStmt
         chain = stack + [node]
         for i in range(len(chain) - 1, 0, -1):
@@ -200,7 +189,24 @@ def find_hostile(tu, path):
                 return chain[i]
         return None
 
-    walk(tu.cursor, [])
+    def walk(cur):
+        stack.append(cur)
+        for ch in cur.get_children():
+            if ch.kind in HOSTILE:
+                stmt = enclosing_stmt(ch)
+                if stmt is None:
+                    raise TransformError(
+                        f"unremovable {HOSTILE[ch.kind]} construct at "
+                        f"{ch.location.line}:{ch.location.column}")
+                out.append((stmt, HOSTILE[ch.kind]))
+                continue  # whole statement goes; no need to descend
+            walk(ch)
+        stack.pop()
+
+    for top in tu.cursor.get_children():
+        if top.location.file is not None \
+                and os.path.abspath(str(top.location.file.name)) == path:
+            walk(top)
     return out
 
 
