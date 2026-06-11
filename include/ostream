@@ -35,7 +35,7 @@ namespace std {
 //===----------------------------------------------------------------------===//
 // Forward declaration
 //===----------------------------------------------------------------------===//
-template<class CharT, class Traits = char_traits<CharT>>
+template<class CharT, class Traits>  // defaults: <iosfwd>
 class basic_ostream;
 
 using ostream  = basic_ostream<char>;

@@ -21,8 +21,7 @@ namespace std {
 //===----------------------------------------------------------------------===//
 // basic_stringbuf
 //===----------------------------------------------------------------------===//
-template<class CharT, class Traits = char_traits<CharT>,
-         class Allocator = allocator<CharT>>
+template<class CharT, class Traits, class Allocator>  // defaults: <iosfwd>
 class basic_stringbuf : public basic_streambuf<CharT, Traits> {
 public:
     using char_type   = CharT;
@@ -405,8 +404,7 @@ using wstringbuf = basic_stringbuf<wchar_t>;
 //===----------------------------------------------------------------------===//
 // basic_istringstream
 //===----------------------------------------------------------------------===//
-template<class CharT, class Traits = char_traits<CharT>,
-         class Allocator = allocator<CharT>>
+template<class CharT, class Traits, class Allocator>  // defaults: <iosfwd>
 class basic_istringstream : public basic_istream<CharT, Traits> {
 public:
     using char_type   = CharT;
@@ -492,8 +490,7 @@ using wistringstream = basic_istringstream<wchar_t>;
 //===----------------------------------------------------------------------===//
 // basic_ostringstream
 //===----------------------------------------------------------------------===//
-template<class CharT, class Traits = char_traits<CharT>,
-         class Allocator = allocator<CharT>>
+template<class CharT, class Traits, class Allocator>  // defaults: <iosfwd>
 class basic_ostringstream : public basic_ostream<CharT, Traits> {
 public:
     using char_type   = CharT;
@@ -581,8 +578,7 @@ using wostringstream = basic_ostringstream<wchar_t>;
 //===----------------------------------------------------------------------===//
 // basic_stringstream
 //===----------------------------------------------------------------------===//
-template<class CharT, class Traits = char_traits<CharT>,
-         class Allocator = allocator<CharT>>
+template<class CharT, class Traits, class Allocator>  // defaults: <iosfwd>
 class basic_stringstream : public basic_iostream<CharT, Traits> {
 public:
     using char_type   = CharT;

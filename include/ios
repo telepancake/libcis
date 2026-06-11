@@ -384,7 +384,7 @@ inline void ios_base::clear(iostate state) {
 //===----------------------------------------------------------------------===//
 // basic_ios<CharT,Traits>
 //===----------------------------------------------------------------------===//
-template<class CharT, class Traits = char_traits<CharT>>
+template<class CharT, class Traits>  // defaults: <iosfwd>
 class basic_ios : public ios_base {
 public:
     using char_type   = CharT;

@@ -31,7 +31,7 @@ namespace std {
 //===----------------------------------------------------------------------===//
 // Forward declarations
 //===----------------------------------------------------------------------===//
-template<class CharT, class Traits = char_traits<CharT>>
+template<class CharT, class Traits>  // defaults: <iosfwd>
 class basic_istream;
 
 using istream  = basic_istream<char>;
@@ -610,7 +610,7 @@ void swap(basic_istream<CharT, Traits>& x, basic_istream<CharT, Traits>& y) {
 // Canonical home is <istream> (not <iostream>) so it can be used by <sstream>
 // without pulling in the global cin/cout/cerr/clog objects.
 //===----------------------------------------------------------------------===//
-template<class CharT, class Traits = char_traits<CharT>>
+template<class CharT, class Traits>  // defaults: <iosfwd>
 class basic_iostream
     : public basic_istream<CharT, Traits>
     , public basic_ostream<CharT, Traits>

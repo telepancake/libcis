@@ -21,7 +21,7 @@
 namespace std {
 // streamoff/streamsize already defined in <ios> (included above)
 
-template<class CharT, class Traits = char_traits<CharT>>
+template<class CharT, class Traits>  // defaults: <iosfwd>
 class basic_streambuf {
 public:
     using char_type   = CharT;

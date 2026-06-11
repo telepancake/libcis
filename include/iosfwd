@@ -1,23 +1,29 @@
-// <iosfwd> — stream position types + (single home for) fpos/streamoff.
+// <iosfwd> — forward declarations for all iostream types  [iosfwd.syn].
+// Mechanically ported from libc++ include/iosfwd +
+//   include/__fwd/ios.h + include/__ios/fpos.h
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //
-// Provides the lightweight position vocabulary that <string_view>'s
-// char_traits and <ios> both need, in ONE place so they cannot redefine each
-// other when both are included:
-//   streamoff  (long long — POSIX/Linux, matches libc++ __fwd/ios.h)
-//   fpos<State>
-//   streampos, wstreampos, u8/u16/u32streampos
-//
-// NOTE: the stream-template forward-declarations ([iosfwd.syn] basic_ios,
-// basic_istream, ...) intentionally live in the actual stream headers (<ios>,
-// <istream>, ...), not here: declaring them with their default Traits/Allocator
-// args here would redefine the defaults the definitions already carry.  Pull in
-// <ios> etc. directly if you need an incomplete stream type.
+// SINGLE HOME for the stream template default arguments: the declarations here
+// carry the Traits/Allocator defaults, and the DEFINITIONS in <ios>,
+// <streambuf>, <istream>, <ostream>, <sstream> intentionally omit them (a
+// default argument may only be specified once per scope).
+// Also the single home for streamoff / fpos<State> / streampos.
 #pragma once
 
 #include <cwchar>   // mbstate_t
 
 namespace std {
+
+// Forward declarations for char_traits (defined in <string_view>)
+template<class CharT> struct char_traits;
+template<> struct char_traits<char>;
+template<> struct char_traits<char8_t>;
+template<> struct char_traits<char16_t>;
+template<> struct char_traits<char32_t>;
+template<> struct char_traits<wchar_t>;
+
+// Forward declaration for allocator (defined in <memory>)
+template<class T> class allocator;
 
 //===----------------------------------------------------------------------===//
 // streamoff — implementation-defined signed offset type (glibc/Linux: long long)
@@ -66,5 +72,87 @@ using wstreampos   = fpos<mbstate_t>;
 using u8streampos  = fpos<mbstate_t>;
 using u16streampos = fpos<mbstate_t>;
 using u32streampos = fpos<mbstate_t>;
+
+//===----------------------------------------------------------------------===//
+// ios_base / basic_ios
+//===----------------------------------------------------------------------===//
+class ios_base;
+
+template<class CharT, class Traits = char_traits<CharT>>
+class basic_ios;
+
+using ios  = basic_ios<char>;
+using wios = basic_ios<wchar_t>;
+
+//===----------------------------------------------------------------------===//
+// Stream buffer / streams
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits = char_traits<CharT>> class basic_streambuf;
+template<class CharT, class Traits = char_traits<CharT>> class basic_istream;
+template<class CharT, class Traits = char_traits<CharT>> class basic_ostream;
+template<class CharT, class Traits = char_traits<CharT>> class basic_iostream;
+
+using streambuf  = basic_streambuf<char>;
+using istream    = basic_istream<char>;
+using ostream    = basic_ostream<char>;
+using iostream   = basic_iostream<char>;
+
+using wstreambuf = basic_streambuf<wchar_t>;
+using wistream   = basic_istream<wchar_t>;
+using wostream   = basic_ostream<wchar_t>;
+using wiostream  = basic_iostream<wchar_t>;
+
+//===----------------------------------------------------------------------===//
+// String streams
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits = char_traits<CharT>,
+         class Allocator = allocator<CharT>>
+class basic_stringbuf;
+
+template<class CharT, class Traits = char_traits<CharT>,
+         class Allocator = allocator<CharT>>
+class basic_istringstream;
+
+template<class CharT, class Traits = char_traits<CharT>,
+         class Allocator = allocator<CharT>>
+class basic_ostringstream;
+
+template<class CharT, class Traits = char_traits<CharT>,
+         class Allocator = allocator<CharT>>
+class basic_stringstream;
+
+using stringbuf       = basic_stringbuf<char>;
+using istringstream   = basic_istringstream<char>;
+using ostringstream   = basic_ostringstream<char>;
+using stringstream    = basic_stringstream<char>;
+
+using wstringbuf      = basic_stringbuf<wchar_t>;
+using wistringstream  = basic_istringstream<wchar_t>;
+using wostringstream  = basic_ostringstream<wchar_t>;
+using wstringstream   = basic_stringstream<wchar_t>;
+
+//===----------------------------------------------------------------------===//
+// File streams ([iosfwd.syn] declares them even though <fstream> is not ported)
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits = char_traits<CharT>> class basic_filebuf;
+template<class CharT, class Traits = char_traits<CharT>> class basic_ifstream;
+template<class CharT, class Traits = char_traits<CharT>> class basic_ofstream;
+template<class CharT, class Traits = char_traits<CharT>> class basic_fstream;
+
+using filebuf   = basic_filebuf<char>;
+using ifstream  = basic_ifstream<char>;
+using ofstream  = basic_ofstream<char>;
+using fstream   = basic_fstream<char>;
+
+using wfilebuf  = basic_filebuf<wchar_t>;
+using wifstream = basic_ifstream<wchar_t>;
+using wofstream = basic_ofstream<wchar_t>;
+using wfstream  = basic_fstream<wchar_t>;
+
+//===----------------------------------------------------------------------===//
+// Streambuf iterators
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits = char_traits<CharT>> class istreambuf_iterator;
+template<class CharT, class Traits = char_traits<CharT>> class ostreambuf_iterator;
 
 } // namespace std
