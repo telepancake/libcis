@@ -1,22 +1,22 @@
-// <exception> -- exception base types and terminate support.
+// <exception> -- exception base types, terminate support, and propagation
+//   facilities ([propagation], [except.nested]).
 // Mechanically ported from libc++ include/__exception/*.h
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //
-// OMITTED (require the exception runtime — throw/catch/exception_ptr):
-//   exception_ptr        — needs __cxa_current_exception / unwinder ABI
-//   make_exception_ptr   — needs throw internally
-//   current_exception    — needs __cxa_current_exception
-//   rethrow_exception    — needs throw/catch machinery
-//   nested_exception     — captures via current_exception, rethrows via rethrow_exception
-//   throw_with_nested    — needs throw
-//   rethrow_if_nested    — needs catch / dynamic_cast (RTTI)
-//   uncaught_exceptions  — needs unwinder state
-//
-// The exception *types* (exception, bad_exception) are ordinary classes with
-// virtual functions; defining them is valid under -fno-exceptions -fno-rtti.
-// terminate/set_terminate/get_terminate are declared here and defined in
-// src/support.cpp (freestanding runtime support — no libstdc++ needed).
+// -fno-exceptions semantics for propagation facilities:
+//   exception_ptr       — null-only handle (there are never live exceptions)
+//   current_exception() — always returns a null exception_ptr
+//   rethrow_exception() — [[noreturn]]; aborts (there is nothing to rethrow)
+//   make_exception_ptr  — mirrors libc++'s _LIBCPP_NO_EXCEPTIONS path: aborts
+//   nested_exception    — nested_ptr() always returns null; rethrow_nested aborts
+//   throw_with_nested   — [[noreturn]]; aborts
+//   rethrow_if_nested   — no-op (nothing is ever nested)
+//   uncaught_exceptions — returns 0 (no unwinding ever in progress)
 #pragma once
+
+#include <type_traits>        // is_class, is_base_of, is_copy_constructible,
+                              // is_convertible, is_polymorphic, is_final_v, decay_t
+#include <bits/pointer.h>     // addressof
 
 namespace std {
 
@@ -55,5 +55,139 @@ using terminate_handler = void (*)();
 terminate_handler set_terminate(terminate_handler) noexcept;
 [[nodiscard]] terminate_handler get_terminate() noexcept;
 [[noreturn]] void terminate() noexcept;
+
+//===----------------------------------------------------------------------===//
+// uncaught_exceptions  (__exception/operations.h)
+// Under -fno-exceptions there is never an active exception, so this is
+// always 0.  Defined inline to avoid a src/support.cpp entry.
+//===----------------------------------------------------------------------===//
+[[nodiscard]] inline int uncaught_exceptions() noexcept { return 0; }
+
+//===----------------------------------------------------------------------===//
+// exception_ptr  (__exception/exception_ptr.h)
+//
+// Under -fno-exceptions there are never live exceptions, so exception_ptr is
+// a thin null-only handle: internally a void* that is always nullptr.
+// It satisfies NullablePointer (C++20 [nullablepointer.requirements]).
+//===----------------------------------------------------------------------===//
+class exception_ptr {
+    void* ptr;
+
+public:
+    // Default and nullptr constructors — always null.
+    exception_ptr() noexcept : ptr(nullptr) {}
+    exception_ptr(decltype(nullptr)) noexcept : ptr(nullptr) {}
+
+    // Copy / move — trivially copying the null pointer.
+    exception_ptr(const exception_ptr& other) noexcept : ptr(other.ptr) {}
+    exception_ptr(exception_ptr&& other) noexcept : ptr(other.ptr) {
+        other.ptr = nullptr;
+    }
+    exception_ptr& operator=(const exception_ptr& other) noexcept {
+        ptr = other.ptr;
+        return *this;
+    }
+    exception_ptr& operator=(exception_ptr&& other) noexcept {
+        ptr = other.ptr;
+        other.ptr = nullptr;
+        return *this;
+    }
+    exception_ptr& operator=(decltype(nullptr)) noexcept {
+        ptr = nullptr;
+        return *this;
+    }
+
+    ~exception_ptr() noexcept {}
+
+    // Contextual bool: null → false.
+    explicit operator bool() const noexcept { return ptr != nullptr; }
+
+    friend bool operator==(const exception_ptr& a, const exception_ptr& b) noexcept {
+        return a.ptr == b.ptr;
+    }
+    friend bool operator!=(const exception_ptr& a, const exception_ptr& b) noexcept {
+        return a.ptr != b.ptr;
+    }
+
+    // Friends that need to access ptr.
+    friend exception_ptr current_exception() noexcept;
+    [[noreturn]] friend void rethrow_exception(exception_ptr);
+};
+
+//===----------------------------------------------------------------------===//
+// current_exception  (__exception/operations.h)
+// Always returns null — there are never live exceptions.
+//===----------------------------------------------------------------------===//
+[[nodiscard]] inline exception_ptr current_exception() noexcept {
+    return exception_ptr{};
+}
+
+//===----------------------------------------------------------------------===//
+// rethrow_exception  (__exception/operations.h)
+// Cannot return — always aborts under -fno-exceptions.
+//===----------------------------------------------------------------------===//
+[[noreturn]] inline void rethrow_exception(exception_ptr) {
+    // Under -fno-exceptions there is nothing to rethrow.
+    __builtin_trap();
+    __builtin_unreachable();
+}
+
+//===----------------------------------------------------------------------===//
+// make_exception_ptr  (__exception/exception_ptr.h)
+// Mirror libc++'s _LIBCPP_NO_EXCEPTIONS path: abort (there is no exception
+// runtime to store the object in).
+//===----------------------------------------------------------------------===//
+template<class E>
+inline exception_ptr make_exception_ptr(E) noexcept {
+    // Under -fno-exceptions we cannot store exceptions.  Match libc++ behaviour.
+    __builtin_trap();
+    __builtin_unreachable();
+}
+
+//===----------------------------------------------------------------------===//
+// nested_exception  (__exception/nested_exception.h)
+//
+// Under -fno-exceptions, nested_ptr() always returns a null exception_ptr.
+// rethrow_nested() aborts.
+//===----------------------------------------------------------------------===//
+class nested_exception {
+    exception_ptr ptr_;
+
+public:
+    nested_exception() noexcept : ptr_(current_exception()) {}
+    nested_exception(const nested_exception&) noexcept            = default;
+    nested_exception& operator=(const nested_exception&) noexcept = default;
+    virtual ~nested_exception() noexcept = default;
+
+    [[noreturn]] void rethrow_nested() const {
+        rethrow_exception(ptr_);
+    }
+
+    [[nodiscard]] exception_ptr nested_ptr() const noexcept { return ptr_; }
+};
+
+//===----------------------------------------------------------------------===//
+// throw_with_nested  (__exception/nested_exception.h)
+// [[noreturn]] under -fno-exceptions; abort.
+//===----------------------------------------------------------------------===//
+template<class T>
+[[noreturn]] inline void throw_with_nested(T&&) {
+    // Under -fno-exceptions we cannot throw; trap.
+    __builtin_trap();
+    __builtin_unreachable();
+}
+
+//===----------------------------------------------------------------------===//
+// rethrow_if_nested  (__exception/nested_exception.h)
+//
+// Under -fno-rtti, dynamic_cast is unavailable, so we cannot cast to
+// nested_exception*.  Under -fno-exceptions nothing is ever nested anyway;
+// the function is a no-op.
+//===----------------------------------------------------------------------===//
+template<class E>
+inline void rethrow_if_nested(const E&) noexcept {
+    // No-op: -fno-rtti disables dynamic_cast; -fno-exceptions means nested_ptr
+    // is always null anyway.
+}
 
 } // namespace std
