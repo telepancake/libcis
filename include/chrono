@@ -1656,6 +1656,16 @@ operator""ns(long double ns) {
     return chrono::duration<long double, nano>(ns);
 }
 
+[[nodiscard]] constexpr chrono::day
+operator""d(unsigned long long d) noexcept {
+    return chrono::day(static_cast<unsigned>(d));
+}
+
+[[nodiscard]] constexpr chrono::year
+operator""y(unsigned long long y) noexcept {
+    return chrono::year(static_cast<int>(y));
+}
+
 } // namespace chrono_literals
 } // namespace literals
 
