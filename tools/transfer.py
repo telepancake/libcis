@@ -418,7 +418,10 @@ def list_inputs(sub):
 
 
 def process_one(args):
+    # cursor locations are compared by absolute path; ninja edges pass src
+    # relative to the build dir
     src, rel = args
+    src = os.path.abspath(args[0])
     try:
         with open(src, "r", errors="replace") as fh:
             text = fh.read()
@@ -510,7 +513,15 @@ def cmd_edge(src, rel, rec_path):
 
 
 def cmd_aggregate(manifest_path, rec_paths):
-    """Aggregate edge: fold every per-file record into manifest.json."""
+    """Aggregate edge: fold every per-file record into manifest.json.
+    @FILE arguments are ninja response files (one path per whitespace token)."""
+    expanded = []
+    for p in rec_paths:
+        if p.startswith("@"):
+            expanded.extend(open(p[1:]).read().split())
+        else:
+            expanded.append(p)
+    rec_paths = expanded
     m = {"transferred": [], "skipped": [], "errors": [], "subtrees": []}
     subs = set()
     for rp in rec_paths:

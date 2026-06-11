@@ -60,8 +60,11 @@ def main():
         "rule xfer",
         "  command = $py --edge $src $rel $out",
         "  description = XFER $rel",
+        # 7950 rec paths exceed ARG_MAX; pass them via a response file
         "rule aggregate",
-        "  command = $py --aggregate $out $in",
+        "  command = $py --aggregate $out @$out.rsp",
+        "  rspfile = $out.rsp",
+        "  rspfile_content = $in",
         "  description = MANIFEST $out",
         "",
         f"build {pch}: pch | {py}",
