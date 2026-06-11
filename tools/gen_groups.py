@@ -163,12 +163,24 @@ def emit_ninja():
               f"  command = $cxx_{be} $cargs_{be} $flags $in $extra_{be} -o $out -MMD -MF $out.d",
               "  depfile = $out.d", "  deps = gcc",
               f"  description = LINK[{be}] $out", ""]
+    # support.cpp provides operator new/delete (mandatory under -nodefaultlibs).
+    # It must be linked as an ARCHIVE, not a bare .o: tests using libc++'s
+    # count_new.h define their own operator new/delete in the group TU, and
+    # replaceable-function semantics require the runtime's definitions to be
+    # archive members the linker only pulls when nothing else defines them
+    # (exactly how libstdc++.a ships operator new).  A bare .o made every
+    # count_new group a duplicate-definition link error.
     sup = "build/groups/libcis/__support.o"
+    suplib = "build/groups/libcis/libsupport.a"
     L += ["rule cco",
           f"  command = $cxx_libcis $cargs_libcis -c $in -o $out -MMD -MF $out.d",
           "  depfile = $out.d", "  deps = gcc",
+          "rule ar",
+          "  command = rm -f $out && ar rcs $out $in",
+          "  description = AR $out",
           f"build {sup}: cco src/support.cpp",
-          f"extra_libcis = {sup} {LINK_CIS}",
+          f"build {suplib}: ar {sup}",
+          f"extra_libcis = {suplib} {LINK_CIS}",
           "extra_libcxx =", "extra_libstdcxx = ", "extra_gcc10std =", ""]
 
     results = {be: [] for be in BACKENDS}
@@ -179,7 +191,7 @@ def emit_ninja():
         L += [f"build {src}: gengroup {recs} | tools/gen_groups.py {MANIFEST}",
               f"  key = {key}"]
         for be in BACKENDS:
-            dep = f" | {sup}" if be == "libcis" else ""
+            dep = f" | {suplib}" if be == "libcis" else ""
             exe, res = f"build/groups/{be}/{key}.exe", f"build/groups/{be}/{key}.result"
             L.append(f"build {exe}: link_{be} {src}{dep}")
             fl = " ".join(backend_flags(flags[d], be))

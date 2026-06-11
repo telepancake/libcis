@@ -119,6 +119,11 @@ namespace {
 }
 
 } // anonymous namespace
+// Replaceable allocation functions are WEAK: a test TU that defines its own
+// operator new/delete (libc++'s count_new.h instrumentation) overrides these
+// at link time, per ELF replaceable-function practice (glibc does the same).
+// Without test definitions the weak ones are used.
+#define LIBCIS_REPLACEABLE __attribute__((__weak__))
 
 // ---------------------------------------------------------------------------
 // operator new / new[]  (scalar and array)
@@ -126,17 +131,17 @@ namespace {
 
 // Plain scalar new — may loop through new_handler; terminates if OOM
 // (cannot throw bad_alloc under -fno-exceptions — comment documents intent).
-[[nodiscard]] void* operator new(std::size_t size) {
+[[nodiscard]] LIBCIS_REPLACEABLE void* operator new(std::size_t size) {
     return new_loop(size);
 }
 
 // Aligned scalar new
-[[nodiscard]] void* operator new(std::size_t size, std::align_val_t alignment) {
+[[nodiscard]] LIBCIS_REPLACEABLE void* operator new(std::size_t size, std::align_val_t alignment) {
     return new_loop_aligned(size, static_cast<std::size_t>(alignment));
 }
 
 // Nothrow scalar new — returns nullptr on failure instead of terminating.
-[[nodiscard]] void* operator new(std::size_t size, const std::nothrow_t&) noexcept {
+[[nodiscard]] LIBCIS_REPLACEABLE void* operator new(std::size_t size, const std::nothrow_t&) noexcept {
     void* p = ::malloc(size == 0 ? 1 : size);
     if (p) return p;
     // Try new-handler once per iteration, but return nullptr rather than abort.
@@ -150,7 +155,7 @@ namespace {
 }
 
 // Aligned nothrow scalar new
-[[nodiscard]] void* operator new(std::size_t size, std::align_val_t alignment,
+[[nodiscard]] LIBCIS_REPLACEABLE void* operator new(std::size_t size, std::align_val_t alignment,
                                   const std::nothrow_t&) noexcept {
     std::size_t align = static_cast<std::size_t>(alignment);
     if (align < sizeof(void*)) align = sizeof(void*);
@@ -167,19 +172,19 @@ namespace {
 }
 
 // Array new delegates to scalar new
-[[nodiscard]] void* operator new[](std::size_t size) {
+[[nodiscard]] LIBCIS_REPLACEABLE void* operator new[](std::size_t size) {
     return ::operator new(size);
 }
 
-[[nodiscard]] void* operator new[](std::size_t size, std::align_val_t alignment) {
+[[nodiscard]] LIBCIS_REPLACEABLE void* operator new[](std::size_t size, std::align_val_t alignment) {
     return ::operator new(size, alignment);
 }
 
-[[nodiscard]] void* operator new[](std::size_t size, const std::nothrow_t& nt) noexcept {
+[[nodiscard]] LIBCIS_REPLACEABLE void* operator new[](std::size_t size, const std::nothrow_t& nt) noexcept {
     return ::operator new(size, nt);
 }
 
-[[nodiscard]] void* operator new[](std::size_t size, std::align_val_t alignment,
+[[nodiscard]] LIBCIS_REPLACEABLE void* operator new[](std::size_t size, std::align_val_t alignment,
                                     const std::nothrow_t& nt) noexcept {
     return ::operator new(size, alignment, nt);
 }
@@ -190,59 +195,60 @@ namespace {
 // On glibc, memory allocated with posix_memalign() is freed with free().
 // ---------------------------------------------------------------------------
 
-void operator delete(void* ptr) noexcept {
+LIBCIS_REPLACEABLE void operator delete(void* ptr) noexcept {
     ::free(ptr);
 }
 
-void operator delete(void* ptr, std::size_t /*size*/) noexcept {
+LIBCIS_REPLACEABLE void operator delete(void* ptr, std::size_t /*size*/) noexcept {
     ::free(ptr);
 }
 
-void operator delete(void* ptr, std::align_val_t /*alignment*/) noexcept {
+LIBCIS_REPLACEABLE void operator delete(void* ptr, std::align_val_t /*alignment*/) noexcept {
     ::free(ptr);
 }
 
-void operator delete(void* ptr, std::size_t /*size*/,
+LIBCIS_REPLACEABLE void operator delete(void* ptr, std::size_t /*size*/,
                      std::align_val_t /*alignment*/) noexcept {
     ::free(ptr);
 }
 
-void operator delete(void* ptr, const std::nothrow_t&) noexcept {
+LIBCIS_REPLACEABLE void operator delete(void* ptr, const std::nothrow_t&) noexcept {
     ::free(ptr);
 }
 
-void operator delete(void* ptr, std::align_val_t /*alignment*/,
+LIBCIS_REPLACEABLE void operator delete(void* ptr, std::align_val_t /*alignment*/,
                      const std::nothrow_t&) noexcept {
     ::free(ptr);
 }
 
 // Array delete
-void operator delete[](void* ptr) noexcept {
+LIBCIS_REPLACEABLE void operator delete[](void* ptr) noexcept {
     ::free(ptr);
 }
 
-void operator delete[](void* ptr, std::size_t /*size*/) noexcept {
+LIBCIS_REPLACEABLE void operator delete[](void* ptr, std::size_t /*size*/) noexcept {
     ::free(ptr);
 }
 
-void operator delete[](void* ptr, std::align_val_t /*alignment*/) noexcept {
+LIBCIS_REPLACEABLE void operator delete[](void* ptr, std::align_val_t /*alignment*/) noexcept {
     ::free(ptr);
 }
 
-void operator delete[](void* ptr, std::size_t /*size*/,
+LIBCIS_REPLACEABLE void operator delete[](void* ptr, std::size_t /*size*/,
                         std::align_val_t /*alignment*/) noexcept {
     ::free(ptr);
 }
 
-void operator delete[](void* ptr, const std::nothrow_t&) noexcept {
+LIBCIS_REPLACEABLE void operator delete[](void* ptr, const std::nothrow_t&) noexcept {
     ::free(ptr);
 }
 
-void operator delete[](void* ptr, std::align_val_t /*alignment*/,
+LIBCIS_REPLACEABLE void operator delete[](void* ptr, std::align_val_t /*alignment*/,
                         const std::nothrow_t&) noexcept {
     ::free(ptr);
 }
 
+#undef LIBCIS_REPLACEABLE
 // ---------------------------------------------------------------------------
 // __cxa_guard_acquire / __cxa_guard_release / __cxa_guard_abort
 //
