@@ -1,30 +1,21 @@
-// <cstddef> -- fundamental supporting types.
+// <cstddef> -- fundamental supporting types and C macros NULL / offsetof.
 // Mechanically ported from libc++ include/cstddef + include/__cstddef/*.h
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Pull NULL, offsetof, size_t, ptrdiff_t, max_align_t, and nullptr_t from the
+// underlying C <stddef.h> (always reachable even under -nostdinc++), then
+// re-export them into namespace std exactly as the other C-wrapper headers do.
 #pragma once
 
-#include <type_traits>
+#include <stddef.h>    // NULL, offsetof, ::size_t, ::ptrdiff_t, ::max_align_t, ::nullptr_t
+#include <type_traits> // is_integral_v (needed by byte operators)
 
 namespace std {
 
-// size_t — defined in <type_traits> as well; re-using here is harmless since
-// they expand to the same type.
-// using size_t = decltype(sizeof(int));   // already in type_traits
-
-// ptrdiff_t: result of pointer subtraction (from ptrdiff_t.h)
-using ptrdiff_t = decltype(static_cast<int*>(nullptr) - static_cast<int*>(nullptr));
-
-// nullptr_t (from nullptr_t.h)
-using nullptr_t = decltype(nullptr);
-
-// max_align_t (from max_align_t.h): alignment of the most aligned fundamental type.
-// We define it as a union of all maximally-aligned fundamental types.
-union max_align_t {
-    long long   ll;
-    long double ld;
-    double      d;
-    void*       p;
-};
+using ::size_t;
+using ::ptrdiff_t;
+using ::max_align_t;
+using ::nullptr_t;
 
 // byte (C++17, from byte.h): a distinct type for raw memory manipulation.
 // Shift operators require an integral Integer per [support.types.byteops].
