@@ -176,16 +176,16 @@ const DT deque_iterator<VT,Pp,Rp,MP,DT,BS>::block_size_val =
 // spare so that push_front/push_back on the map are O(1) amortized.
 //===----------------------------------------------------------------------===//
 
-template<class Pointer, class PtrAlloc>
+// deque_map — a growable array of block-pointers with no allocator of its own.
+// The deque class owns the single allocator; deque_map uses ::operator new /
+// ::operator delete for its internal map array (just pointers-to-pointers).
+template<class Pointer>
 class deque_map {
-    using alloc_traits = allocator_traits<PtrAlloc>;
 public:
     using value_type = Pointer;
-    using pointer    = typename alloc_traits::pointer;
-    using size_type  = typename alloc_traits::size_type;
+    using size_type  = size_t;
 
 private:
-    PtrAlloc alloc_;
     Pointer* data_;   // raw allocation (size == cap_)
     size_type cap_;   // total allocated slots
     size_type front_; // index of first used slot
@@ -194,22 +194,19 @@ private:
     static size_type next_cap(size_type c) { return c == 0 ? 8 : 2*c; }
 
 public:
-    explicit deque_map(const PtrAlloc& a = PtrAlloc{})
-        : alloc_(a), data_(nullptr), cap_(0), front_(0), back_(0) {}
+    deque_map() noexcept : data_(nullptr), cap_(0), front_(0), back_(0) {}
 
     deque_map(const deque_map&) = delete;
     deque_map& operator=(const deque_map&) = delete;
 
     deque_map(deque_map&& o) noexcept
-        : alloc_(std::move(o.alloc_)), data_(o.data_),
-          cap_(o.cap_), front_(o.front_), back_(o.back_) {
+        : data_(o.data_), cap_(o.cap_), front_(o.front_), back_(o.back_) {
         o.data_ = nullptr; o.cap_ = o.front_ = o.back_ = 0;
     }
 
     deque_map& operator=(deque_map&& o) noexcept {
         if (this != &o) {
             free_();
-            alloc_ = std::move(o.alloc_);
             data_  = o.data_;
             cap_   = o.cap_;
             front_ = o.front_;
@@ -238,9 +235,6 @@ public:
     size_type front_spare() const noexcept { return front_; }
     size_type back_spare()  const noexcept { return cap_ - back_; }
 
-    PtrAlloc&       get_allocator()       noexcept { return alloc_; }
-    const PtrAlloc& get_allocator() const noexcept { return alloc_; }
-
     // Add a block pointer at the front
     void push_front(Pointer p) {
         if (front_ == 0)
@@ -261,7 +255,6 @@ public:
     void clear() noexcept { front_ = back_ = cap_ / 2; }
 
     void swap(deque_map& o) noexcept {
-        std::swap(alloc_, o.alloc_);
         std::swap(data_,  o.data_);
         std::swap(cap_,   o.cap_);
         std::swap(front_, o.front_);
@@ -351,8 +344,7 @@ public:
     using const_reference = const value_type&;
 
 private:
-    using ptr_alloc_t   = typename alloc_traits::template rebind_alloc<pointer>;
-    using map_t         = deque_map<pointer, ptr_alloc_t>;
+    using map_t         = deque_map<pointer>;
     using map_pointer   = pointer*;         // pointer into map's raw array
     using const_map_ptr = const pointer*;
 
@@ -748,35 +740,35 @@ public:
     //--- Construct/copy/destroy ---
 
     deque() noexcept(is_nothrow_default_constructible_v<allocator_type>)
-        : map_(ptr_alloc_t{}), start_(0), size_(0) {}
+        : map_(), start_(0), size_(0) {}
 
     explicit deque(const allocator_type& a)
-        : map_(ptr_alloc_t(a)), start_(0), size_(0), alloc_(a) {}
+        : map_(), start_(0), size_(0), alloc_(a) {}
 
     explicit deque(size_type n)
-        : map_(ptr_alloc_t{}), start_(0), size_(0) {
+        : map_(), start_(0), size_(0) {
         if (n > 0) append_n(n);
     }
 
     explicit deque(size_type n, const allocator_type& a)
-        : map_(ptr_alloc_t(a)), start_(0), size_(0), alloc_(a) {
+        : map_(), start_(0), size_(0), alloc_(a) {
         if (n > 0) append_n(n);
     }
 
     deque(size_type n, const value_type& v)
-        : map_(ptr_alloc_t{}), start_(0), size_(0) {
+        : map_(), start_(0), size_(0) {
         if (n > 0) append_n(n, v);
     }
 
     deque(size_type n, const value_type& v, const allocator_type& a)
-        : map_(ptr_alloc_t(a)), start_(0), size_(0), alloc_(a) {
+        : map_(), start_(0), size_(0), alloc_(a) {
         if (n > 0) append_n(n, v);
     }
 
     template<class InputIter>
         requires requires { typename iterator_traits<InputIter>::iterator_category; }
     deque(InputIter f, InputIter l)
-        : map_(ptr_alloc_t{}), start_(0), size_(0) {
+        : map_(), start_(0), size_(0) {
         if constexpr (is_base_of_v<forward_iterator_tag,
                         typename iterator_traits<InputIter>::iterator_category>)
             append_fwd(f, static_cast<size_type>(std::distance(f, l)));
@@ -787,7 +779,7 @@ public:
     template<class InputIter>
         requires requires { typename iterator_traits<InputIter>::iterator_category; }
     deque(InputIter f, InputIter l, const allocator_type& a)
-        : map_(ptr_alloc_t(a)), start_(0), size_(0), alloc_(a) {
+        : map_(), start_(0), size_(0), alloc_(a) {
         if constexpr (is_base_of_v<forward_iterator_tag,
                         typename iterator_traits<InputIter>::iterator_category>)
             append_fwd(f, static_cast<size_type>(std::distance(f, l)));
@@ -796,24 +788,23 @@ public:
     }
 
     deque(initializer_list<value_type> il)
-        : map_(ptr_alloc_t{}), start_(0), size_(0) {
+        : map_(), start_(0), size_(0) {
         append_fwd(il.begin(), static_cast<size_type>(il.size()));
     }
 
     deque(initializer_list<value_type> il, const allocator_type& a)
-        : map_(ptr_alloc_t(a)), start_(0), size_(0), alloc_(a) {
+        : map_(), start_(0), size_(0), alloc_(a) {
         append_fwd(il.begin(), static_cast<size_type>(il.size()));
     }
 
     deque(const deque& c)
-        : map_(ptr_alloc_t(alloc_traits::select_on_container_copy_construction(c.alloc_ref()))),
-          start_(0), size_(0),
+        : map_(), start_(0), size_(0),
           alloc_(alloc_traits::select_on_container_copy_construction(c.alloc_ref())) {
         append_fwd(c.begin(), c.size());
     }
 
     deque(const deque& c, const allocator_type& a)
-        : map_(ptr_alloc_t(a)), start_(0), size_(0), alloc_(a) {
+        : map_(), start_(0), size_(0), alloc_(a) {
         append_fwd(c.begin(), c.size());
     }
 
@@ -825,7 +816,7 @@ public:
     }
 
     deque(deque&& c, const allocator_type& a)
-        : map_(ptr_alloc_t(a)), start_(0), size_(0), alloc_(a) {
+        : map_(), start_(0), size_(0), alloc_(a) {
         if (a == c.alloc_ref()) {
             map_    = std::move(c.map_);
             start_  = c.start_;
