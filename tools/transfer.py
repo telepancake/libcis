@@ -112,6 +112,9 @@ TRUE_FEATURES = {
     "locale.en_US.UTF-8", "locale.fr_FR.UTF-8", "locale.ru_RU.UTF-8",
     "locale.zh_CN.UTF-8", "locale.ja_JP.UTF-8", "locale.cs_CZ.ISO8859-2",
     "has-1024-bit-extended-precision", "linux", "x86_64",
+    # libcis has no libc++-hardening: _LIBCPP_ASSERT death-tests
+    # (UNSUPPORTED: libcpp-hardening-mode=none) must be lit-skipped.
+    "libcpp-hardening-mode=none",
 }
 FALSE_STD_MODES = {"c++03", "c++11", "c++14", "c++17", "c++23", "c++26",
                    "std-at-least-c++23", "std-at-least-c++26"}

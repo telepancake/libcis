@@ -3,6 +3,8 @@
 
   "utilities/tuple/tuple.tuple/tuple.cnstr/recursion_depth.pass.cpp": "gcc-10 compiler limit at tuple<512 elements>: gcc10std discriminator (g++-10 with its OWN libstdc++, no -nostdinc++/-Iinclude) dies with 'template instantiation depth exceeds maximum of 900' in /usr/include/c++/10/type_traits; on libcis cc1plus is OOM-killed at the same depth. Red on both backends -> compiler limitation, not a libcis defect.",
 
+  "utilities/smartptr/unique.ptr/unique.ptr.class/unique.ptr.observers/op_subscript.runtime.pass.cpp": "gcc-10 grammar gap: the test uses a parameterless template-lambda `[]<class T> { ... }` (valid C++20, accepted by g++-13). g++-10 rejects it with 'expected ( before { token' on the gcc10std discriminator too (compiled without -nostdinc++/-Iinclude) -- a parse error in the test itself, independent of the library. Not fixable in library code.",
+
   "utilities/utility/pairs/pairs.pair/ctor.brace-init.pass.cpp": "gcc overload-resolution limitation: 'explicit X() = default' brace-init makes explicit_vs_implicit_brace_init({{},{}}) ambiguous. Fails identically on gcc-10+libcis, gcc-10+libstdc++ (gcc10std discriminator), AND g++-14+libstdc++; only clang++-20+libc++ passes. Not fixable in library code.",
 
   "utilities/utility/pairs/pairs.pair/implicit_deduction_guides.pass.cpp": "gcc-10 CTAD limitation: pair class-template-argument-deduction over the archetype test types hard-errors in the archetype's own enable_if SFINAE ctor. Fails on gcc-10+libcis AND gcc-10+libstdc++ (gcc10std discriminator); passes on g++-14+libstdc++ and clang++-20+libc++, so it is gcc-10-specific, not a libcis defect."
