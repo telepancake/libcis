@@ -45,6 +45,11 @@ namespace std {
 // Helpers used throughout <ranges>
 //===----------------------------------------------------------------------===//
 
+// Forward declarations for the enable_view opt-ins below (their headers
+// cannot include <ranges> back).
+template<class CharT> struct char_traits;
+template<class CharT, class Traits> class basic_string_view;
+
 namespace ranges {
 
 // enable_borrowed_range now lives in <iterator> (with ranges::begin).
@@ -73,6 +78,13 @@ template<class T>
 inline constexpr bool enable_view =
     derived_from<T, view_base> ||
     requires { is_derived_from_view_interface_fn<remove_cv_t<T>>((remove_cv_t<T>*)nullptr); };
+
+// [string.view.synop]/[views.span]: these library types opt into view
+// without deriving from view_interface; libc++ specializes enable_view in
+// their own headers (via __ranges/enable_view.h), but in libcis those
+// headers cannot include <ranges> back, so the specializations live here.
+template<class CharT, class Traits>
+inline constexpr bool enable_view<std::basic_string_view<CharT, Traits>> = true;
 
 } // namespace ranges
 
@@ -335,7 +347,9 @@ inline namespace cpo {
 
 // ---- ranges::size ----
 namespace size_detail {
-void size() = delete; // poison pill
+void size(); // poison pill (declared, not deleted: gcc-10 mis-resolves the
+             // dependent ADL call against a deleted overload -- same defect
+             // as iter_move in <iterator>, see that comment)
 
 template<class T>
 concept integer_like_check = integral<remove_cvref_t<T>> && !same_as<bool, remove_cv_t<remove_reference_t<T>>>;
@@ -376,10 +390,15 @@ struct size_fn {
         noexcept(noexcept(t.size())) -> decltype(t.size()) {
         return t.size();
     }
+    // NO trailing '-> decltype(size(t))': the trailing return is substituted
+    // during overload resolution BEFORE the constraint, so the unqualified
+    // dependent call would ADL-instantiate incomplete associated classes
+    // (Holder<Incomplete>* robustness tests). The adl_size constraint already
+    // SFINAEs; plain auto defers the body until after satisfaction.
     template<class T>
         requires adl_size<T>
     [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(size(t))) -> decltype(size(t)) {
+        noexcept(noexcept(size(t))) {
         return size(t);
     }
     template<class T>
@@ -1733,9 +1752,10 @@ public:
             }
             return {*this, *cached_begin_};
         } else {
+            // move: input ranges (the uncached case) may have move-only iterators
             auto it = ranges::begin(base_);
             while (it != ranges::end(base_) && !invoke(*pred_, *it)) ++it;
-            return {*this, it};
+            return {*this, std::move(it)};
         }
     }
     constexpr auto end() {
@@ -3264,8 +3284,9 @@ template<forward_range View, forward_range Pattern>
     requires view<View> && view<Pattern> &&
              indirectly_comparable<iterator_t<View>, iterator_t<Pattern>, ranges::equal_to>
 class split_view : public view_interface<split_view<View, Pattern>> {
-    [[no_unique_address]] View base_      = View();
-    [[no_unique_address]] Pattern pattern_ = Pattern();
+    // NUA removed (see iterator members below; gcc-10 constexpr defect)
+    View base_      = View();
+    Pattern pattern_ = Pattern();
     using Cache = non_propagating_cache<subrange<iterator_t<View>>>;
     Cache cached_begin_;
 
@@ -3276,9 +3297,11 @@ class split_view : public view_interface<split_view<View, Pattern>> {
         auto end = ranges::end(base_);
         // Inline ranges::search
         if (ranges::empty(pattern_)) {
+            // empty pattern: an EMPTY match one past `it` (libc++ search
+            // semantics + split's adjustment), so each piece is one char.
             auto nx = it;
             if (nx != end) ++nx;
-            return {it, nx};
+            return {nx, nx};
         }
         for (; it != end; ++it) {
             auto cur = it;
@@ -3288,7 +3311,10 @@ class split_view : public view_interface<split_view<View, Pattern>> {
             if (p == pend)
                 return {it, cur};
         }
-        return {end, end};
+        // no match: `it` has walked to the end -- return ITERATORS, the
+        // sentinel cannot initialize subrange<iterator_t<View>> on
+        // non-common views.
+        return {it, it};
     }
 
 public:
@@ -3335,8 +3361,13 @@ template<forward_range View, forward_range Pattern>
              indirectly_comparable<iterator_t<View>, iterator_t<Pattern>, ranges::equal_to>
 struct split_view<View, Pattern>::iterator {
     split_view* parent_           = nullptr;
-    [[no_unique_address]] iterator_t<View>              cur_    = iterator_t<View>();
-    [[no_unique_address]] subrange<iterator_t<View>>    next_   = subrange<iterator_t<View>>();
+    // NO [[no_unique_address]] on cur_/next_: g++-10's constexpr evaluator
+    // loses mutations to later-declared no_unique_address members (same
+    // probe-proven defect as the include/vector alloc_ ordering workaround);
+    // with the attribute, operator++'s writes were invisible during constant
+    // evaluation only (runtime fine, g++-13 fine).
+    iterator_t<View>              cur_    = iterator_t<View>();
+    subrange<iterator_t<View>>    next_   = subrange<iterator_t<View>>();
     bool trailing_empty_          = false;
 
     friend struct sentinel;
@@ -3358,16 +3389,23 @@ public:
     constexpr value_type operator*() const { return {cur_, next_.begin()}; }
 
     constexpr iterator& operator++() {
-        cur_ = next_.begin();
-        if (cur_ != ranges::end(parent_->base_)) {
-            cur_ = next_.end();
-            if (cur_ == ranges::end(parent_->base_)) {
+        // computed entirely in locals, members written exactly once at the
+        // end: g++-10's constexpr evaluator dropped interleaved member
+        // writes in this function (runtime and g++-13 were correct).
+        auto nb = next_.begin();
+        auto ne = next_.end();
+        if (nb != ranges::end(parent_->base_)) {
+            if (ne == ranges::end(parent_->base_)) {
+                cur_ = ne;
                 trailing_empty_ = true;
-                next_ = {cur_, cur_};
+                next_ = {ne, ne};
             } else {
-                next_ = parent_->find_next(cur_);
+                auto nx = parent_->find_next(ne);
+                cur_ = ne;
+                next_ = nx;
             }
         } else {
+            cur_ = nb;
             trailing_empty_ = false;
         }
         return *this;
@@ -3809,6 +3847,122 @@ inline namespace cpo {
     inline constexpr auto common = common_detail::common_fn{};
 } // namespace cpo
 } // namespace ranges::views
+
+//===----------------------------------------------------------------------===//
+// [range.istream] basic_istream_view / views::istream
+// (from __ranges/istream_view.h; only <iosfwd> declarations are needed, the
+// stream operations live in templates instantiated at use)
+//===----------------------------------------------------------------------===//
+
+namespace ranges {
+
+namespace istream_detail {
+template<class Val, class CharT, class Traits>
+concept stream_extractable =
+    requires(basic_istream<CharT, Traits>& is, Val& t) { is >> t; };
+} // namespace istream_detail
+
+template<movable Val, class CharT, class Traits = char_traits<CharT>>
+    requires default_initializable<Val> &&
+             istream_detail::stream_extractable<Val, CharT, Traits>
+class basic_istream_view : public view_interface<basic_istream_view<Val, CharT, Traits>> {
+    class iterator_impl;
+
+public:
+    constexpr explicit basic_istream_view(basic_istream<CharT, Traits>& stream)
+        : stream_(std::addressof(stream)) {}
+
+    constexpr auto begin() {
+        *stream_ >> value_;
+        return iterator_impl{*this};
+    }
+
+    constexpr default_sentinel_t end() const noexcept { return default_sentinel; }
+
+private:
+    basic_istream<CharT, Traits>* stream_;
+    Val value_ = Val();
+
+    // redundant in ISO C++ (member classes share access), but g++-10 denies
+    // the OUT-OF-CLASS-defined member iterator access when instantiated from
+    // outside contexts (same family as the tree/hash sibling-private trap)
+    friend iterator_impl;
+};
+
+template<movable Val, class CharT, class Traits>
+    requires default_initializable<Val> &&
+             istream_detail::stream_extractable<Val, CharT, Traits>
+class basic_istream_view<Val, CharT, Traits>::iterator_impl {
+public:
+    using iterator_concept = input_iterator_tag;
+    using difference_type  = ptrdiff_t;
+    using value_type       = Val;
+
+    constexpr explicit iterator_impl(basic_istream_view& parent) noexcept
+        : parent_(std::addressof(parent)) {}
+
+    iterator_impl(const iterator_impl&)            = delete;
+    iterator_impl(iterator_impl&&)                 = default;
+    iterator_impl& operator=(const iterator_impl&) = delete;
+    iterator_impl& operator=(iterator_impl&&)      = default;
+
+    iterator_impl& operator++() {
+        *parent_->stream_ >> parent_->value_;
+        return *this;
+    }
+
+    void operator++(int) { ++*this; }
+
+    Val& operator*() const { return parent_->value_; }
+
+    friend bool operator==(const iterator_impl& x, default_sentinel_t) {
+        return !*x.parent_stream();
+    }
+
+private:
+    basic_istream_view* parent_;
+
+    // members of the nested class share the enclosing class' access; the
+    // hidden friend above does NOT, so it goes through this helper
+    // (libc++ __get_parent_stream)
+    constexpr basic_istream<CharT, Traits>* parent_stream() const {
+        return parent_->stream_;
+    }
+};
+
+template<class Val>
+using istream_view = basic_istream_view<Val, char>;
+
+template<class Val>
+using wistream_view = basic_istream_view<Val, wchar_t>;
+
+namespace views {
+namespace istream_detail_cpo {
+
+template<class T>
+struct istream_fn {
+    template<class U, class UnCVRef = remove_cvref_t<U>>
+        requires derived_from<UnCVRef, basic_istream<typename UnCVRef::char_type,
+                                                     typename UnCVRef::traits_type>>
+    constexpr auto operator()(U&& u) const
+        noexcept(noexcept(basic_istream_view<T, typename UnCVRef::char_type,
+                                             typename UnCVRef::traits_type>(std::forward<U>(u))))
+        -> decltype(basic_istream_view<T, typename UnCVRef::char_type,
+                                       typename UnCVRef::traits_type>(std::forward<U>(u))) {
+        return basic_istream_view<T, typename UnCVRef::char_type,
+                                  typename UnCVRef::traits_type>(std::forward<U>(u));
+    }
+};
+
+} // namespace istream_detail_cpo
+
+inline namespace cpo {
+template<class T>
+inline constexpr auto istream = istream_detail_cpo::istream_fn<T>{};
+} // namespace cpo
+} // namespace views
+
+} // namespace ranges
 
 //===----------------------------------------------------------------------===//
 // views alias (std::views = std::ranges::views)
