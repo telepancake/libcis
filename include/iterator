@@ -2,12 +2,11 @@
 // Mechanically ported from libc++ include/iterator + include/__iterator/*.h
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //
-// Omitted: deprecated std::iterator base class (removed in C++17 per LWG).
-// Omitted: ranges::advance/distance/next/prev CPOs (those are in <ranges>).
-//   We provide only the std:: (non-ranges) versions here.
-// Note: common_iterator uses std::variant; if <variant> is not yet ported,
-//   common_iterator is omitted.  It is included at the bottom guarded by
-//   a static check.
+// Provides: deprecated-but-still-present std::iterator base class
+//   ([depr.iterator.basic]), ranges::advance/next/prev ([range.iter.ops]).
+// Omitted: ranges::distance (lives in <ranges>: its range overload needs the
+//   range concepts).
+// common_iterator uses std::variant (<variant> is included here).
 #pragma once
 
 #include <type_traits>
@@ -382,12 +381,14 @@ using iter_value_t =
 namespace ranges {
 namespace iter_move_detail {
 
-void iter_move() = delete; // poison pill
+void iter_move(); // poison pill (declared, not deleted: gcc-10 mishandles a
+                  // deleted non-template overload during dependent ADL --
+                  // matches libstdc++-10's form)
 
 template<class T>
 concept unqualified_iter_move =
     detail::iter_class_or_enum<remove_cvref_t<T>> &&
-    requires(T&& t) { iter_move(forward<T>(t)); };
+    requires(T&& t) { iter_move(std::forward<T>(t)); };
 
 template<class T>
 concept move_deref =
@@ -409,24 +410,24 @@ struct iter_move_fn {
     template<class I>
         requires unqualified_iter_move<I>
     [[nodiscard]] constexpr decltype(auto) operator()(I&& i) const
-        noexcept(noexcept(iter_move(forward<I>(i)))) {
-        return iter_move(forward<I>(i));
+        noexcept(noexcept(iter_move(std::forward<I>(i)))) {
+        return iter_move(std::forward<I>(i));
     }
 
     template<class I>
         requires move_deref<I>
     [[nodiscard]] constexpr auto operator()(I&& i) const
-        noexcept(noexcept(move(*forward<I>(i))))
-        -> decltype(move(*forward<I>(i))) {
-        return move(*forward<I>(i));
+        noexcept(noexcept(std::move(*std::forward<I>(i))))
+        -> decltype(std::move(*std::forward<I>(i))) {
+        return std::move(*std::forward<I>(i));
     }
 
     template<class I>
         requires just_deref<I>
     [[nodiscard]] constexpr auto operator()(I&& i) const
-        noexcept(noexcept(*forward<I>(i)))
-        -> decltype(*forward<I>(i)) {
-        return *forward<I>(i);
+        noexcept(noexcept(*std::forward<I>(i)))
+        -> decltype(*std::forward<I>(i)) {
+        return *std::forward<I>(i);
     }
 };
 
@@ -443,7 +444,7 @@ template<detail::dereferenceable T>
     requires requires(T& t) {
         { ranges::iter_move(t) } -> detail::referenceable_type;
     }
-using iter_rvalue_reference_t = decltype(ranges::iter_move(declval<T&>()));
+using iter_rvalue_reference_t = decltype(ranges::iter_move(std::declval<T&>()));
 
 //===----------------------------------------------------------------------===//
 // [iterator.concept.readable] — indirectly_readable, iter_common_reference_t
@@ -498,10 +499,10 @@ using iter_common_reference_t = common_reference_t<iter_reference_t<T>,
 
 template<class Out, class T>
 concept indirectly_writable = requires(Out&& o, T&& t) {
-    *o = forward<T>(t);
-    *forward<Out>(o) = forward<T>(t);
-    const_cast<const iter_reference_t<Out>&&>(*o) = forward<T>(t);
-    const_cast<const iter_reference_t<Out>&&>(*forward<Out>(o)) = forward<T>(t);
+    *o = std::forward<T>(t);
+    *std::forward<Out>(o) = std::forward<T>(t);
+    const_cast<const iter_reference_t<Out>&&>(*o) = std::forward<T>(t);
+    const_cast<const iter_reference_t<Out>&&>(*std::forward<Out>(o)) = std::forward<T>(t);
 };
 
 //===----------------------------------------------------------------------===//
@@ -634,7 +635,7 @@ concept output_iterator =
     input_or_output_iterator<I> &&
     indirectly_writable<I, T> &&
     requires(I it, T&& t) {
-        *it++ = forward<T>(t);
+        *it++ = std::forward<T>(t);
     };
 
 //===----------------------------------------------------------------------===//
@@ -708,7 +709,7 @@ template<class T1, class T2>
 concept unqualified_iter_swap =
     (detail::iter_class_or_enum<remove_cvref_t<T1>> ||
      detail::iter_class_or_enum<remove_cvref_t<T2>>) &&
-    requires(T1&& x, T2&& y) { iter_swap(forward<T1>(x), forward<T2>(y)); };
+    requires(T1&& x, T2&& y) { iter_swap(std::forward<T1>(x), std::forward<T2>(y)); };
 
 template<class T1, class T2>
 concept readable_swappable =
@@ -739,15 +740,15 @@ struct iter_swap_fn {
     template<class T1, class T2>
         requires unqualified_iter_swap<T1, T2>
     constexpr void operator()(T1&& x, T2&& y) const
-        noexcept(noexcept(iter_swap(forward<T1>(x), forward<T2>(y)))) {
-        (void)iter_swap(forward<T1>(x), forward<T2>(y));
+        noexcept(noexcept(iter_swap(std::forward<T1>(x), std::forward<T2>(y)))) {
+        (void)iter_swap(std::forward<T1>(x), std::forward<T2>(y));
     }
 
     template<class T1, class T2>
         requires(!unqualified_iter_swap<T1, T2>) && readable_swappable<T1, T2>
     constexpr void operator()(T1&& x, T2&& y) const
-        noexcept(noexcept(ranges::swap(*forward<T1>(x), *forward<T2>(y)))) {
-        ranges::swap(*forward<T1>(x), *forward<T2>(y));
+        noexcept(noexcept(ranges::swap(*std::forward<T1>(x), *std::forward<T2>(y)))) {
+        ranges::swap(*std::forward<T1>(x), *std::forward<T2>(y));
     }
 
     template<class T1, class T2>
@@ -758,10 +759,10 @@ struct iter_swap_fn {
     constexpr void operator()(T1&& x, T2&& y) const
         noexcept(noexcept(iter_value_t<T2>(ranges::iter_move(y))) &&
                  noexcept(*y = ranges::iter_move(x)) &&
-                 noexcept(*forward<T1>(x) = declval<iter_value_t<T2>>())) {
+                 noexcept(*std::forward<T1>(x) = std::declval<iter_value_t<T2>>())) {
         iter_value_t<T2> old(ranges::iter_move(y));
         *y = ranges::iter_move(x);
-        *forward<T1>(x) = move(old);
+        *std::forward<T1>(x) = std::move(old);
     }
 };
 
@@ -1007,6 +1008,21 @@ concept sortable =
     indirect_strict_weak_order<Comp, projected<I, Proj>>;
 
 //===----------------------------------------------------------------------===//
+// [depr.iterator.basic] — std::iterator (deprecated in C++17, but still
+// present in C++20; from __iterator/iterator.h)
+//===----------------------------------------------------------------------===//
+
+template<class Category, class T, class Distance = ptrdiff_t,
+         class Pointer = T*, class Reference = T&>
+struct [[deprecated]] iterator {
+    typedef T         value_type;
+    typedef Distance  difference_type;
+    typedef Pointer   pointer;
+    typedef Reference reference;
+    typedef Category  iterator_category;
+};
+
+//===----------------------------------------------------------------------===//
 // [iterator.operations] — advance, distance, next, prev
 // (std:: versions only; ranges:: versions omitted — live in <ranges>)
 //===----------------------------------------------------------------------===//
@@ -1076,23 +1092,172 @@ distance(InputIter first, InputIter last) {
     }
 }
 
-template<class InputIter>
+namespace detail {
+    // has_input_iterator_category
+    template<class T, class = void>
+    struct has_input_cat : false_type {};
+    template<class T>
+    struct has_input_cat<T, void_t<typename iterator_traits<T>::iterator_category>>
+        : is_convertible<typename iterator_traits<T>::iterator_category,
+                         input_iterator_tag> {};
+} // namespace detail
+
+template<class InputIter,
+         enable_if_t<detail::has_input_cat<InputIter>::value, int> = 0>
 [[nodiscard]] constexpr InputIter
 next(InputIter x,
      typename iterator_traits<InputIter>::difference_type n = 1) {
-    advance(x, n);
+    std::advance(x, n);
     return x;
 }
 
-template<class BidiIter>
-[[nodiscard]] constexpr BidiIter
-prev(BidiIter x,
-     typename iterator_traits<BidiIter>::difference_type n = 1) {
-    static_assert(detail::has_bidi_cat<BidiIter>::value,
-                  "std::prev requires a bidirectional iterator");
-    advance(x, -n);
+// Note: like libc++, prev(it, n) is constrained on *input* iterator only;
+// advance with negative n on a non-bidirectional iterator is a no-op.
+template<class InputIter,
+         enable_if_t<detail::has_input_cat<InputIter>::value, int> = 0>
+[[nodiscard]] constexpr InputIter
+prev(InputIter x,
+     typename iterator_traits<InputIter>::difference_type n) {
+    std::advance(x, -n);
     return x;
 }
+
+template<class InputIter,
+         enable_if_t<detail::has_input_cat<InputIter>::value, int> = 0>
+[[nodiscard]] constexpr InputIter
+prev(InputIter it) {
+    static_assert(detail::has_bidi_cat<InputIter>::value,
+                  "Attempt to prev(it) with a non-bidirectional iterator");
+    return std::prev(std::move(it), 1);
+}
+
+//===----------------------------------------------------------------------===//
+// [range.iter.ops] — ranges::advance, ranges::next, ranges::prev
+// (moved here from <ranges>; ranges::distance stays in <ranges> because its
+//  range overload needs the range concepts)
+//===----------------------------------------------------------------------===//
+
+namespace ranges {
+
+// ranges::advance
+namespace advance_detail {
+struct advance_fn {
+private:
+    template<class I>
+    static constexpr void advance_forward(I& i, iter_difference_t<I> n) {
+        while (n > 0) { --n; ++i; }
+    }
+    template<class I>
+    static constexpr void advance_backward(I& i, iter_difference_t<I> n) {
+        while (n < 0) { ++n; --i; }
+    }
+
+public:
+    template<input_or_output_iterator I>
+    constexpr void operator()(I& i, iter_difference_t<I> n) const {
+        if constexpr (random_access_iterator<I>) {
+            i += n;
+        } else if constexpr (bidirectional_iterator<I>) {
+            advance_forward(i, n);
+            advance_backward(i, n);
+        } else {
+            advance_forward(i, n);
+        }
+    }
+    template<input_or_output_iterator I, sentinel_for<I> S>
+    constexpr void operator()(I& i, S bound) const {
+        if constexpr (assignable_from<I&, S>) {
+            i = std::move(bound);
+        } else if constexpr (sized_sentinel_for<S, I>) {
+            (*this)(i, bound - i);
+        } else {
+            while (i != bound) ++i;
+        }
+    }
+    template<input_or_output_iterator I, sentinel_for<I> S>
+    constexpr iter_difference_t<I> operator()(I& i, iter_difference_t<I> n, S bound) const {
+        if constexpr (sized_sentinel_for<S, I>) {
+            // magnitude_geq(a, b): |a| >= |b|, assuming the same sign
+            auto magnitude_geq = [](auto a, auto b) {
+                return a == 0 ? b == 0 : a > 0 ? a >= b : a <= b;
+            };
+            if (const auto m = bound - i; magnitude_geq(n, m)) {
+                (*this)(i, bound);
+                return n - m;
+            }
+            (*this)(i, n);
+            return 0;
+        } else {
+            while (n > 0 && i != bound) { ++i; --n; }
+            if constexpr (bidirectional_iterator<I> && same_as<I, S>) {
+                while (n < 0 && i != bound) { --i; ++n; }
+            }
+            return n;
+        }
+    }
+};
+} // namespace advance_detail
+
+inline namespace cpo {
+    inline constexpr auto advance = advance_detail::advance_fn{};
+} // namespace cpo
+
+// ranges::next
+namespace next_detail {
+struct next_fn {
+    template<input_or_output_iterator I>
+    [[nodiscard]] constexpr I operator()(I i) const {
+        ++i;
+        return i;
+    }
+    template<input_or_output_iterator I>
+    [[nodiscard]] constexpr I operator()(I i, iter_difference_t<I> n) const {
+        ranges::advance(i, n);
+        return i;
+    }
+    template<input_or_output_iterator I, sentinel_for<I> S>
+    [[nodiscard]] constexpr I operator()(I i, S bound) const {
+        ranges::advance(i, bound);
+        return i;
+    }
+    template<input_or_output_iterator I, sentinel_for<I> S>
+    [[nodiscard]] constexpr I operator()(I i, iter_difference_t<I> n, S bound) const {
+        ranges::advance(i, n, bound);
+        return i;
+    }
+};
+} // namespace next_detail
+
+inline namespace cpo {
+    inline constexpr auto next = next_detail::next_fn{};
+} // namespace cpo
+
+// ranges::prev
+namespace prev_detail {
+struct prev_fn {
+    template<bidirectional_iterator I>
+    [[nodiscard]] constexpr I operator()(I i) const {
+        --i;
+        return i;
+    }
+    template<bidirectional_iterator I>
+    [[nodiscard]] constexpr I operator()(I i, iter_difference_t<I> n) const {
+        ranges::advance(i, -n);
+        return i;
+    }
+    template<bidirectional_iterator I>
+    [[nodiscard]] constexpr I operator()(I i, iter_difference_t<I> n, I bound) const {
+        ranges::advance(i, -n, bound);
+        return i;
+    }
+};
+} // namespace prev_detail
+
+inline namespace cpo {
+    inline constexpr auto prev = prev_detail::prev_fn{};
+} // namespace cpo
+
+} // namespace ranges
 
 //===----------------------------------------------------------------------===//
 // [reverse.iter] — reverse_iterator
@@ -1392,6 +1557,10 @@ public:
         ++current_;
         return *this;
     }
+
+    [[deprecated]] constexpr pointer operator->() const {
+        return current_;
+    }
     constexpr auto operator++(int)
         requires forward_iterator<Iter>
     {
@@ -1520,6 +1689,84 @@ make_move_iterator(Iter i) {
 }
 
 //===----------------------------------------------------------------------===//
+// [range.access] — ranges::begin and ranges::iterator_t
+// (moved here from <ranges>: the C++20 insert_iterator stores a
+//  ranges::iterator_t<Container>; the remaining range-access CPOs stay in
+//  <ranges>)
+//===----------------------------------------------------------------------===//
+
+namespace ranges {
+
+// enable_borrowed_range (specialised by views and by span/string_view etc.)
+template<class>
+inline constexpr bool enable_borrowed_range = false;
+
+namespace access_detail {
+    template<class T>
+    concept can_borrow =
+        is_lvalue_reference_v<T> ||
+        enable_borrowed_range<remove_cvref_t<T>>;
+
+    template<class T>
+    concept class_or_enum = is_class_v<T> || is_union_v<T> || is_enum_v<T>;
+} // namespace access_detail
+
+// ---- ranges::begin ----
+namespace begin_detail {
+void begin() = delete; // poison pill
+
+template<class T>
+concept member_begin =
+    access_detail::can_borrow<T> &&
+    requires(T&& t) {
+        { t.begin() } -> input_or_output_iterator;
+    };
+
+template<class T>
+concept adl_begin =
+    !member_begin<T> &&
+    access_detail::can_borrow<T> &&
+    access_detail::class_or_enum<remove_cvref_t<T>> &&
+    requires(T&& t) {
+        { begin(t) } -> input_or_output_iterator;
+    };
+
+struct begin_fn {
+    // raw array (lvalue)
+    template<class T, size_t N>
+    [[nodiscard]] constexpr T* operator()(T (&arr)[N]) const noexcept {
+        return arr + 0;
+    }
+    // member .begin()
+    template<class T>
+        requires member_begin<T>
+    [[nodiscard]] constexpr auto operator()(T&& t) const
+        noexcept(noexcept(t.begin()))
+        -> decltype(t.begin()) {
+        return t.begin();
+    }
+    // ADL begin(t)
+    template<class T>
+        requires adl_begin<T>
+    [[nodiscard]] constexpr auto operator()(T&& t) const
+        noexcept(noexcept(begin(t)))
+        -> decltype(begin(t)) {
+        return begin(t);
+    }
+};
+} // namespace begin_detail
+
+inline namespace cpo {
+    inline constexpr auto begin = begin_detail::begin_fn{};
+} // namespace cpo
+
+// iterator_t
+template<class R>
+using iterator_t = decltype(ranges::begin(declval<R&>()));
+
+} // namespace ranges
+
+//===----------------------------------------------------------------------===//
 // [back.insert.iter] — back_insert_iterator, back_inserter
 //===----------------------------------------------------------------------===//
 
@@ -1607,11 +1854,18 @@ front_inserter(Container& x) {
 // [insert.iter] — insert_iterator, inserter
 //===----------------------------------------------------------------------===//
 
+// C++20: insert_iterator stores ranges::iterator_t<Container>, not
+// Container::iterator (P0896 / libc++ __insert_iterator_iter_t)
+namespace detail {
+    template<class Container>
+    using insert_iterator_iter_t = ranges::iterator_t<Container>;
+} // namespace detail
+
 template<class Container>
 class insert_iterator {
 protected:
     Container* container;
-    typename Container::iterator iter;
+    detail::insert_iterator_iter_t<Container> iter;
 
 public:
     using iterator_category = output_iterator_tag;
@@ -1621,7 +1875,7 @@ public:
     using reference         = void;
     using container_type    = Container;
 
-    constexpr insert_iterator(Container& x, typename Container::iterator i)
+    constexpr insert_iterator(Container& x, detail::insert_iterator_iter_t<Container> i)
         : container(addressof(x)), iter(i) {}
 
     constexpr insert_iterator&
@@ -1644,7 +1898,7 @@ public:
 
 template<class Container>
 [[nodiscard]] constexpr insert_iterator<Container>
-inserter(Container& x, typename Container::iterator i) {
+inserter(Container& x, detail::insert_iterator_iter_t<Container> i) {
     return insert_iterator<Container>(x, i);
 }
 
@@ -1817,7 +2071,9 @@ public:
     template<common_with<Iter> I2>
     [[nodiscard]] friend constexpr iter_difference_t<I2>
     operator-(const counted_iterator& lhs, const counted_iterator<I2>& rhs) {
-        return rhs.count_ - lhs.count_;
+        // note: rhs.count() (public) -- gcc-10 does not let a hidden friend of
+        // counted_iterator<Iter> see counted_iterator<I2>'s privates
+        return rhs.count() - lhs.count_;
     }
     [[nodiscard]] friend constexpr difference_type
     operator-(const counted_iterator& lhs, default_sentinel_t) {
@@ -1831,7 +2087,7 @@ public:
     template<common_with<Iter> I2>
     friend constexpr bool
     operator==(const counted_iterator& lhs, const counted_iterator<I2>& rhs) {
-        return lhs.count_ == rhs.count_;
+        return lhs.count_ == rhs.count();
     }
     friend constexpr bool
     operator==(const counted_iterator& lhs, default_sentinel_t) {
@@ -1841,13 +2097,16 @@ public:
     template<common_with<Iter> I2>
     friend constexpr strong_ordering
     operator<=>(const counted_iterator& lhs, const counted_iterator<I2>& rhs) {
-        return rhs.count_ <=> lhs.count_;
+        return rhs.count() <=> lhs.count_;
     }
 
+    // gcc-10: a hidden friend with a trailing requires-clause is not found by
+    // ADL inside dependent requires-expressions; use an enable_if template
+    // parameter instead.
+    template<class I2 = Iter, enable_if_t<input_iterator<I2>, int> = 0>
     [[nodiscard]] friend constexpr decltype(auto)
     iter_move(const counted_iterator& i)
         noexcept(noexcept(ranges::iter_move(i.current_)))
-        requires input_iterator<Iter>
     {
         return ranges::iter_move(i.current_);
     }
@@ -1869,9 +2128,11 @@ private:
     friend class counted_iterator;
 };
 
-// iterator_traits specialisation for counted_iterator<Iter> when Iter is input_iterator
+// iterator_traits specialisation for counted_iterator<Iter>: only when
+// iterator_traits<Iter> is itself a specialisation (matches libc++'s
+// same_as<_ITER_TRAITS<_Iter>, iterator_traits<_Iter>> constraint)
 template<input_iterator Iter>
-    requires detail::primary_template<iterator_traits<Iter>>
+    requires same_as<detail::iter_traits_t<Iter>, iterator_traits<Iter>>
 struct iterator_traits<counted_iterator<Iter>> : iterator_traits<Iter> {
     using pointer = conditional_t<contiguous_iterator<Iter>,
                                   add_pointer_t<iter_reference_t<Iter>>,
@@ -1880,10 +2141,257 @@ struct iterator_traits<counted_iterator<Iter>> : iterator_traits<Iter> {
 
 //===----------------------------------------------------------------------===//
 // [common.iter] — common_iterator
-// (requires std::variant; define only if available)
-// NOTE: common_iterator is omitted — it depends on std::variant which is not
-//       yet ported to libcis.
+// Ported from libc++ __iterator/common_iterator.h.  Uses std::variant.
+// <variant> is included here (mid-file, outside namespace std) rather than at
+// the top: <variant> pulls in <functional>, which needs iterator_traits.
 //===----------------------------------------------------------------------===//
+
+} // namespace std
+#include <variant>
+namespace std {
+
+namespace detail {
+    template<class Iter>
+    concept can_use_postfix_proxy =
+        constructible_from<iter_value_t<Iter>, iter_reference_t<Iter>> &&
+        move_constructible<iter_value_t<Iter>>;
+
+    // gcc-10: hidden friends of common_iterator<A> are not granted access to
+    // the privates of a different specialisation common_iterator<B> by the
+    // template friend class declaration; route the access through this
+    // accessor, which every specialisation befriends.
+    struct common_iterator_access {
+        template<class CI>
+        static constexpr auto& hold(CI& c) noexcept { return c.hold_; }
+        template<class CI>
+        static constexpr const auto& hold(const CI& c) noexcept { return c.hold_; }
+    };
+} // namespace detail
+
+template<input_or_output_iterator Iter, sentinel_for<Iter> Sent>
+    requires(!same_as<Iter, Sent> && copyable<Iter>)
+class common_iterator {
+    struct proxy {
+        constexpr const iter_value_t<Iter>* operator->() const noexcept {
+            return std::addressof(value_);
+        }
+        iter_value_t<Iter> value_;
+    };
+
+    struct postfix_proxy {
+        constexpr const iter_value_t<Iter>& operator*() const noexcept {
+            return value_;
+        }
+        iter_value_t<Iter> value_;
+    };
+
+    // index 0 = iterator, index 1 = sentinel
+    variant<Iter, Sent> hold_;
+
+    template<input_or_output_iterator OI, sentinel_for<OI> OS>
+        requires(!same_as<OI, OS> && copyable<OI>)
+    friend class common_iterator;
+
+    friend struct detail::common_iterator_access;
+
+public:
+    common_iterator()
+        requires default_initializable<Iter>
+    = default;
+
+    constexpr common_iterator(Iter i) : hold_(in_place_type<Iter>, std::move(i)) {}
+    constexpr common_iterator(Sent s) : hold_(in_place_type<Sent>, std::move(s)) {}
+
+    template<class I2, class S2>
+        requires convertible_to<const I2&, Iter> && convertible_to<const S2&, Sent>
+    constexpr common_iterator(const common_iterator<I2, S2>& other)
+        : hold_([&]() -> variant<Iter, Sent> {
+              if (other.hold_.index() == 0)
+                  return variant<Iter, Sent>{in_place_index<0>, std::get<0>(other.hold_)};
+              return variant<Iter, Sent>{in_place_index<1>, std::get<1>(other.hold_)};
+          }()) {}
+
+    template<class I2, class S2>
+        requires convertible_to<const I2&, Iter> && convertible_to<const S2&, Sent> &&
+                 assignable_from<Iter&, const I2&> && assignable_from<Sent&, const S2&>
+    constexpr common_iterator& operator=(const common_iterator<I2, S2>& other) {
+        auto idx       = hold_.index();
+        auto other_idx = other.hold_.index();
+        if (idx == 0 && other_idx == 0)
+            std::get<0>(hold_) = std::get<0>(other.hold_);
+        else if (idx == 1 && other_idx == 1)
+            std::get<1>(hold_) = std::get<1>(other.hold_);
+        else if (other_idx == 1)
+            hold_.template emplace<1>(std::get<1>(other.hold_));
+        else
+            hold_.template emplace<0>(std::get<0>(other.hold_));
+        return *this;
+    }
+
+    [[nodiscard]] constexpr decltype(auto) operator*() {
+        return *std::get<Iter>(hold_);
+    }
+    [[nodiscard]] constexpr decltype(auto) operator*() const
+        requires detail::dereferenceable<const Iter>
+    {
+        return *std::get<Iter>(hold_);
+    }
+
+    template<class I2 = Iter>
+    [[nodiscard]] constexpr auto operator->() const
+        requires indirectly_readable<const I2> &&
+                 (requires(const I2& i) { i.operator->(); } ||
+                  is_reference_v<iter_reference_t<I2>> ||
+                  constructible_from<iter_value_t<I2>, iter_reference_t<I2>>)
+    {
+        if constexpr (is_pointer_v<Iter> || requires(const Iter& i) { i.operator->(); }) {
+            return std::get<Iter>(hold_);
+        } else if constexpr (is_reference_v<iter_reference_t<Iter>>) {
+            auto&& tmp = *std::get<Iter>(hold_);
+            return std::addressof(tmp);
+        } else {
+            return proxy{*std::get<Iter>(hold_)};
+        }
+    }
+
+    constexpr common_iterator& operator++() {
+        ++std::get<Iter>(hold_);
+        return *this;
+    }
+
+    constexpr decltype(auto) operator++(int) {
+        if constexpr (forward_iterator<Iter>) {
+            auto tmp = *this;
+            ++*this;
+            return tmp;
+        } else if constexpr (requires(Iter& i) {
+                                 { *i++ } -> detail::referenceable_type;
+                             } || !detail::can_use_postfix_proxy<Iter>) {
+            return std::get<Iter>(hold_)++;
+        } else {
+            auto p = postfix_proxy{**this};
+            ++*this;
+            return p;
+        }
+    }
+
+    template<class I2, sentinel_for<Iter> S2>
+        requires sentinel_for<Sent, I2>
+    [[nodiscard]] friend constexpr bool
+    operator==(const common_iterator& x, const common_iterator<I2, S2>& y) {
+        const auto& yh = detail::common_iterator_access::hold(y);
+        auto x_index = x.hold_.index();
+        auto y_index = yh.index();
+
+        if (x_index == y_index)
+            return true;
+
+        if (x_index == 0)
+            return std::get<Iter>(x.hold_) == std::get<S2>(yh);
+
+        return std::get<Sent>(x.hold_) == std::get<I2>(yh);
+    }
+
+    template<class I2, sentinel_for<Iter> S2>
+        requires sentinel_for<Sent, I2> && equality_comparable_with<Iter, I2>
+    [[nodiscard]] friend constexpr bool
+    operator==(const common_iterator& x, const common_iterator<I2, S2>& y) {
+        const auto& yh = detail::common_iterator_access::hold(y);
+        auto x_index = x.hold_.index();
+        auto y_index = yh.index();
+
+        if (x_index == 1 && y_index == 1)
+            return true;
+
+        if (x_index == 0 && y_index == 0)
+            return std::get<Iter>(x.hold_) == std::get<I2>(yh);
+
+        if (x_index == 0)
+            return std::get<Iter>(x.hold_) == std::get<S2>(yh);
+
+        return std::get<Sent>(x.hold_) == std::get<I2>(yh);
+    }
+
+    template<sized_sentinel_for<Iter> I2, sized_sentinel_for<Iter> S2>
+        requires sized_sentinel_for<Sent, I2>
+    [[nodiscard]] friend constexpr iter_difference_t<I2>
+    operator-(const common_iterator& x, const common_iterator<I2, S2>& y) {
+        const auto& yh = detail::common_iterator_access::hold(y);
+        auto x_index = x.hold_.index();
+        auto y_index = yh.index();
+
+        if (x_index == 1 && y_index == 1)
+            return 0;
+
+        if (x_index == 0 && y_index == 0)
+            return std::get<Iter>(x.hold_) - std::get<I2>(yh);
+
+        if (x_index == 0)
+            return std::get<Iter>(x.hold_) - std::get<S2>(yh);
+
+        return std::get<Sent>(x.hold_) - std::get<I2>(yh);
+    }
+
+    template<class I2 = Iter, enable_if_t<input_iterator<I2>, int> = 0>
+    [[nodiscard]] friend constexpr decltype(auto)
+    iter_move(const common_iterator& i)
+        noexcept(noexcept(ranges::iter_move(std::declval<const Iter&>())))
+    {
+        return ranges::iter_move(std::get<Iter>(i.hold_));
+    }
+
+    template<indirectly_swappable<Iter> I2, class S2>
+    friend constexpr void
+    iter_swap(const common_iterator& x, const common_iterator<I2, S2>& y)
+        noexcept(noexcept(ranges::iter_swap(std::declval<const Iter&>(),
+                                            std::declval<const I2&>())))
+    {
+        ranges::iter_swap(std::get<Iter>(x.hold_),
+                          std::get<I2>(detail::common_iterator_access::hold(y)));
+    }
+};
+
+template<class Iter, class Sent>
+struct incrementable_traits<common_iterator<Iter, Sent>> {
+    using difference_type = iter_difference_t<Iter>;
+};
+
+// A concept, not a plain && in a type argument: constraint conjunction
+// short-circuits (the derived_from conjunct is never substituted when the
+// category does not exist).  Mirrors libc++ __denotes_forward_iter.
+namespace detail {
+    template<class Iter>
+    concept common_iter_denotes_forward = requires {
+        typename iterator_traits<Iter>::iterator_category;
+    } && derived_from<typename iterator_traits<Iter>::iterator_category, forward_iterator_tag>;
+
+    template<class Iter, class Sent>
+    concept common_iter_has_ptr_op =
+        requires(const common_iterator<Iter, Sent>& a) { a.operator->(); };
+
+    template<class, class>
+    struct common_iter_arrow_type_or_void {
+        using type = void;
+    };
+
+    template<class Iter, class Sent>
+        requires common_iter_has_ptr_op<Iter, Sent>
+    struct common_iter_arrow_type_or_void<Iter, Sent> {
+        using type = decltype(std::declval<const common_iterator<Iter, Sent>&>().operator->());
+    };
+} // namespace detail
+
+template<input_iterator Iter, class Sent>
+struct iterator_traits<common_iterator<Iter, Sent>> {
+    using iterator_concept  = conditional_t<forward_iterator<Iter>,
+                                            forward_iterator_tag, input_iterator_tag>;
+    using iterator_category = conditional_t<detail::common_iter_denotes_forward<Iter>,
+                                            forward_iterator_tag, input_iterator_tag>;
+    using pointer           = typename detail::common_iter_arrow_type_or_void<Iter, Sent>::type;
+    using value_type        = iter_value_t<Iter>;
+    using difference_type   = iter_difference_t<Iter>;
+    using reference         = iter_reference_t<Iter>;
+};
 
 //===----------------------------------------------------------------------===//
 // [iterator.range] — begin / end / cbegin / cend / rbegin / rend / crbegin /
@@ -1906,16 +2414,16 @@ template<class C>
 template<class C>
 [[nodiscard]] constexpr auto end(const C& c) -> decltype(c.end()) { return c.end(); }
 
-// cbegin / cend
+// cbegin / cend (qualified std::begin/std::end -- must not be ADL-hijacked)
 template<class C>
 [[nodiscard]] constexpr auto cbegin(const C& c)
-    noexcept(noexcept(begin(c))) -> decltype(begin(c)) {
-    return begin(c);
+    noexcept(noexcept(std::begin(c))) -> decltype(std::begin(c)) {
+    return std::begin(c);
 }
 template<class C>
 [[nodiscard]] constexpr auto cend(const C& c)
-    noexcept(noexcept(end(c))) -> decltype(end(c)) {
-    return end(c);
+    noexcept(noexcept(std::end(c))) -> decltype(std::end(c)) {
+    return std::end(c);
 }
 
 // rbegin / rend — array
@@ -1950,16 +2458,16 @@ template<class C>
 template<class C>
 [[nodiscard]] constexpr auto rend(const C& c) -> decltype(c.rend()) { return c.rend(); }
 
-// crbegin / crend
+// crbegin / crend (qualified std::rbegin/std::rend -- must not be ADL-hijacked)
 template<class C>
 [[nodiscard]] constexpr auto crbegin(const C& c)
-    -> decltype(rbegin(c)) {
-    return rbegin(c);
+    -> decltype(std::rbegin(c)) {
+    return std::rbegin(c);
 }
 template<class C>
 [[nodiscard]] constexpr auto crend(const C& c)
-    -> decltype(rend(c)) {
-    return rend(c);
+    -> decltype(std::rend(c)) {
+    return std::rend(c);
 }
 
 // size / ssize

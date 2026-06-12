@@ -25,6 +25,19 @@ CIS = ("g++-10 -std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -nostdinc++ -
        "-Itest/std -Itest/std/support -O0 -w").split()
 LINK = "build/groups/libcis/libsupport.a -nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc".split()
 
+# tools/test_overrides/ holds hand-adapted copies of transferred tests whose
+# upstream form trips PROVEN gcc-10 frontend defects (evidence in the files'
+# "libcis:" comments).  test/std is regenerated (gitignored), so the transfer
+# would silently revert those adaptations; re-applying them here makes the
+# gate self-healing regardless of transfer order.
+OVR = os.path.join(ROOT, "tools", "test_overrides")
+for dirp, _, files in os.walk(OVR):
+    for fn in files:
+        src = os.path.join(dirp, fn)
+        dst = os.path.join(ROOT, "test/std", os.path.relpath(src, OVR))
+        if os.path.exists(dst) and open(src).read() != open(dst).read():
+            open(dst, "w").write(open(src).read())
+
 pre = sys.argv[1]
 limit = int(sys.argv[2]) if len(sys.argv) > 2 else 10**9
 man = json.load(open("test/std/manifest.json"))

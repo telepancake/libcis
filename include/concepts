@@ -60,7 +60,7 @@ concept derived_from =
 template<class From, class To>
 concept convertible_to =
     is_convertible_v<From, To> &&
-    requires { static_cast<To>(declval<From>()); };
+    requires { static_cast<To>(std::declval<From>()); };
 
 //===----------------------------------------------------------------------===//
 // [concept.commonref] common_reference_with
@@ -80,8 +80,8 @@ template<class T, class U>
 concept common_with =
     same_as<common_type_t<T,U>, common_type_t<U,T>> &&
     requires {
-        static_cast<common_type_t<T,U>>(declval<T>());
-        static_cast<common_type_t<T,U>>(declval<U>());
+        static_cast<common_type_t<T,U>>(std::declval<T>());
+        static_cast<common_type_t<T,U>>(std::declval<U>());
     } &&
     common_reference_with<add_lvalue_reference_t<const T>,
                           add_lvalue_reference_t<const U>> &&
@@ -164,7 +164,7 @@ concept assignable_from =
     common_reference_with<detail::make_const_lvalue_ref<Lhs>,
                           detail::make_const_lvalue_ref<Rhs>> &&
     requires(Lhs lhs, Rhs&& rhs) {
-        { lhs = forward<Rhs>(rhs) } -> same_as<Lhs>;
+        { lhs = std::forward<Rhs>(rhs) } -> same_as<Lhs>;
     };
 
 //===----------------------------------------------------------------------===//
@@ -186,7 +186,7 @@ template<class T, class U>
 concept unqualified_swappable_with =
     (detail::class_or_enum<remove_cvref_t<T>> ||
      detail::class_or_enum<remove_cvref_t<U>>) &&
-    requires(T&& t, U&& u) { swap(forward<T>(t), forward<U>(u)); };
+    requires(T&& t, U&& u) { swap(std::forward<T>(t), std::forward<U>(u)); };
 
 struct swap_fn;
 
@@ -211,8 +211,8 @@ struct swap_fn {
     template<class T, class U>
         requires unqualified_swappable_with<T, U>
     constexpr void operator()(T&& t, U&& u) const
-        noexcept(noexcept(swap(forward<T>(t), forward<U>(u)))) {
-        swap(forward<T>(t), forward<U>(u));
+        noexcept(noexcept(swap(std::forward<T>(t), std::forward<U>(u)))) {
+        swap(std::forward<T>(t), std::forward<U>(u));
     }
 
     // 2.2: array swap (element-wise)
@@ -229,7 +229,7 @@ struct swap_fn {
     constexpr void operator()(T& x, T& y) const
         noexcept(is_nothrow_move_constructible_v<T> &&
                  is_nothrow_move_assignable_v<T>) {
-        y = exchange(x, move(y));
+        y = std::exchange(x, std::move(y));
     }
 };
 
@@ -247,10 +247,10 @@ template<class T, class U>
 concept swappable_with =
     common_reference_with<T, U> &&
     requires(T&& t, U&& u) {
-        ranges::swap(forward<T>(t), forward<T>(t));
-        ranges::swap(forward<U>(u), forward<U>(u));
-        ranges::swap(forward<T>(t), forward<U>(u));
-        ranges::swap(forward<U>(u), forward<T>(t));
+        ranges::swap(std::forward<T>(t), std::forward<T>(t));
+        ranges::swap(std::forward<U>(u), std::forward<U>(u));
+        ranges::swap(std::forward<T>(t), std::forward<U>(u));
+        ranges::swap(std::forward<U>(u), std::forward<T>(t));
     };
 
 //===----------------------------------------------------------------------===//

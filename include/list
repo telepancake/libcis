@@ -74,7 +74,7 @@ public:
         return static_cast<list_node<T>*>(ptr)->get_value();
     }
     pointer operator->() const noexcept {
-        return &static_cast<list_node<T>*>(ptr)->get_value();
+        return std::addressof(static_cast<list_node<T>*>(ptr)->get_value());
     }
 
     list_iterator& operator++() noexcept { ptr = ptr->next; return *this; }
@@ -118,7 +118,7 @@ public:
         return static_cast<const list_node<T>*>(ptr)->get_value();
     }
     pointer operator->() const noexcept {
-        return &static_cast<const list_node<T>*>(ptr)->get_value();
+        return std::addressof(static_cast<const list_node<T>*>(ptr)->get_value());
     }
 
     list_const_iterator& operator++() noexcept { ptr = ptr->next; return *this; }
@@ -149,6 +149,8 @@ public:
     using allocator_type         = Allocator;
     using reference              = value_type&;
     using const_reference        = const value_type&;
+    using pointer                = typename allocator_traits<Allocator>::pointer;
+    using const_pointer          = typename allocator_traits<Allocator>::const_pointer;
     using size_type              = size_t;
     using difference_type        = ptrdiff_t;
     using iterator               = list_iterator<T>;
@@ -179,7 +181,7 @@ private:
     node_type* create_node(node_base_type* prev_ptr, node_base_type* next_ptr) {
         node_type* n = node_alloc_traits::allocate(node_alloc, 1);
         ::new(static_cast<void*>(n)) node_type(prev_ptr, next_ptr);
-        node_alloc_traits::construct(node_alloc, &n->get_value());
+        node_alloc_traits::construct(node_alloc, std::addressof(n->get_value()));
         return n;
     }
 
@@ -187,12 +189,12 @@ private:
     node_type* create_node(node_base_type* prev_ptr, node_base_type* next_ptr, Args&&... args) {
         node_type* n = node_alloc_traits::allocate(node_alloc, 1);
         ::new(static_cast<void*>(n)) node_type(prev_ptr, next_ptr);
-        node_alloc_traits::construct(node_alloc, &n->get_value(), forward<Args>(args)...);
+        node_alloc_traits::construct(node_alloc, std::addressof(n->get_value()), forward<Args>(args)...);
         return n;
     }
 
     void delete_node(node_type* n) noexcept {
-        node_alloc_traits::destroy(node_alloc, &n->get_value());
+        node_alloc_traits::destroy(node_alloc, std::addressof(n->get_value()));
         n->~node_type();
         node_alloc_traits::deallocate(node_alloc, n, 1);
     }

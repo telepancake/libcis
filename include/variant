@@ -19,7 +19,7 @@
 #include <exception>
 #include <initializer_list>
 #include <new>
-#include <functional>
+#include <bits/hash.h>     // std::hash (cannot include <functional>: cycle)
 #include <bits/construct_at.h>
 
 namespace std {
