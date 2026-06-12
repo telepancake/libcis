@@ -33,6 +33,7 @@ tests = [r for r in man["transferred"]
 buckets = collections.Counter()
 cerr = collections.Counter()
 rfail = []
+cfail = []
 for r in tests:
     src = os.path.abspath(os.path.join("test/std", r["file"]))
     drv = "/tmp/rf_drv.cpp"
@@ -45,6 +46,7 @@ for r in tests:
         m = re.search(r"error: (.+)", p.stderr)
         key = re.sub(r"'[^']*'", "'X'", m.group(1))[:62] if m else "?"
         cerr[key] += 1
+        cfail.append((r["file"], m.group(1)[:80] if m else "?"))
         continue
     try:
         rc = subprocess.run([exe], capture_output=True, timeout=60).returncode
@@ -56,14 +58,23 @@ for r in tests:
         buckets["run-fail"] += 1
         rfail.append(r["file"])
 
+# The work queue is the FAILURE LIST, not a score.  State is binary: a subtree
+# is CLEAN iff nothing in it fails (every failure is then either a bug to fix or
+# a test to move, justified, into the exclusion set).  The counts are only the
+# size of the queue.
 n = len(tests)
-print(f"{pre}: {n} run-tests individually")
-for k in ("PASS", "compile-fail", "run-fail"):
-    print(f"  {k:13s} {buckets[k]:4d}  ({100*buckets[k]//max(1,n)}%)")
-print("  top compile-error causes:")
-for e, c in cerr.most_common(8):
-    print(f"    {c:3d}  {e}")
+failing = buckets["compile-fail"] + buckets["run-fail"]
+print(f"== {pre}: {failing} FAILING of {n} (PASS {buckets['PASS']}) ==")
 if rfail:
-    print("  run-fail files:")
-    for f in rfail[:10]:
-        print("    ", f)
+    print("RUN-FAIL (compiles, wrong answer/crash):")
+    for f in rfail:
+        print("   ", f)
+if cfail:
+    print("COMPILE-FAIL (the fix/exclude queue):")
+    for f, e in cfail:
+        print(f"    {f}\n        {e}")
+    print("  error-class tally:")
+    for e, c in cerr.most_common(10):
+        print(f"    {c:3d}  {e}")
+print("CLEAN" if failing == 0 else f"NOT CLEAN: {failing} non-excluded tests fail")
+sys.exit(0 if failing == 0 else 1)

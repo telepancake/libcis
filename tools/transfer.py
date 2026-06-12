@@ -116,9 +116,9 @@ TRUE_FEATURES = {
 FALSE_STD_MODES = {"c++03", "c++11", "c++14", "c++17", "c++23", "c++26",
                    "std-at-least-c++23", "std-at-least-c++26"}
 
-# Features our build actually enables (see check.sh): a test that declares
-# itself UNSUPPORTED under these can NOT be adapted -- its purpose is the
-# feature we turned off -- so it is skipped, with the reason recorded.
+# Features our build actually enables (-fno-exceptions / -fno-rtti): a test that
+# declares itself UNSUPPORTED under these can NOT be adapted -- its purpose is
+# the feature we turned off -- so it is skipped, with the reason recorded.
 ACTIVE_NO_FEATURES = {"no-exceptions", "no-rtti"}
 
 
