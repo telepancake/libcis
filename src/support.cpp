@@ -199,8 +199,11 @@ LIBCIS_REPLACEABLE void operator delete(void* ptr) noexcept {
     ::free(ptr);
 }
 
+// The default sized/nothrow forms MUST forward to the replaceable base form
+// ([new.delete.single]): a program replacing only operator delete(void*) --
+// e.g. the suite's count_new.h -- must still intercept these deallocations.
 LIBCIS_REPLACEABLE void operator delete(void* ptr, std::size_t /*size*/) noexcept {
-    ::free(ptr);
+    ::operator delete(ptr);
 }
 
 LIBCIS_REPLACEABLE void operator delete(void* ptr, std::align_val_t /*alignment*/) noexcept {
@@ -208,17 +211,17 @@ LIBCIS_REPLACEABLE void operator delete(void* ptr, std::align_val_t /*alignment*
 }
 
 LIBCIS_REPLACEABLE void operator delete(void* ptr, std::size_t /*size*/,
-                     std::align_val_t /*alignment*/) noexcept {
-    ::free(ptr);
+                     std::align_val_t alignment) noexcept {
+    ::operator delete(ptr, alignment);
 }
 
 LIBCIS_REPLACEABLE void operator delete(void* ptr, const std::nothrow_t&) noexcept {
-    ::free(ptr);
+    ::operator delete(ptr);
 }
 
-LIBCIS_REPLACEABLE void operator delete(void* ptr, std::align_val_t /*alignment*/,
+LIBCIS_REPLACEABLE void operator delete(void* ptr, std::align_val_t alignment,
                      const std::nothrow_t&) noexcept {
-    ::free(ptr);
+    ::operator delete(ptr, alignment);
 }
 
 // Array delete
@@ -227,7 +230,7 @@ LIBCIS_REPLACEABLE void operator delete[](void* ptr) noexcept {
 }
 
 LIBCIS_REPLACEABLE void operator delete[](void* ptr, std::size_t /*size*/) noexcept {
-    ::free(ptr);
+    ::operator delete[](ptr);
 }
 
 LIBCIS_REPLACEABLE void operator delete[](void* ptr, std::align_val_t /*alignment*/) noexcept {
@@ -235,17 +238,17 @@ LIBCIS_REPLACEABLE void operator delete[](void* ptr, std::align_val_t /*alignmen
 }
 
 LIBCIS_REPLACEABLE void operator delete[](void* ptr, std::size_t /*size*/,
-                        std::align_val_t /*alignment*/) noexcept {
-    ::free(ptr);
+                        std::align_val_t alignment) noexcept {
+    ::operator delete[](ptr, alignment);
 }
 
 LIBCIS_REPLACEABLE void operator delete[](void* ptr, const std::nothrow_t&) noexcept {
-    ::free(ptr);
+    ::operator delete[](ptr);
 }
 
-LIBCIS_REPLACEABLE void operator delete[](void* ptr, std::align_val_t /*alignment*/,
+LIBCIS_REPLACEABLE void operator delete[](void* ptr, std::align_val_t alignment,
                         const std::nothrow_t&) noexcept {
-    ::free(ptr);
+    ::operator delete[](ptr, alignment);
 }
 
 #undef LIBCIS_REPLACEABLE
