@@ -27,8 +27,15 @@ LINK = "build/groups/libcis/libsupport.a -nodefaultlibs -lpthread -lm -lc -lgcc_
 pre = sys.argv[1]
 limit = int(sys.argv[2]) if len(sys.argv) > 2 else 10**9
 man = json.load(open("test/std/manifest.json"))
+
+# Excluded tests carry a written justification (gcc-10 compiler limits proven by
+# the discriminator, target-impossible facilities).  They are NOT the work queue
+# and NOT counted against the verdict: every test NOT excluded must pass.
+excl = {k: v for k, v in json.load(open("test/std/exclusions.json")).items()
+        if not k.startswith("_")}
 tests = [r for r in man["transferred"]
-         if r["file"].startswith(pre) and r["kind"] == "run" and r.get("entry")][:limit]
+         if r["file"].startswith(pre) and r["kind"] == "run" and r.get("entry")
+         and r["file"] not in excl][:limit]
 
 buckets = collections.Counter()
 cerr = collections.Counter()
