@@ -12,6 +12,7 @@
 #include <utility>
 #include <initializer_list>
 #include <iterator>
+#include <algorithm>
 #include <compare>
 
 namespace std {
@@ -137,9 +138,9 @@ public:
     using key_compare     = Compare;
     using value_compare   = Compare;
     using allocator_type  = Alloc;
-    using reference       = const value_type&;
+    using reference       = value_type&;
     using const_reference = const value_type&;
-    using pointer         = typename allocator_traits<Alloc>::const_pointer;
+    using pointer         = typename allocator_traits<Alloc>::pointer;
     using const_pointer   = typename allocator_traits<Alloc>::const_pointer;
     using size_type       = typename allocator_traits<Alloc>::size_type;
     using difference_type = typename allocator_traits<Alloc>::difference_type;
@@ -166,7 +167,11 @@ public:
 
     explicit set(const allocator_type& a) : tree_(a) {}
 
-    template<class InputIt>
+    // comp/alloc convenience ctors guarded so implicit deduction guides
+    // SFINAE away on allocator-as-comparator / non-allocator Alloc (libc++).
+    template<class InputIt, class C2 = Compare, class A2 = Alloc,
+             class = enable_if_t<!detail::tree_is_allocator_v<C2> &&
+                                 detail::tree_is_allocator_v<A2>, void>>
     set(InputIt first, InputIt last,
         const key_compare& comp = key_compare(),
         const allocator_type& a = allocator_type())
@@ -175,7 +180,8 @@ public:
         insert(first, last);
     }
 
-    template<class InputIt>
+    template<class InputIt, class A2 = Alloc,
+             class = enable_if_t<detail::tree_is_allocator_v<A2>, void>>
     set(InputIt first, InputIt last, const allocator_type& a)
         : set(first, last, key_compare(), a) {}
 
@@ -185,6 +191,9 @@ public:
     set(const set& o, const allocator_type& a) : tree_(o.tree_, a) {}
     set(set&& o, const allocator_type& a) : tree_(move(o.tree_), a) {}
 
+    template<class C2 = Compare, class A2 = Alloc,
+             class = enable_if_t<!detail::tree_is_allocator_v<C2> &&
+                                 detail::tree_is_allocator_v<A2>, void>>
     set(initializer_list<value_type> il,
         const key_compare& comp = key_compare(),
         const allocator_type& a = allocator_type())
@@ -193,6 +202,8 @@ public:
         insert(il.begin(), il.end());
     }
 
+    template<class A2 = Alloc,
+             class = enable_if_t<detail::tree_is_allocator_v<A2>, void>>
     set(initializer_list<value_type> il, const allocator_type& a)
         : set(il, key_compare(), a) {}
 
@@ -226,35 +237,62 @@ public:
     size_type max_size() const noexcept { return tree_.max_size(); }
 
     // ---- Modifiers ----
+    // emplace with a single Key-typed arg: search first, allocate only on
+    // miss (libc++ __can_extract_key; allocator-requirements tests).
     template<class... Args>
     pair<iterator, bool> emplace(Args&&... args) {
-        auto [it, ok] = tree_.emplace_unique(forward<Args>(args)...);
-        return {const_iterator(it), ok};
+        if constexpr (sizeof...(Args) == 1) {
+            auto [it, ok] = emplace_one(forward<Args>(args)...);
+            return {const_iterator(it), ok};
+        } else {
+            auto [it, ok] = tree_.emplace_unique(forward<Args>(args)...);
+            return {const_iterator(it), ok};
+        }
     }
 
     template<class... Args>
     iterator emplace_hint(const_iterator hint, Args&&... args) {
-        return tree_.emplace_hint_unique(hint, forward<Args>(args)...);
+        if constexpr (sizeof...(Args) == 1)
+            return emplace_hint_one(hint, forward<Args>(args)...);
+        else
+            return tree_.emplace_hint_unique(hint, forward<Args>(args)...);
     }
 
+private:
+    template<class A>
+    auto emplace_one(A&& a) {
+        if constexpr (is_same_v<remove_cvref_t<A>, Key>)
+            return tree_.emplace_unique_key_args(a, forward<A>(a));
+        else
+            return tree_.emplace_unique(forward<A>(a));
+    }
+    template<class A>
+    auto emplace_hint_one(const_iterator hint, A&& a) {
+        if constexpr (is_same_v<remove_cvref_t<A>, Key>)
+            return tree_.emplace_hint_unique_key_args(hint, a, forward<A>(a));
+        else
+            return tree_.emplace_hint_unique(hint, forward<A>(a));
+    }
+
+public:
     pair<iterator, bool> insert(const value_type& v) {
-        auto [it, ok] = tree_.emplace_unique(v);
+        auto [it, ok] = tree_.emplace_unique_key_args(v, v);
         return {const_iterator(it), ok};
     }
     pair<iterator, bool> insert(value_type&& v) {
-        auto [it, ok] = tree_.emplace_unique(move(v));
+        auto [it, ok] = tree_.emplace_unique_key_args(v, move(v));
         return {const_iterator(it), ok};
     }
     iterator insert(const_iterator hint, const value_type& v) {
-        return tree_.emplace_hint_unique(hint, v);
+        return tree_.emplace_hint_unique_key_args(hint, v, v);
     }
     iterator insert(const_iterator hint, value_type&& v) {
-        return tree_.emplace_hint_unique(hint, move(v));
+        return tree_.emplace_hint_unique_key_args(hint, v, move(v));
     }
     template<class InputIt>
     void insert(InputIt first, InputIt last) {
         for (; first != last; ++first)
-            tree_.emplace_unique(*first);
+            insert(*first);
     }
     void insert(initializer_list<value_type> il) { insert(il.begin(), il.end()); }
 
@@ -319,7 +357,7 @@ public:
 
     size_type count(const key_type& k) const { return tree_.count_unique(k); }
     template<class K> requires requires { typename key_compare::is_transparent; }
-    size_type count(const K& k) const { return tree_.count_unique(k); }
+    size_type count(const K& k) const { return tree_.count_multi(k); }
 
     bool contains(const key_type& k) const { return find(k) != end(); }
     template<class K> requires requires { typename key_compare::is_transparent; }
@@ -347,35 +385,34 @@ public:
     }
     template<class K> requires requires { typename key_compare::is_transparent; }
     pair<iterator, iterator>             equal_range(const K& k) {
-        return tree_.equal_range_unique(k);
+        return tree_.equal_range_multi(k);
     }
     template<class K> requires requires { typename key_compare::is_transparent; }
     pair<const_iterator, const_iterator> equal_range(const K& k) const {
-        return tree_.equal_range_unique(k);
-    }
-
-    // ---- Comparisons ----
-    template<class K2, class C2, class A2>
-    friend bool operator==(const set<K2,C2,A2>& x, const set<K2,C2,A2>& y) {
-        if (x.size() != y.size()) return false;
-        auto a = x.begin(), b = y.begin();
-        for (; a != x.end(); ++a, ++b)
-            if (!(*a == *b)) return false;
-        return true;
-    }
-
-    template<class K2, class C2, class A2>
-    friend auto operator<=>(const set<K2,C2,A2>& x, const set<K2,C2,A2>& y) {
-        auto a = x.begin(), b = y.begin();
-        for (; a != x.end() && b != y.end(); ++a, ++b)
-            if (auto c = (*a <=> *b); c != 0) return c;
-        return x.size() <=> y.size();
+        return tree_.equal_range_multi(k);
     }
 
     // Expose tree_ for merge across containers
     template<class, class, class> friend class set;
     template<class, class, class> friend class multiset;
 };
+
+// ---- Comparisons ----
+template<class Key, class Compare, class Alloc>
+bool operator==(const set<Key,Compare,Alloc>& x, const set<Key,Compare,Alloc>& y) {
+    if (x.size() != y.size()) return false;
+    auto a = x.begin(), b = y.begin();
+    for (; a != x.end(); ++a, ++b)
+        if (!(*a == *b)) return false;
+    return true;
+}
+
+template<class Key, class Compare, class Alloc>
+inline detail::synth_three_way_result<Key>
+operator<=>(const set<Key,Compare,Alloc>& x, const set<Key,Compare,Alloc>& y) {
+    return lexicographical_compare_three_way(x.begin(), x.end(), y.begin(), y.end(),
+                                             detail::synth_three_way);
+}
 
 // ---- Non-member swap ----
 template<class K, class C, class A>
@@ -393,23 +430,31 @@ erase_if(set<K,C,A>& c, Pred pred) {
     return old - c.size();
 }
 
-// ---- Deduction guides ----
+// ---- Deduction guides (guarded by __is_allocator per libc++) ----
 template<class InputIt,
          class Compare = less<typename iterator_traits<InputIt>::value_type>,
-         class Alloc   = allocator<typename iterator_traits<InputIt>::value_type>>
+         class Alloc   = allocator<typename iterator_traits<InputIt>::value_type>,
+         class = enable_if_t<!detail::tree_is_allocator_v<Compare>, void>,
+         class = enable_if_t<!is_integral_v<Compare>, void>,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
 set(InputIt, InputIt, Compare = Compare(), Alloc = Alloc())
     -> set<typename iterator_traits<InputIt>::value_type, Compare, Alloc>;
 
-template<class InputIt, class Alloc>
+template<class InputIt, class Alloc,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
 set(InputIt, InputIt, Alloc)
     -> set<typename iterator_traits<InputIt>::value_type,
            less<typename iterator_traits<InputIt>::value_type>, Alloc>;
 
-template<class Key, class Compare = less<Key>, class Alloc = allocator<Key>>
+template<class Key, class Compare = less<Key>, class Alloc = allocator<Key>,
+         class = enable_if_t<!detail::tree_is_allocator_v<Compare>, void>,
+         class = enable_if_t<!is_integral_v<Compare>, void>,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
 set(initializer_list<Key>, Compare = Compare(), Alloc = Alloc())
     -> set<Key, Compare, Alloc>;
 
-template<class Key, class Alloc>
+template<class Key, class Alloc,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
 set(initializer_list<Key>, Alloc) -> set<Key, less<Key>, Alloc>;
 
 // ============================================================
@@ -426,9 +471,9 @@ public:
     using key_compare     = Compare;
     using value_compare   = Compare;
     using allocator_type  = Alloc;
-    using reference       = const value_type&;
+    using reference       = value_type&;
     using const_reference = const value_type&;
-    using pointer         = typename allocator_traits<Alloc>::const_pointer;
+    using pointer         = typename allocator_traits<Alloc>::pointer;
     using const_pointer   = typename allocator_traits<Alloc>::const_pointer;
     using size_type       = typename allocator_traits<Alloc>::size_type;
     using difference_type = typename allocator_traits<Alloc>::difference_type;
@@ -453,7 +498,9 @@ public:
 
     explicit multiset(const allocator_type& a) : tree_(a) {}
 
-    template<class InputIt>
+    template<class InputIt, class C2 = Compare, class A2 = Alloc,
+             class = enable_if_t<!detail::tree_is_allocator_v<C2> &&
+                                 detail::tree_is_allocator_v<A2>, void>>
     multiset(InputIt first, InputIt last,
              const key_compare& comp = key_compare(),
              const allocator_type& a = allocator_type())
@@ -462,7 +509,8 @@ public:
         insert(first, last);
     }
 
-    template<class InputIt>
+    template<class InputIt, class A2 = Alloc,
+             class = enable_if_t<detail::tree_is_allocator_v<A2>, void>>
     multiset(InputIt first, InputIt last, const allocator_type& a)
         : multiset(first, last, key_compare(), a) {}
 
@@ -472,6 +520,9 @@ public:
     multiset(const multiset& o, const allocator_type& a) : tree_(o.tree_, a) {}
     multiset(multiset&& o, const allocator_type& a) : tree_(move(o.tree_), a) {}
 
+    template<class C2 = Compare, class A2 = Alloc,
+             class = enable_if_t<!detail::tree_is_allocator_v<C2> &&
+                                 detail::tree_is_allocator_v<A2>, void>>
     multiset(initializer_list<value_type> il,
              const key_compare& comp = key_compare(),
              const allocator_type& a = allocator_type())
@@ -480,6 +531,8 @@ public:
         insert(il.begin(), il.end());
     }
 
+    template<class A2 = Alloc,
+             class = enable_if_t<detail::tree_is_allocator_v<A2>, void>>
     multiset(initializer_list<value_type> il, const allocator_type& a)
         : multiset(il, key_compare(), a) {}
 
@@ -533,6 +586,7 @@ public:
     }
     template<class InputIt>
     void insert(InputIt first, InputIt last) {
+        // multi containers forward the raw element reference (libc++).
         for (; first != last; ++first) tree_.emplace_multi(*first);
     }
     void insert(initializer_list<value_type> il) { insert(il.begin(), il.end()); }
@@ -634,27 +688,26 @@ public:
         return tree_.equal_range_multi(k);
     }
 
-    // ---- Comparisons ----
-    template<class K2, class C2, class A2>
-    friend bool operator==(const multiset<K2,C2,A2>& x, const multiset<K2,C2,A2>& y) {
-        if (x.size() != y.size()) return false;
-        auto a = x.begin(), b = y.begin();
-        for (; a != x.end(); ++a, ++b)
-            if (!(*a == *b)) return false;
-        return true;
-    }
-
-    template<class K2, class C2, class A2>
-    friend auto operator<=>(const multiset<K2,C2,A2>& x, const multiset<K2,C2,A2>& y) {
-        auto a = x.begin(), b = y.begin();
-        for (; a != x.end() && b != y.end(); ++a, ++b)
-            if (auto c = (*a <=> *b); c != 0) return c;
-        return x.size() <=> y.size();
-    }
-
     template<class, class, class> friend class set;
     template<class, class, class> friend class multiset;
 };
+
+// ---- Comparisons ----
+template<class Key, class Compare, class Alloc>
+bool operator==(const multiset<Key,Compare,Alloc>& x, const multiset<Key,Compare,Alloc>& y) {
+    if (x.size() != y.size()) return false;
+    auto a = x.begin(), b = y.begin();
+    for (; a != x.end(); ++a, ++b)
+        if (!(*a == *b)) return false;
+    return true;
+}
+
+template<class Key, class Compare, class Alloc>
+inline detail::synth_three_way_result<Key>
+operator<=>(const multiset<Key,Compare,Alloc>& x, const multiset<Key,Compare,Alloc>& y) {
+    return lexicographical_compare_three_way(x.begin(), x.end(), y.begin(), y.end(),
+                                             detail::synth_three_way);
+}
 
 // ---- Non-member swap ----
 template<class K, class C, class A>
@@ -675,20 +728,28 @@ erase_if(multiset<K,C,A>& c, Pred pred) {
 // ---- Deduction guides for multiset ----
 template<class InputIt,
          class Compare = less<typename iterator_traits<InputIt>::value_type>,
-         class Alloc   = allocator<typename iterator_traits<InputIt>::value_type>>
+         class Alloc   = allocator<typename iterator_traits<InputIt>::value_type>,
+         class = enable_if_t<!detail::tree_is_allocator_v<Compare>, void>,
+         class = enable_if_t<!is_integral_v<Compare>, void>,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
 multiset(InputIt, InputIt, Compare = Compare(), Alloc = Alloc())
     -> multiset<typename iterator_traits<InputIt>::value_type, Compare, Alloc>;
 
-template<class InputIt, class Alloc>
+template<class InputIt, class Alloc,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
 multiset(InputIt, InputIt, Alloc)
     -> multiset<typename iterator_traits<InputIt>::value_type,
                 less<typename iterator_traits<InputIt>::value_type>, Alloc>;
 
-template<class Key, class Compare = less<Key>, class Alloc = allocator<Key>>
+template<class Key, class Compare = less<Key>, class Alloc = allocator<Key>,
+         class = enable_if_t<!detail::tree_is_allocator_v<Compare>, void>,
+         class = enable_if_t<!is_integral_v<Compare>, void>,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
 multiset(initializer_list<Key>, Compare = Compare(), Alloc = Alloc())
     -> multiset<Key, Compare, Alloc>;
 
-template<class Key, class Alloc>
+template<class Key, class Alloc,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
 multiset(initializer_list<Key>, Alloc) -> multiset<Key, less<Key>, Alloc>;
 
 // ---- Cross-container merge implementations ----

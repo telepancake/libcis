@@ -220,8 +220,13 @@ struct array<T, 0> {
     // For a zero-element array we keep aggregate-initability by providing a
     // dummy properly-aligned storage field (same technique as libc++).
     // No T objects actually live here.
-    struct aligned_storage_t { alignas(T) unsigned char buf[sizeof(T)]; };
-    aligned_storage_t storage;
+    // Like libc++, the dummy elements are const-qualified when T is const so
+    // that array<const T, 0> has a deleted implicit copy assignment operator
+    // (tested by array.cons/implicit_copy.pass.cpp).
+    struct empty_placeholder {};
+    using empty_type = conditional_t<is_const_v<T>, const empty_placeholder, empty_placeholder>;
+    struct array_in_struct_t { T data_[1]; };
+    alignas(array_in_struct_t) empty_type storage[sizeof(array_in_struct_t)];
 
     // data() returns nullptr per the standard
     [[nodiscard]] constexpr pointer data() noexcept { return nullptr; }

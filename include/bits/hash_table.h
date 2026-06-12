@@ -1,1128 +1,1801 @@
-// bits/hash_table.h — internal hash table infrastructure
-// Ported from libc++ include/__hash_table
+// bits/hash_table.h — internal hash table infrastructure for the unordered
+// containers. Ported from libc++ include/__hash_table (release/20.x), plus:
+//   - __next_prime from libcxx/src/hash.cpp (header-only here),
+//   - node-handle machinery from include/__node_handle,
+//   - key-extraction tags from include/__type_traits/can_extract_key.h.
 // Shared by <unordered_map> and <unordered_set>.
+//
+// Deviations from libc++ (reasons in line):
+//   - libc++ stores map elements as __hash_value_type<Key,T>, a layout-
+//     identical wrapper around pair<const Key, T> whose only purpose is to
+//     allow assigning/moving nodes despite the const key. Here the node value
+//     type IS pair<const Key, T> and the const_cast tricks live in
+//     ht_kv_types (same object layout, same casts, fewer types). As a result
+//     the map needs no __hash_map_iterator wrappers: the plain hash iterators
+//     already yield pair<const Key, T>.
+//   - The bucket list is managed with explicit allocate/deallocate calls
+//     instead of unique_ptr<next_ptr[], deleter> (same allocator, same calls).
+//   - would-throw paths trap (house style, -fno-exceptions).
+//
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 #pragma once
 
 #include <memory>
 #include <functional>
 #include <utility>
+#include <iterator>
 #include <type_traits>
+#include <initializer_list>
+#include <optional>
 #include <limits>
 #include <cstddef>
 
 namespace std {
 
-// ============================================================================
-// Internal helpers
-// ============================================================================
-
 namespace detail {
+
+// ===========================================================================
+// __next_prime — ported from libcxx/src/hash.cpp
+// ===========================================================================
+
+// handle all next_prime(i) for i in [1, 210), special case 0
+inline constexpr unsigned ht_small_primes[] = {
+    0,   2,   3,   5,   7,   11,  13,  17,  19,  23,  29,  31,  37,  41,  43,  47,
+    53,  59,  61,  67,  71,  73,  79,  83,  89,  97,  101, 103, 107, 109, 113, 127,
+    131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211};
+
+// potential primes = 210*k + ht_prime_indices[i], k >= 1
+//   these numbers are not divisible by 2, 3, 5 or 7.
+inline constexpr unsigned ht_prime_indices[] = {
+    1,   11,  13,  17,  19,  23,  29,  31,  37,  41,  43,  47,  53,  59,  61,  67,
+    71,  73,  79,  83,  89,  97,  101, 103, 107, 109, 113, 121, 127, 131, 137, 139,
+    143, 149, 151, 157, 163, 167, 169, 173, 179, 181, 187, 191, 193, 197, 199, 209};
+
+template<class T>
+inline const T* ht_lower_bound(const T* first, const T* last, size_t value) {
+    size_t len = static_cast<size_t>(last - first);
+    while (len != 0) {
+        size_t half = len / 2;
+        const T* mid = first + half;
+        if (static_cast<size_t>(*mid) < value) {
+            first = mid + 1;
+            len -= half + 1;
+        } else
+            len = half;
+    }
+    return first;
+}
+
+// If n == 0, returns 0. Else returns the lowest prime number >= n.
+inline size_t next_prime(size_t n) {
+    const size_t L = 210;
+    const size_t N = sizeof(ht_small_primes) / sizeof(ht_small_primes[0]);
+    // If n is small enough, search in small_primes
+    if (n <= ht_small_primes[N - 1])
+        return *ht_lower_bound(ht_small_primes, ht_small_primes + N, n);
+    // Else n > largest small prime. Check for overflow (would throw
+    // overflow_error in libc++).
+    if (sizeof(size_t) == 8 ? n > 0xFFFFFFFFFFFFFFC5ull : n > 0xFFFFFFFBu)
+        __builtin_trap();
+    const size_t M = sizeof(ht_prime_indices) / sizeof(ht_prime_indices[0]);
+    size_t k0 = n / L;
+    size_t in = static_cast<size_t>(
+        ht_lower_bound(ht_prime_indices, ht_prime_indices + M, n - k0 * L) - ht_prime_indices);
+    n = L * k0 + ht_prime_indices[in];
+    while (true) {
+        // Divide n by all primes or potential primes (i) until:
+        //   1. The division is even, so try next potential prime.
+        //   2. The i > sqrt(n), in which case n is prime.
+        for (size_t j = 5; j < N - 1; ++j) {
+            const size_t p = ht_small_primes[j];
+            const size_t q = n / p;
+            if (q < p)
+                return n;
+            if (n == q * p)
+                goto next;
+        }
+        // n wasn't divisible by small primes, try potential primes
+        {
+            size_t i = 211;
+            while (true) {
+                size_t q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 10; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 6; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 6; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 6; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 6; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 6; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 6; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 6; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 8; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 8; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 6; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 6; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 6; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 6; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 6; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 6; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 6; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 4; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 10; q = n / i;
+                if (q < i) return n;
+                if (n == q * i) break;
+                i += 2;
+            }
+        }
+    next:
+        // n is not prime. Increment n to next potential prime.
+        if (++in == M) {
+            ++k0;
+            in = 0;
+        }
+        n = L * k0 + ht_prime_indices[in];
+    }
+}
+
+// ===========================================================================
+// Hash constraining helpers (libc++ __hash_table)
+// ===========================================================================
 
 inline bool is_hash_power2(size_t bc) noexcept {
     return bc > 2 && !(bc & (bc - 1));
 }
 
 inline size_t constrain_hash(size_t h, size_t bc) noexcept {
-    return !(bc & (bc - 1)) ? (h & (bc - 1)) : (h < bc ? h : h % bc);
+    return !(bc & (bc - 1)) ? h & (bc - 1) : (h < bc ? h : h % bc);
 }
 
-// Next power-of-two >= n
 inline size_t next_hash_pow2(size_t n) noexcept {
-    if (n <= 1) return 1;
-    unsigned long long v = (unsigned long long)(n - 1);
-    int lz = __builtin_clzll(v | 1ULL);
-    return size_t(1) << (64 - lz);
+    return n < 2 ? n
+                 : (size_t(1) << (numeric_limits<size_t>::digits - __builtin_clzll(n - 1)));
 }
 
-// Simple next-prime
-inline size_t next_prime(size_t n) noexcept {
-    if (n <= 2) return 2;
-    if (n <= 3) return 3;
-    if (!(n & 1)) ++n;
-    while (true) {
-        bool ok = true;
-        for (size_t d = 3; d * d <= n; d += 2) {
-            if (n % d == 0) { ok = false; break; }
-        }
-        if (ok) return n;
-        n += 2;
+inline float ht_ceil(float f) noexcept { return __builtin_ceilf(f); }
+
+// ===========================================================================
+// Key extraction tags (libc++ __type_traits/can_extract_key.h)
+// ===========================================================================
+
+struct extract_key_fail_tag {};
+struct extract_key_self_tag {};
+struct extract_key_first_tag {};
+
+template<class ValTy, class Key, class RawValTy = remove_const_t<remove_reference_t<ValTy>>>
+struct ht_can_extract_key
+    : conditional_t<is_same_v<RawValTy, Key>, extract_key_self_tag, extract_key_fail_tag> {};
+
+template<class Pair, class Key, class First, class Second>
+struct ht_can_extract_key<Pair, Key, pair<First, Second>>
+    : conditional_t<is_same_v<remove_const_t<First>, Key>, extract_key_first_tag,
+                    extract_key_fail_tag> {};
+
+// true iff Key != ContainerValueTy (map, not set) and ValTy == Key.
+template<class ValTy, class Key, class ContainerValueTy,
+         class RawValTy = remove_const_t<remove_reference_t<ValTy>>>
+struct ht_can_extract_map_key : bool_constant<is_same_v<RawValTy, Key>> {};
+
+template<class ValTy, class Key, class RawValTy>
+struct ht_can_extract_map_key<ValTy, Key, Key, RawValTy> : false_type {};
+
+// is_transparent gate for the C++20 heterogeneous overloads
+// (libc++ __is_transparent_v<Hash,K> && __is_transparent_v<Pred,K>)
+template<class T, class K, class = void>
+inline constexpr bool ht_is_transparent_v = false;
+template<class T, class K>
+inline constexpr bool ht_is_transparent_v<T, K, void_t<typename T::is_transparent>> = true;
+
+// __is_allocator (unique name; detail::tree_is_allocator_v is owned by
+// bits/tree.h)
+template<class Alloc, class = void, class = void>
+inline constexpr bool ht_is_allocator_v = false;
+template<class Alloc>
+inline constexpr bool ht_is_allocator_v<
+    Alloc, void_t<typename Alloc::value_type>,
+    void_t<decltype(declval<Alloc&>().allocate(size_t(0)))>> = true;
+
+template<class Iter>
+using ht_iter_category_t = typename iterator_traits<Iter>::iterator_category;
+
+// ===========================================================================
+// Key/value traits (libc++ __hash_key_value_types, adapted: the map node
+// value type is pair<const Key, T> itself; the const_cast machinery of
+// __hash_value_type lives here instead)
+// ===========================================================================
+
+template<class Tp>
+struct ht_kv_types {
+    using key_type             = Tp;
+    using node_value_type      = Tp;
+    using container_value_type = Tp;
+    static const bool is_map   = false;
+
+    static const key_type& get_key(const Tp& v) noexcept { return v; }
+    static container_value_type* get_ptr(node_value_type& n) noexcept { return std::addressof(n); }
+    static Tp&& move_value(node_value_type& v) noexcept { return std::move(v); }
+    static Tp& ref(node_value_type& v) noexcept { return v; }
+};
+
+template<class Key, class T>
+struct ht_kv_types<pair<const Key, T>> {
+    using key_type             = Key;
+    using mapped_type          = T;
+    using node_value_type      = pair<const Key, T>;
+    using container_value_type = pair<const Key, T>;
+    static const bool is_map   = true;
+
+    static const key_type& get_key(const container_value_type& v) noexcept { return v.first; }
+    static container_value_type* get_ptr(node_value_type& n) noexcept { return std::addressof(n); }
+    // __hash_value_type::__move()
+    static pair<Key&&, T&&> move_value(node_value_type& v) noexcept {
+        return pair<Key&&, T&&>(std::move(const_cast<Key&>(v.first)), std::move(v.second));
     }
-}
-
-inline float ceil_f(float f) noexcept {
-    long long i = static_cast<long long>(f);
-    return (f > static_cast<float>(i)) ? static_cast<float>(i + 1) : static_cast<float>(i);
-}
+    // __hash_value_type::__ref()
+    static pair<Key&, T&> ref(node_value_type& v) noexcept {
+        return pair<Key&, T&>(const_cast<Key&>(v.first), v.second);
+    }
+};
 
 } // namespace detail
 
-// ============================================================================
-// Node types
-// ============================================================================
+// ===========================================================================
+// Node types (libc++ __hash_node_base / __hash_node)
+// ===========================================================================
 
-// Forward declaration
-template<class Tp, class Hash, class Equal, class Alloc, bool Unique>
+template<class Tp, class Hash, class Equal, class Alloc>
 class hash_table;
 
-// Base node.
-// NodePtr = pointer to ht_node<Tp,VoidPtr>.
-// next_ is a pointer to ht_node_base (the "base pointer" / "next pointer" type).
-// This matches libc++'s __hash_node_base design where __next_ is __next_pointer
-// (a rebind of NodePtr to the base type).
 template<class NodePtr>
 struct ht_node_base {
-    // The "base pointer" type = pointer to ht_node_base, rebound from NodePtr
-    using base_ptr_type = typename pointer_traits<NodePtr>::template rebind<ht_node_base>;
+    using node_type         = typename pointer_traits<NodePtr>::element_type;
+    using node_base_pointer = typename pointer_traits<NodePtr>::template rebind<ht_node_base>;
+    using node_pointer      = NodePtr;
+    using next_pointer      = node_base_pointer;
 
-    base_ptr_type next_;   // pointer to next base node (== next in singly-linked list)
+    next_pointer next_;
+
+    next_pointer ptr() noexcept {
+        return static_cast<next_pointer>(pointer_traits<node_base_pointer>::pointer_to(*this));
+    }
+
+    node_pointer upcast() noexcept {
+        return static_cast<node_pointer>(pointer_traits<node_base_pointer>::pointer_to(*this));
+    }
+
+    size_t hash() const noexcept { return static_cast<const node_type&>(*this).hash_; }
 
     ht_node_base() noexcept : next_(nullptr) {}
-
-    // Convert this base to the base_ptr_type pointing to *this
-    base_ptr_type ptr() noexcept {
-        return pointer_traits<base_ptr_type>::pointer_to(*this);
-    }
-
-    // Upcast: interpret *this as the full node and return NodePtr
-    // Valid when *this is actually a ht_node (not the sentinel head)
-    NodePtr upcast() noexcept {
-        return static_cast<NodePtr>(
-            pointer_traits<base_ptr_type>::pointer_to(*this));
-    }
+    explicit ht_node_base(next_pointer next) noexcept : next_(next) {}
 };
 
-// Full node: inherits base (which carries next_), plus hash and value
 template<class Tp, class VoidPtr>
 struct ht_node
-    : ht_node_base<typename pointer_traits<VoidPtr>::template rebind<ht_node<Tp,VoidPtr>>>
+    : public ht_node_base<typename pointer_traits<VoidPtr>::template rebind<ht_node<Tp, VoidPtr>>>
 {
-    using value_type    = Tp;
-    using node_ptr_type = typename pointer_traits<VoidPtr>::template rebind<ht_node>;
+    using node_value_type = Tp;
+    using base            = ht_node_base<typename pointer_traits<VoidPtr>::template rebind<ht_node>>;
+    using next_pointer    = typename base::next_pointer;
 
-    size_t hash_val;
+    size_t hash_;
 
+    // Lifetime of the value starts separately (allocator-aware construction).
 private:
-    union { value_type val_; };  // deferred initialisation
+    union { Tp value_; };
 public:
-    value_type&       get_value()       noexcept { return val_; }
-    const value_type& get_value() const noexcept { return val_; }
+    Tp& get_value() noexcept { return value_; }
+    const Tp& get_value() const noexcept { return value_; }
+
+    explicit ht_node(next_pointer next, size_t hash) : base(next), hash_(hash) {}
     ~ht_node() {}
 };
 
-// ============================================================================
-// Iterators
-//
-// Both mutable and const iterators store a base_ptr_type (pointer to the
-// base node).  Dereferencing casts via upcast() to get the value.
-// Incrementing advances via next_.
-// ============================================================================
+// ht_node_types: compute iterator typedefs from NodePtr WITHOUT completing
+// the node type (libc++ __hash_node_types). Required for incomplete-type
+// support: `struct A { unordered_set<A> m; ... }` instantiates the iterator
+// classes while A is incomplete, and `typename node_type::next_pointer`
+// would otherwise force completion of ht_node<A, ...> (whose union member
+// needs complete A).
+template<class Node>
+struct ht_node_types_impl;
+
+template<class T, class VP>
+struct ht_node_types_impl<ht_node<T, VP>> {
+    using node_value_type   = T;
+    using node_pointer      = typename pointer_traits<VP>::template rebind<ht_node<T, VP>>;
+    using node_base_pointer =
+        typename pointer_traits<VP>::template rebind<ht_node_base<node_pointer>>;
+    using next_pointer      = node_base_pointer;
+};
+
+template<class NodePtr>
+using ht_node_types = ht_node_types_impl<typename pointer_traits<NodePtr>::element_type>;
+
+// ===========================================================================
+// Iterators (libc++ __hash_iterator and friends)
+// Members are public implementation details (libcis style avoids the long
+// cross-class friend lists of libc++; see CONVENTIONS gcc-10 note (f)).
+// ===========================================================================
 
 template<class NodePtr>
 class ht_iterator {
-    using Node      = typename pointer_traits<NodePtr>::element_type;
-    using BaseType  = ht_node_base<NodePtr>;
-    using BasePtr   = typename pointer_traits<NodePtr>::template rebind<BaseType>;
 public:
+    using node_type    = typename pointer_traits<NodePtr>::element_type;
+    using next_pointer = typename ht_node_types<NodePtr>::next_pointer;
+
+    next_pointer node_;
+
     using iterator_category = forward_iterator_tag;
-    using value_type        = typename Node::value_type;
+    using value_type        = typename ht_node_types<NodePtr>::node_value_type;
     using difference_type   = ptrdiff_t;
     using reference         = value_type&;
     using pointer           = typename pointer_traits<NodePtr>::template rebind<value_type>;
 
-    BasePtr node_;
-
     ht_iterator() noexcept : node_(nullptr) {}
-    explicit ht_iterator(BasePtr n) noexcept : node_(n) {}
+    explicit ht_iterator(next_pointer node) noexcept : node_(node) {}
 
-    reference operator*()  const noexcept {
-        return static_cast<NodePtr>(node_)->get_value();
+    reference operator*() const { return node_->upcast()->get_value(); }
+    pointer operator->() const {
+        return pointer_traits<pointer>::pointer_to(node_->upcast()->get_value());
     }
-    pointer operator->() const noexcept {
-        return pointer_traits<pointer>::pointer_to(operator*());
-    }
-    ht_iterator& operator++() noexcept { node_ = node_->next_; return *this; }
-    ht_iterator  operator++(int) noexcept { ht_iterator t(*this); ++(*this); return t; }
+    ht_iterator& operator++() { node_ = node_->next_; return *this; }
+    ht_iterator operator++(int) { ht_iterator t(*this); ++(*this); return t; }
 
-    friend bool operator==(const ht_iterator& x, const ht_iterator& y) noexcept { return x.node_ == y.node_; }
-    friend bool operator!=(const ht_iterator& x, const ht_iterator& y) noexcept { return !(x==y); }
-
-    template<class,class,class,class,bool> friend class hash_table;
+    friend bool operator==(const ht_iterator& x, const ht_iterator& y) { return x.node_ == y.node_; }
+    friend bool operator!=(const ht_iterator& x, const ht_iterator& y) { return !(x == y); }
 };
 
 template<class NodePtr>
 class ht_const_iterator {
-    using Node      = typename pointer_traits<NodePtr>::element_type;
-    using BaseType  = ht_node_base<NodePtr>;
-    using BasePtr   = typename pointer_traits<NodePtr>::template rebind<BaseType>;
 public:
+    using node_type    = typename pointer_traits<NodePtr>::element_type;
+    using next_pointer = typename ht_node_types<NodePtr>::next_pointer;
+
+    next_pointer node_;
+
+    using non_const_iterator = ht_iterator<NodePtr>;
+
     using iterator_category = forward_iterator_tag;
-    using value_type        = typename Node::value_type;
+    using value_type        = typename ht_node_types<NodePtr>::node_value_type;
     using difference_type   = ptrdiff_t;
     using reference         = const value_type&;
     using pointer           = typename pointer_traits<NodePtr>::template rebind<const value_type>;
 
-    BasePtr node_;
-
     ht_const_iterator() noexcept : node_(nullptr) {}
-    explicit ht_const_iterator(BasePtr n) noexcept : node_(n) {}
-    ht_const_iterator(const ht_iterator<NodePtr>& it) noexcept : node_(it.node_) {}
+    explicit ht_const_iterator(next_pointer node) noexcept : node_(node) {}
+    ht_const_iterator(const non_const_iterator& x) noexcept : node_(x.node_) {}
 
-    reference operator*()  const noexcept {
-        return static_cast<NodePtr>(node_)->get_value();
+    reference operator*() const { return node_->upcast()->get_value(); }
+    pointer operator->() const {
+        return pointer_traits<pointer>::pointer_to(node_->upcast()->get_value());
     }
-    pointer operator->() const noexcept {
-        return pointer_traits<pointer>::pointer_to(operator*());
-    }
-    ht_const_iterator& operator++() noexcept { node_ = node_->next_; return *this; }
-    ht_const_iterator  operator++(int) noexcept { ht_const_iterator t(*this); ++(*this); return t; }
+    ht_const_iterator& operator++() { node_ = node_->next_; return *this; }
+    ht_const_iterator operator++(int) { ht_const_iterator t(*this); ++(*this); return t; }
 
-    friend bool operator==(const ht_const_iterator& x, const ht_const_iterator& y) noexcept { return x.node_ == y.node_; }
-    friend bool operator!=(const ht_const_iterator& x, const ht_const_iterator& y) noexcept { return !(x==y); }
-
-    template<class,class,class,class,bool> friend class hash_table;
+    friend bool operator==(const ht_const_iterator& x, const ht_const_iterator& y) { return x.node_ == y.node_; }
+    friend bool operator!=(const ht_const_iterator& x, const ht_const_iterator& y) { return !(x == y); }
 };
 
 template<class NodePtr>
 class ht_local_iterator {
-    using Node      = typename pointer_traits<NodePtr>::element_type;
-    using BaseType  = ht_node_base<NodePtr>;
-    using BasePtr   = typename pointer_traits<NodePtr>::template rebind<BaseType>;
 public:
+    using node_type    = typename pointer_traits<NodePtr>::element_type;
+    using next_pointer = typename ht_node_types<NodePtr>::next_pointer;
+
+    next_pointer node_;
+    size_t bucket_;
+    size_t bucket_count_;
+
     using iterator_category = forward_iterator_tag;
-    using value_type        = typename Node::value_type;
+    using value_type        = typename ht_node_types<NodePtr>::node_value_type;
     using difference_type   = ptrdiff_t;
     using reference         = value_type&;
     using pointer           = typename pointer_traits<NodePtr>::template rebind<value_type>;
 
-    BasePtr  node_;
-    size_t   bucket_idx_;
-    size_t   bucket_cnt_;
-
-    ht_local_iterator() noexcept : node_(nullptr), bucket_idx_(0), bucket_cnt_(0) {}
-    // Construct from predecessor bp: first node is bp->next_
-    explicit ht_local_iterator(BasePtr bp, size_t b, size_t bc) noexcept
-        : node_(bp ? bp->next_ : nullptr), bucket_idx_(b), bucket_cnt_(bc) {}
-
-    reference operator*()  const noexcept { return static_cast<NodePtr>(node_)->get_value(); }
-    pointer   operator->() const noexcept {
-        return pointer_traits<pointer>::pointer_to(operator*());
+    ht_local_iterator() noexcept : node_(nullptr), bucket_(0), bucket_count_(0) {}
+    // node is the bucket's "before begin" pointer (or null)
+    explicit ht_local_iterator(next_pointer node, size_t bucket, size_t bucket_count) noexcept
+        : node_(node), bucket_(bucket), bucket_count_(bucket_count) {
+        if (node_ != nullptr)
+            node_ = node_->next_;
     }
-    ht_local_iterator& operator++() noexcept {
+
+    reference operator*() const { return node_->upcast()->get_value(); }
+    pointer operator->() const {
+        return pointer_traits<pointer>::pointer_to(node_->upcast()->get_value());
+    }
+    ht_local_iterator& operator++() {
         node_ = node_->next_;
-        if (node_ &&
-            detail::constrain_hash(static_cast<NodePtr>(node_)->hash_val, bucket_cnt_) != bucket_idx_)
+        if (node_ != nullptr && detail::constrain_hash(node_->hash(), bucket_count_) != bucket_)
             node_ = nullptr;
         return *this;
     }
-    ht_local_iterator operator++(int) noexcept { ht_local_iterator t(*this); ++(*this); return t; }
-    friend bool operator==(const ht_local_iterator& x, const ht_local_iterator& y) noexcept { return x.node_ == y.node_; }
-    friend bool operator!=(const ht_local_iterator& x, const ht_local_iterator& y) noexcept { return !(x==y); }
+    ht_local_iterator operator++(int) { ht_local_iterator t(*this); ++(*this); return t; }
 
-    template<class,class,class,class,bool> friend class hash_table;
-    template<class> friend class ht_const_local_iterator;
+    friend bool operator==(const ht_local_iterator& x, const ht_local_iterator& y) { return x.node_ == y.node_; }
+    friend bool operator!=(const ht_local_iterator& x, const ht_local_iterator& y) { return !(x == y); }
 };
 
 template<class NodePtr>
 class ht_const_local_iterator {
-    using Node      = typename pointer_traits<NodePtr>::element_type;
-    using BaseType  = ht_node_base<NodePtr>;
-    using BasePtr   = typename pointer_traits<NodePtr>::template rebind<BaseType>;
 public:
+    using node_type    = typename pointer_traits<NodePtr>::element_type;
+    using next_pointer = typename ht_node_types<NodePtr>::next_pointer;
+
+    next_pointer node_;
+    size_t bucket_;
+    size_t bucket_count_;
+
+    using non_const_iterator = ht_local_iterator<NodePtr>;
+
     using iterator_category = forward_iterator_tag;
-    using value_type        = typename Node::value_type;
+    using value_type        = typename ht_node_types<NodePtr>::node_value_type;
     using difference_type   = ptrdiff_t;
     using reference         = const value_type&;
     using pointer           = typename pointer_traits<NodePtr>::template rebind<const value_type>;
 
-    BasePtr  node_;
-    size_t   bucket_idx_;
-    size_t   bucket_cnt_;
-
-    ht_const_local_iterator() noexcept : node_(nullptr), bucket_idx_(0), bucket_cnt_(0) {}
-    explicit ht_const_local_iterator(BasePtr bp, size_t b, size_t bc) noexcept
-        : node_(bp ? bp->next_ : nullptr), bucket_idx_(b), bucket_cnt_(bc) {}
-    ht_const_local_iterator(const ht_local_iterator<NodePtr>& it) noexcept
-        : node_(it.node_), bucket_idx_(it.bucket_idx_), bucket_cnt_(it.bucket_cnt_) {}
-
-    reference operator*()  const noexcept { return static_cast<NodePtr>(node_)->get_value(); }
-    pointer   operator->() const noexcept {
-        return pointer_traits<pointer>::pointer_to(operator*());
+    ht_const_local_iterator() noexcept : node_(nullptr), bucket_(0), bucket_count_(0) {}
+    explicit ht_const_local_iterator(next_pointer node, size_t bucket, size_t bucket_count) noexcept
+        : node_(node), bucket_(bucket), bucket_count_(bucket_count) {
+        if (node_ != nullptr)
+            node_ = node_->next_;
     }
-    ht_const_local_iterator& operator++() noexcept {
+    ht_const_local_iterator(const non_const_iterator& x) noexcept
+        : node_(x.node_), bucket_(x.bucket_), bucket_count_(x.bucket_count_) {}
+
+    reference operator*() const { return node_->upcast()->get_value(); }
+    pointer operator->() const {
+        return pointer_traits<pointer>::pointer_to(node_->upcast()->get_value());
+    }
+    ht_const_local_iterator& operator++() {
         node_ = node_->next_;
-        if (node_ &&
-            detail::constrain_hash(static_cast<NodePtr>(node_)->hash_val, bucket_cnt_) != bucket_idx_)
+        if (node_ != nullptr && detail::constrain_hash(node_->hash(), bucket_count_) != bucket_)
             node_ = nullptr;
         return *this;
     }
-    ht_const_local_iterator operator++(int) noexcept { ht_const_local_iterator t(*this); ++(*this); return t; }
-    friend bool operator==(const ht_const_local_iterator& x, const ht_const_local_iterator& y) noexcept { return x.node_ == y.node_; }
-    friend bool operator!=(const ht_const_local_iterator& x, const ht_const_local_iterator& y) noexcept { return !(x==y); }
+    ht_const_local_iterator operator++(int) { ht_const_local_iterator t(*this); ++(*this); return t; }
 
-    template<class,class,class,class,bool> friend class hash_table;
+    friend bool operator==(const ht_const_local_iterator& x, const ht_const_local_iterator& y) { return x.node_ == y.node_; }
+    friend bool operator!=(const ht_const_local_iterator& x, const ht_const_local_iterator& y) { return !(x == y); }
 };
 
-// ============================================================================
-// Node destructor
-// ============================================================================
+// ===========================================================================
+// Node destructor (libc++ __hash_node_destructor)
+// ===========================================================================
 
-template<class NodeAlloc>
-struct ht_node_destructor {
-    using traits   = allocator_traits<NodeAlloc>;
-    using pointer  = typename traits::pointer;
-    NodeAlloc& alloc;
-    bool       value_constructed;
-    explicit ht_node_destructor(NodeAlloc& a, bool vc=false) noexcept : alloc(a), value_constructed(vc) {}
+template<class Alloc>
+class ht_node_destructor {
+    using allocator_type = Alloc;
+    using alloc_traits   = allocator_traits<allocator_type>;
+
+public:
+    using pointer = typename alloc_traits::pointer;
+
+private:
+    using node_type = typename pointer_traits<pointer>::element_type;
+    using kv_types  = detail::ht_kv_types<typename node_type::node_value_type>;
+
+    allocator_type& na_;
+
+public:
+    bool value_constructed;
+
+    ht_node_destructor(const ht_node_destructor&) = default;
+    ht_node_destructor& operator=(const ht_node_destructor&) = delete;
+
+    explicit ht_node_destructor(allocator_type& na, bool constructed = false) noexcept
+        : na_(na), value_constructed(constructed) {}
+
     void operator()(pointer p) noexcept {
-        if (value_constructed && p)
-            traits::destroy(alloc, addressof(p->get_value()));
+        if (value_constructed) {
+            alloc_traits::destroy(na_, kv_types::get_ptr(p->get_value()));
+            std::destroy_at(std::addressof(*p));
+        }
         if (p)
-            traits::deallocate(alloc, p, 1);
+            alloc_traits::deallocate(na_, p, 1);
     }
 };
 
-// ============================================================================
-// hash_table
-// ============================================================================
+// ===========================================================================
+// Node handles (libc++ __node_handle: __basic_node_handle + specifics)
+// ===========================================================================
 
-template<class Tp, class Hash, class Equal, class Alloc, bool Unique>
+template<class NodeType, class Alloc, template<class, class> class MapOrSetSpecifics>
+class ht_basic_node_handle
+    : public MapOrSetSpecifics<NodeType, ht_basic_node_handle<NodeType, Alloc, MapOrSetSpecifics>>
+{
+    using alloc_traits = allocator_traits<Alloc>;
+
+public:
+    using allocator_type = Alloc;
+    using node_pointer_type =
+        typename pointer_traits<typename alloc_traits::void_pointer>::template rebind<NodeType>;
+
+    // public implementation detail (avoids cross-class friend issues, gcc-10 note (f))
+    node_pointer_type ptr_ = nullptr;
+    optional<allocator_type> alloc_;
+
+    void release_ptr() noexcept {
+        ptr_ = nullptr;
+        alloc_ = nullopt;
+    }
+
+    void destroy_node_pointer() noexcept {
+        if (ptr_ != nullptr) {
+            using node_alloc_type = typename alloc_traits::template rebind_alloc<NodeType>;
+            node_alloc_type alloc(*alloc_);
+            ht_node_destructor<node_alloc_type>(alloc, true)(ptr_);
+            ptr_ = nullptr;
+        }
+    }
+
+    ht_basic_node_handle(node_pointer_type p, const allocator_type& a) : ptr_(p), alloc_(a) {}
+
+    ht_basic_node_handle() = default;
+
+    ht_basic_node_handle(ht_basic_node_handle&& other) noexcept
+        : ptr_(other.ptr_), alloc_(std::move(other.alloc_)) {
+        other.ptr_ = nullptr;
+        other.alloc_ = nullopt;
+    }
+
+    ht_basic_node_handle& operator=(ht_basic_node_handle&& other) {
+        destroy_node_pointer();
+        ptr_ = other.ptr_;
+        if (alloc_traits::propagate_on_container_move_assignment::value || alloc_ == nullopt)
+            alloc_ = std::move(other.alloc_);
+        other.ptr_ = nullptr;
+        other.alloc_ = nullopt;
+        return *this;
+    }
+
+    allocator_type get_allocator() const { return *alloc_; }
+
+    explicit operator bool() const { return ptr_ != nullptr; }
+
+    [[nodiscard]] bool empty() const { return ptr_ == nullptr; }
+
+    void swap(ht_basic_node_handle& other) noexcept(
+        alloc_traits::propagate_on_container_swap::value || alloc_traits::is_always_equal::value) {
+        using std::swap;
+        swap(ptr_, other.ptr_);
+        if (alloc_traits::propagate_on_container_swap::value || alloc_ == nullopt ||
+            other.alloc_ == nullopt)
+            swap(alloc_, other.alloc_);
+    }
+
+    friend void swap(ht_basic_node_handle& a, ht_basic_node_handle& b) noexcept(noexcept(a.swap(b))) {
+        a.swap(b);
+    }
+
+    ~ht_basic_node_handle() { destroy_node_pointer(); }
+};
+
+template<class NodeType, class Derived>
+struct ht_set_node_handle_specifics {
+    using value_type = typename NodeType::node_value_type;
+
+    value_type& value() const { return static_cast<const Derived*>(this)->ptr_->get_value(); }
+};
+
+template<class NodeType, class Derived>
+struct ht_map_node_handle_specifics {
+    using kv_types    = detail::ht_kv_types<typename NodeType::node_value_type>;
+    using key_type    = typename kv_types::key_type;
+    using mapped_type = typename kv_types::mapped_type;
+
+    key_type& key() const {
+        return kv_types::ref(static_cast<const Derived*>(this)->ptr_->get_value()).first;
+    }
+    mapped_type& mapped() const {
+        return kv_types::ref(static_cast<const Derived*>(this)->ptr_->get_value()).second;
+    }
+};
+
+template<class NodeType, class Alloc>
+using ht_set_node_handle = ht_basic_node_handle<NodeType, Alloc, ht_set_node_handle_specifics>;
+
+template<class NodeType, class Alloc>
+using ht_map_node_handle = ht_basic_node_handle<NodeType, Alloc, ht_map_node_handle_specifics>;
+
+template<class Iterator, class NodeType>
+struct ht_insert_return_type {
+    Iterator position;
+    bool inserted;
+    NodeType node;
+};
+
+// ===========================================================================
+// hash_table (libc++ __hash_table)
+// ===========================================================================
+
+template<class Tp, class Hash, class Equal, class Alloc>
 class hash_table {
 public:
-    using value_type      = Tp;
-    using hasher          = Hash;
-    using key_equal       = Equal;
-    using allocator_type  = Alloc;
+    using value_type     = Tp;
+    using hasher         = Hash;
+    using key_equal      = Equal;
+    using allocator_type = Alloc;
 
-    using alloc_traits    = allocator_traits<Alloc>;
-    using size_type       = typename alloc_traits::size_type;
-    using difference_type = ptrdiff_t;
-    using pointer         = typename alloc_traits::pointer;
-    using const_pointer   = typename alloc_traits::const_pointer;
+    using alloc_traits = allocator_traits<allocator_type>;
+    using kv_types     = detail::ht_kv_types<Tp>;
 
-    using void_ptr    = typename alloc_traits::void_pointer;
-    using node_type   = ht_node<Tp, void_ptr>;
-    using node_alloc  = typename alloc_traits::template rebind_alloc<node_type>;
-    using node_traits = allocator_traits<node_alloc>;
-    using node_ptr    = typename node_traits::pointer;        // = node_type*
+    using node_value_type      = typename kv_types::node_value_type;
+    using container_value_type = typename kv_types::container_value_type;
+    using key_type             = typename kv_types::key_type;
+    using reference            = value_type&;
+    using const_reference      = const value_type&;
+    using pointer              = typename alloc_traits::pointer;
+    using const_pointer        = typename alloc_traits::const_pointer;
+    using size_type            = typename alloc_traits::size_type;
+    using difference_type      = ptrdiff_t;
 
-    // base_node = ht_node_base<node_ptr>
-    // base_ptr  = pointer to base_node (= ht_node_base<node_ptr>*)
-    using base_node   = ht_node_base<node_ptr>;
-    using base_ptr    = typename base_node::base_ptr_type;    // = base_node*
+    using void_pointer = typename alloc_traits::void_pointer;
+    using node         = ht_node<Tp, void_pointer>;
+    using node_allocator = typename alloc_traits::template rebind_alloc<node>;
+    using node_traits    = allocator_traits<node_allocator>;
+    using node_pointer   = typename node_traits::pointer;
+    using first_node_t   = ht_node_base<node_pointer>;
+    using node_base_pointer = typename first_node_t::node_base_pointer;
+    using next_pointer      = typename first_node_t::next_pointer;
 
-    // Bucket array: each entry is a base_ptr (predecessor pointer to first node)
-    using bucket_alloc  = typename alloc_traits::template rebind_alloc<base_ptr>;
-    using bucket_traits = allocator_traits<bucket_alloc>;
-    using bucket_arr    = typename bucket_traits::pointer;    // = base_ptr*
+    using pointer_allocator   = typename node_traits::template rebind_alloc<next_pointer>;
+    using pointer_alloc_traits = allocator_traits<pointer_allocator>;
+    using bucket_list_pointer = typename pointer_alloc_traits::pointer;
 
-    using node_dtor   = ht_node_destructor<node_alloc>;
-    using node_holder = unique_ptr<node_type, node_dtor>;
+    using iterator             = ht_iterator<node_pointer>;
+    using const_iterator       = ht_const_iterator<node_pointer>;
+    using local_iterator       = ht_local_iterator<node_pointer>;
+    using const_local_iterator = ht_const_local_iterator<node_pointer>;
 
-    using iterator             = ht_iterator<node_ptr>;
-    using const_iterator       = ht_const_iterator<node_ptr>;
-    using local_iterator       = ht_local_iterator<node_ptr>;
-    using const_local_iterator = ht_const_local_iterator<node_ptr>;
+    using node_destructor = ht_node_destructor<node_allocator>;
+    using node_holder     = unique_ptr<node, node_destructor>;
+
+private:
+    // --- Member data (libc++ layout: bucket list, first node, node alloc,
+    // size, hasher, max load factor, key_eq; [[no_unique_address]] members
+    // first per gcc-10 note (a)) ---
+    [[no_unique_address]] node_allocator node_alloc_;
+    [[no_unique_address]] hasher hasher_;
+    [[no_unique_address]] key_equal key_eq_;
+    bucket_list_pointer bucket_list_;
+    size_type bucket_count_;
+    first_node_t first_node_;
+    size_type size_;
+    float max_load_factor_;
 
 public:
-    // --- data members ---
-    bucket_arr buckets_;
-    size_type  bucket_count_;
-    base_node  head_;         // sentinel; head_.next_ = base_ptr to first real node
-    node_alloc node_alloc_;
-    size_type  size_;
-    float      max_load_factor_;
-    hasher     hasher_;
-    key_equal  key_eq_;
+    size_type size() const noexcept { return size_; }
 
-    // ---- utilities ----
+    hasher& hash_function() noexcept { return hasher_; }
+    const hasher& hash_function() const noexcept { return hasher_; }
 
-    base_ptr head_as_base() noexcept {
-        return pointer_traits<base_ptr>::pointer_to(head_);
-    }
+    float& max_load_factor_ref() noexcept { return max_load_factor_; }
+    float max_load_factor() const noexcept { return max_load_factor_; }
 
-    // Convert node_ptr to base_ptr (valid: node_type inherits from base_node)
-    static base_ptr node_to_base(node_ptr np) noexcept {
-        return pointer_traits<base_ptr>::pointer_to(
-            *static_cast<base_node*>(np));
-    }
+    key_equal& key_eq() noexcept { return key_eq_; }
+    const key_equal& key_eq() const noexcept { return key_eq_; }
 
-    // ---- bucket array alloc/free ----
+    node_allocator& node_alloc() noexcept { return node_alloc_; }
+    const node_allocator& node_alloc() const noexcept { return node_alloc_; }
 
-    void alloc_buckets(size_type n) {
-        bucket_alloc ba(node_alloc_);
-        buckets_      = bucket_traits::allocate(ba, n);
+    size_type bucket_count() const noexcept { return bucket_count_; }
+
+private:
+    size_type& size_ref() noexcept { return size_; }
+
+    void allocate_bucket_list(size_type n) {
+        pointer_allocator pa(node_alloc_);
+        bucket_list_ = n > 0 ? pointer_alloc_traits::allocate(pa, n) : nullptr;
         bucket_count_ = n;
-        for (size_type i = 0; i < n; ++i)
-            buckets_[i] = nullptr;
     }
 
-    void free_buckets() noexcept {
-        if (buckets_) {
-            bucket_alloc ba(node_alloc_);
-            bucket_traits::deallocate(ba, buckets_, bucket_count_);
-            buckets_      = nullptr;
+    void deallocate_bucket_list() noexcept {
+        if (bucket_list_ != nullptr) {
+            pointer_allocator pa(node_alloc_);
+            pointer_alloc_traits::deallocate(pa, bucket_list_, bucket_count_);
+            bucket_list_ = nullptr;
             bucket_count_ = 0;
         }
     }
 
-    // ---- node construction ----
-
-    template<class... Args>
-    node_holder construct_node(Args&&... args) {
-        node_holder h(node_traits::allocate(node_alloc_, 1),
-                      node_dtor(node_alloc_, false));
-        h->next_    = nullptr;
-        h->hash_val = 0;
-        node_traits::construct(node_alloc_, addressof(h->get_value()),
-                               forward<Args>(args)...);
-        h.get_deleter().value_constructed = true;
-        h->hash_val = hasher_(h->get_value());
-        return h;
-    }
-
-    template<class... Args>
-    node_holder construct_node_with_hash(size_t hv, Args&&... args) {
-        node_holder h(node_traits::allocate(node_alloc_, 1),
-                      node_dtor(node_alloc_, false));
-        h->next_    = nullptr;
-        h->hash_val = hv;
-        node_traits::construct(node_alloc_, addressof(h->get_value()),
-                               forward<Args>(args)...);
-        h.get_deleter().value_constructed = true;
-        return h;
-    }
-
-    void deallocate_node(node_ptr np) noexcept {
-        node_traits::destroy(node_alloc_, addressof(np->get_value()));
-        node_traits::deallocate(node_alloc_, np, 1);
-    }
-
-    // Deallocate entire chain starting at bp (base_ptr)
-    void deallocate_list(base_ptr bp) noexcept {
-        while (bp) {
-            base_ptr nxt = static_cast<node_ptr>(bp)->next_;
-            deallocate_node(static_cast<node_ptr>(bp));
-            bp = nxt;
-        }
-    }
-
-    // ---- grow if needed ----
-    void maybe_grow() {
-        size_type bc = bucket_count_;
-        size_type s1 = 2*bc + (detail::is_hash_power2(bc) ? 0 : 1);
-        size_type s2 = (size_type)detail::ceil_f((float)(size_+1) / max_load_factor_);
-        size_type n  = s1 > s2 ? s1 : s2;
-        if (n < 2) n = 2;
-        do_rehash(n);
-    }
-
-    // ---- raw insert unique ----
-    // Returns (base_ptr_to_node, was_inserted)
-    pair<base_ptr, bool> raw_insert_unique(node_ptr np) noexcept {
-        size_t hv = np->hash_val;
-        size_t ch = detail::constrain_hash(hv, bucket_count_);
-        base_ptr bp = buckets_[ch];
-        if (bp) {
-            for (base_ptr nd = bp->next_; nd; nd = static_cast<node_ptr>(nd)->next_) {
-                node_ptr ep = static_cast<node_ptr>(nd);
-                if (ep->hash_val != hv &&
-                    detail::constrain_hash(ep->hash_val, bucket_count_) != ch)
-                    break;
-                if (ep->hash_val == hv && key_eq_(ep->get_value(), np->get_value()))
-                    return {nd, false};
-            }
-            // Insert after bp (bp is predecessor of the bucket's chain)
-            np->next_  = bp->next_;
-            bp->next_  = node_to_base(np);
-            if (np->next_) {
-                size_t nch = detail::constrain_hash(
-                    static_cast<node_ptr>(np->next_)->hash_val, bucket_count_);
-                if (nch != ch) buckets_[nch] = node_to_base(np);
-            }
-        } else {
-            // Bucket empty: insert at head of the global list
-            base_ptr hbp = head_as_base();
-            np->next_  = hbp->next_;
-            hbp->next_ = node_to_base(np);
-            buckets_[ch] = hbp;
-            if (np->next_) {
-                size_t nch = detail::constrain_hash(
-                    static_cast<node_ptr>(np->next_)->hash_val, bucket_count_);
-                buckets_[nch] = node_to_base(np);
-            }
-        }
-        ++size_;
-        return {node_to_base(np), true};
-    }
-
-    // ---- find multi insertion point ----
-    base_ptr find_multi_pos(size_t hv, const value_type& val) noexcept {
-        size_t ch = detail::constrain_hash(hv, bucket_count_);
-        base_ptr bp = buckets_[ch];
-        if (!bp) return nullptr;
-        bool found = false;
-        for (base_ptr nd = bp; nd->next_; nd = nd->next_) {
-            node_ptr np2 = static_cast<node_ptr>(nd->next_);
-            if (detail::constrain_hash(np2->hash_val, bucket_count_) != ch)
-                break;
-            bool eq = (np2->hash_val == hv) && key_eq_(np2->get_value(), val);
-            if (found != eq) {
-                if (!found) found = true;
-                else        return nd;
-            }
-        }
-        return bp;
-    }
-
-    void raw_insert_multi(node_ptr np) noexcept {
-        size_t hv = np->hash_val;
-        size_t ch = detail::constrain_hash(hv, bucket_count_);
-        base_ptr bp = find_multi_pos(hv, np->get_value());
-        if (!bp) {
-            base_ptr hbp = head_as_base();
-            np->next_  = hbp->next_;
-            hbp->next_ = node_to_base(np);
-            buckets_[ch] = hbp;
-            if (np->next_) {
-                size_t nch = detail::constrain_hash(
-                    static_cast<node_ptr>(np->next_)->hash_val, bucket_count_);
-                buckets_[nch] = node_to_base(np);
-            }
-        } else {
-            np->next_  = bp->next_;
-            bp->next_  = node_to_base(np);
-            if (np->next_) {
-                size_t nch = detail::constrain_hash(
-                    static_cast<node_ptr>(np->next_)->hash_val, bucket_count_);
-                if (nch != ch) buckets_[nch] = node_to_base(np);
-            }
-        }
-        ++size_;
-    }
-
-    // ---- rehash ----
-    void do_rehash(size_type n) {
-        free_buckets();
-        if (n == 0) return;
-        alloc_buckets(n);
-
-        // Rebuild bucket_ entries from the existing linked list
-        // head_.next_ is the base_ptr to the first real node
-        base_ptr pp = head_as_base();
-        if (!pp->next_) return;
-
-        {
-            node_ptr first = static_cast<node_ptr>(pp->next_);
-            size_t ch_cur = detail::constrain_hash(first->hash_val, n);
-            buckets_[ch_cur] = pp;
-            size_t ch_prev   = ch_cur;
-            pp = pp->next_;
-
-            for (base_ptr cp = pp->next_; cp; cp = pp->next_) {
-                ch_cur = detail::constrain_hash(static_cast<node_ptr>(cp)->hash_val, n);
-                if (ch_cur == ch_prev) {
-                    pp = cp;
-                } else if (!buckets_[ch_cur]) {
-                    buckets_[ch_cur] = pp;
-                    pp      = cp;
-                    ch_prev = ch_cur;
-                } else {
-                    // Move this node (and equal-key cluster for multi) to existing bucket
-                    base_ptr tail = cp;
-                    if constexpr (!Unique) {
-                        while (tail->next_ &&
-                               key_eq_(static_cast<node_ptr>(cp)->get_value(),
-                                       static_cast<node_ptr>(tail->next_)->get_value()))
-                            tail = tail->next_;
-                    }
-                    pp->next_               = tail->next_;
-                    tail->next_             = buckets_[ch_cur]->next_;
-                    buckets_[ch_cur]->next_ = cp;
-                }
-            }
-        }
-    }
-
-    // ---- copy ----
-    void copy_from(const hash_table& src) {
-        if (src.size_ == 0) return;
-        do_rehash(src.bucket_count_);
-
-        // Walk source list; build a new linked list in the same order
-        base_ptr tail = head_as_base();
-        // src.head_.next_ is base_ptr to first real node in src
-        for (base_ptr sp = src.head_.next_; sp; sp = static_cast<node_ptr>(sp)->next_) {
-            node_ptr sn = static_cast<node_ptr>(sp);
-            node_holder h = construct_node_with_hash(sn->hash_val, sn->get_value());
-            node_ptr np = h.release();
-            np->next_   = nullptr;
-            tail->next_ = node_to_base(np);   // base_ptr = base_ptr
-            tail        = node_to_base(np);    // advance tail
-            ++size_;
-        }
-        // Rebuild bucket predecessor pointers
-        rebuild_bucket_heads();
-    }
-
-    void rebuild_bucket_heads() noexcept {
-        for (size_type i = 0; i < bucket_count_; ++i)
-            buckets_[i] = nullptr;
-        base_ptr pp = head_as_base();
-        for (base_ptr cp = pp->next_; cp; cp = static_cast<node_ptr>(cp)->next_) {
-            size_t ch = detail::constrain_hash(
-                static_cast<node_ptr>(cp)->hash_val, bucket_count_);
-            if (!buckets_[ch]) buckets_[ch] = pp;
-            pp = cp;
-        }
-    }
-
 public:
-    // =========================================================================
+    // ------------------------------------------------------------------
     // Constructors / destructor
-    // =========================================================================
+    // ------------------------------------------------------------------
 
-    hash_table() noexcept
-        : buckets_(nullptr), bucket_count_(0), head_(), node_alloc_(),
-          size_(0), max_load_factor_(1.0f), hasher_(), key_eq_()
-    {}
+    hash_table() noexcept(
+        is_nothrow_default_constructible_v<node_allocator> &&
+        is_nothrow_default_constructible_v<hasher> && is_nothrow_default_constructible_v<key_equal>)
+        : node_alloc_(), hasher_(), key_eq_(),
+          bucket_list_(nullptr), bucket_count_(0), first_node_(), size_(0), max_load_factor_(1.0f) {}
 
-    hash_table(size_type n, const hasher& hf, const key_equal& eq,
-               const allocator_type& a = allocator_type())
-        : buckets_(nullptr), bucket_count_(0), head_(), node_alloc_(a),
-          size_(0), max_load_factor_(1.0f), hasher_(hf), key_eq_(eq)
-    {
-        if (n > 0) {
-            size_type bc = detail::next_prime(n);
-            alloc_buckets(bc);
-        }
-    }
+    hash_table(const hasher& hf, const key_equal& eql)
+        : node_alloc_(), hasher_(hf), key_eq_(eql),
+          bucket_list_(nullptr), bucket_count_(0), first_node_(), size_(0), max_load_factor_(1.0f) {}
+
+    hash_table(const hasher& hf, const key_equal& eql, const allocator_type& a)
+        : node_alloc_(node_allocator(a)), hasher_(hf), key_eq_(eql),
+          bucket_list_(nullptr), bucket_count_(0), first_node_(), size_(0), max_load_factor_(1.0f) {}
 
     explicit hash_table(const allocator_type& a)
-        : buckets_(nullptr), bucket_count_(0), head_(), node_alloc_(a),
-          size_(0), max_load_factor_(1.0f), hasher_(), key_eq_()
-    {}
+        : node_alloc_(node_allocator(a)), hasher_(), key_eq_(),
+          bucket_list_(nullptr), bucket_count_(0), first_node_(), size_(0), max_load_factor_(1.0f) {}
 
-    hash_table(const hash_table& src)
-        : buckets_(nullptr), bucket_count_(0), head_(), node_alloc_(src.node_alloc_),
-          size_(0), max_load_factor_(src.max_load_factor_),
-          hasher_(src.hasher_), key_eq_(src.key_eq_)
-    { copy_from(src); }
+    // Note: like libc++, the copy constructor copies hash/eq/mlf and the
+    // (select_on_container_copy_construction) allocator but NO elements;
+    // the containers re-insert.
+    hash_table(const hash_table& u)
+        : node_alloc_(node_traits::select_on_container_copy_construction(u.node_alloc())),
+          hasher_(u.hasher_), key_eq_(u.key_eq_),
+          bucket_list_(nullptr), bucket_count_(0), first_node_(), size_(0),
+          max_load_factor_(u.max_load_factor_) {}
 
-    hash_table(const hash_table& src, const allocator_type& a)
-        : buckets_(nullptr), bucket_count_(0), head_(), node_alloc_(a),
-          size_(0), max_load_factor_(src.max_load_factor_),
-          hasher_(src.hasher_), key_eq_(src.key_eq_)
-    { copy_from(src); }
+    hash_table(const hash_table& u, const allocator_type& a)
+        : node_alloc_(node_allocator(a)), hasher_(u.hasher_), key_eq_(u.key_eq_),
+          bucket_list_(nullptr), bucket_count_(0), first_node_(), size_(0),
+          max_load_factor_(u.max_load_factor_) {}
 
-    hash_table(hash_table&& src) noexcept
-        : buckets_(src.buckets_), bucket_count_(src.bucket_count_),
-          head_(), node_alloc_(move(src.node_alloc_)),
-          size_(src.size_), max_load_factor_(src.max_load_factor_),
-          hasher_(move(src.hasher_)), key_eq_(move(src.key_eq_))
-    {
-        head_.next_        = src.head_.next_;
-        src.head_.next_    = nullptr;
-        src.buckets_       = nullptr;
-        src.bucket_count_  = 0;
-        src.size_          = 0;
-        // Fix the bucket that pointed to src's head sentinel → now point to our head
-        if (size_ > 0 && bucket_count_ > 0 && head_.next_) {
-            size_t ch = detail::constrain_hash(
-                static_cast<node_ptr>(head_.next_)->hash_val, bucket_count_);
-            buckets_[ch] = head_as_base();
+    hash_table(hash_table&& u) noexcept(
+        is_nothrow_move_constructible_v<node_allocator> &&
+        is_nothrow_move_constructible_v<hasher> && is_nothrow_move_constructible_v<key_equal>)
+        : node_alloc_(std::move(u.node_alloc_)), hasher_(std::move(u.hasher_)),
+          key_eq_(std::move(u.key_eq_)),
+          bucket_list_(u.bucket_list_), bucket_count_(u.bucket_count_),
+          first_node_(std::move(u.first_node_)), size_(u.size_),
+          max_load_factor_(u.max_load_factor_) {
+        u.bucket_list_ = nullptr;
+        u.bucket_count_ = 0;
+        if (size() > 0) {
+            bucket_list_[detail::constrain_hash(first_node_.next_->hash(), bucket_count())] =
+                first_node_.ptr();
+            u.first_node_.next_ = nullptr;
+            u.size_ = 0;
         }
     }
 
-    hash_table(hash_table&& src, const allocator_type& a)
-        : buckets_(nullptr), bucket_count_(0), head_(), node_alloc_(a),
-          size_(0), max_load_factor_(src.max_load_factor_),
-          hasher_(move(src.hasher_)), key_eq_(move(src.key_eq_))
-    {
-        if (a == allocator_type(src.node_alloc_)) {
-            buckets_           = src.buckets_;
-            bucket_count_      = src.bucket_count_;
-            head_.next_        = src.head_.next_;
-            size_              = src.size_;
-            src.buckets_       = nullptr;
-            src.bucket_count_  = 0;
-            src.head_.next_    = nullptr;
-            src.size_          = 0;
-            if (size_ > 0 && bucket_count_ > 0 && head_.next_) {
-                size_t ch = detail::constrain_hash(
-                    static_cast<node_ptr>(head_.next_)->hash_val, bucket_count_);
-                buckets_[ch] = head_as_base();
-            }
-        } else {
-            while (src.size_ > 0) {
-                auto it = src.begin();
-                auto h  = src.extract_node(it);
-                h->hash_val = hasher_(h->get_value());
-                if (bucket_count_ == 0 || size_+1 > bucket_count_*max_load_factor_)
-                    maybe_grow();
-                if constexpr (Unique) raw_insert_unique(h.release());
-                else                  raw_insert_multi(h.release());
+    hash_table(hash_table&& u, const allocator_type& a)
+        : node_alloc_(node_allocator(a)), hasher_(std::move(u.hasher_)),
+          key_eq_(std::move(u.key_eq_)),
+          bucket_list_(nullptr), bucket_count_(0), first_node_(), size_(0),
+          max_load_factor_(u.max_load_factor_) {
+        if (a == allocator_type(u.node_alloc())) {
+            bucket_list_ = u.bucket_list_;
+            bucket_count_ = u.bucket_count_;
+            u.bucket_list_ = nullptr;
+            u.bucket_count_ = 0;
+            if (u.size() > 0) {
+                first_node_.next_ = u.first_node_.next_;
+                u.first_node_.next_ = nullptr;
+                bucket_list_[detail::constrain_hash(first_node_.next_->hash(), bucket_count())] =
+                    first_node_.ptr();
+                size_ = u.size_;
+                u.size_ = 0;
             }
         }
     }
 
     ~hash_table() {
-        deallocate_list(head_.next_);
-        head_.next_ = nullptr;
-        free_buckets();
+        deallocate_node(first_node_.next_);
+        deallocate_bucket_list();
     }
 
-    // =========================================================================
+    // ------------------------------------------------------------------
     // Assignment
-    // =========================================================================
+    // ------------------------------------------------------------------
 
-    hash_table& operator=(const hash_table& src) {
-        if (this == &src) return *this;
-        clear();
-        hasher_          = src.hasher_;
-        key_eq_          = src.key_eq_;
-        max_load_factor_ = src.max_load_factor_;
-        if constexpr (node_traits::propagate_on_container_copy_assignment::value)
-            node_alloc_ = src.node_alloc_;
-        copy_from(src);
-        return *this;
+private:
+    void copy_assign_alloc(const hash_table& u) {
+        if constexpr (node_traits::propagate_on_container_copy_assignment::value) {
+            if (node_alloc() != u.node_alloc()) {
+                clear();
+                deallocate_bucket_list();
+            }
+            node_alloc_ = u.node_alloc_;
+        }
     }
 
-    hash_table& operator=(hash_table&& src) noexcept(
-        is_nothrow_move_assignable_v<hasher> &&
-        is_nothrow_move_assignable_v<key_equal> &&
-        (node_traits::propagate_on_container_move_assignment::value ||
-         node_traits::is_always_equal::value))
-    {
-        if (this == &src) return *this;
-        bool steal = node_traits::propagate_on_container_move_assignment::value ||
-                     node_alloc_ == src.node_alloc_;
-        if (steal) {
-            clear();
-            free_buckets();
-            if constexpr (node_traits::propagate_on_container_move_assignment::value)
-                node_alloc_ = move(src.node_alloc_);
-            buckets_          = src.buckets_;
-            bucket_count_     = src.bucket_count_;
-            head_.next_       = src.head_.next_;
-            size_             = src.size_;
-            hasher_           = move(src.hasher_);
-            key_eq_           = move(src.key_eq_);
-            max_load_factor_  = src.max_load_factor_;
-            src.buckets_      = nullptr;
-            src.bucket_count_ = 0;
-            src.head_.next_   = nullptr;
-            src.size_         = 0;
-            if (size_ > 0 && bucket_count_ > 0 && head_.next_) {
-                size_t ch = detail::constrain_hash(
-                    static_cast<node_ptr>(head_.next_)->hash_val, bucket_count_);
-                buckets_[ch] = head_as_base();
+    void move_assign_alloc(hash_table& u) noexcept(
+        !node_traits::propagate_on_container_move_assignment::value ||
+        is_nothrow_move_assignable_v<node_allocator>) {
+        if constexpr (node_traits::propagate_on_container_move_assignment::value)
+            node_alloc_ = std::move(u.node_alloc_);
+    }
+
+    void move_assign(hash_table& u, true_type) noexcept(
+        is_nothrow_move_assignable_v<node_allocator> && is_nothrow_move_assignable_v<hasher> &&
+        is_nothrow_move_assignable_v<key_equal>) {
+        clear();
+        deallocate_bucket_list();
+        bucket_list_ = u.bucket_list_;
+        bucket_count_ = u.bucket_count_;
+        u.bucket_list_ = nullptr;
+        u.bucket_count_ = 0;
+        move_assign_alloc(u);
+        size_ = u.size_;
+        hasher_ = std::move(u.hasher_);
+        max_load_factor_ = u.max_load_factor_;
+        key_eq_ = std::move(u.key_eq_);
+        first_node_.next_ = u.first_node_.next_;
+        if (size() > 0) {
+            bucket_list_[detail::constrain_hash(first_node_.next_->hash(), bucket_count())] =
+                first_node_.ptr();
+            u.first_node_.next_ = nullptr;
+            u.size_ = 0;
+        }
+    }
+
+    void move_assign(hash_table& u, false_type) {
+        if (node_alloc() == u.node_alloc())
+            move_assign(u, true_type());
+        else {
+            hasher_ = std::move(u.hasher_);
+            key_eq_ = std::move(u.key_eq_);
+            max_load_factor_ = u.max_load_factor_;
+            if (bucket_count() != 0) {
+                next_pointer cache = detach();
+                const_iterator i = u.begin();
+                while (cache != nullptr && u.size() != 0) {
+                    kv_types::ref(cache->upcast()->get_value()) =
+                        kv_types::move_value(u.remove(i++)->get_value());
+                    next_pointer next = cache->next_;
+                    node_insert_multi(cache->upcast());
+                    cache = next;
+                }
+                deallocate_node(cache);
             }
-        } else {
-            clear();
-            hasher_          = move(src.hasher_);
-            key_eq_          = move(src.key_eq_);
-            max_load_factor_ = src.max_load_factor_;
-            while (src.size_ > 0) {
-                auto it  = src.begin();
-                auto h   = src.extract_node(it);
-                value_type v = move(h->get_value());
-                node_traits::destroy(src.node_alloc_, addressof(h->get_value()));
-                h.get_deleter().value_constructed = false;
-                emplace_impl(move(v));
+            const_iterator i = u.begin();
+            while (u.size() != 0) {
+                node_holder h = construct_node(kv_types::move_value(u.remove(i++)->get_value()));
+                node_insert_multi(h.get());
+                h.release();
             }
+        }
+    }
+
+public:
+    hash_table& operator=(const hash_table& u) {
+        if (this != std::addressof(u)) {
+            copy_assign_alloc(u);
+            hasher_ = u.hasher_;
+            key_eq_ = u.key_eq_;
+            max_load_factor_ = u.max_load_factor_;
+            assign_multi(u.begin(), u.end());
         }
         return *this;
     }
 
-    // =========================================================================
-    // Iterators
-    // =========================================================================
-
-    iterator       begin()        noexcept { return iterator(head_.next_); }
-    iterator       end()          noexcept { return iterator(nullptr); }
-    const_iterator begin()  const noexcept {
-        // head_.next_ is already a base_ptr; cast away const
-        return const_iterator(const_cast<base_ptr>(head_.next_));
+    hash_table& operator=(hash_table&& u) noexcept(
+        node_traits::propagate_on_container_move_assignment::value &&
+        is_nothrow_move_assignable_v<node_allocator> && is_nothrow_move_assignable_v<hasher> &&
+        is_nothrow_move_assignable_v<key_equal>) {
+        move_assign(u, integral_constant<bool,
+                       node_traits::propagate_on_container_move_assignment::value>());
+        return *this;
     }
-    const_iterator end()    const noexcept { return const_iterator(nullptr); }
-    const_iterator cbegin() const noexcept { return begin(); }
-    const_iterator cend()   const noexcept { return end(); }
 
-    // =========================================================================
-    // Capacity
-    // =========================================================================
+    // ------------------------------------------------------------------
+    // assign_unique / assign_multi (reuse existing nodes via cache)
+    // ------------------------------------------------------------------
 
-    bool      empty()    const noexcept { return size_ == 0; }
-    size_type size()     const noexcept { return size_; }
+    template<class InputIterator>
+    void assign_unique(InputIterator first, InputIterator last) {
+        if (bucket_count() != 0) {
+            next_pointer cache = detach();
+            for (; cache != nullptr && first != last; ++first) {
+                kv_types::ref(cache->upcast()->get_value()) = *first;
+                next_pointer next = cache->next_;
+                node_insert_unique(cache->upcast());
+                cache = next;
+            }
+            deallocate_node(cache);
+        }
+        for (; first != last; ++first)
+            insert_unique(*first);
+    }
+
+    template<class InputIterator>
+    void assign_multi(InputIterator first, InputIterator last) {
+        if (bucket_count() != 0) {
+            next_pointer cache = detach();
+            for (; cache != nullptr && first != last; ++first) {
+                kv_types::ref(cache->upcast()->get_value()) = *first;
+                next_pointer next = cache->next_;
+                node_insert_multi(cache->upcast());
+                cache = next;
+            }
+            deallocate_node(cache);
+        }
+        for (; first != last; ++first)
+            insert_multi(*first);
+    }
+
     size_type max_size() const noexcept {
-        return min<size_type>(node_traits::max_size(node_alloc_),
-                              (size_type)numeric_limits<difference_type>::max());
+        return std::min<size_type>(node_traits::max_size(node_alloc()),
+                                   numeric_limits<difference_type>::max());
     }
 
-    // =========================================================================
-    // Observers
-    // =========================================================================
-
-    hasher&          hash_function()       noexcept { return hasher_; }
-    const hasher&    hash_function() const noexcept { return hasher_; }
-    key_equal&       key_eq()              noexcept { return key_eq_; }
-    const key_equal& key_eq()       const  noexcept { return key_eq_; }
-    allocator_type   get_allocator() const noexcept { return allocator_type(node_alloc_); }
-
-    // =========================================================================
-    // Emplace / insert
-    // =========================================================================
-
-    template<class... Args>
-    pair<iterator,bool> emplace_unique(Args&&... args) {
-        node_holder h = construct_node(forward<Args>(args)...);
-        if (bucket_count_ == 0 || size_+1 > (size_type)(bucket_count_*max_load_factor_))
-            maybe_grow();
-        auto [bp, ins] = raw_insert_unique(h.get());
-        if (ins) h.release();
-        return {iterator(bp), ins};
-    }
-
-    template<class... Args>
-    iterator emplace_multi(Args&&... args) {
-        node_holder h = construct_node(forward<Args>(args)...);
-        if (bucket_count_ == 0 || size_+1 > (size_type)(bucket_count_*max_load_factor_))
-            maybe_grow();
-        node_ptr np = h.release();
-        raw_insert_multi(np);
-        return iterator(node_to_base(np));
-    }
-
-    // Dispatch unique/multi
-    template<class... Args>
-    auto emplace_impl(Args&&... args) {
-        if constexpr (Unique) return emplace_unique(forward<Args>(args)...);
-        else                  return emplace_multi(forward<Args>(args)...);
-    }
-
-    // Insert pre-built node (node already has hash_val set)
-    pair<iterator,bool> insert_node_unique(node_ptr np) {
-        if (bucket_count_ == 0 || size_+1 > (size_type)(bucket_count_*max_load_factor_))
-            maybe_grow();
-        auto [bp, ins] = raw_insert_unique(np);
-        return {iterator(bp), ins};
-    }
-
-    iterator insert_node_multi(node_ptr np) {
-        if (bucket_count_ == 0 || size_+1 > (size_type)(bucket_count_*max_load_factor_))
-            maybe_grow();
-        raw_insert_multi(np);
-        return iterator(node_to_base(np));
-    }
-
-    // =========================================================================
-    // Lookup
-    // =========================================================================
 private:
-    template<class K>
-    base_ptr find_base(const K& k) const {
-        if (bucket_count_ == 0 || size_ == 0) return nullptr;
-        size_t hv = hasher_(k);
-        size_t ch = detail::constrain_hash(hv, bucket_count_);
-        base_ptr bp = buckets_[ch];
-        if (!bp) return nullptr;
-        for (base_ptr nd = bp->next_; nd; nd = static_cast<node_ptr>(nd)->next_) {
-            node_ptr np = static_cast<node_ptr>(nd);
-            if (np->hash_val != hv &&
-                detail::constrain_hash(np->hash_val, bucket_count_) != ch)
-                break;
-            if (np->hash_val == hv && key_eq_(np->get_value(), k))
-                return nd;
+    void deallocate_node(next_pointer np) noexcept {
+        node_allocator& na = node_alloc();
+        while (np != nullptr) {
+            next_pointer next = np->next_;
+            node_pointer real_np = np->upcast();
+            node_traits::destroy(na, kv_types::get_ptr(real_np->get_value()));
+            std::destroy_at(std::addressof(*real_np));
+            node_traits::deallocate(na, real_np, 1);
+            np = next;
+        }
+    }
+
+    next_pointer detach() noexcept {
+        size_type bc = bucket_count();
+        for (size_type i = 0; i < bc; ++i)
+            bucket_list_[i] = nullptr;
+        size_ = 0;
+        next_pointer cache = first_node_.next_;
+        first_node_.next_ = nullptr;
+        return cache;
+    }
+
+    // Returns existing node if the value is already present, else null
+    // (after rehashing if needed). Ported exactly.
+    next_pointer node_insert_unique_prepare(size_t hash, value_type& value) {
+        size_type bc = bucket_count();
+        if (bc != 0) {
+            size_t chash = detail::constrain_hash(hash, bc);
+            next_pointer ndptr = bucket_list_[chash];
+            if (ndptr != nullptr) {
+                for (ndptr = ndptr->next_;
+                     ndptr != nullptr &&
+                     (ndptr->hash() == hash || detail::constrain_hash(ndptr->hash(), bc) == chash);
+                     ndptr = ndptr->next_) {
+                    if ((ndptr->hash() == hash) && key_eq_(ndptr->upcast()->get_value(), value))
+                        return ndptr;
+                }
+            }
+        }
+        if (size() + 1 > bc * max_load_factor() || bc == 0) {
+            rehash_unique(std::max<size_type>(
+                2 * bc + !detail::is_hash_power2(bc),
+                size_type(detail::ht_ceil(float(size() + 1) / max_load_factor()))));
         }
         return nullptr;
     }
 
+    void node_insert_unique_perform(node_pointer nd) noexcept {
+        size_type bc = bucket_count();
+        size_t chash = detail::constrain_hash(nd->hash(), bc);
+        next_pointer pn = bucket_list_[chash];
+        if (pn == nullptr) {
+            pn = first_node_.ptr();
+            nd->next_ = pn->next_;
+            pn->next_ = nd->ptr();
+            bucket_list_[chash] = pn;
+            if (nd->next_ != nullptr)
+                bucket_list_[detail::constrain_hash(nd->next_->hash(), bc)] = nd->ptr();
+        } else {
+            nd->next_ = pn->next_;
+            pn->next_ = nd->ptr();
+        }
+        ++size_;
+    }
+
+    // Returns the node after which to insert (for multi), having rehashed.
+    next_pointer node_insert_multi_prepare(size_t cp_hash, value_type& cp_val) {
+        size_type bc = bucket_count();
+        if (size() + 1 > bc * max_load_factor() || bc == 0) {
+            rehash_multi(std::max<size_type>(
+                2 * bc + !detail::is_hash_power2(bc),
+                size_type(detail::ht_ceil(float(size() + 1) / max_load_factor()))));
+            bc = bucket_count();
+        }
+        size_t chash = detail::constrain_hash(cp_hash, bc);
+        next_pointer pn = bucket_list_[chash];
+        if (pn != nullptr) {
+            for (bool found = false;
+                 pn->next_ != nullptr && detail::constrain_hash(pn->next_->hash(), bc) == chash;
+                 pn = pn->next_) {
+                //      found    key_eq()     action
+                //      false    false        loop
+                //      true     true         loop
+                //      false    true         set found to true
+                //      true     false        break
+                if (found != (pn->next_->hash() == cp_hash &&
+                              key_eq_(pn->next_->upcast()->get_value(), cp_val))) {
+                    if (!found)
+                        found = true;
+                    else
+                        break;
+                }
+            }
+        }
+        return pn;
+    }
+
+    void node_insert_multi_perform(node_pointer cp, next_pointer pn) noexcept {
+        size_type bc = bucket_count();
+        size_t chash = detail::constrain_hash(cp->hash_, bc);
+        if (pn == nullptr) {
+            pn = first_node_.ptr();
+            cp->next_ = pn->next_;
+            pn->next_ = cp->ptr();
+            bucket_list_[chash] = pn;
+            if (cp->next_ != nullptr)
+                bucket_list_[detail::constrain_hash(cp->next_->hash(), bc)] = cp->ptr();
+        } else {
+            cp->next_ = pn->next_;
+            pn->next_ = cp->ptr();
+            if (cp->next_ != nullptr) {
+                size_t nhash = detail::constrain_hash(cp->next_->hash(), bc);
+                if (nhash != chash)
+                    bucket_list_[nhash] = cp->ptr();
+            }
+        }
+        ++size_;
+    }
+
 public:
-    iterator       find(const value_type& k)       { auto p = find_base(k); return p ? iterator(p) : end(); }
-    const_iterator find(const value_type& k) const { auto p = find_base(k); return p ? const_iterator(p) : end(); }
+    pair<iterator, bool> node_insert_unique(node_pointer nd) {
+        nd->hash_ = hasher_(nd->get_value());
+        next_pointer existing_node = node_insert_unique_prepare(nd->hash(), nd->get_value());
 
-    size_type count_unique(const value_type& k) const { return find_base(k) ? 1 : 0; }
-    size_type count_multi(const value_type& k) const {
-        size_type r = 0;
-        for (auto i = find(k); i != end() && key_eq_(*i, k); ++i) ++r;
-        return r;
-    }
-
-    pair<iterator,iterator> equal_range_unique(const value_type& k) {
-        iterator i = find(k), j = i;
-        if (i != end()) ++j;
-        return {i, j};
-    }
-    pair<const_iterator,const_iterator> equal_range_unique(const value_type& k) const {
-        const_iterator i = find(k), j = i;
-        if (i != end()) ++j;
-        return {i, j};
-    }
-    pair<iterator,iterator> equal_range_multi(const value_type& k) {
-        iterator i = find(k), j = i;
-        if (i != end()) { auto e = end(); do { ++j; } while (j != e && key_eq_(*j, k)); }
-        return {i, j};
-    }
-    pair<const_iterator,const_iterator> equal_range_multi(const value_type& k) const {
-        const_iterator i = find(k), j = i;
-        if (i != end()) { auto e = end(); do { ++j; } while (j != e && key_eq_(*j, k)); }
-        return {i, j};
-    }
-
-    // =========================================================================
-    // Erase
-    // =========================================================================
-
-    iterator erase(const_iterator pos) {
-        base_ptr cn = pos.node_;
-        iterator r(cn); ++r;
-        extract_node(pos);
-        return r;
-    }
-
-    iterator erase(const_iterator first, const_iterator last) {
-        while (first != last) first = const_iterator(erase(first).node_);
-        return iterator(last.node_);
-    }
-
-    size_type erase_unique(const value_type& k) {
-        auto i = find(k);
-        if (i == end()) return 0;
-        erase(i);
-        return 1;
-    }
-
-    size_type erase_multi(const value_type& k) {
-        size_type r = 0;
-        auto i = find(k);
-        while (i != end() && key_eq_(*i, k)) { i = erase(i); ++r; }
-        return r;
-    }
-
-    // Extract node; returns holder owning it (value not yet deallocated)
-    node_holder extract_node(const_iterator pos) noexcept {
-        base_ptr cn = pos.node_;
-        node_ptr np = static_cast<node_ptr>(cn);
-        size_t hv   = np->hash_val;
-        size_t ch   = detail::constrain_hash(hv, bucket_count_);
-
-        // Find predecessor in the global list
-        // buckets_[ch] is the predecessor of the first node in bucket ch
-        base_ptr pn = buckets_[ch];
-        while (pn && pn->next_ != cn)
-            pn = pn->next_;
-
-        // Fix bucket heads
-        bool pn_in_same = (pn != head_as_base() &&
-            detail::constrain_hash(static_cast<node_ptr>(pn)->hash_val, bucket_count_) == ch);
-        if (!pn_in_same) {
-            if (!cn->next_ ||
-                detail::constrain_hash(static_cast<node_ptr>(cn->next_)->hash_val, bucket_count_) != ch)
-                buckets_[ch] = nullptr;
+        bool inserted = false;
+        if (existing_node == nullptr) {
+            node_insert_unique_perform(nd);
+            existing_node = nd->ptr();
+            inserted = true;
         }
-        if (cn->next_) {
-            size_t nch = detail::constrain_hash(
-                static_cast<node_ptr>(cn->next_)->hash_val, bucket_count_);
-            if (nch != ch) buckets_[nch] = pn;
-        }
-        pn->next_  = cn->next_;
-        np->next_  = nullptr;
-        --size_;
-        return node_holder(np, node_dtor(node_alloc_, true));
+        return pair<iterator, bool>(iterator(existing_node), inserted);
     }
 
-    // =========================================================================
-    // Clear
-    // =========================================================================
+    iterator node_insert_multi(node_pointer cp) {
+        cp->hash_ = hasher_(cp->get_value());
+        next_pointer pn = node_insert_multi_prepare(cp->hash(), cp->get_value());
+        node_insert_multi_perform(cp, pn);
+        return iterator(cp->ptr());
+    }
+
+    iterator node_insert_multi(const_iterator p, node_pointer cp) {
+        if (p != end() && key_eq_(*p, cp->get_value())) {
+            next_pointer np = p.node_;
+            cp->hash_ = np->hash();
+            size_type bc = bucket_count();
+            if (size() + 1 > bc * max_load_factor() || bc == 0) {
+                rehash_multi(std::max<size_type>(
+                    2 * bc + !detail::is_hash_power2(bc),
+                    size_type(detail::ht_ceil(float(size() + 1) / max_load_factor()))));
+                bc = bucket_count();
+            }
+            size_t chash = detail::constrain_hash(cp->hash_, bc);
+            next_pointer pp = bucket_list_[chash];
+            while (pp->next_ != np)
+                pp = pp->next_;
+            cp->next_ = np;
+            pp->next_ = static_cast<next_pointer>(cp->ptr());
+            ++size_;
+            return iterator(static_cast<next_pointer>(cp->ptr()));
+        }
+        return node_insert_multi(cp);
+    }
+
+    template<class Key, class... Args>
+    pair<iterator, bool> emplace_unique_key_args(const Key& k, Args&&... args) {
+        size_t hash = hasher_(k);
+        size_type bc = bucket_count();
+        bool inserted = false;
+        next_pointer nd;
+        size_t chash;
+        if (bc != 0) {
+            chash = detail::constrain_hash(hash, bc);
+            nd = bucket_list_[chash];
+            if (nd != nullptr) {
+                for (nd = nd->next_;
+                     nd != nullptr &&
+                     (nd->hash() == hash || detail::constrain_hash(nd->hash(), bc) == chash);
+                     nd = nd->next_) {
+                    if ((nd->hash() == hash) && key_eq_(nd->upcast()->get_value(), k))
+                        goto done;
+                }
+            }
+        }
+        {
+            node_holder h = construct_node_hash(hash, std::forward<Args>(args)...);
+            if (size() + 1 > bc * max_load_factor() || bc == 0) {
+                rehash_unique(std::max<size_type>(
+                    2 * bc + !detail::is_hash_power2(bc),
+                    size_type(detail::ht_ceil(float(size() + 1) / max_load_factor()))));
+                bc = bucket_count();
+                chash = detail::constrain_hash(hash, bc);
+            }
+            next_pointer pn = bucket_list_[chash];
+            if (pn == nullptr) {
+                pn = first_node_.ptr();
+                h->next_ = pn->next_;
+                pn->next_ = h.get()->ptr();
+                bucket_list_[chash] = pn;
+                if (h->next_ != nullptr)
+                    bucket_list_[detail::constrain_hash(h->next_->hash(), bc)] = h.get()->ptr();
+            } else {
+                h->next_ = pn->next_;
+                pn->next_ = static_cast<next_pointer>(h.get()->ptr());
+            }
+            nd = static_cast<next_pointer>(h.release()->ptr());
+            ++size_;
+            inserted = true;
+        }
+    done:
+        return pair<iterator, bool>(iterator(nd), inserted);
+    }
+
+    template<class... Args>
+    pair<iterator, bool> emplace_unique_impl(Args&&... args) {
+        node_holder h = construct_node(std::forward<Args>(args)...);
+        pair<iterator, bool> r = node_insert_unique(h.get());
+        if (r.second)
+            h.release();
+        return r;
+    }
+
+    template<class P>
+    pair<iterator, bool> emplace_unique_extract_key(P&& x, detail::extract_key_fail_tag) {
+        return emplace_unique_impl(std::forward<P>(x));
+    }
+    template<class P>
+    pair<iterator, bool> emplace_unique_extract_key(P&& x, detail::extract_key_self_tag) {
+        return emplace_unique_key_args(x, std::forward<P>(x));
+    }
+    template<class P>
+    pair<iterator, bool> emplace_unique_extract_key(P&& x, detail::extract_key_first_tag) {
+        return emplace_unique_key_args(x.first, std::forward<P>(x));
+    }
+
+    template<class P>
+    pair<iterator, bool> emplace_unique(P&& x) {
+        return emplace_unique_extract_key(std::forward<P>(x),
+                                          detail::ht_can_extract_key<P, key_type>());
+    }
+
+    template<class First, class Second,
+             enable_if_t<detail::ht_can_extract_map_key<First, key_type,
+                                                        container_value_type>::value, int> = 0>
+    pair<iterator, bool> emplace_unique(First&& f, Second&& s) {
+        return emplace_unique_key_args(f, std::forward<First>(f), std::forward<Second>(s));
+    }
+
+    template<class... Args>
+    pair<iterator, bool> emplace_unique(Args&&... args) {
+        return emplace_unique_impl(std::forward<Args>(args)...);
+    }
+
+    template<class... Args>
+    iterator emplace_multi(Args&&... args) {
+        node_holder h = construct_node(std::forward<Args>(args)...);
+        iterator r = node_insert_multi(h.get());
+        h.release();
+        return r;
+    }
+
+    template<class... Args>
+    iterator emplace_hint_multi(const_iterator p, Args&&... args) {
+        node_holder h = construct_node(std::forward<Args>(args)...);
+        iterator r = node_insert_multi(p, h.get());
+        h.release();
+        return r;
+    }
+
+    pair<iterator, bool> insert_unique(container_value_type&& x) {
+        return emplace_unique_key_args(kv_types::get_key(x), std::move(x));
+    }
+
+    pair<iterator, bool> insert_unique(const container_value_type& x) {
+        return emplace_unique_key_args(kv_types::get_key(x), x);
+    }
+
+    template<class P, enable_if_t<!is_same_v<remove_const_t<remove_reference_t<P>>,
+                                             container_value_type>, int> = 0>
+    pair<iterator, bool> insert_unique(P&& x) {
+        return emplace_unique(std::forward<P>(x));
+    }
+
+    template<class P>
+    iterator insert_multi(P&& x) {
+        return emplace_multi(std::forward<P>(x));
+    }
+
+    template<class P>
+    iterator insert_multi(const_iterator p, P&& x) {
+        return emplace_hint_multi(p, std::forward<P>(x));
+    }
+
+    // ------------------------------------------------------------------
+    // Node handle operations
+    // ------------------------------------------------------------------
+
+    template<class NodeHandle, class InsertReturnType>
+    InsertReturnType node_handle_insert_unique(NodeHandle&& nh) {
+        if (nh.empty())
+            return InsertReturnType{end(), false, NodeHandle()};
+        pair<iterator, bool> result = node_insert_unique(nh.ptr_);
+        if (result.second)
+            nh.release_ptr();
+        return InsertReturnType{result.first, result.second, std::move(nh)};
+    }
+
+    template<class NodeHandle>
+    iterator node_handle_insert_unique(const_iterator, NodeHandle&& nh) {
+        if (nh.empty())
+            return end();
+        pair<iterator, bool> result = node_insert_unique(nh.ptr_);
+        if (result.second)
+            nh.release_ptr();
+        return result.first;
+    }
+
+    template<class NodeHandle>
+    NodeHandle node_handle_extract(const key_type& key) {
+        iterator i = find(key);
+        if (i == end())
+            return NodeHandle();
+        return node_handle_extract<NodeHandle>(i);
+    }
+
+    template<class NodeHandle>
+    NodeHandle node_handle_extract(const_iterator p) {
+        allocator_type alloc(node_alloc());
+        return NodeHandle(remove(p).release(), alloc);
+    }
+
+    template<class Table>
+    void node_handle_merge_unique(Table& source) {
+        static_assert(is_same_v<node, typename Table::node>);
+        for (typename Table::iterator it = source.begin(); it != source.end();) {
+            node_pointer src_ptr = it.node_->upcast();
+            size_t hash = hasher_(src_ptr->get_value());
+            next_pointer existing_node = node_insert_unique_prepare(hash, src_ptr->get_value());
+            auto prev_iter = it++;
+            if (existing_node == nullptr) {
+                (void)source.remove(prev_iter).release();
+                src_ptr->hash_ = hash;
+                node_insert_unique_perform(src_ptr);
+            }
+        }
+    }
+
+    template<class NodeHandle>
+    iterator node_handle_insert_multi(NodeHandle&& nh) {
+        if (nh.empty())
+            return end();
+        iterator result = node_insert_multi(nh.ptr_);
+        nh.release_ptr();
+        return result;
+    }
+
+    template<class NodeHandle>
+    iterator node_handle_insert_multi(const_iterator hint, NodeHandle&& nh) {
+        if (nh.empty())
+            return end();
+        iterator result = node_insert_multi(hint, nh.ptr_);
+        nh.release_ptr();
+        return result;
+    }
+
+    template<class Table>
+    void node_handle_merge_multi(Table& source) {
+        static_assert(is_same_v<typename Table::node, node>);
+        for (typename Table::iterator it = source.begin(); it != source.end();) {
+            node_pointer src_ptr = it.node_->upcast();
+            size_t src_hash = hasher_(src_ptr->get_value());
+            next_pointer pn = node_insert_multi_prepare(src_hash, src_ptr->get_value());
+            (void)source.remove(it++).release();
+            src_ptr->hash_ = src_hash;
+            node_insert_multi_perform(src_ptr, pn);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // clear / rehash
+    // ------------------------------------------------------------------
 
     void clear() noexcept {
-        if (size_ > 0) {
-            deallocate_list(head_.next_);
-            head_.next_ = nullptr;
-            for (size_type i = 0; i < bucket_count_; ++i)
-                buckets_[i] = nullptr;
+        if (size() > 0) {
+            deallocate_node(first_node_.next_);
+            first_node_.next_ = nullptr;
+            size_type bc = bucket_count();
+            for (size_type i = 0; i < bc; ++i)
+                bucket_list_[i] = nullptr;
             size_ = 0;
         }
     }
 
-    // =========================================================================
-    // Bucket interface
-    // =========================================================================
+    void rehash_unique(size_type n) { rehash<true>(n); }
+    void rehash_multi(size_type n) { rehash<false>(n); }
+    void reserve_unique(size_type n) {
+        rehash_unique(static_cast<size_type>(detail::ht_ceil(float(n) / max_load_factor())));
+    }
+    void reserve_multi(size_type n) {
+        rehash_multi(static_cast<size_type>(detail::ht_ceil(float(n) / max_load_factor())));
+    }
 
-    size_type bucket_count()     const noexcept { return bucket_count_; }
-    size_type max_bucket_count() const noexcept { return max_size(); }
+private:
+    template<bool UniqueKeys>
+    void rehash(size_type n) {
+        if (n == 1)
+            n = 2;
+        else if (n & (n - 1))
+            n = detail::next_prime(n);
+        size_type bc = bucket_count();
+        if (n > bc)
+            do_rehash<UniqueKeys>(n);
+        else if (n < bc) {
+            n = std::max<size_type>(
+                n,
+                detail::is_hash_power2(bc)
+                    ? detail::next_hash_pow2(size_t(detail::ht_ceil(float(size()) / max_load_factor())))
+                    : detail::next_prime(size_t(detail::ht_ceil(float(size()) / max_load_factor()))));
+            if (n < bc)
+                do_rehash<UniqueKeys>(n);
+        }
+    }
 
-    size_type bucket_size(size_type n) const noexcept {
-        if (n >= bucket_count_) return 0;
-        base_ptr bp = buckets_[n];
-        if (!bp) return 0;
+    template<bool UniqueKeys>
+    void do_rehash(size_type nbc) {
+        // Allocate the new bucket list first (libc++ resets the unique_ptr,
+        // which deallocates the old list with the old size, then installs the
+        // new one).
+        pointer_allocator pa(node_alloc_);
+        bucket_list_pointer new_list = nbc > 0 ? pointer_alloc_traits::allocate(pa, nbc) : nullptr;
+        if (bucket_list_ != nullptr)
+            pointer_alloc_traits::deallocate(pa, bucket_list_, bucket_count_);
+        bucket_list_ = new_list;
+        bucket_count_ = nbc;
+        if (nbc > 0) {
+            for (size_type i = 0; i < nbc; ++i)
+                bucket_list_[i] = nullptr;
+            next_pointer pp = first_node_.ptr();
+            next_pointer cp = pp->next_;
+            if (cp != nullptr) {
+                size_type chash = detail::constrain_hash(cp->hash(), nbc);
+                bucket_list_[chash] = pp;
+                size_type phash = chash;
+                for (pp = cp, void(), cp = cp->next_; cp != nullptr; cp = pp->next_) {
+                    chash = detail::constrain_hash(cp->hash(), nbc);
+                    if (chash == phash)
+                        pp = cp;
+                    else {
+                        if (bucket_list_[chash] == nullptr) {
+                            bucket_list_[chash] = pp;
+                            pp = cp;
+                            phash = chash;
+                        } else {
+                            next_pointer np = cp;
+                            if constexpr (!UniqueKeys) {
+                                for (; np->next_ != nullptr &&
+                                       key_eq_(cp->upcast()->get_value(),
+                                               np->next_->upcast()->get_value());
+                                     np = np->next_)
+                                    ;
+                            }
+                            pp->next_ = np->next_;
+                            np->next_ = bucket_list_[chash]->next_;
+                            bucket_list_[chash]->next_ = cp;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+public:
+    // ------------------------------------------------------------------
+    // Iterators
+    // ------------------------------------------------------------------
+
+    iterator begin() noexcept { return iterator(first_node_.next_); }
+    iterator end() noexcept { return iterator(nullptr); }
+    const_iterator begin() const noexcept { return const_iterator(first_node_.next_); }
+    const_iterator end() const noexcept { return const_iterator(nullptr); }
+
+    // ------------------------------------------------------------------
+    // Lookup
+    // ------------------------------------------------------------------
+
+    template<class Key>
+    size_type bucket(const Key& k) const {
+        return detail::constrain_hash(hash_function()(k), bucket_count());
+    }
+
+    template<class Key>
+    iterator find(const Key& k) {
+        size_t hash = hasher_(k);
+        size_type bc = bucket_count();
+        if (bc != 0) {
+            size_t chash = detail::constrain_hash(hash, bc);
+            next_pointer nd = bucket_list_[chash];
+            if (nd != nullptr) {
+                for (nd = nd->next_;
+                     nd != nullptr &&
+                     (nd->hash() == hash || detail::constrain_hash(nd->hash(), bc) == chash);
+                     nd = nd->next_) {
+                    if ((nd->hash() == hash) && key_eq_(nd->upcast()->get_value(), k))
+                        return iterator(nd);
+                }
+            }
+        }
+        return end();
+    }
+
+    template<class Key>
+    const_iterator find(const Key& k) const {
+        size_t hash = hasher_(k);
+        size_type bc = bucket_count();
+        if (bc != 0) {
+            size_t chash = detail::constrain_hash(hash, bc);
+            next_pointer nd = bucket_list_[chash];
+            if (nd != nullptr) {
+                for (nd = nd->next_;
+                     nd != nullptr &&
+                     (hash == nd->hash() || detail::constrain_hash(nd->hash(), bc) == chash);
+                     nd = nd->next_) {
+                    if ((nd->hash() == hash) && key_eq_(nd->upcast()->get_value(), k))
+                        return const_iterator(nd);
+                }
+            }
+        }
+        return end();
+    }
+
+    template<class Key>
+    size_type count_unique(const Key& k) const {
+        return static_cast<size_type>(find(k) != end());
+    }
+
+    template<class Key>
+    size_type count_multi(const Key& k) const {
         size_type r = 0;
-        for (base_ptr nd = bp->next_;
-             nd && detail::constrain_hash(static_cast<node_ptr>(nd)->hash_val, bucket_count_) == n;
-             nd = static_cast<node_ptr>(nd)->next_)
-            ++r;
+        const_iterator i = find(k);
+        if (i != end()) {
+            const_iterator e = end();
+            do {
+                ++i;
+                ++r;
+            } while (i != e && key_eq_(*i, k));
+        }
         return r;
     }
 
-    template<class K>
-    size_type bucket(const K& k) const {
-        if (!bucket_count_) return 0;
-        return detail::constrain_hash(hasher_(k), bucket_count_);
+    template<class Key>
+    pair<iterator, iterator> equal_range_unique(const Key& k) {
+        iterator i = find(k);
+        iterator j = i;
+        if (i != end())
+            ++j;
+        return pair<iterator, iterator>(i, j);
     }
 
-    local_iterator begin(size_type n) noexcept {
-        if (n >= bucket_count_ || !buckets_[n]) return local_iterator();
-        return local_iterator(buckets_[n], n, bucket_count_);
-    }
-    local_iterator end(size_type) noexcept { return local_iterator(); }
-
-    const_local_iterator begin(size_type n) const noexcept {
-        if (n >= bucket_count_ || !buckets_[n]) return const_local_iterator();
-        return const_local_iterator(buckets_[n], n, bucket_count_);
-    }
-    const_local_iterator end(size_type) const noexcept { return const_local_iterator(); }
-    const_local_iterator cbegin(size_type n) const noexcept { return begin(n); }
-    const_local_iterator cend(size_type n)   const noexcept { return end(n); }
-
-    // =========================================================================
-    // Load factor / rehash / reserve
-    // =========================================================================
-
-    float load_factor()     const noexcept {
-        return bucket_count_ ? (float)size_ / (float)bucket_count_ : 0.f;
-    }
-    float max_load_factor() const noexcept { return max_load_factor_; }
-    void  max_load_factor(float mlf) noexcept {
-        if (mlf > 0)
-            max_load_factor_ = mlf;
+    template<class Key>
+    pair<const_iterator, const_iterator> equal_range_unique(const Key& k) const {
+        const_iterator i = find(k);
+        const_iterator j = i;
+        if (i != end())
+            ++j;
+        return pair<const_iterator, const_iterator>(i, j);
     }
 
-    void rehash(size_type n) {
-        size_type min_req = (size_type)detail::ceil_f((float)size_ / max_load_factor_);
-        if (n < min_req) n = min_req;
-        if (n <= 1) n = 2;
-        if (n != bucket_count_)
-            do_rehash(n);
-    }
-
-    void reserve(size_type n) {
-        rehash((size_type)detail::ceil_f((float)n / max_load_factor_));
-    }
-
-    // =========================================================================
-    // Swap
-    // =========================================================================
-
-    void swap(hash_table& other) noexcept(
-        is_nothrow_swappable_v<hasher> && is_nothrow_swappable_v<key_equal>)
-    {
-        using std::swap;
-        swap(buckets_,         other.buckets_);
-        swap(bucket_count_,    other.bucket_count_);
-        swap(head_.next_,      other.head_.next_);
-        swap(node_alloc_,      other.node_alloc_);
-        swap(size_,            other.size_);
-        swap(max_load_factor_, other.max_load_factor_);
-        swap(hasher_,          other.hasher_);
-        swap(key_eq_,          other.key_eq_);
-        // Fix head-sentinel bucket pointers after swap
-        if (size_ > 0 && bucket_count_ > 0 && head_.next_) {
-            size_t ch = detail::constrain_hash(
-                static_cast<node_ptr>(head_.next_)->hash_val, bucket_count_);
-            buckets_[ch] = head_as_base();
+    template<class Key>
+    pair<iterator, iterator> equal_range_multi(const Key& k) {
+        iterator i = find(k);
+        iterator j = i;
+        if (i != end()) {
+            iterator e = end();
+            do {
+                ++j;
+            } while (j != e && key_eq_(*j, k));
         }
-        if (other.size_ > 0 && other.bucket_count_ > 0 && other.head_.next_) {
-            size_t ch = detail::constrain_hash(
-                static_cast<node_ptr>(other.head_.next_)->hash_val, other.bucket_count_);
-            other.buckets_[ch] = other.head_as_base();
-        }
+        return pair<iterator, iterator>(i, j);
     }
 
-    // =========================================================================
-    // Node handles — extract and merge
-    // =========================================================================
+    template<class Key>
+    pair<const_iterator, const_iterator> equal_range_multi(const Key& k) const {
+        const_iterator i = find(k);
+        const_iterator j = i;
+        if (i != end()) {
+            const_iterator e = end();
+            do {
+                ++j;
+            } while (j != e && key_eq_(*j, k));
+        }
+        return pair<const_iterator, const_iterator>(i, j);
+    }
 
-    node_holder extract(const_iterator pos) noexcept { return extract_node(pos); }
+    // ------------------------------------------------------------------
+    // Construct nodes
+    // ------------------------------------------------------------------
 
-    node_holder extract_by_key(const value_type& k) noexcept {
-        auto i = find(k);
+    template<class... Args>
+    node_holder construct_node(Args&&... args) {
+        node_allocator& na = node_alloc();
+        node_holder h(node_traits::allocate(na, 1), node_destructor(na));
+        // Begin the lifetime of the node itself; the value is constructed
+        // separately via the allocator (allocator-aware).
+        std::construct_at(std::addressof(*h), /*next =*/nullptr, /*hash =*/size_t(0));
+        node_traits::construct(na, kv_types::get_ptr(h->get_value()), std::forward<Args>(args)...);
+        h.get_deleter().value_constructed = true;
+        h->hash_ = hasher_(h->get_value());
+        return h;
+    }
+
+    template<class First, class... Rest>
+    node_holder construct_node_hash(size_t hash, First&& f, Rest&&... rest) {
+        node_allocator& na = node_alloc();
+        node_holder h(node_traits::allocate(na, 1), node_destructor(na));
+        std::construct_at(std::addressof(*h), /*next =*/nullptr, /*hash =*/hash);
+        node_traits::construct(na, kv_types::get_ptr(h->get_value()),
+                               std::forward<First>(f), std::forward<Rest>(rest)...);
+        h.get_deleter().value_constructed = true;
+        return h;
+    }
+
+    // ------------------------------------------------------------------
+    // Erase
+    // ------------------------------------------------------------------
+
+    iterator erase(const_iterator p) {
+        next_pointer np = p.node_;
+        iterator r(np);
+        ++r;
+        remove(p);
+        return r;
+    }
+
+    iterator erase(const_iterator first, const_iterator last) {
+        for (const_iterator p = first; first != last; p = first) {
+            ++first;
+            erase(p);
+        }
+        next_pointer np = last.node_;
+        return iterator(np);
+    }
+
+    template<class Key>
+    size_type erase_unique(const Key& k) {
+        iterator i = find(k);
         if (i == end())
-            return node_holder(nullptr, node_dtor(node_alloc_, false));
-        return extract_node(i);
+            return 0;
+        erase(i);
+        return 1;
     }
 
-    template<bool SrcUnique>
-    void merge_unique(hash_table<Tp,Hash,Equal,Alloc,SrcUnique>& src) {
-        for (auto it = src.begin(); it != src.end(); ) {
-            auto cur = it++;
-            if (find(*cur) == end()) {
-                auto h = src.extract_node(cur);
-                node_ptr moved = h.release();
-                moved->hash_val = hasher_(moved->get_value());
-                if (bucket_count_ == 0 || size_+1 > (size_type)(bucket_count_*max_load_factor_))
-                    maybe_grow();
-                raw_insert_unique(moved);
-            }
+    template<class Key>
+    size_type erase_multi(const Key& k) {
+        size_type r = 0;
+        iterator i = find(k);
+        if (i != end()) {
+            iterator e = end();
+            do {
+                erase(i++);
+                ++r;
+            } while (i != e && key_eq_(*i, k));
         }
+        return r;
     }
 
-    template<bool SrcUnique>
-    void merge_multi(hash_table<Tp,Hash,Equal,Alloc,SrcUnique>& src) {
-        for (auto it = src.begin(); it != src.end(); ) {
-            auto cur = it++;
-            auto h = src.extract_node(cur);
-            node_ptr moved = h.release();
-            moved->hash_val = hasher_(moved->get_value());
-            if (bucket_count_ == 0 || size_+1 > (size_type)(bucket_count_*max_load_factor_))
-                maybe_grow();
-            raw_insert_multi(moved);
+    node_holder remove(const_iterator p) noexcept {
+        // current node
+        next_pointer cn = p.node_;
+        size_type bc = bucket_count();
+        size_t chash = detail::constrain_hash(cn->hash(), bc);
+        // find previous node
+        next_pointer pn = bucket_list_[chash];
+        for (; pn->next_ != cn; pn = pn->next_)
+            ;
+        // Fix up bucket_list_
+        if (pn == first_node_.ptr() || detail::constrain_hash(pn->hash(), bc) != chash) {
+            if (cn->next_ == nullptr || detail::constrain_hash(cn->next_->hash(), bc) != chash)
+                bucket_list_[chash] = nullptr;
         }
-    }
-
-    // =========================================================================
-    // Equality
-    // =========================================================================
-
-    friend bool operator==(const hash_table& a, const hash_table& b) {
-        if (a.size_ != b.size_) return false;
-        if constexpr (Unique) {
-            for (auto& v : a) {
-                if (!b.find_base(v)) return false;
-            }
-            return true;
-        } else {
-            for (auto it = a.begin(); it != a.end(); ) {
-                const value_type& v = *it;
-                size_type n1 = 0, n2 = 0;
-                auto j = it;
-                while (j != a.end() && a.key_eq_(v, *j)) { ++j; ++n1; }
-                auto [b1, b2] = b.equal_range_multi(v);
-                for (auto k = b1; k != b2; ++k) ++n2;
-                if (n1 != n2) return false;
-                it = j;
-            }
-            return true;
+        if (cn->next_ != nullptr) {
+            size_t nhash = detail::constrain_hash(cn->next_->hash(), bc);
+            if (nhash != chash)
+                bucket_list_[nhash] = pn;
         }
+        // remove cn
+        pn->next_ = cn->next_;
+        cn->next_ = nullptr;
+        --size_;
+        return node_holder(cn->upcast(), node_destructor(node_alloc(), true));
     }
 
-    // =========================================================================
-    // Assign from iterator range
-    // =========================================================================
+    // ------------------------------------------------------------------
+    // Swap
+    // ------------------------------------------------------------------
 
-    template<class InputIt>
-    void assign_unique(InputIt first, InputIt last) {
-        clear();
-        for (; first != last; ++first)
-            emplace_unique(*first);
+    void swap(hash_table& u) noexcept(
+        is_nothrow_swappable_v<hasher> && is_nothrow_swappable_v<key_equal>) {
+        using std::swap;
+        swap(bucket_list_, u.bucket_list_);
+        swap(bucket_count_, u.bucket_count_);
+        if constexpr (node_traits::propagate_on_container_swap::value)
+            swap(node_alloc_, u.node_alloc_);
+        swap(first_node_.next_, u.first_node_.next_);
+        swap(size_, u.size_);
+        swap(hasher_, u.hasher_);
+        swap(max_load_factor_, u.max_load_factor_);
+        swap(key_eq_, u.key_eq_);
+        if (size() > 0)
+            bucket_list_[detail::constrain_hash(first_node_.next_->hash(), bucket_count())] =
+                first_node_.ptr();
+        if (u.size() > 0)
+            u.bucket_list_[detail::constrain_hash(u.first_node_.next_->hash(), u.bucket_count())] =
+                u.first_node_.ptr();
     }
 
-    template<class InputIt>
-    void assign_multi(InputIt first, InputIt last) {
-        clear();
-        for (; first != last; ++first)
-            emplace_multi(*first);
+    // ------------------------------------------------------------------
+    // Bucket interface / load factor
+    // ------------------------------------------------------------------
+
+    size_type max_bucket_count() const noexcept { return max_size(); }
+
+    size_type bucket_size(size_type n) const {
+        next_pointer np = bucket_list_[n];
+        size_type bc = bucket_count();
+        size_type r = 0;
+        if (np != nullptr) {
+            for (np = np->next_;
+                 np != nullptr && detail::constrain_hash(np->hash(), bc) == n;
+                 np = np->next_, (void)++r)
+                ;
+        }
+        return r;
+    }
+
+    float load_factor() const noexcept {
+        size_type bc = bucket_count();
+        return bc != 0 ? (float)size() / bc : 0.f;
+    }
+
+    void max_load_factor(float mlf) noexcept {
+        max_load_factor_ = std::max(mlf, load_factor());
+    }
+
+    local_iterator begin(size_type n) {
+        return local_iterator(bucket_list_[n], n, bucket_count());
+    }
+    local_iterator end(size_type n) {
+        return local_iterator(nullptr, n, bucket_count());
+    }
+    const_local_iterator cbegin(size_type n) const {
+        return const_local_iterator(bucket_list_[n], n, bucket_count());
+    }
+    const_local_iterator cend(size_type n) const {
+        return const_local_iterator(nullptr, n, bucket_count());
     }
 };
+
+template<class Tp, class Hash, class Equal, class Alloc>
+inline void swap(hash_table<Tp, Hash, Equal, Alloc>& x, hash_table<Tp, Hash, Equal, Alloc>& y)
+    noexcept(noexcept(x.swap(y))) {
+    x.swap(y);
+}
 
 } // namespace std

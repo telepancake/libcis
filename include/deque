@@ -595,7 +595,7 @@ private:
         if (back_spare() < n) add_back_capacity(n - back_spare());
         allocator_type& a = alloc_ref();
         iterator e = end();
-        for (size_type i = 0; i < n; ++i, ++e, ++f) {
+        for (size_type i = 0; i < n; ++i, (void)++e, ++f) {   // (void): user types may delete operator,
             alloc_traits::construct(a, addressof(*e), *f);
             ++size_;
         }

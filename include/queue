@@ -8,6 +8,7 @@
 
 #include <deque>
 #include <vector>
+#include <cstdlib>
 #include <algorithm>
 #include <functional>
 #include <compare>
@@ -17,6 +18,16 @@
 #include <type_traits>
 
 namespace std {
+
+namespace detail {
+// libc++ __is_allocator (same pattern as detail::string_is_allocator_v):
+// constrains the queue/priority_queue deduction guides.
+template <class Alloc>
+inline constexpr bool queue_is_allocator_v = requires(Alloc& a) {
+    typename Alloc::value_type;
+    a.allocate(size_t{});
+};
+} // namespace detail
 
 //===----------------------------------------------------------------------===//
 // queue<T, Container>
@@ -390,25 +401,33 @@ public:
 
 // --- Deduction guides (C++17) ---
 
+// Constraints follow libc++ exactly: __is_allocator / !__is_allocator guards
+// disambiguate the (Compare, Container)/(..., Alloc) guide overload sets.
 template <class Compare, class Container>
+    requires (!detail::queue_is_allocator_v<Compare> &&
+              !detail::queue_is_allocator_v<Container>)
 priority_queue(Compare, Container)
     -> priority_queue<typename Container::value_type, Container, Compare>;
 
 template <class InputIter,
           class Compare   = less<typename iterator_traits<InputIter>::value_type>,
           class Container = vector<typename iterator_traits<InputIter>::value_type>>
-    requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    requires (requires { typename iterator_traits<InputIter>::iterator_category; } &&
+              !detail::queue_is_allocator_v<Compare> &&
+              !detail::queue_is_allocator_v<Container>)
 priority_queue(InputIter, InputIter, Compare = Compare(), Container = Container())
     -> priority_queue<typename iterator_traits<InputIter>::value_type, Container, Compare>;
 
 template <class Compare, class Container, class Alloc>
-    requires uses_allocator<Container, Alloc>::value
+    requires (!detail::queue_is_allocator_v<Compare> &&
+              !detail::queue_is_allocator_v<Container> &&
+              uses_allocator<Container, Alloc>::value)
 priority_queue(Compare, Container, Alloc)
     -> priority_queue<typename Container::value_type, Container, Compare>;
 
 template <class InputIter, class Alloc>
     requires (requires { typename iterator_traits<InputIter>::iterator_category; } &&
-              requires { typename Alloc::value_type; })
+              detail::queue_is_allocator_v<Alloc>)
 priority_queue(InputIter, InputIter, Alloc)
     -> priority_queue<typename iterator_traits<InputIter>::value_type,
                       vector<typename iterator_traits<InputIter>::value_type, Alloc>,
@@ -416,7 +435,8 @@ priority_queue(InputIter, InputIter, Alloc)
 
 template <class InputIter, class Compare, class Alloc>
     requires (requires { typename iterator_traits<InputIter>::iterator_category; } &&
-              requires { typename Alloc::value_type; })
+              !detail::queue_is_allocator_v<Compare> &&
+              detail::queue_is_allocator_v<Alloc>)
 priority_queue(InputIter, InputIter, Compare, Alloc)
     -> priority_queue<typename iterator_traits<InputIter>::value_type,
                       vector<typename iterator_traits<InputIter>::value_type, Alloc>,
@@ -424,6 +444,8 @@ priority_queue(InputIter, InputIter, Compare, Alloc)
 
 template <class InputIter, class Compare, class Container, class Alloc>
     requires (requires { typename iterator_traits<InputIter>::iterator_category; } &&
+              !detail::queue_is_allocator_v<Compare> &&
+              !detail::queue_is_allocator_v<Container> &&
               uses_allocator<Container, Alloc>::value)
 priority_queue(InputIter, InputIter, Compare, Container, Alloc)
     -> priority_queue<typename Container::value_type, Container, Compare>;

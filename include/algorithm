@@ -4344,3 +4344,42 @@ inline constexpr is_heap_fn is_heap{};
 } // namespace ranges
 
 } // namespace std
+
+//===----------------------------------------------------------------------===//
+// shuffle  (from __algorithm/shuffle.h)
+// DEVIATION from libc++ layering: libc++ includes uniform_int_distribution
+// here, but in libcis <random> includes <vector> which includes <algorithm>,
+// so <algorithm> cannot include <random> back. shuffle is a template, so a
+// forward declaration suffices: the distribution is only instantiated at the
+// point of use, and any caller of shuffle has <random> included for the URBG
+// it must pass anyway.
+//===----------------------------------------------------------------------===//
+
+namespace std {
+
+template<class IntType> class uniform_int_distribution;
+
+// [alg.random.shuffle] std::shuffle — libc++ __algorithm/shuffle.h:
+// Fisher-Yates with uniform_int_distribution re-parameterized per step.
+template<class RandomAccessIterator, class UniformRandomBitGenerator>
+void shuffle(RandomAccessIterator first, RandomAccessIterator last,
+             UniformRandomBitGenerator&& g) {
+    typedef typename iterator_traits<RandomAccessIterator>::difference_type difference_type;
+    // The artificial dependency on the template parameter delays the
+    // completeness check on uniform_int_distribution to the instantiation
+    // point (where the caller's <random> include has defined it).
+    using D = uniform_int_distribution<
+        conditional_t<(sizeof(remove_reference_t<UniformRandomBitGenerator>) > 0), ptrdiff_t, ptrdiff_t>>;
+    typedef typename D::param_type P;
+    difference_type d = last - first;
+    if (d > 1) {
+        D uid;
+        for (--last, (void)--d; first < last; ++first, (void)--d) {
+            difference_type i = uid(g, P(0, d));
+            if (i != difference_type(0))
+                std::iter_swap(first, first + i);
+        }
+    }
+}
+
+} // namespace std

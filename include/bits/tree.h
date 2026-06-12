@@ -16,6 +16,17 @@
 
 namespace std {
 
+namespace detail {
+// libc++ __is_allocator: constrains map/set deduction guides so a
+// non-allocator argument makes deduction fail (SFINAE) instead of
+// hard-erroring inside allocator_traits.
+template<class Alloc>
+inline constexpr bool tree_is_allocator_v = requires(Alloc& a) {
+    typename Alloc::value_type;
+    a.allocate(size_t{});
+};
+} // namespace detail
+
 // ============================================================
 // Node structures
 //
@@ -89,6 +100,21 @@ public:
     rb_node& operator=(const rb_node&) = delete;
     T&       get_value()       noexcept { return value; }
     const T& get_value() const noexcept { return value; }
+};
+
+// Move a stored value out of a node (libc++ _NodeTypes::__move): for map
+// values pair<const K, M> the const key must be cast away so the key can be
+// moved rather than copied.
+template<class V>
+struct rb_value_mover {
+    static V&& do_move(V& v) noexcept { return static_cast<V&&>(v); }
+};
+template<class F, class S>
+struct rb_value_mover<pair<const F, S>> {
+    static pair<F&&, S&&> do_move(pair<const F, S>& v) noexcept {
+        return pair<F&&, S&&>(static_cast<F&&>(const_cast<F&>(v.first)),
+                              static_cast<S&&>(v.second));
+    }
 };
 
 // ============================================================
@@ -326,26 +352,34 @@ void tree_remove(NP& root_ref, NP z) noexcept {
 // rb_tree_iterator / rb_tree_const_iterator
 // ============================================================
 
-template<class T, class NP, class Diff> class rb_tree_const_iterator;
+template<class T, class VP, class Diff> class rb_tree_const_iterator;
 
-template<class T, class NP, class Diff>
+// Pointer typedefs computed from the void pointer alone — must NOT require
+// rb_node<T, VP> to be complete (incomplete-type support: map<A, A> inside A).
+template<class T, class VP>
+struct rb_tree_ptr_types {
+    using node_pointer  = typename pointer_traits<VP>::template rebind<rb_node<T, VP>>;
+    using node_base_ptr = typename pointer_traits<VP>::template rebind<rb_node_base<VP>>;
+    using end_node_ptr  = typename pointer_traits<VP>::template rebind<rb_end_node<node_base_ptr>>;
+};
+
+template<class T, class VP, class Diff>
 class rb_tree_iterator {
 public:
     using iterator_category = bidirectional_iterator_tag;
     using value_type        = T;
     using difference_type   = Diff;
     using reference         = T&;
-    using pointer           = T*;
+    using pointer           = typename pointer_traits<VP>::template rebind<T>;
 
-    // NP is rb_node<T,VP>*; its base rb_node_base has node_base_ptr and end_node_ptr
-    using node_pointer  = NP;
-    using node_base_ptr = typename remove_pointer_t<NP>::node_base_ptr;
-    using end_node_ptr  = typename remove_pointer_t<NP>::end_node_ptr;
+    using node_pointer  = typename rb_tree_ptr_types<T, VP>::node_pointer;
+    using node_base_ptr = typename rb_tree_ptr_types<T, VP>::node_base_ptr;
+    using end_node_ptr  = typename rb_tree_ptr_types<T, VP>::end_node_ptr;
 
 private:
     end_node_ptr ptr_;   // points to either a real node or the sentinel end_node
 
-    friend class rb_tree_const_iterator<T, NP, Diff>;
+    friend class rb_tree_const_iterator<T, VP, Diff>;
     template<class, class, class> friend class rb_tree;
 
     explicit rb_tree_iterator(node_pointer np) noexcept
@@ -361,7 +395,9 @@ public:
     node_base_ptr get_base() const noexcept { return rbtree_cast<node_base_ptr>(ptr_); }
 
     reference operator*()  const noexcept { return get_node()->get_value(); }
-    pointer   operator->() const noexcept { return addressof(get_node()->get_value()); }
+    pointer   operator->() const noexcept {
+        return pointer_traits<pointer>::pointer_to(get_node()->get_value());
+    }
 
     rb_tree_iterator& operator++() noexcept {
         ptr_ = tree_next_iter<end_node_ptr>(get_base());
@@ -384,19 +420,19 @@ public:
     }
 };
 
-template<class T, class NP, class Diff>
+template<class T, class VP, class Diff>
 class rb_tree_const_iterator {
 public:
     using iterator_category = bidirectional_iterator_tag;
     using value_type        = T;
     using difference_type   = Diff;
     using reference         = const T&;
-    using pointer           = const T*;
+    using pointer           = typename pointer_traits<VP>::template rebind<const T>;
 
-    using node_pointer       = NP;
-    using non_const_iterator = rb_tree_iterator<T, NP, Diff>;
-    using node_base_ptr      = typename remove_pointer_t<NP>::node_base_ptr;
-    using end_node_ptr       = typename remove_pointer_t<NP>::end_node_ptr;
+    using node_pointer       = typename rb_tree_ptr_types<T, VP>::node_pointer;
+    using non_const_iterator = rb_tree_iterator<T, VP, Diff>;
+    using node_base_ptr      = typename rb_tree_ptr_types<T, VP>::node_base_ptr;
+    using end_node_ptr       = typename rb_tree_ptr_types<T, VP>::end_node_ptr;
 
 private:
     end_node_ptr ptr_;
@@ -417,7 +453,9 @@ public:
     node_base_ptr get_base() const noexcept { return rbtree_cast<node_base_ptr>(ptr_); }
 
     reference operator*()  const noexcept { return get_node()->get_value(); }
-    pointer   operator->() const noexcept { return addressof(get_node()->get_value()); }
+    pointer   operator->() const noexcept {
+        return pointer_traits<pointer>::pointer_to(get_node()->get_value());
+    }
 
     rb_tree_const_iterator& operator++() noexcept {
         ptr_ = tree_next_iter<end_node_ptr>(get_base());
@@ -459,17 +497,20 @@ public:
     using node_type          = rb_node<T, void_pointer>;
     using node_alloc_type    = typename alloc_traits::template rebind_alloc<node_type>;
     using node_alloc_traits  = allocator_traits<node_alloc_type>;
-    using node_pointer       = typename node_alloc_traits::pointer;  // rb_node<T,VP>*
+    // All pointer typedefs derive from the void pointer alone so that
+    // instantiating rb_tree does not complete rb_node (incomplete-type support).
+    using ptr_types          = rb_tree_ptr_types<T, void_pointer>;
+    using node_pointer       = typename ptr_types::node_pointer;      // rb_node<T,VP>*
     using node_base_type     = rb_node_base<void_pointer>;
-    using node_base_pointer  = typename node_type::node_base_ptr;    // rb_node_base<VP>*
-    using end_node_type      = typename node_type::end_node_t;       // rb_end_node<nb_ptr>
-    using end_node_pointer   = typename node_type::end_node_ptr;     // rb_end_node<nb_ptr>*
+    using node_base_pointer  = typename ptr_types::node_base_ptr;     // rb_node_base<VP>*
+    using end_node_type      = rb_end_node<node_base_pointer>;        // rb_end_node<nb_ptr>
+    using end_node_pointer   = typename ptr_types::end_node_ptr;      // rb_end_node<nb_ptr>*
 
     using size_type          = typename alloc_traits::size_type;
     using difference_type    = typename alloc_traits::difference_type;
 
-    using iterator           = rb_tree_iterator<T, node_pointer, difference_type>;
-    using const_iterator     = rb_tree_const_iterator<T, node_pointer, difference_type>;
+    using iterator           = rb_tree_iterator<T, void_pointer, difference_type>;
+    using const_iterator     = rb_tree_const_iterator<T, void_pointer, difference_type>;
 
 private:
     end_node_type    end_node_;    // sentinel
@@ -514,35 +555,37 @@ private:
         if (!np) return;
         destroy_subtree(np->left);
         node_base_pointer rc = np->right;
-        free_node(static_cast<node_pointer>(np));
+        free_node(rbtree_cast<node_pointer>(np));
         destroy_subtree(rc);
     }
 
     node_base_pointer copy_subtree(node_base_pointer src) {
         if (!src) return nullptr;
-        node_pointer dn = alloc_node(static_cast<node_pointer>(src)->get_value());
+        node_pointer dn = alloc_node(rbtree_cast<node_pointer>(src)->get_value());
         dn->is_black = src->is_black;
         node_base_pointer lc = copy_subtree(src->left);
         node_base_pointer rc = copy_subtree(src->right);
+        node_base_pointer dnb = rbtree_cast<node_base_pointer>(dn);
         dn->left = lc; dn->right = rc;
-        if (lc) static_cast<node_base_pointer>(lc)->set_parent(dn);
-        if (rc) static_cast<node_base_pointer>(rc)->set_parent(dn);
-        return dn;
+        if (lc) lc->set_parent(dnb);
+        if (rc) rc->set_parent(dnb);
+        return dnb;
     }
 
     void do_insert(end_node_pointer parent, node_base_pointer& child,
                    node_pointer np) noexcept
     {
+        node_base_pointer npb = rbtree_cast<node_base_pointer>(np);
         np->set_parent_end(parent);
         np->left = nullptr; np->right = nullptr;
-        child = np;
+        child = npb;
         ++size_;
-        if (begin_node_->left == np) {  // np is new leftmost
-            begin_node_ = rbtree_cast<end_node_pointer>(static_cast<node_base_pointer>(np));
+        if (begin_node_->left == npb) {  // np is new leftmost
+            begin_node_ = rbtree_cast<end_node_pointer>(npb);
         }
         // balance — pass as node_base_ptr to the algorithm
         node_base_pointer r = root_base();
-        tree_balance_after_insert(r, static_cast<node_base_pointer>(np));
+        tree_balance_after_insert(r, npb);
     }
 
     // find_unique: returns (parent, &child_slot)
@@ -553,7 +596,7 @@ private:
         node_base_pointer* cp = &end_node_.left;
         node_base_pointer nd = root_base();
         while (nd) {
-            node_pointer ndv = static_cast<node_pointer>(nd);
+            node_pointer ndv = rbtree_cast<node_pointer>(nd);
             if (comp_(k, ndv->get_value())) {
                 parent = rbtree_cast<end_node_pointer>(nd);
                 cp = &nd->left;
@@ -578,7 +621,7 @@ private:
         node_base_pointer nd = root_base();
         while (nd) {
             parent = rbtree_cast<end_node_pointer>(nd);
-            node_pointer ndv = static_cast<node_pointer>(nd);
+            node_pointer ndv = rbtree_cast<node_pointer>(nd);
             if (comp_(k, ndv->get_value())) {
                 cp = &nd->left;  nd = nd->left;
             } else {
@@ -604,27 +647,52 @@ private:
         return find_unique(k);
     }
 
+    // find_multi_low: leaf position BEFORE the equal range (libc++ __find_leaf_low)
     template<class K>
-    pair<end_node_pointer, node_base_pointer*> find_multi_hint(const_iterator hint, const K& k) {
-        if (hint != cend() && !comp_(*hint, k)) {
-            const_iterator prev = hint;
-            if (prev == cbegin() || !comp_(k, *--prev)) {
-                node_base_pointer hn = (hint != cend()) ? hint.get_base() : nullptr;
-                node_base_pointer pn = (hint != cbegin()) ? prev.get_base() : nullptr;
-                if (pn && !pn->right)
-                    return {rbtree_cast<end_node_pointer>(pn), &pn->right};
-                else if (hn)
-                    return {rbtree_cast<end_node_pointer>(hn), &hn->left};
+    pair<end_node_pointer, node_base_pointer*> find_multi_low(const K& k) {
+        end_node_pointer parent = sentinel();
+        node_base_pointer* cp = &end_node_.left;
+        node_base_pointer nd = root_base();
+        while (nd) {
+            parent = rbtree_cast<end_node_pointer>(nd);
+            node_pointer ndv = rbtree_cast<node_pointer>(nd);
+            if (comp_(ndv->get_value(), k)) {
+                cp = &nd->right; nd = nd->right;
+            } else {
+                cp = &nd->left;  nd = nd->left;
             }
         }
-        return find_multi(k);
+        return {parent, cp};
+    }
+
+    // libc++ __find_leaf: place as close to hint as possible
+    template<class K>
+    pair<end_node_pointer, node_base_pointer*> find_multi_hint(const_iterator hint, const K& k) {
+        if (hint == cend() || !comp_(*hint, k)) {  // k <= *hint
+            const_iterator prev = hint;
+            if (prev == cbegin() || !comp_(k, *--prev)) {
+                // *prev(hint) <= k <= *hint
+                node_base_pointer hn = (hint != cend()) ? hint.get_base() : nullptr;
+                node_base_pointer pn = (hint != cbegin()) ? prev.get_base() : nullptr;
+                if (hn && !hn->left)
+                    return {rbtree_cast<end_node_pointer>(hn), &hn->left};
+                else if (pn)
+                    return {rbtree_cast<end_node_pointer>(pn), &pn->right};
+                // hint == cend() and tree empty
+                return {sentinel(), &end_node_.left};
+            }
+            // k < *prev(hint): insert after the equal range
+            return find_multi(k);
+        }
+        // k > *hint: insert before the equal range
+        return find_multi_low(k);
     }
 
     void unlink(node_base_pointer np) noexcept {
         // update begin_node_ if np is leftmost
         if (rbtree_cast<node_base_pointer>(begin_node_) == np) {
             if (np->right)
-                begin_node_ = rbtree_cast<end_node_pointer>(tree_min(static_cast<node_base_pointer>(np->right)));
+                begin_node_ = rbtree_cast<end_node_pointer>(tree_min(rbtree_cast<node_base_pointer>(np->right)));
             else
                 begin_node_ = np->parent;
         }
@@ -648,10 +716,10 @@ private:
         other.size_ = 0;
     }
 
+public:
     const_iterator cbegin() const noexcept { return const_iterator(begin_node_); }
     const_iterator cend()   const noexcept { return const_iterator(sentinel()); }
 
-public:
     rb_tree() noexcept(noexcept(value_compare{}) && noexcept(node_alloc_type{}))
         : size_(0) { begin_node_ = sentinel(); }
 
@@ -703,7 +771,7 @@ public:
         } else {
             for (auto& v : o) {
                 auto [p, cp] = find_multi(v);
-                do_insert(p, *cp, alloc_node(move(v)));
+                do_insert(p, *cp, alloc_node(rb_value_mover<T>::do_move(v)));
             }
         }
     }
@@ -741,7 +809,7 @@ public:
             clear();
             for (auto& v : o) {
                 auto [p, cp] = find_multi(v);
-                do_insert(p, *cp, alloc_node(move(v)));
+                do_insert(p, *cp, alloc_node(rb_value_mover<T>::do_move(v)));
             }
         }
         return *this;
@@ -806,6 +874,28 @@ public:
             free_node(np);
             return iterator(rbtree_cast<node_pointer>(*cp));
         }
+        do_insert(p, *cp, np);
+        return iterator(np);
+    }
+
+    // Search by an already-available key first; only allocate when absent
+    // (allocator-requirements: duplicate insert must not allocate).
+    template<class K, class... Args>
+    pair<iterator, bool> emplace_unique_key_args(const K& k, Args&&... args) {
+        auto [p, cp] = find_unique(k);
+        if (*cp != nullptr)
+            return {iterator(rbtree_cast<node_pointer>(*cp)), false};
+        node_pointer np = alloc_node(forward<Args>(args)...);
+        do_insert(p, *cp, np);
+        return {iterator(np), true};
+    }
+
+    template<class K, class... Args>
+    iterator emplace_hint_unique_key_args(const_iterator hint, const K& k, Args&&... args) {
+        auto [p, cp] = find_unique_hint(hint, k);
+        if (*cp != nullptr)
+            return iterator(rbtree_cast<node_pointer>(*cp));
+        node_pointer np = alloc_node(forward<Args>(args)...);
         do_insert(p, *cp, np);
         return iterator(np);
     }
@@ -886,7 +976,7 @@ public:
         node_base_pointer np = pos.get_base();
         const_iterator nx = pos; ++nx;
         unlink(np);
-        free_node(static_cast<node_pointer>(np));
+        free_node(rbtree_cast<node_pointer>(np));
         return iterator(nx.ptr_);
     }
 
@@ -912,11 +1002,13 @@ public:
     }
 
     // ---- Lookup ----
+    // find returns the FIRST element equivalent to k (matters for multi
+    // containers, where any-equal would be wrong).
     template<class K>
     iterator find(const K& k) {
-        auto [p, cp] = find_unique(k);
-        if (!*cp) return end();
-        return iterator(rbtree_cast<node_pointer>(*cp));
+        iterator it = lower_bound(k);
+        if (it != end() && !comp_(k, *it)) return it;
+        return end();
     }
 
     template<class K>
@@ -940,7 +1032,7 @@ public:
         end_node_pointer result = sentinel();
         node_base_pointer nd = root_base();
         while (nd) {
-            if (!comp_(static_cast<node_pointer>(nd)->get_value(), k)) {
+            if (!comp_(rbtree_cast<node_pointer>(nd)->get_value(), k)) {
                 result = rbtree_cast<end_node_pointer>(nd);
                 nd = nd->left;
             } else {
@@ -960,7 +1052,7 @@ public:
         end_node_pointer result = sentinel();
         node_base_pointer nd = root_base();
         while (nd) {
-            if (comp_(k, static_cast<node_pointer>(nd)->get_value())) {
+            if (comp_(k, rbtree_cast<node_pointer>(nd)->get_value())) {
                 result = rbtree_cast<end_node_pointer>(nd);
                 nd = nd->left;
             } else {
@@ -997,7 +1089,7 @@ public:
         node_base_pointer np = pos.get_base();
         unlink(np);
         np->left = nullptr; np->right = nullptr; np->parent = nullptr;
-        return static_cast<node_pointer>(np);
+        return rbtree_cast<node_pointer>(np);
     }
 
     template<class K>

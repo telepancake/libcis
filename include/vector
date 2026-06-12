@@ -28,6 +28,17 @@ namespace std {
 template<class T, class Allocator = allocator<T>>
 class vector;
 
+namespace detail {
+// SFINAE gate for vector's alloc_traits: when CTAD substitutes a non-allocator
+// (e.g. vector(it, it, Empty{}) probing an implicit guide whose parameter
+// names vector<T, Empty>::size_type), the lookup of Empty::value_type must be
+// a deduction failure, not a hard error inside allocator_traits<Empty>
+// (libstdc++ achieves the same via its __alloc_rebind alias; probe-verified
+// on g++-10).
+template<class Alloc, class ValueType>
+struct vector_enable_alloc_traits { using type = allocator_traits<Alloc>; };
+} // namespace detail
+
 //===----------------------------------------------------------------------===//
 // vector<T, Allocator>
 //===----------------------------------------------------------------------===//
@@ -37,7 +48,8 @@ class vector {
 public:
     using value_type             = T;
     using allocator_type         = Allocator;
-    using alloc_traits           = allocator_traits<allocator_type>;
+    using alloc_traits           = typename detail::vector_enable_alloc_traits<
+                                       allocator_type, typename allocator_type::value_type>::type;
     using reference              = value_type&;
     using const_reference        = const value_type&;
     using size_type              = typename alloc_traits::size_type;
@@ -81,10 +93,19 @@ private:
     template<class... Args>
     constexpr void construct_one(pointer p, Args&&... args) {
         auto raw = std::to_address(p);
-        if (is_constant_evaluated())
-            std::construct_at(raw, forward<Args>(args)...);
-        else
-            alloc_traits::construct(alloc_, raw, forward<Args>(args)...);
+        // If the allocator provides its own construct() (e.g. TaggingAllocator,
+        // scoped allocators), it MUST be used — both at runtime and in constant
+        // evaluation (allocator_traits then never reaches raw placement-new for
+        // such allocators, matching libc++'s dispatch).  Only the default
+        // placement-new fallback needs the gcc-10 std::construct_at bypass.
+        if constexpr (requires(allocator_type& a) { a.construct(raw, std::forward<Args>(args)...); }) {
+            alloc_traits::construct(alloc_, raw, std::forward<Args>(args)...);
+        } else {
+            if (is_constant_evaluated())
+                std::construct_at(raw, std::forward<Args>(args)...);
+            else
+                alloc_traits::construct(alloc_, raw, std::forward<Args>(args)...);
+        }
     }
 
     [[noreturn]] constexpr static void throw_length_error() noexcept {
@@ -276,7 +297,9 @@ private:
     template<class Iterator, class Sentinel>
     constexpr void assign_with_sentinel(Iterator first, Sentinel last) {
         pointer cur = begin_;
-        for (; first != last && cur != end_; ++first, ++cur)
+        // (void): user test iterators delete operator,(T) — match libc++'s
+        // "++__first, (void)++__cur" comma-guard.
+        for (; first != last && cur != end_; ++first, (void)++cur)
             *cur = *first;
         if (cur != end_) {
             destruct_at_end(cur);
@@ -288,15 +311,22 @@ private:
 
     template<class Iterator, class Sentinel>
     constexpr void assign_with_size(Iterator first, Sentinel last, size_type new_size) {
+        // NOTE: std::copy/copy_n in include/algorithm lack libc++'s
+        // "(void)" comma-guards in their for-loop increments, so user
+        // iterators with a deleted operator,() reject them.  algorithm is a
+        // shared header (off-limits here), so copy inline with guarded loops.
         if (new_size <= capacity()) {
             size_type sz = size();
             if (new_size > sz) {
-                std::copy_n(first, sz, begin_);
                 Iterator mid = first;
-                advance(mid, static_cast<difference_type>(sz));
+                pointer cur = begin_;
+                for (size_type i = 0; i < sz; ++i, (void)++mid, (void)++cur)
+                    *cur = *mid;
                 construct_at_end(mid, last, new_size - sz);
             } else {
-                pointer m = std::copy(first, last, begin_);
+                pointer m = begin_;
+                for (; first != last; ++first, (void)++m)
+                    *m = *first;
                 destruct_at_end(m);
             }
         } else {
@@ -412,7 +442,9 @@ public:
         }
     }
 
-    constexpr vector(const vector& x, const allocator_type& a)
+    // type_identity_t: keep the allocator parameter a non-deduced context so
+    // CTAD vector(source, ConvertibleToAlloc) works (libc++ __type_identity_t).
+    constexpr vector(const vector& x, const type_identity_t<allocator_type>& a)
         : alloc_(a) {
         if (x.size() > 0) {
             vallocate(x.size());
@@ -427,7 +459,7 @@ public:
         x.begin_ = x.end_ = x.cap_ = nullptr;
     }
 
-    constexpr vector(vector&& x, const allocator_type& a)
+    constexpr vector(vector&& x, const type_identity_t<allocator_type>& a)
         : alloc_(a) {
         if (a == x.alloc_) {
             begin_ = x.begin_;
@@ -742,17 +774,22 @@ public:
             if (static_cast<difference_type>(cap_ - end_) >= n) {
                 pointer old_last = end_;
                 difference_type dx = end_ - p;
+                // inline copy loops: see comma-guard note in assign_with_size
                 if (n > dx) {
                     InputIter m = first;
                     std::advance(m, dx);
                     construct_at_end(m, last, static_cast<size_type>(n - dx));
                     if (dx > 0) {
                         move_range(p, old_last, p + n);
-                        std::copy_n(first, dx, p);
+                        pointer cur = p;
+                        for (difference_type i = 0; i < dx; ++i, (void)++first, (void)++cur)
+                            *cur = *first;
                     }
                 } else {
                     move_range(p, old_last, p + n);
-                    std::copy_n(first, n, p);
+                    pointer cur = p;
+                    for (difference_type i = 0; i < n; ++i, (void)++first, (void)++cur)
+                        *cur = *first;
                 }
             } else {
                 pointer np = reallocate_and_insert_gap(p, static_cast<size_type>(n));
@@ -775,7 +812,7 @@ public:
 
         // Fill any available capacity first
         for (; end_ != cap_ && first != last; ++first) {
-            alloc_traits::construct(alloc_, end_, *first);
+            construct_one(end_, *first);
             ++end_;
         }
 
@@ -783,10 +820,17 @@ public:
             // rotate [p, old_last) to back
             std::rotate(p, old_last, end_);
         } else {
-            // Collect remaining into a temp vector, then insert
+            // Collect remaining into a temp vector, then insert.
+            // Growth max(2*cap, 8) matches libc++ __split_buffer::
+            // __construct_at_end_with_sentinel (the limited_allocator tests
+            // budget allocations for exactly this pattern).
             vector tmp(alloc_);
-            for (; first != last; ++first)
-                tmp.emplace_back(*first);
+            for (; first != last; ++first) {
+                if (tmp.end_ == tmp.cap_)
+                    tmp.reallocate_grow(std::max<size_type>(2 * tmp.capacity(), 8));
+                tmp.construct_one(tmp.end_, *first);
+                ++tmp.end_;
+            }
 
             // Now do a bulk insert of tmp at the right spot
             // First rotate what we already appended
@@ -869,9 +913,12 @@ template<class InputIter,
     requires input_iterator<InputIter>
 vector(InputIter, InputIter) -> vector<typename iterator_traits<InputIter>::value_type, Alloc>;
 
+// Alloc must look like an allocator (libc++ __is_allocator): otherwise the
+// guide must SFINAE away (e.g. vector(it, it, Empty{}) must not deduce).
 template<class InputIter,
          class Alloc>
-    requires input_iterator<InputIter>
+    requires input_iterator<InputIter> &&
+             requires(Alloc a) { typename Alloc::value_type; a.allocate(size_t{}); }
 vector(InputIter, InputIter, Alloc) -> vector<typename iterator_traits<InputIter>::value_type, Alloc>;
 
 // -----------------------------------------------------------------------
@@ -883,11 +930,14 @@ constexpr bool operator==(const vector<T,Alloc>& x, const vector<T,Alloc>& y) {
     return x.size() == y.size() && std::equal(x.begin(), x.end(), y.begin());
 }
 
+// libc++ uses __synth_three_way (falls back to operator< for types without
+// operator<=>), not compare_three_way.
 template<class T, class Alloc>
-constexpr auto operator<=>(const vector<T,Alloc>& x, const vector<T,Alloc>& y) {
+constexpr detail::synth_three_way_result<T>
+operator<=>(const vector<T,Alloc>& x, const vector<T,Alloc>& y) {
     return std::lexicographical_compare_three_way(x.begin(), x.end(),
                                                    y.begin(), y.end(),
-                                                   compare_three_way{});
+                                                   detail::synth_three_way);
 }
 
 template<class T, class Alloc>
@@ -1051,7 +1101,8 @@ public:
     using difference_type   = typename Cp::difference_type;
     using value_type        = bool;
     using pointer           = bit_iterator;
-    using reference         = conditional_t<IsConst, bit_const_reference<Cp>, bit_reference<Cp>>;
+    // bool for const: _LIBCPP_ABI_BITSET_VECTOR_BOOL_CONST_SUBSCRIPT_RETURN_BOOL
+    using reference         = conditional_t<IsConst, bool, bit_reference<Cp>>;
     using iterator_category = random_access_iterator_tag;
     using iterator_concept  = random_access_iterator_tag;
 
@@ -1092,7 +1143,8 @@ public:
         : seg_(it.seg_), ctz_(it.ctz_) {}
 
     constexpr reference operator*() const noexcept {
-        return reference(seg_, storage_type(1) << ctz_);
+        return conditional_t<IsConst, bit_const_reference<Cp>, bit_reference<Cp>>(
+            seg_, storage_type(1) << ctz_);
     }
 
     constexpr bit_iterator& operator++() noexcept {
@@ -1289,7 +1341,9 @@ public:
     using value_type             = bool;
     using allocator_type         = Allocator;
     using reference              = bit_reference<vector>;
-    using const_reference        = bit_const_reference<vector>;
+    // libc++ _LIBCPP_ABI_BITSET_VECTOR_BOOL_CONST_SUBSCRIPT_RETURN_BOOL
+    // (the test suite asserts this when not building against libc++ itself).
+    using const_reference        = bool;
     using pointer                = bit_iterator<vector, false>;
     using const_pointer          = bit_iterator<vector, true>;
     using iterator               = bit_iterator<vector, false>;
@@ -1376,8 +1430,9 @@ private:
                          storage_type(1) << (pos % bits_per_word));
     }
     constexpr const_reference make_ref(size_type pos) const noexcept {
-        return const_reference(begin_ + pos / bits_per_word,
-                               storage_type(1) << (pos % bits_per_word));
+        // const_reference is bool; read through a bit_const_reference
+        return bit_const_reference<vector>(begin_ + pos / bits_per_word,
+                                           storage_type(1) << (pos % bits_per_word));
     }
 
     constexpr iterator const_iterator_cast(const_iterator p) noexcept {
@@ -1394,7 +1449,7 @@ private:
             bit_copy(first, last, dst);
         } else {
             // Source is a scalar bool iterator (bool*, const bool*, initializer_list ptr)
-            for (auto it = first; it != last; ++it, ++dst)
+            for (auto it = first; it != last; ++it, (void)++dst)
                 *dst = static_cast<bool>(*it);
         }
         size_ += n;
@@ -1562,7 +1617,7 @@ public:
         }
     }
 
-    constexpr vector(const vector& v, const allocator_type& a)
+    constexpr vector(const vector& v, const type_identity_t<allocator_type>& a)
         : alloc_(static_cast<storage_allocator>(a)) {
         if (v.size_ > 0) {
             vallocate(v.size_);
@@ -1578,7 +1633,7 @@ public:
           cap_  (exchange(v.cap_,   size_type(0))),
           alloc_(std::move(v.alloc_)) {}
 
-    constexpr vector(vector&& v, const allocator_type& a)
+    constexpr vector(vector&& v, const type_identity_t<allocator_type>& a)
         : alloc_(static_cast<storage_allocator>(a)) {
         if (a == allocator_type(v.alloc_)) {
             begin_ = exchange(v.begin_, nullptr);
@@ -1898,7 +1953,13 @@ private:
             bit_copy_backward(position, cend(), tmp.end());
             swap(tmp);
         }
-        std::copy(first, last, r);
+        // inline copy: std::copy's loop increments lack libc++'s (void)
+        // comma-guards and user test iterators delete operator,()
+        {
+            iterator dst = r;
+            for (; first != last; ++first, (void)++dst)
+                *dst = *first;
+        }
         return r;
     }
 };
@@ -1920,10 +1981,11 @@ constexpr bool operator==(const vector<bool,Alloc>& x, const vector<bool,Alloc>&
 }
 
 template<class Alloc>
-constexpr auto operator<=>(const vector<bool,Alloc>& x, const vector<bool,Alloc>& y) {
+constexpr detail::synth_three_way_result<bool>
+operator<=>(const vector<bool,Alloc>& x, const vector<bool,Alloc>& y) {
     return std::lexicographical_compare_three_way(x.begin(), x.end(),
                                                    y.begin(), y.end(),
-                                                   compare_three_way{});
+                                                   detail::synth_three_way);
 }
 
 // -----------------------------------------------------------------------
@@ -1931,7 +1993,7 @@ constexpr auto operator<=>(const vector<bool,Alloc>& x, const vector<bool,Alloc>
 // -----------------------------------------------------------------------
 template<class Alloc>
 struct hash<vector<bool, Alloc>> {
-    size_t operator()(const vector<bool, Alloc>& v) const noexcept {
+    constexpr size_t operator()(const vector<bool, Alloc>& v) const noexcept {
         return v.hash_code();
     }
 };

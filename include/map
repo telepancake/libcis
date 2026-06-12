@@ -16,12 +16,23 @@
 #include <utility>
 #include <initializer_list>
 #include <iterator>
+#include <algorithm>
 #include <compare>
 
 namespace std {
 
 // Forward declarations
 template<class Key, class T, class Compare, class Alloc> class multimap;
+
+namespace detail {
+// libc++ __can_extract_key (map flavor): emplace args from which the key can
+// be read without constructing the node first.
+template<class P, class Key>
+inline constexpr bool map_can_extract_key_v = false;
+template<class F, class S, class Key>
+inline constexpr bool map_can_extract_key_v<pair<F, S>, Key> =
+    is_same_v<remove_cv_t<F>, Key>;
+} // namespace detail
 
 // ============================================================
 // map_node_handle — returned by map::extract
@@ -197,6 +208,14 @@ public:
         bool operator()(const K1& a, const K2& b) const {
             return comp(a, b);
         }
+        // swap defined so the container's swap is noexcept whenever the key
+        // comparator's swap is (libc++ __map_value_compare::swap).
+        friend void swap(value_compare& x, value_compare& y)
+            noexcept(is_nothrow_swappable_v<key_compare>)
+        {
+            using std::swap;
+            swap(x.comp, y.comp);
+        }
     };
 
 private:
@@ -225,7 +244,13 @@ public:
     explicit map(const allocator_type& a)
         : tree_(make_vc(key_compare()), a) {}
 
-    template<class InputIt>
+    // The comp/alloc convenience constructors are guarded so the implicit
+    // deduction guides synthesized from them SFINAE away when the deduced
+    // Compare is an allocator or the deduced Alloc is not one (libc++
+    // behaviour; [associative.general] CTAD requirements).
+    template<class InputIt, class C2 = Compare, class A2 = Alloc,
+             class = enable_if_t<!detail::tree_is_allocator_v<C2> &&
+                                 detail::tree_is_allocator_v<A2>, void>>
     map(InputIt first, InputIt last,
         const key_compare& comp = key_compare(),
         const allocator_type& a = allocator_type())
@@ -234,7 +259,8 @@ public:
         insert(first, last);
     }
 
-    template<class InputIt>
+    template<class InputIt, class A2 = Alloc,
+             class = enable_if_t<detail::tree_is_allocator_v<A2>, void>>
     map(InputIt first, InputIt last, const allocator_type& a)
         : map(first, last, key_compare(), a) {}
 
@@ -244,6 +270,9 @@ public:
     map(const map& o, const allocator_type& a) : tree_(o.tree_, a) {}
     map(map&& o, const allocator_type& a) : tree_(move(o.tree_), a) {}
 
+    template<class C2 = Compare, class A2 = Alloc,
+             class = enable_if_t<!detail::tree_is_allocator_v<C2> &&
+                                 detail::tree_is_allocator_v<A2>, void>>
     map(initializer_list<value_type> il,
         const key_compare& comp = key_compare(),
         const allocator_type& a = allocator_type())
@@ -252,6 +281,8 @@ public:
         insert(il.begin(), il.end());
     }
 
+    template<class A2 = Alloc,
+             class = enable_if_t<detail::tree_is_allocator_v<A2>, void>>
     map(initializer_list<value_type> il, const allocator_type& a)
         : map(il, key_compare(), a) {}
 
@@ -307,46 +338,108 @@ public:
     }
 
     // ---- Modifiers ----
+    // emplace: when the key is extractable from the args (a pair-like single
+    // arg, or a two-arg form whose first arg IS the key) search first and only
+    // allocate on miss (libc++ __can_extract_key).
     template<class... Args>
     pair<iterator, bool> emplace(Args&&... args) {
-        return tree_.emplace_unique(forward<Args>(args)...);
+        if constexpr (sizeof...(Args) == 1) {
+            return emplace_one(forward<Args>(args)...);
+        } else if constexpr (sizeof...(Args) == 2) {
+            return emplace_two(forward<Args>(args)...);
+        } else {
+            return tree_.emplace_unique(forward<Args>(args)...);
+        }
     }
 
     template<class... Args>
     iterator emplace_hint(const_iterator hint, Args&&... args) {
-        return tree_.emplace_hint_unique(hint, forward<Args>(args)...);
+        if constexpr (sizeof...(Args) == 1) {
+            return emplace_hint_one(hint, forward<Args>(args)...);
+        } else if constexpr (sizeof...(Args) == 2) {
+            return emplace_hint_two(hint, forward<Args>(args)...);
+        } else {
+            return tree_.emplace_hint_unique(hint, forward<Args>(args)...);
+        }
     }
 
+private:
+    template<class A>
+    pair<iterator, bool> emplace_one(A&& a) {
+        if constexpr (detail::map_can_extract_key_v<remove_cvref_t<A>, Key>)
+            return tree_.emplace_unique_key_args(a.first, forward<A>(a));
+        else
+            return tree_.emplace_unique(forward<A>(a));
+    }
+    template<class F, class S>
+    pair<iterator, bool> emplace_two(F&& f, S&& s) {
+        if constexpr (is_same_v<remove_cvref_t<F>, Key>)
+            return tree_.emplace_unique_key_args(f, forward<F>(f), forward<S>(s));
+        else
+            return tree_.emplace_unique(forward<F>(f), forward<S>(s));
+    }
+    template<class A>
+    iterator emplace_hint_one(const_iterator hint, A&& a) {
+        if constexpr (detail::map_can_extract_key_v<remove_cvref_t<A>, Key>)
+            return tree_.emplace_hint_unique_key_args(hint, a.first, forward<A>(a));
+        else
+            return tree_.emplace_hint_unique(hint, forward<A>(a));
+    }
+    template<class F, class S>
+    iterator emplace_hint_two(const_iterator hint, F&& f, S&& s) {
+        if constexpr (is_same_v<remove_cvref_t<F>, Key>)
+            return tree_.emplace_hint_unique_key_args(hint, f, forward<F>(f), forward<S>(s));
+        else
+            return tree_.emplace_hint_unique(hint, forward<F>(f), forward<S>(s));
+    }
+
+public:
     pair<iterator, bool> insert(const value_type& v) {
-        return tree_.emplace_unique(v);
+        return tree_.emplace_unique_key_args(v.first, v);
     }
     pair<iterator, bool> insert(value_type&& v) {
-        return tree_.emplace_unique(move(v));
+        return tree_.emplace_unique_key_args(v.first, move(v));
     }
     template<class P>
-        requires is_constructible_v<value_type, P&&>
+        requires (is_constructible_v<value_type, P&&> &&
+                  !is_same_v<remove_cvref_t<P>, value_type>)
     pair<iterator, bool> insert(P&& p) {
-        return tree_.emplace_unique(forward<P>(p));
+        return emplace(forward<P>(p));
     }
     iterator insert(const_iterator hint, const value_type& v) {
-        return tree_.emplace_hint_unique(hint, v);
+        return tree_.emplace_hint_unique_key_args(hint, v.first, v);
     }
     iterator insert(const_iterator hint, value_type&& v) {
-        return tree_.emplace_hint_unique(hint, move(v));
+        return tree_.emplace_hint_unique_key_args(hint, v.first, move(v));
     }
     template<class P>
-        requires is_constructible_v<value_type, P&&>
+        requires (is_constructible_v<value_type, P&&> &&
+                  !is_same_v<remove_cvref_t<P>, value_type>)
     iterator insert(const_iterator hint, P&& p) {
-        return tree_.emplace_hint_unique(hint, forward<P>(p));
+        return emplace_hint(hint, forward<P>(p));
     }
     template<class InputIt>
     void insert(InputIt first, InputIt last) {
         for (; first != last; ++first)
-            tree_.emplace_unique(*first);
+            insert_range_elem(*first);
     }
     void insert(initializer_list<value_type> il) {
         insert(il.begin(), il.end());
     }
+
+private:
+    // lvalue value_type elements insert as const& (allocator-requirements:
+    // range insert constructs from value_type const&, not value_type&)
+    template<class V>
+    void insert_range_elem(V&& v) {
+        if constexpr (is_same_v<remove_cvref_t<V>, value_type> &&
+                      is_lvalue_reference_v<V&&>)
+            insert(static_cast<const value_type&>(v));
+        else
+            insert(forward<V>(v));
+    }
+
+public:
 
     // try_emplace
     template<class... Args>
@@ -456,7 +549,7 @@ public:
 
     size_type count(const key_type& k) const { return tree_.count_unique(k); }
     template<class K> requires requires { typename key_compare::is_transparent; }
-    size_type count(const K& k) const { return tree_.count_unique(k); }
+    size_type count(const K& k) const { return tree_.count_multi(k); }
 
     bool contains(const key_type& k) const { return find(k) != end(); }
     template<class K> requires requires { typename key_compare::is_transparent; }
@@ -484,32 +577,33 @@ public:
     }
     template<class K> requires requires { typename key_compare::is_transparent; }
     pair<iterator, iterator>             equal_range(const K& k) {
-        return tree_.equal_range_unique(k);
+        return tree_.equal_range_multi(k);
     }
     template<class K> requires requires { typename key_compare::is_transparent; }
     pair<const_iterator, const_iterator> equal_range(const K& k) const {
-        return tree_.equal_range_unique(k);
+        return tree_.equal_range_multi(k);
     }
 
-    // ---- Comparisons ----
-    template<class K2, class T2, class C2, class A2>
-    friend bool operator==(const map<K2,T2,C2,A2>& x, const map<K2,T2,C2,A2>& y) {
-        if (x.size() != y.size()) return false;
-        auto a = x.begin(), b = y.begin();
-        for (; a != x.end(); ++a, ++b)
-            if (!(*a == *b)) return false;
-        return true;
-    }
-
-    template<class K2, class T2, class C2, class A2>
-    friend auto operator<=>(const map<K2,T2,C2,A2>& x, const map<K2,T2,C2,A2>& y) {
-        auto a = x.begin(), b = y.begin();
-        for (; a != x.end() && b != y.end(); ++a, ++b) {
-            if (auto c = (*a <=> *b); c != 0) return c;
-        }
-        return x.size() <=> y.size();
-    }
+    template<class, class, class, class> friend class map;
+    template<class, class, class, class> friend class multimap;
 };
+
+// ---- Comparisons ----
+template<class Key, class T, class Compare, class Alloc>
+bool operator==(const map<Key,T,Compare,Alloc>& x, const map<Key,T,Compare,Alloc>& y) {
+    if (x.size() != y.size()) return false;
+    auto a = x.begin(), b = y.begin();
+    for (; a != x.end(); ++a, ++b)
+        if (!(*a == *b)) return false;
+    return true;
+}
+
+template<class Key, class T, class Compare, class Alloc>
+inline detail::synth_three_way_result<pair<const Key, T>>
+operator<=>(const map<Key,T,Compare,Alloc>& x, const map<Key,T,Compare,Alloc>& y) {
+    return lexicographical_compare_three_way(x.begin(), x.end(), y.begin(), y.end(),
+                                             detail::synth_three_way);
+}
 
 // ---- Non-member swap ----
 template<class K, class T, class C, class A>
@@ -527,28 +621,48 @@ erase_if(map<K,T,C,A>& c, Pred pred) {
     return old - c.size();
 }
 
-// ---- Deduction guides ----
+// ---- Deduction guides (libc++ map: __iter_key_type / __iter_mapped_type,
+// guarded by __is_allocator so non-allocator args SFINAE out) ----
+namespace detail {
+template<class InputIt>
+using iter_key_type = remove_const_t<
+    typename iterator_traits<InputIt>::value_type::first_type>;
+template<class InputIt>
+using iter_mapped_type = typename iterator_traits<InputIt>::value_type::second_type;
+template<class InputIt>
+using iter_to_alloc_type = pair<
+    add_const_t<typename iterator_traits<InputIt>::value_type::first_type>,
+    typename iterator_traits<InputIt>::value_type::second_type>;
+} // namespace detail
+
 template<class InputIt,
-         class Compare = less<typename iterator_traits<InputIt>::value_type::first_type>,
-         class Alloc   = allocator<typename iterator_traits<InputIt>::value_type>>
+         class Compare = less<detail::iter_key_type<InputIt>>,
+         class Alloc   = allocator<detail::iter_to_alloc_type<InputIt>>,
+         class = enable_if_t<!detail::tree_is_allocator_v<Compare>, void>,
+         class = enable_if_t<!is_integral_v<Compare>, void>,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
 map(InputIt, InputIt, Compare = Compare(), Alloc = Alloc())
-    -> map<typename iterator_traits<InputIt>::value_type::first_type,
-           typename iterator_traits<InputIt>::value_type::second_type,
+    -> map<detail::iter_key_type<InputIt>, detail::iter_mapped_type<InputIt>,
            Compare, Alloc>;
 
-template<class InputIt, class Alloc>
+template<class InputIt, class Alloc,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
 map(InputIt, InputIt, Alloc)
-    -> map<typename iterator_traits<InputIt>::value_type::first_type,
-           typename iterator_traits<InputIt>::value_type::second_type,
-           less<typename iterator_traits<InputIt>::value_type::first_type>, Alloc>;
+    -> map<detail::iter_key_type<InputIt>, detail::iter_mapped_type<InputIt>,
+           less<detail::iter_key_type<InputIt>>, Alloc>;
 
-template<class Key, class T, class Compare = less<Key>,
-         class Alloc = allocator<pair<const Key, T>>>
-map(initializer_list<pair<const Key, T>>, Compare = Compare(), Alloc = Alloc())
-    -> map<Key, T, Compare, Alloc>;
+template<class Key, class T, class Compare = less<remove_const_t<Key>>,
+         class Alloc = allocator<pair<const Key, T>>,
+         class = enable_if_t<!detail::tree_is_allocator_v<Compare>, void>,
+         class = enable_if_t<!is_integral_v<Compare>, void>,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
+map(initializer_list<pair<Key, T>>, Compare = Compare(), Alloc = Alloc())
+    -> map<remove_const_t<Key>, T, Compare, Alloc>;
 
-template<class Key, class T, class Alloc>
-map(initializer_list<pair<const Key, T>>, Alloc) -> map<Key, T, less<Key>, Alloc>;
+template<class Key, class T, class Alloc,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
+map(initializer_list<pair<Key, T>>, Alloc)
+    -> map<remove_const_t<Key>, T, less<remove_const_t<Key>>, Alloc>;
 
 // ============================================================
 // multimap<Key, T, Compare, Alloc>
@@ -601,6 +715,14 @@ public:
         bool operator()(const K1& a, const K2& b) const {
             return comp(a, b);
         }
+        // swap defined so the container's swap is noexcept whenever the key
+        // comparator's swap is (libc++ __map_value_compare::swap).
+        friend void swap(value_compare& x, value_compare& y)
+            noexcept(is_nothrow_swappable_v<key_compare>)
+        {
+            using std::swap;
+            swap(x.comp, y.comp);
+        }
     };
 
 private:
@@ -626,7 +748,9 @@ public:
     explicit multimap(const allocator_type& a)
         : tree_(make_vc(key_compare()), a) {}
 
-    template<class InputIt>
+    template<class InputIt, class C2 = Compare, class A2 = Alloc,
+             class = enable_if_t<!detail::tree_is_allocator_v<C2> &&
+                                 detail::tree_is_allocator_v<A2>, void>>
     multimap(InputIt first, InputIt last,
              const key_compare& comp = key_compare(),
              const allocator_type& a = allocator_type())
@@ -635,7 +759,8 @@ public:
         insert(first, last);
     }
 
-    template<class InputIt>
+    template<class InputIt, class A2 = Alloc,
+             class = enable_if_t<detail::tree_is_allocator_v<A2>, void>>
     multimap(InputIt first, InputIt last, const allocator_type& a)
         : multimap(first, last, key_compare(), a) {}
 
@@ -645,6 +770,9 @@ public:
     multimap(const multimap& o, const allocator_type& a) : tree_(o.tree_, a) {}
     multimap(multimap&& o, const allocator_type& a) : tree_(move(o.tree_), a) {}
 
+    template<class C2 = Compare, class A2 = Alloc,
+             class = enable_if_t<!detail::tree_is_allocator_v<C2> &&
+                                 detail::tree_is_allocator_v<A2>, void>>
     multimap(initializer_list<value_type> il,
              const key_compare& comp = key_compare(),
              const allocator_type& a = allocator_type())
@@ -653,6 +781,8 @@ public:
         insert(il.begin(), il.end());
     }
 
+    template<class A2 = Alloc,
+             class = enable_if_t<detail::tree_is_allocator_v<A2>, void>>
     multimap(initializer_list<value_type> il, const allocator_type& a)
         : multimap(il, key_compare(), a) {}
 
@@ -714,6 +844,8 @@ public:
     }
     template<class InputIt>
     void insert(InputIt first, InputIt last) {
+        // multi containers forward the raw element reference (libc++
+        // __insert_multi(_Vp&&)): lvalue elements construct from value_type&.
         for (; first != last; ++first)
             tree_.emplace_multi(*first);
     }
@@ -816,25 +948,26 @@ public:
         return tree_.equal_range_multi(k);
     }
 
-    // ---- Comparisons ----
-    template<class K2, class T2, class C2, class A2>
-    friend bool operator==(const multimap<K2,T2,C2,A2>& x, const multimap<K2,T2,C2,A2>& y) {
-        if (x.size() != y.size()) return false;
-        auto a = x.begin(), b = y.begin();
-        for (; a != x.end(); ++a, ++b)
-            if (!(*a == *b)) return false;
-        return true;
-    }
-
-    template<class K2, class T2, class C2, class A2>
-    friend auto operator<=>(const multimap<K2,T2,C2,A2>& x, const multimap<K2,T2,C2,A2>& y) {
-        auto a = x.begin(), b = y.begin();
-        for (; a != x.end() && b != y.end(); ++a, ++b) {
-            if (auto c = (*a <=> *b); c != 0) return c;
-        }
-        return x.size() <=> y.size();
-    }
+    template<class, class, class, class> friend class map;
+    template<class, class, class, class> friend class multimap;
 };
+
+// ---- Comparisons ----
+template<class Key, class T, class Compare, class Alloc>
+bool operator==(const multimap<Key,T,Compare,Alloc>& x, const multimap<Key,T,Compare,Alloc>& y) {
+    if (x.size() != y.size()) return false;
+    auto a = x.begin(), b = y.begin();
+    for (; a != x.end(); ++a, ++b)
+        if (!(*a == *b)) return false;
+    return true;
+}
+
+template<class Key, class T, class Compare, class Alloc>
+inline detail::synth_three_way_result<pair<const Key, T>>
+operator<=>(const multimap<Key,T,Compare,Alloc>& x, const multimap<Key,T,Compare,Alloc>& y) {
+    return lexicographical_compare_three_way(x.begin(), x.end(), y.begin(), y.end(),
+                                             detail::synth_three_way);
+}
 
 // ---- Non-member swap ----
 template<class K, class T, class C, class A>
@@ -856,27 +989,33 @@ erase_if(multimap<K,T,C,A>& c, Pred pred) {
 
 // ---- Deduction guides for multimap ----
 template<class InputIt,
-         class Compare = less<typename iterator_traits<InputIt>::value_type::first_type>,
-         class Alloc   = allocator<typename iterator_traits<InputIt>::value_type>>
+         class Compare = less<detail::iter_key_type<InputIt>>,
+         class Alloc   = allocator<detail::iter_to_alloc_type<InputIt>>,
+         class = enable_if_t<!detail::tree_is_allocator_v<Compare>, void>,
+         class = enable_if_t<!is_integral_v<Compare>, void>,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
 multimap(InputIt, InputIt, Compare = Compare(), Alloc = Alloc())
-    -> multimap<typename iterator_traits<InputIt>::value_type::first_type,
-                typename iterator_traits<InputIt>::value_type::second_type,
+    -> multimap<detail::iter_key_type<InputIt>, detail::iter_mapped_type<InputIt>,
                 Compare, Alloc>;
 
-template<class InputIt, class Alloc>
+template<class InputIt, class Alloc,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
 multimap(InputIt, InputIt, Alloc)
-    -> multimap<typename iterator_traits<InputIt>::value_type::first_type,
-                typename iterator_traits<InputIt>::value_type::second_type,
-                less<typename iterator_traits<InputIt>::value_type::first_type>, Alloc>;
+    -> multimap<detail::iter_key_type<InputIt>, detail::iter_mapped_type<InputIt>,
+                less<detail::iter_key_type<InputIt>>, Alloc>;
 
-template<class Key, class T, class Compare = less<Key>,
-         class Alloc = allocator<pair<const Key, T>>>
-multimap(initializer_list<pair<const Key, T>>, Compare = Compare(), Alloc = Alloc())
-    -> multimap<Key, T, Compare, Alloc>;
+template<class Key, class T, class Compare = less<remove_const_t<Key>>,
+         class Alloc = allocator<pair<const Key, T>>,
+         class = enable_if_t<!detail::tree_is_allocator_v<Compare>, void>,
+         class = enable_if_t<!is_integral_v<Compare>, void>,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
+multimap(initializer_list<pair<Key, T>>, Compare = Compare(), Alloc = Alloc())
+    -> multimap<remove_const_t<Key>, T, Compare, Alloc>;
 
-template<class Key, class T, class Alloc>
-multimap(initializer_list<pair<const Key, T>>, Alloc)
-    -> multimap<Key, T, less<Key>, Alloc>;
+template<class Key, class T, class Alloc,
+         class = enable_if_t<detail::tree_is_allocator_v<Alloc>, void>>
+multimap(initializer_list<pair<Key, T>>, Alloc)
+    -> multimap<remove_const_t<Key>, T, less<remove_const_t<Key>>, Alloc>;
 
 // ---- Cross-container merge implementations ----
 // (map::merge from multimap — deferred because multimap wasn't defined yet)
