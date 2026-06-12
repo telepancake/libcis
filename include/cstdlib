@@ -3,7 +3,14 @@
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 #pragma once
 
+// glibc declarations must keep DEFAULT visibility no matter where this
+// wrapper is first included from: io headers wrap their bodies in
+// `#pragma GCC visibility push(hidden)` (libstdc++-ABI isolation), and a
+// libc prototype first seen inside such a region becomes a hidden symbol
+// the linker then cannot resolve against libc (e.g. strtod via <sstream>).
+#pragma GCC visibility push(default)
 #include <stdlib.h>
+#pragma GCC visibility pop
 #include <bits/fp_abs.h>  // floating std::abs overloads ([c.math.abs] puts them here too)
 
 namespace std {

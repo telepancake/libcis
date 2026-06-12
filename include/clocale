@@ -10,7 +10,14 @@
 // only requires them there.
 #pragma once
 
+// glibc declarations must keep DEFAULT visibility no matter where this
+// wrapper is first included from: io headers wrap their bodies in
+// `#pragma GCC visibility push(hidden)` (libstdc++-ABI isolation), and a
+// libc prototype first seen inside such a region becomes a hidden symbol
+// the linker then cannot resolve against libc (e.g. strtod via <sstream>).
+#pragma GCC visibility push(default)
 #include <locale.h>
+#pragma GCC visibility pop
 
 namespace std {
 
