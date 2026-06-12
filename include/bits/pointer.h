@@ -84,16 +84,24 @@ namespace detail {
     template<class Ptr, class = void>
     struct pointer_traits_impl {};
 
+    // difference_type selection must be LAZY: conditional_t<cond, typename
+    // Ptr::difference_type, ptrdiff_t> names the member in the argument list
+    // unconditionally, which is a hard error when Ptr has none -- a requires
+    // condition can't save an eagerly-formed branch type.
+    template<class Ptr, class = void>
+    struct pointer_traits_difference_type { using type = ptrdiff_t; };
+    template<class Ptr>
+    struct pointer_traits_difference_type<Ptr, void_t<typename Ptr::difference_type>> {
+        using type = typename Ptr::difference_type;
+    };
+
     template<class Ptr>
     struct pointer_traits_impl<Ptr,
         void_t<typename pointer_traits_element_type<Ptr>::type>>
     {
         using pointer       = Ptr;
         using element_type  = typename pointer_traits_element_type<Ptr>::type;
-        using difference_type =
-            conditional_t<requires { typename Ptr::difference_type; },
-                          typename Ptr::difference_type,
-                          ptrdiff_t>;
+        using difference_type = typename pointer_traits_difference_type<Ptr>::type;
 
         template<class U>
         using rebind = typename pointer_traits_rebind<pointer, U>::type;

@@ -2893,12 +2893,23 @@ struct incrementable_traits<common_iterator<Iter, Sent>> {
     using difference_type = iter_difference_t<Iter>;
 };
 
+// A concept, not a plain && in a type argument: constraint conjunction
+// short-circuits (the derived_from conjunct is never substituted when the
+// category doesn't exist), whereas conditional_t<A && B, ...> must form B's
+// template-id even when A is false -- a hard error for category-less input
+// iterators.  Mirrors libc++ __denotes_forward_iter.
+namespace detail {
+    template<class Iter>
+    concept common_iter_denotes_forward = requires {
+        typename iterator_traits<Iter>::iterator_category;
+    } && derived_from<typename iterator_traits<Iter>::iterator_category, forward_iterator_tag>;
+}
+
 template<input_iterator Iter, class Sent>
 struct iterator_traits<common_iterator<Iter, Sent>> {
     using iterator_concept  = conditional_t<forward_iterator<Iter>, forward_iterator_tag, input_iterator_tag>;
     using iterator_category = conditional_t<
-        requires { typename iterator_traits<Iter>::iterator_category; } &&
-        derived_from<typename iterator_traits<Iter>::iterator_category, forward_iterator_tag>,
+        detail::common_iter_denotes_forward<Iter>,
         forward_iterator_tag,
         input_iterator_tag>;
     using value_type      = iter_value_t<Iter>;

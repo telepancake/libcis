@@ -85,12 +85,15 @@ constexpr T* construct_at(T* loc, Args&&... args) {
     return ::new(static_cast<void*>(loc)) T(forward<Args>(args)...);
 }
 
-// Internal helper (used by allocator_traits and uninitialized algorithms)
+// Internal helper (used by allocator_traits and uninitialized algorithms).
+// MUST forward to std::construct_at, not repeat the placement new: gcc-10 only
+// blesses constexpr placement new inside the function literally named
+// std::construct_at, so a copy under any other name is non-constexpr.
 namespace detail {
     template<class T, class... Args>
         requires requires { ::new(declval<void*>()) T(declval<Args>()...); }
     constexpr T* construct_at_impl(T* loc, Args&&... args) {
-        return ::new(static_cast<void*>(loc)) T(forward<Args>(args)...);
+        return std::construct_at(loc, forward<Args>(args)...);
     }
 }
 
@@ -98,7 +101,7 @@ template<class T>
 constexpr void destroy_at(T* loc) {
     if constexpr (is_array_v<T>) {
         for (auto& elem : *loc)
-            destroy_at(addressof(elem));
+            std::destroy_at(std::addressof(elem));  // qualified: no ADL over T's associated classes
     } else {
         loc->~T();
     }
@@ -112,13 +115,13 @@ constexpr void destroy_at(T* loc) {
 template<class ForwardIter>
 constexpr void destroy(ForwardIter first, ForwardIter last) {
     for (; first != last; ++first)
-        destroy_at(addressof(*first));
+        std::destroy_at(std::addressof(*first));  // qualified: no ADL
 }
 
 template<class ForwardIter, class Size>
 constexpr ForwardIter destroy_n(ForwardIter first, Size n) {
     for (; n > 0; (void)++first, --n)
-        destroy_at(addressof(*first));
+        std::destroy_at(std::addressof(*first));  // qualified: no ADL
     return first;
 }
 
@@ -220,38 +223,43 @@ namespace detail {
         using type = typename Alloc::is_always_equal;
     };
 
-    // rebind_alloc
-    template<class Alloc, class U, class = void>
+    // rebind_alloc.  Dispatch on a bool (libc++ __allocator_traits_rebind), NOT
+    // two void_t partial specializations: for a class template that ALSO has a
+    // member rebind, both would match at <Alloc, U, void> and the
+    // template-template pattern wins partial ordering -- silently ignoring the
+    // member rebind, which the standard gives priority.
+    template<class Alloc, class U>
+    inline constexpr bool has_rebind_other =
+        requires { typename Alloc::template rebind<U>::other; };
+
+    template<class Alloc, class U, bool = has_rebind_other<Alloc, U>>
     struct alloc_rebind_impl {
-        // fallback: replace first template arg
-        // (works for Alloc<T, Args...> → Alloc<U, Args...>)
+        using type = typename Alloc::template rebind<U>::other;
     };
     template<template<class, class...> class AllocTpl, class T, class... Args, class U>
-    struct alloc_rebind_impl<AllocTpl<T, Args...>, U, void> {
-        using type = AllocTpl<U, Args...>;
+    struct alloc_rebind_impl<AllocTpl<T, Args...>, U, true> {
+        using type = typename AllocTpl<T, Args...>::template rebind<U>::other;
     };
-    template<class Alloc, class U>
-    struct alloc_rebind_impl<Alloc, U, void_t<typename Alloc::template rebind<U>::other>> {
-        using type = typename Alloc::template rebind<U>::other;
+    template<template<class, class...> class AllocTpl, class T, class... Args, class U>
+    struct alloc_rebind_impl<AllocTpl<T, Args...>, U, false> {
+        using type = AllocTpl<U, Args...>;
     };
 
     template<class Alloc, class U>
     using alloc_rebind_t = typename alloc_rebind_impl<Alloc, U>::type;
 
-    // has_construct
-    template<class Alloc, class Ptr, class = void, class... Args>
-    inline constexpr bool has_alloc_construct = false;
+    // has_construct / has_destroy.  requires-expressions, not the void_t-slot
+    // arrangement: a pack after a defaulted detection slot silently ate the
+    // first real Args argument at the call site (has_alloc_construct<Alloc, T*,
+    // Args...> put Args[0] in the void slot), so allocator construct() members
+    // were never detected when args were passed.
     template<class Alloc, class Ptr, class... Args>
-    inline constexpr bool has_alloc_construct<Alloc, Ptr,
-        void_t<decltype(declval<Alloc&>().construct(declval<Ptr>(), declval<Args>()...))>,
-        Args...> = true;
+    inline constexpr bool has_alloc_construct =
+        requires(Alloc& a, Ptr p) { a.construct(p, declval<Args>()...); };
 
-    // has_destroy
-    template<class Alloc, class Ptr, class = void>
-    inline constexpr bool has_alloc_destroy = false;
     template<class Alloc, class Ptr>
-    inline constexpr bool has_alloc_destroy<Alloc, Ptr,
-        void_t<decltype(declval<Alloc&>().destroy(declval<Ptr>()))>> = true;
+    inline constexpr bool has_alloc_destroy =
+        requires(Alloc& a, Ptr p) { a.destroy(p); };
 
     // has_max_size
     template<class Alloc, class = void>
@@ -353,7 +361,9 @@ struct allocator_traits {
         if constexpr (detail::has_alloc_destroy<Alloc, T*>) {
             a.destroy(p);
         } else {
-            destroy_at(p);
+            // qualified: an unqualified call ADL-scans T's associated classes,
+            // instantiating them -- ill-formed when T is Holder<Incomplete>*.
+            std::destroy_at(p);
         }
     }
 
