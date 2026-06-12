@@ -15,6 +15,7 @@
 #include <iterator>
 #include <new>
 #include <bits/pointer.h>
+#include <bits/construct_at.h>
 #include <compare>
 #include <cstdint>  // uintptr_t
 #include <atomic>   // memory_order (for the [util.smartptr.shared.atomic] API)
@@ -81,11 +82,8 @@ struct uses_allocator<T, Alloc> : true_type {};
 // (from __memory/construct_at.h)
 //===----------------------------------------------------------------------===//
 
-template<class T, class... Args>
-    requires requires { ::new(declval<void*>()) T(declval<Args>()...); }
-constexpr T* construct_at(T* loc, Args&&... args) {
-    return ::new(static_cast<void*>(loc)) T(forward<Args>(args)...);
-}
+// Definition lives in bits/construct_at.h (<optional> needs it; including
+// <memory> there would cycle through bits/memory_ranges.h -> <ranges>).
 
 // Internal helper (used by allocator_traits and uninitialized algorithms).
 // MUST forward to std::construct_at, not repeat the placement new: gcc-10 only

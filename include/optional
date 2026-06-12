@@ -23,6 +23,7 @@
 #include <concepts>
 #include <exception>
 #include <new>
+#include <bits/construct_at.h>
 #include <initializer_list>
 #include <functional>
 
@@ -228,9 +229,12 @@ namespace detail {
 
         template<class... Args>
         constexpr void construct(Args&&... args) {
-            // placement-new into the union member
-            ::new (static_cast<void*>(__builtin_addressof(this->val)))
-                remove_cv_t<value_type>(forward<Args>(args)...);
+            // std::construct_at, not raw placement-new into the union member:
+            // gcc-10 only blesses constexpr placement-new inside the function
+            // literally named std::construct_at.
+            std::construct_at(
+                const_cast<remove_cv_t<value_type>*>(__builtin_addressof(this->val)),
+                forward<Args>(args)...);
             this->engaged = true;
         }
 
