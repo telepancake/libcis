@@ -120,7 +120,11 @@ struct char_traits<char> {
     static constexpr char_type*
     move(char_type* s1, const char_type* s2, size_t n) noexcept {
         if (__builtin_is_constant_evaluated()) {
-            if (s1 < s2 || s1 >= s2 + n) {
+            // Unrelated pointers are non-constant to compare; if the
+            // comparison is not a constant the ranges cannot overlap
+            // (libc++ __is_pointer_in_range strategy).
+            if (!__builtin_constant_p(s2 <= s1 && s1 < s2 + n) ||
+                s1 < s2 || s1 >= s2 + n) {
                 for (size_t i = 0; i < n; ++i) s1[i] = s2[i];
             } else {
                 for (size_t i = n; i > 0; --i) s1[i-1] = s2[i-1];
@@ -195,7 +199,10 @@ struct char_traits_base {
     static constexpr char_type*
     move(char_type* dest, const char_type* src, size_t n) noexcept {
         if (__builtin_is_constant_evaluated()) {
-            if (dest < src || dest >= src + n) {
+            // See char_traits<char>::move: __builtin_constant_p guards the
+            // unrelated-pointer comparison (libc++ __is_pointer_in_range).
+            if (!__builtin_constant_p(src <= dest && dest < src + n) ||
+                dest < src || dest >= src + n) {
                 for (size_t i = 0; i < n; ++i) dest[i] = src[i];
             } else {
                 for (size_t i = n; i > 0; --i) dest[i-1] = src[i-1];

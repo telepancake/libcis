@@ -2,6 +2,7 @@
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 #pragma once
 
+#include <memory_resource>
 #include <bits/hash_table.h>
 #include <functional>
 #include <memory>
@@ -961,5 +962,17 @@ erase_if(unordered_multimap<Key,T,Hash,Pred,Alloc>& c, Pred2 pred) {
         it = pred(*it) ? c.erase(it) : next(it);
     return old - c.size();
 }
+
+
+// [unord.map.syn] pmr aliases (libc++ include/unordered_map)
+namespace pmr {
+template <class KeyT, class ValueT, class HashT = std::hash<KeyT>, class PredT = std::equal_to<KeyT>>
+using unordered_map =
+    std::unordered_map<KeyT, ValueT, HashT, PredT, polymorphic_allocator<std::pair<const KeyT, ValueT>>>;
+
+template <class KeyT, class ValueT, class HashT = std::hash<KeyT>, class PredT = std::equal_to<KeyT>>
+using unordered_multimap =
+    std::unordered_multimap<KeyT, ValueT, HashT, PredT, polymorphic_allocator<std::pair<const KeyT, ValueT>>>;
+} // namespace pmr
 
 } // namespace std

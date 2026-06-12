@@ -19,6 +19,11 @@
 #include <algorithm>   // lower_bound
 #include <memory>      // addressof
 #include <cstring>     // strcmp
+#include <vector>      // match_results storage
+#include <iterator>    // iterator_traits, distance, next, back_inserter
+#include <compare>     // compare_three_way_result_t
+#include <iosfwd>      // basic_ostream (operator<< for sub_match)
+#include <memory_resource> // std::pmr aliases
 
 namespace std {
 
@@ -750,5 +755,366 @@ private:
 // Static member definition (libc++ include/regex line 1091)
 template<class CharT>
 const typename regex_traits<CharT>::char_class_type regex_traits<CharT>::regex_word;
+
+
+// ============================================================================
+// Stage 3: sub_match and match_results.
+// Ported from libc++ include/regex lines 4180–4880 (sub_match, its comparison
+// operator set, match_results and its members).  The regex engine itself
+// (basic_regex, regex_match/search/replace, the iterators) is not ported yet;
+// the friend declarations referring to it are therefore omitted.
+// ============================================================================
+
+template <class BidirectionalIterator>
+class sub_match;
+
+typedef sub_match<const char*> csub_match;
+typedef sub_match<string::const_iterator> ssub_match;
+typedef sub_match<const wchar_t*> wcsub_match;
+typedef sub_match<wstring::const_iterator> wssub_match;
+
+template <class BidirectionalIterator>
+class sub_match : public pair<BidirectionalIterator, BidirectionalIterator> {
+public:
+    typedef BidirectionalIterator iterator;
+    typedef typename iterator_traits<iterator>::value_type value_type;
+    typedef typename iterator_traits<iterator>::difference_type difference_type;
+    typedef basic_string<value_type> string_type;
+
+    bool matched;
+
+    constexpr sub_match() : matched() {}
+
+    difference_type length() const {
+        return matched ? std::distance(this->first, this->second) : 0;
+    }
+    string_type str() const {
+        return matched ? string_type(this->first, this->second) : string_type();
+    }
+    operator string_type() const { return str(); }
+
+    int compare(const sub_match& s) const { return str().compare(s.str()); }
+    int compare(const string_type& s) const { return str().compare(s); }
+    int compare(const value_type* s) const { return str().compare(s); }
+
+    void swap(sub_match& s) noexcept(is_nothrow_swappable_v<BidirectionalIterator>) {
+        this->pair<BidirectionalIterator, BidirectionalIterator>::swap(s);
+        std::swap(matched, s.matched);
+    }
+};
+
+template <class BiIter>
+inline bool operator==(const sub_match<BiIter>& x, const sub_match<BiIter>& y) {
+    return x.compare(y) == 0;
+}
+
+namespace detail {
+template <class BiIter>
+using sub_match_cat =
+    compare_three_way_result_t<basic_string<typename iterator_traits<BiIter>::value_type>>;
+} // namespace detail
+
+template <class BiIter>
+auto operator<=>(const sub_match<BiIter>& x, const sub_match<BiIter>& y) {
+    return static_cast<detail::sub_match_cat<BiIter>>(x.compare(y) <=> 0);
+}
+
+template <class BiIter, class ST, class SA>
+inline bool operator==(const sub_match<BiIter>& x,
+                       const basic_string<typename iterator_traits<BiIter>::value_type, ST, SA>& y) {
+    return x.compare(typename sub_match<BiIter>::string_type(y.data(), y.size())) == 0;
+}
+
+template <class BiIter, class ST, class SA>
+auto operator<=>(const sub_match<BiIter>& x,
+                 const basic_string<typename iterator_traits<BiIter>::value_type, ST, SA>& y) {
+    return static_cast<detail::sub_match_cat<BiIter>>(
+        x.compare(typename sub_match<BiIter>::string_type(y.data(), y.size())) <=> 0);
+}
+
+template <class BiIter>
+inline bool operator==(const sub_match<BiIter>& x,
+                       typename iterator_traits<BiIter>::value_type const* y) {
+    return x.compare(y) == 0;
+}
+
+template <class BiIter>
+auto operator<=>(const sub_match<BiIter>& x, typename iterator_traits<BiIter>::value_type const* y) {
+    return static_cast<detail::sub_match_cat<BiIter>>(x.compare(y) <=> 0);
+}
+
+template <class BiIter>
+inline bool operator==(const sub_match<BiIter>& x,
+                       typename iterator_traits<BiIter>::value_type const& y) {
+    typedef basic_string<typename iterator_traits<BiIter>::value_type> string_type;
+    return x.compare(string_type(1, y)) == 0;
+}
+
+template <class BiIter>
+auto operator<=>(const sub_match<BiIter>& x, typename iterator_traits<BiIter>::value_type const& y) {
+    using string_type = basic_string<typename iterator_traits<BiIter>::value_type>;
+    return static_cast<detail::sub_match_cat<BiIter>>(x.compare(string_type(1, y)) <=> 0);
+}
+
+template <class CharT, class ST, class BiIter>
+inline basic_ostream<CharT, ST>& operator<<(basic_ostream<CharT, ST>& os, const sub_match<BiIter>& m) {
+    return os << m.str();
+}
+
+template <class BidirectionalIterator,
+          class Allocator = allocator<sub_match<BidirectionalIterator>>>
+class match_results;
+
+typedef match_results<const char*> cmatch;
+typedef match_results<string::const_iterator> smatch;
+typedef match_results<const wchar_t*> wcmatch;
+typedef match_results<wstring::const_iterator> wsmatch;
+
+template <class BidirectionalIterator, class Allocator>
+class match_results {
+public:
+    typedef Allocator allocator_type;
+    typedef sub_match<BidirectionalIterator> value_type;
+
+private:
+    typedef vector<value_type, allocator_type> container_type;
+
+    container_type matches;
+    value_type unmatched;
+    value_type prefix_match;
+    value_type suffix_match;
+    bool is_ready;
+
+public:
+    BidirectionalIterator position_start;
+    typedef const value_type& const_reference;
+    typedef value_type& reference;
+    typedef typename container_type::const_iterator const_iterator;
+    typedef const_iterator iterator;
+    typedef typename iterator_traits<BidirectionalIterator>::difference_type difference_type;
+    typedef typename allocator_traits<allocator_type>::size_type size_type;
+    typedef typename iterator_traits<BidirectionalIterator>::value_type char_type;
+    typedef basic_string<char_type> string_type;
+
+    // construct/copy/destroy:
+    match_results() : match_results(allocator_type()) {}
+    explicit match_results(const allocator_type& a)
+        : matches(a), unmatched(), prefix_match(), suffix_match(), is_ready(false), position_start() {}
+
+    bool ready() const { return is_ready; }
+
+    // size:
+    size_type size() const noexcept { return matches.size(); }
+    size_type max_size() const noexcept { return matches.max_size(); }
+    [[nodiscard]] bool empty() const noexcept { return size() == 0; }
+
+    // element access:
+    difference_type length(size_type sub = 0) const { return (*this)[sub].length(); }
+    difference_type position(size_type sub = 0) const {
+        return std::distance(position_start, (*this)[sub].first);
+    }
+    string_type str(size_type sub = 0) const { return (*this)[sub].str(); }
+    const_reference operator[](size_type n) const {
+        return n < matches.size() ? matches[n] : unmatched;
+    }
+
+    const_reference prefix() const { return prefix_match; }
+    const_reference suffix() const { return suffix_match; }
+
+    const_iterator begin() const { return empty() ? matches.end() : matches.begin(); }
+    const_iterator end() const { return matches.end(); }
+    const_iterator cbegin() const { return empty() ? matches.end() : matches.begin(); }
+    const_iterator cend() const { return matches.end(); }
+
+    // format:
+    template <class OutputIter>
+    OutputIter format(OutputIter output_iter,
+                      const char_type* fmt_first,
+                      const char_type* fmt_last,
+                      regex_constants::match_flag_type flags = regex_constants::format_default) const;
+    template <class OutputIter, class ST, class SA>
+    OutputIter format(OutputIter output_iter,
+                      const basic_string<char_type, ST, SA>& fmt,
+                      regex_constants::match_flag_type flags = regex_constants::format_default) const {
+        return format(output_iter, fmt.data(), fmt.data() + fmt.size(), flags);
+    }
+    template <class ST, class SA>
+    basic_string<char_type, ST, SA>
+    format(const basic_string<char_type, ST, SA>& fmt,
+           regex_constants::match_flag_type flags = regex_constants::format_default) const {
+        basic_string<char_type, ST, SA> r;
+        format(std::back_inserter(r), fmt.data(), fmt.data() + fmt.size(), flags);
+        return r;
+    }
+    string_type format(const char_type* fmt,
+                       regex_constants::match_flag_type flags = regex_constants::format_default) const {
+        string_type r;
+        format(std::back_inserter(r), fmt, fmt + char_traits<char_type>::length(fmt), flags);
+        return r;
+    }
+
+    // allocator:
+    allocator_type get_allocator() const { return matches.get_allocator(); }
+
+    // swap:
+    void swap(match_results& m) {
+        using std::swap;
+        swap(matches, m.matches);
+        swap(unmatched, m.unmatched);
+        swap(prefix_match, m.prefix_match);
+        swap(suffix_match, m.suffix_match);
+        swap(position_start, m.position_start);
+        swap(is_ready, m.is_ready);
+    }
+
+    template <class B, class A>
+    void assign_from(BidirectionalIterator f,
+                     BidirectionalIterator l,
+                     const match_results<B, A>& m,
+                     bool no_update_pos) {
+        B mf = m.prefix().first;
+        matches.resize(m.size());
+        for (size_type i = 0; i < matches.size(); ++i) {
+            matches[i].first   = std::next(f, std::distance(mf, m[i].first));
+            matches[i].second  = std::next(f, std::distance(mf, m[i].second));
+            matches[i].matched = m[i].matched;
+        }
+        unmatched.first   = l;
+        unmatched.second  = l;
+        unmatched.matched = false;
+        prefix_match.first   = std::next(f, std::distance(mf, m.prefix().first));
+        prefix_match.second  = std::next(f, std::distance(mf, m.prefix().second));
+        prefix_match.matched = m.prefix().matched;
+        suffix_match.first   = std::next(f, std::distance(mf, m.suffix().first));
+        suffix_match.second  = std::next(f, std::distance(mf, m.suffix().second));
+        suffix_match.matched = m.suffix().matched;
+        if (!no_update_pos)
+            position_start = prefix_match.first;
+        is_ready = m.ready();
+    }
+
+private:
+    void init(unsigned s, BidirectionalIterator f, BidirectionalIterator l, bool no_update_pos = false) {
+        unmatched.first   = l;
+        unmatched.second  = l;
+        unmatched.matched = false;
+        matches.assign(s, unmatched);
+        prefix_match.first   = f;
+        prefix_match.second  = f;
+        prefix_match.matched = false;
+        suffix_match = unmatched;
+        if (!no_update_pos)
+            position_start = prefix_match.first;
+        is_ready = true;
+    }
+
+    // Friends to the regex engine (basic_regex, regex_match, __lookahead,
+    // regex_iterator) are omitted until the engine is ported.
+
+    template <class B, class A>
+    friend bool operator==(const match_results<B, A>&, const match_results<B, A>&);
+};
+
+template <class BidirectionalIterator, class Allocator>
+template <class OutputIter>
+OutputIter match_results<BidirectionalIterator, Allocator>::format(
+    OutputIter output_iter,
+    const char_type* fmt_first,
+    const char_type* fmt_last,
+    regex_constants::match_flag_type flags) const {
+    if (flags & regex_constants::format_sed) {
+        for (; fmt_first != fmt_last; ++fmt_first) {
+            if (*fmt_first == '&')
+                output_iter = std::copy(matches[0].first, matches[0].second, output_iter);
+            else if (*fmt_first == '\\' && fmt_first + 1 != fmt_last) {
+                ++fmt_first;
+                if ('0' <= *fmt_first && *fmt_first <= '9') {
+                    size_t i    = *fmt_first - '0';
+                    output_iter = std::copy((*this)[i].first, (*this)[i].second, output_iter);
+                } else {
+                    *output_iter = *fmt_first;
+                    ++output_iter;
+                }
+            } else {
+                *output_iter = *fmt_first;
+                ++output_iter;
+            }
+        }
+    } else {
+        for (; fmt_first != fmt_last; ++fmt_first) {
+            if (*fmt_first == '$' && fmt_first + 1 != fmt_last) {
+                switch (fmt_first[1]) {
+                case '$':
+                    *output_iter = *++fmt_first;
+                    ++output_iter;
+                    break;
+                case '&':
+                    ++fmt_first;
+                    output_iter = std::copy(matches[0].first, matches[0].second, output_iter);
+                    break;
+                case '`':
+                    ++fmt_first;
+                    output_iter = std::copy(prefix_match.first, prefix_match.second, output_iter);
+                    break;
+                case '\'':
+                    ++fmt_first;
+                    output_iter = std::copy(suffix_match.first, suffix_match.second, output_iter);
+                    break;
+                default:
+                    if ('0' <= fmt_first[1] && fmt_first[1] <= '9') {
+                        ++fmt_first;
+                        size_t idx = *fmt_first - '0';
+                        if (fmt_first + 1 != fmt_last && '0' <= fmt_first[1] && fmt_first[1] <= '9') {
+                            ++fmt_first;
+                            if (idx >= numeric_limits<size_t>::max() / 10)
+                                __builtin_trap(); // would throw regex_error(error_escape), but -fno-exceptions
+                            idx = 10 * idx + *fmt_first - '0';
+                        }
+                        output_iter = std::copy((*this)[idx].first, (*this)[idx].second, output_iter);
+                    } else {
+                        *output_iter = *fmt_first;
+                        ++output_iter;
+                    }
+                    break;
+                }
+            } else {
+                *output_iter = *fmt_first;
+                ++output_iter;
+            }
+        }
+    }
+    return output_iter;
+}
+
+template <class BidirectionalIterator, class Allocator>
+bool operator==(const match_results<BidirectionalIterator, Allocator>& x,
+                const match_results<BidirectionalIterator, Allocator>& y) {
+    if (x.is_ready != y.is_ready)
+        return false;
+    if (!x.is_ready)
+        return true;
+    return x.matches == y.matches && x.prefix_match == y.prefix_match && x.suffix_match == y.suffix_match;
+}
+
+template <class BidirectionalIterator, class Allocator>
+inline void swap(match_results<BidirectionalIterator, Allocator>& x,
+                 match_results<BidirectionalIterator, Allocator>& y) {
+    x.swap(y);
+}
+
+// [re.syn] pmr aliases (libc++ include/regex, end of file)
+namespace pmr {
+template <class BidirT>
+using match_results = std::match_results<BidirT, polymorphic_allocator<std::sub_match<BidirT>>>;
+
+using cmatch = match_results<const char*>;
+// libc++ spells these std::pmr::[w]string::const_iterator; std::pmr::string is
+// declared in <string> (owned elsewhere), so spell the identical type directly.
+using smatch =
+    match_results<std::basic_string<char, std::char_traits<char>, polymorphic_allocator<char>>::const_iterator>;
+using wcmatch = match_results<const wchar_t*>;
+using wsmatch =
+    match_results<std::basic_string<wchar_t, std::char_traits<wchar_t>, polymorphic_allocator<wchar_t>>::const_iterator>;
+} // namespace pmr
 
 } // namespace std

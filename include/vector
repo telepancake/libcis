@@ -8,6 +8,7 @@
 // at()/reserve() overflow: __builtin_trap() instead of throwing length_error/out_of_range.
 #pragma once
 
+#include <memory_resource>
 #include <memory>
 #include <algorithm>
 #include <utility>
@@ -52,10 +53,16 @@ public:
         "Allocator::value_type must be same as value_type");
 
 private:
+    // alloc_ is declared before the pointers (libc++ declares it last): with
+    // [[no_unique_address]] g++-10's constexpr evaluator loses track of
+    // pointers written in a ctor body when a later-declared no_unique_address
+    // member is initialized in the member-init-list ("modification of '*0'");
+    // g++-13 accepts the libc++ order.  Layout is unchanged for the (empty)
+    // default allocator.
+    [[no_unique_address]] allocator_type alloc_;
     pointer        begin_  = nullptr;
     pointer        end_    = nullptr;
     pointer        cap_    = nullptr;
-    [[no_unique_address]] allocator_type alloc_;
 
     // -----------------------------------------------------------------------
     // Internal helpers
@@ -307,12 +314,7 @@ public:
     constexpr vector()
         noexcept(is_nothrow_default_constructible_v<allocator_type>) = default;
 
-    constexpr explicit vector(const allocator_type& a) noexcept {
-        // Workaround for g++-10 constexpr bug: [[no_unique_address]] members
-        // initialized in the member-init-list confuse the constexpr evaluator's
-        // pointer tracking. Assign in body instead.
-        alloc_ = a;
-    }
+    constexpr explicit vector(const allocator_type& a) noexcept : alloc_(a) {}
 
     constexpr explicit vector(size_type n) {
         if (n > 0) {
@@ -321,8 +323,8 @@ public:
         }
     }
 
-    constexpr explicit vector(size_type n, const allocator_type& a) {
-        alloc_ = a;  // see alloc_ workaround note above
+    constexpr explicit vector(size_type n, const allocator_type& a)
+        : alloc_(a) {
         if (n > 0) {
             vallocate(n);
             construct_at_end(n);
@@ -336,8 +338,8 @@ public:
         }
     }
 
-    constexpr vector(size_type n, const value_type& x, const allocator_type& a) {
-        alloc_ = a;  // see alloc_ workaround note above
+    constexpr vector(size_type n, const value_type& x, const allocator_type& a)
+        : alloc_(a) {
         if (n > 0) {
             vallocate(n);
             construct_at_end(n, x);
@@ -359,8 +361,8 @@ public:
     template<class InputIter>
         requires forward_iterator<InputIter> &&
                  is_constructible_v<value_type, typename iterator_traits<InputIter>::reference>
-    constexpr vector(InputIter first, InputIter last, const allocator_type& a) {
-        alloc_ = a;  // see alloc_ workaround note above
+    constexpr vector(InputIter first, InputIter last, const allocator_type& a)
+        : alloc_(a) {
         size_type n = static_cast<size_type>(std::distance(first, last));
         if (n > 0) {
             vallocate(n);
@@ -380,8 +382,8 @@ public:
     template<class InputIter>
         requires input_iterator<InputIter> && (!forward_iterator<InputIter>) &&
                  is_constructible_v<value_type, typename iterator_traits<InputIter>::reference>
-    constexpr vector(InputIter first, InputIter last, const allocator_type& a) {
-        alloc_ = a;  // see alloc_ workaround note above
+    constexpr vector(InputIter first, InputIter last, const allocator_type& a)
+        : alloc_(a) {
         for (; first != last; ++first)
             emplace_back(*first);
     }
@@ -393,8 +395,8 @@ public:
         }
     }
 
-    constexpr vector(initializer_list<value_type> il, const allocator_type& a) {
-        alloc_ = a;  // see alloc_ workaround note above
+    constexpr vector(initializer_list<value_type> il, const allocator_type& a)
+        : alloc_(a) {
         if (il.size() > 0) {
             vallocate(il.size());
             construct_at_end(il.begin(), il.end(), il.size());
@@ -402,17 +404,16 @@ public:
     }
 
     // Copy constructor
-    constexpr vector(const vector& x) {
-        // see alloc_ workaround note above
-        alloc_ = alloc_traits::select_on_container_copy_construction(x.alloc_);
+    constexpr vector(const vector& x)
+        : alloc_(alloc_traits::select_on_container_copy_construction(x.alloc_)) {
         if (x.size() > 0) {
             vallocate(x.size());
             construct_at_end(x.begin_, x.end_, x.size());
         }
     }
 
-    constexpr vector(const vector& x, const allocator_type& a) {
-        alloc_ = a;  // see alloc_ workaround note above
+    constexpr vector(const vector& x, const allocator_type& a)
+        : alloc_(a) {
         if (x.size() > 0) {
             vallocate(x.size());
             construct_at_end(x.begin_, x.end_, x.size());
@@ -426,8 +427,8 @@ public:
         x.begin_ = x.end_ = x.cap_ = nullptr;
     }
 
-    constexpr vector(vector&& x, const allocator_type& a) {
-        alloc_ = a;  // see alloc_ workaround note above
+    constexpr vector(vector&& x, const allocator_type& a)
+        : alloc_(a) {
         if (a == x.alloc_) {
             begin_ = x.begin_;
             end_   = x.end_;
@@ -1297,10 +1298,11 @@ public:
     using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
 private:
+    // alloc_ first: see the member-order note in vector<T>.
+    [[no_unique_address]] storage_allocator alloc_;
     storage_pointer begin_  = nullptr;
     size_type       size_   = 0;
     size_type       cap_    = 0; // in words
-    [[no_unique_address]] storage_allocator alloc_;
 
     constexpr static size_type internal_cap_to_external(size_type n) noexcept {
         return n * bits_per_word;
@@ -1453,10 +1455,8 @@ public:
     // Constructors
     constexpr vector() noexcept(is_nothrow_default_constructible_v<allocator_type>) = default;
 
-    constexpr explicit vector(const allocator_type& a) noexcept {
-        // Workaround for g++-10 constexpr bug: see primary vector<T> note.
-        alloc_ = static_cast<storage_allocator>(a);
-    }
+    constexpr explicit vector(const allocator_type& a) noexcept
+        : alloc_(static_cast<storage_allocator>(a)) {}
 
     // Note: vallocate already zeroes all words at constexpr time; the
     // runtime fill_n also zeroes them so both paths agree.
@@ -1468,8 +1468,8 @@ public:
         }
     }
 
-    constexpr explicit vector(size_type n, const allocator_type& a) {
-        alloc_ = static_cast<storage_allocator>(a);  // see alloc_ workaround note
+    constexpr explicit vector(size_type n, const allocator_type& a)
+        : alloc_(static_cast<storage_allocator>(a)) {
         if (n > 0) {
             vallocate(n);
             std::fill_n(begin_, external_cap_to_internal(n), storage_type(0));
@@ -1487,8 +1487,8 @@ public:
         }
     }
 
-    constexpr vector(size_type n, const value_type& x, const allocator_type& a) {
-        alloc_ = static_cast<storage_allocator>(a);  // see alloc_ workaround note
+    constexpr vector(size_type n, const value_type& x, const allocator_type& a)
+        : alloc_(static_cast<storage_allocator>(a)) {
         if (n > 0) {
             vallocate(n);
             std::fill_n(begin_, external_cap_to_internal(n),
@@ -1510,8 +1510,8 @@ public:
 
     template<class InputIter>
         requires forward_iterator<InputIter>
-    constexpr vector(InputIter first, InputIter last, const allocator_type& a) {
-        alloc_ = static_cast<storage_allocator>(a);  // see alloc_ workaround note
+    constexpr vector(InputIter first, InputIter last, const allocator_type& a)
+        : alloc_(static_cast<storage_allocator>(a)) {
         auto n = static_cast<size_type>(std::distance(first, last));
         if (n > 0) {
             vallocate(n);
@@ -1529,8 +1529,8 @@ public:
 
     template<class InputIter>
         requires input_iterator<InputIter> && (!forward_iterator<InputIter>)
-    constexpr vector(InputIter first, InputIter last, const allocator_type& a) {
-        alloc_ = static_cast<storage_allocator>(a);  // see alloc_ workaround note
+    constexpr vector(InputIter first, InputIter last, const allocator_type& a)
+        : alloc_(static_cast<storage_allocator>(a)) {
         for (; first != last; ++first)
             push_back(*first);
     }
@@ -1543,8 +1543,8 @@ public:
         }
     }
 
-    constexpr vector(initializer_list<value_type> il, const allocator_type& a) {
-        alloc_ = static_cast<storage_allocator>(a);  // see alloc_ workaround note
+    constexpr vector(initializer_list<value_type> il, const allocator_type& a)
+        : alloc_(static_cast<storage_allocator>(a)) {
         size_type n = static_cast<size_type>(il.size());
         if (n > 0) {
             vallocate(n);
@@ -1553,9 +1553,8 @@ public:
     }
 
     // Copy
-    constexpr vector(const vector& v) {
-        // see alloc_ workaround note
-        alloc_ = storage_traits::select_on_container_copy_construction(v.alloc_);
+    constexpr vector(const vector& v)
+        : alloc_(storage_traits::select_on_container_copy_construction(v.alloc_)) {
         if (v.size_ > 0) {
             vallocate(v.size_);
             std::copy_n(v.begin_, external_cap_to_internal(v.size_), begin_);
@@ -1563,8 +1562,8 @@ public:
         }
     }
 
-    constexpr vector(const vector& v, const allocator_type& a) {
-        alloc_ = static_cast<storage_allocator>(a);  // see alloc_ workaround note
+    constexpr vector(const vector& v, const allocator_type& a)
+        : alloc_(static_cast<storage_allocator>(a)) {
         if (v.size_ > 0) {
             vallocate(v.size_);
             std::copy_n(v.begin_, external_cap_to_internal(v.size_), begin_);
@@ -1579,8 +1578,8 @@ public:
           cap_  (exchange(v.cap_,   size_type(0))),
           alloc_(std::move(v.alloc_)) {}
 
-    constexpr vector(vector&& v, const allocator_type& a) {
-        alloc_ = static_cast<storage_allocator>(a);  // see alloc_ workaround note
+    constexpr vector(vector&& v, const allocator_type& a)
+        : alloc_(static_cast<storage_allocator>(a)) {
         if (a == allocator_type(v.alloc_)) {
             begin_ = exchange(v.begin_, nullptr);
             size_  = exchange(v.size_,  size_type(0));
@@ -1936,5 +1935,12 @@ struct hash<vector<bool, Alloc>> {
         return v.hash_code();
     }
 };
+
+
+// [vector.syn] pmr alias (libc++ include/__vector/pmr.h)
+namespace pmr {
+template <class ValueT>
+using vector = std::vector<ValueT, polymorphic_allocator<ValueT>>;
+} // namespace pmr
 
 } // namespace std

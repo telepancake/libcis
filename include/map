@@ -9,6 +9,7 @@
 //   Node handles: implemented (extract/insert/merge).
 #pragma once
 
+#include <memory_resource>
 #include <bits/tree.h>
 #include <functional>
 #include <memory>
@@ -889,5 +890,15 @@ template<class C2>
 void map<Key,T,Compare,Alloc>::merge(multimap<Key, T, C2, Alloc>&& source) {
     tree_.merge_unique(source.tree_);
 }
+
+
+// [map.syn] pmr aliases (libc++ include/map)
+namespace pmr {
+template <class KeyT, class ValueT, class CompareT = std::less<KeyT>>
+using map = std::map<KeyT, ValueT, CompareT, polymorphic_allocator<std::pair<const KeyT, ValueT>>>;
+
+template <class KeyT, class ValueT, class CompareT = std::less<KeyT>>
+using multimap = std::multimap<KeyT, ValueT, CompareT, polymorphic_allocator<std::pair<const KeyT, ValueT>>>;
+} // namespace pmr
 
 } // namespace std

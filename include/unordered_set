@@ -2,6 +2,7 @@
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 #pragma once
 
+#include <memory_resource>
 #include <bits/hash_table.h>
 #include <functional>
 #include <memory>
@@ -668,5 +669,15 @@ erase_if(unordered_multiset<Key,Hash,Pred,Alloc>& c, Pred2 pred) {
         it = pred(*it) ? c.erase(it) : next(it);
     return old - c.size();
 }
+
+
+// [unord.set.syn] pmr aliases (libc++ include/unordered_set)
+namespace pmr {
+template <class KeyT, class HashT = std::hash<KeyT>, class PredT = std::equal_to<KeyT>>
+using unordered_set = std::unordered_set<KeyT, HashT, PredT, polymorphic_allocator<KeyT>>;
+
+template <class KeyT, class HashT = std::hash<KeyT>, class PredT = std::equal_to<KeyT>>
+using unordered_multiset = std::unordered_multiset<KeyT, HashT, PredT, polymorphic_allocator<KeyT>>;
+} // namespace pmr
 
 } // namespace std

@@ -8,6 +8,7 @@
 // Out-of-range at(): __builtin_trap() (comment: would throw std::out_of_range)
 #pragma once
 
+#include <memory_resource>
 #include <memory>
 #include <iterator>
 #include <algorithm>
@@ -1427,5 +1428,12 @@ erase_if(deque<T,A>& c, Predicate pred) {
     c.erase(std::remove_if(c.begin(), c.end(), pred), c.end());
     return old - c.size();
 }
+
+
+// [deque.syn] pmr alias (libc++ include/deque)
+namespace pmr {
+template <class ValueT>
+using deque = std::deque<ValueT, polymorphic_allocator<ValueT>>;
+} // namespace pmr
 
 } // namespace std

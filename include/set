@@ -5,6 +5,7 @@
 // Node handles, erase_if, deduction guides.
 #pragma once
 
+#include <memory_resource>
 #include <bits/tree.h>
 #include <functional>
 #include <memory>
@@ -701,5 +702,15 @@ template<class C2>
 void set<Key,Compare,Alloc>::merge(multiset<Key, C2, Alloc>&& source) {
     tree_.merge_unique(source.tree_);
 }
+
+
+// [set.syn] pmr aliases (libc++ include/set)
+namespace pmr {
+template <class KeyT, class CompareT = std::less<KeyT>>
+using set = std::set<KeyT, CompareT, polymorphic_allocator<KeyT>>;
+
+template <class KeyT, class CompareT = std::less<KeyT>>
+using multiset = std::multiset<KeyT, CompareT, polymorphic_allocator<KeyT>>;
+} // namespace pmr
 
 } // namespace std

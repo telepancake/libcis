@@ -3,6 +3,7 @@
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 #pragma once
 
+#include <memory_resource>
 #include <memory>
 #include <iterator>
 #include <algorithm>
@@ -788,5 +789,12 @@ inline typename forward_list<T, Alloc>::size_type
 erase_if(forward_list<T, Alloc>& c, Predicate pred) {
     return c.remove_if(pred);
 }
+
+
+// [forward.list.syn] pmr alias (libc++ include/forward_list)
+namespace pmr {
+template <class ValueT>
+using forward_list = std::forward_list<ValueT, polymorphic_allocator<ValueT>>;
+} // namespace pmr
 
 } // namespace std
