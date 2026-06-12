@@ -654,7 +654,50 @@ struct hash<bitset<N>> {
 // ----------------------------------------------------------------
 // Stream operators — DEFERRED (need <iostream>)
 // ----------------------------------------------------------------
-// operator>> and operator<< for basic_istream/basic_ostream are
-// not defined here; they require <iostream> which is not yet ported.
+// [bitset.operators] stream extraction/insertion (libc++ defines these in
+// <istream>; templates only need the <iosfwd> declarations here, stream
+// members resolve at instantiation). widen() goes through the stream
+// (basic_ios::widen == ctype facet widen, without pulling <locale> here).
+
+template<class CharT, class Traits, size_t Size>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, bitset<Size>& x) {
+    // every ios_base name is spelled DEPENDENTLY (through the stream type):
+    // only <iosfwd> is visible here, so non-dependent ios_base::... would
+    // need the complete class at definition time.
+    using IS = basic_istream<CharT, Traits>;
+    typename IS::iostate state = IS::goodbit;
+    typename IS::sentry sen(is);
+    if (sen) {
+        basic_string<CharT, Traits> str;
+        size_t c   = 0;
+        CharT zero = is.widen('0');
+        CharT one  = is.widen('1');
+        while (c != Size) {
+            typename Traits::int_type i = is.rdbuf()->sgetc();
+            if (Traits::eq_int_type(i, Traits::eof())) {
+                state |= IS::eofbit;
+                break;
+            }
+            CharT ch = Traits::to_char_type(i);
+            if (!Traits::eq(ch, zero) && !Traits::eq(ch, one))
+                break;
+            str.push_back(ch);
+            ++c;
+            is.rdbuf()->sbumpc();
+        }
+        x = bitset<Size>(str);
+        if (Size > 0 && c == 0)
+            state |= IS::failbit;
+        is.setstate(state);
+    }
+    return is;
+}
+
+template<class CharT, class Traits, size_t Size>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const bitset<Size>& x) {
+    return os << x.template to_string<CharT, Traits>(os.widen('0'), os.widen('1'));
+}
 
 } // namespace std

@@ -1347,6 +1347,15 @@ public:
     constexpr explicit iota_view(Start value) : value_(move(value)) {}
     constexpr iota_view(type_identity_t<Start> value, type_identity_t<BoundSentinel> bound)
         : value_(move(value)), bound_(move(bound)) {}
+    constexpr iota_view(iterator first, iterator last)
+        requires same_as<Start, BoundSentinel>
+        : iota_view(move(first.value_), move(last.value_)) {}
+    constexpr iota_view(iterator first, BoundSentinel last)
+        requires same_as<BoundSentinel, unreachable_sentinel_t>
+        : iota_view(move(first.value_), move(last)) {}
+    constexpr iota_view(iterator first, sentinel last)
+        requires (!same_as<Start, BoundSentinel> && !same_as<BoundSentinel, unreachable_sentinel_t>)
+        : iota_view(move(first.value_), move(last.bound_)) {}
 
     [[nodiscard]] constexpr iterator begin() const { return iterator{value_}; }
 

@@ -78,6 +78,175 @@ template<class T, class Alloc>
 struct uses_allocator<T, Alloc> : true_type {};
 
 //===----------------------------------------------------------------------===//
+// [allocator.uses.construction]  uses_allocator_construction_args /
+// make_obj_using_allocator / uninitialized_construct_using_allocator (C++20)
+// (from __memory/uses_allocator_construction.h, C++20 subset)
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+template<class T>
+inline constexpr bool is_std_pair = false;
+template<class T1, class T2>
+inline constexpr bool is_std_pair<pair<T1, T2>> = true;
+template<class T>
+inline constexpr bool is_cv_std_pair = is_std_pair<remove_cv_t<T>>;
+
+template<class T, class = void>
+struct uses_alloc_args;
+
+namespace uses_alloc_detail {
+    template<class A, class B>
+    void pair_ref_fun(const pair<A, B>&);
+
+    template<class T>
+    decltype(uses_alloc_detail::pair_ref_fun(declval<T>()), true_type())
+    convertible_to_const_pair_ref_impl(int);
+    template<class>
+    false_type convertible_to_const_pair_ref_impl(...);
+
+    template<class T>
+    inline constexpr bool convertible_to_const_pair_ref =
+        decltype(uses_alloc_detail::convertible_to_const_pair_ref_impl<T>(0))::value;
+
+    template<class T, class U>
+    inline constexpr bool uses_allocator_constraints =
+        is_cv_std_pair<T> && !convertible_to_const_pair_ref<U>;
+} // namespace uses_alloc_detail
+
+template<class Type, class Alloc, class... Args>
+constexpr Type make_obj_using_allocator_impl(const Alloc& alloc, Args&&... args);
+
+template<class Pair>
+struct uses_alloc_args<Pair, enable_if_t<is_cv_std_pair<Pair>>> {
+    template<class Alloc, class Tuple1, class Tuple2>
+    static constexpr auto
+    apply(const Alloc& alloc, piecewise_construct_t, Tuple1&& x, Tuple2&& y) noexcept {
+        return std::make_tuple(
+            piecewise_construct,
+            std::apply(
+                [&alloc](auto&&... args1) {
+                    return uses_alloc_args<typename Pair::first_type>::apply(
+                        alloc, std::forward<decltype(args1)>(args1)...);
+                },
+                std::forward<Tuple1>(x)),
+            std::apply(
+                [&alloc](auto&&... args2) {
+                    return uses_alloc_args<typename Pair::second_type>::apply(
+                        alloc, std::forward<decltype(args2)>(args2)...);
+                },
+                std::forward<Tuple2>(y)));
+    }
+
+    template<class Alloc>
+    static constexpr auto apply(const Alloc& alloc) noexcept {
+        return uses_alloc_args<Pair>::apply(alloc, piecewise_construct, tuple<>{}, tuple<>{});
+    }
+
+    template<class Alloc, class U, class V>
+    static constexpr auto apply(const Alloc& alloc, U&& u, V&& v) noexcept {
+        return uses_alloc_args<Pair>::apply(
+            alloc, piecewise_construct,
+            std::forward_as_tuple(std::forward<U>(u)),
+            std::forward_as_tuple(std::forward<V>(v)));
+    }
+
+    template<class Alloc, class U, class V>
+    static constexpr auto apply(const Alloc& alloc, const pair<U, V>& p) noexcept {
+        return uses_alloc_args<Pair>::apply(
+            alloc, piecewise_construct,
+            std::forward_as_tuple(p.first), std::forward_as_tuple(p.second));
+    }
+
+    template<class Alloc, class U, class V>
+    static constexpr auto apply(const Alloc& alloc, pair<U, V>&& p) noexcept {
+        return uses_alloc_args<Pair>::apply(
+            alloc, piecewise_construct,
+            std::forward_as_tuple(std::get<0>(std::move(p))),
+            std::forward_as_tuple(std::get<1>(std::move(p))));
+    }
+
+    // converting from a non-pair value that is convertible to the pair: defer
+    // through a one-element tuple holding a converting proxy (libc++
+    // __pair_constructor).
+    template<class Alloc, class Type,
+             enable_if_t<uses_alloc_detail::uses_allocator_constraints<Pair, Type>, int> = 0>
+    static constexpr auto apply(const Alloc& alloc, Type&& value) noexcept {
+        struct pair_constructor {
+            using PairMutable = remove_cv_t<Pair>;
+
+            constexpr auto do_construct(const PairMutable& p) const {
+                return detail::make_obj_using_allocator_impl<PairMutable>(alloc_, p);
+            }
+            constexpr auto do_construct(PairMutable&& p) const {
+                return detail::make_obj_using_allocator_impl<PairMutable>(alloc_, std::move(p));
+            }
+
+            const Alloc& alloc_;
+            Type& value_;
+
+            constexpr operator PairMutable() const {
+                return do_construct(std::forward<Type>(value_));
+            }
+        };
+        return std::make_tuple(pair_constructor{alloc, value});
+    }
+};
+
+template<class Type>
+struct uses_alloc_args<Type, enable_if_t<!is_cv_std_pair<Type>>> {
+    template<class Alloc, class... Args>
+    static constexpr auto apply(const Alloc& alloc, Args&&... args) noexcept {
+        if constexpr (!uses_allocator_v<remove_cv_t<Type>, Alloc> &&
+                      is_constructible_v<Type, Args...>) {
+            return std::forward_as_tuple(std::forward<Args>(args)...);
+        } else if constexpr (uses_allocator_v<remove_cv_t<Type>, Alloc> &&
+                             is_constructible_v<Type, allocator_arg_t, const Alloc&, Args...>) {
+            return tuple<allocator_arg_t, const Alloc&, Args&&...>(
+                allocator_arg, alloc, std::forward<Args>(args)...);
+        } else if constexpr (uses_allocator_v<remove_cv_t<Type>, Alloc> &&
+                             is_constructible_v<Type, Args..., const Alloc&>) {
+            return std::forward_as_tuple(std::forward<Args>(args)..., alloc);
+        } else {
+            static_assert(sizeof(Type) + 1 == 0,
+                "If uses_allocator_v<Type> is true, the type has to be allocator-constructible");
+        }
+    }
+};
+
+template<class Type, class Alloc, class... Args>
+constexpr Type make_obj_using_allocator_impl(const Alloc& alloc, Args&&... args) {
+    return std::make_from_tuple<Type>(
+        uses_alloc_args<Type>::apply(alloc, std::forward<Args>(args)...));
+}
+
+} // namespace detail
+
+template<class Type, class Alloc, class... Args>
+[[nodiscard]] constexpr auto
+uses_allocator_construction_args(const Alloc& alloc, Args&&... args) noexcept
+    -> decltype(detail::uses_alloc_args<Type>::apply(alloc, std::forward<Args>(args)...)) {
+    return detail::uses_alloc_args<Type>::apply(alloc, std::forward<Args>(args)...);
+}
+
+template<class Type, class Alloc, class... Args>
+[[nodiscard]] constexpr auto
+make_obj_using_allocator(const Alloc& alloc, Args&&... args)
+    -> decltype(detail::make_obj_using_allocator_impl<Type>(alloc, std::forward<Args>(args)...)) {
+    return detail::make_obj_using_allocator_impl<Type>(alloc, std::forward<Args>(args)...);
+}
+
+// plain auto return: gcc-10 rejects a lambda in a trailing decltype here
+// ("use of parameter outside function body").
+template<class Type, class Alloc, class... Args>
+constexpr Type*
+uninitialized_construct_using_allocator(Type* ptr, const Alloc& alloc, Args&&... args) {
+    return std::apply(
+        [&ptr](auto&&... xs) { return std::construct_at(ptr, std::forward<decltype(xs)>(xs)...); },
+        detail::uses_alloc_args<Type>::apply(alloc, std::forward<Args>(args)...));
+}
+
+//===----------------------------------------------------------------------===//
 // construct_at / destroy_at  (C++20)
 // (from __memory/construct_at.h)
 //===----------------------------------------------------------------------===//

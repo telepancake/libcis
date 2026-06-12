@@ -1,19 +1,20 @@
-// <charconv> — primitive numerical conversion (integer only).
+// <charconv> — primitive numerical conversion.
 // Mechanically ported from libc++ include/__charconv/*.h
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //
-// KNOWN GAP: Floating-point overloads of to_chars / from_chars are NOT
-// implemented.  libc++'s float path (Ryu algorithm, large lookup tables in
-// __charconv/to_chars_floating_point.h and from_chars_floating_point.h) is
-// very large and would pull in heavy platform-specific machinery.  The integer
-// overloads below are complete.  The float overloads are intentionally omitted
-// and declared =delete so that any accidental use produces a clear diagnostic.
+// Integer to_chars/from_chars (incl. __int128) are a full port.
+// Floating-point from_chars is implemented on top of strtof/strtod with
+// libcis-side grammar validation (see DEVIATION comment at
+// detail::from_chars_floating).  Floating-point to_chars (Ryu, very large
+// lookup tables) is NOT yet ported and remains =delete.
 #pragma once
 
 #include <type_traits>   // is_integral, is_signed, is_unsigned, make_unsigned_t
 #include <limits>        // numeric_limits
 #include <cstdint>       // uint32_t, uint64_t
 #include <cstddef>       // ptrdiff_t
+#include <cstdlib>       // strtof, strtod, strtold
+#include <cerrno>        // errno, ERANGE
 #include <system_error>  // errc
 
 namespace std {
@@ -177,6 +178,51 @@ inline constexpr const uint64_t pow10_64[20] = {
     UINT64_C(10000000000000000000)
 };
 
+// pow10_128 (tables.h — __pow10_128, offset 0, 40 entries)
+inline constexpr int pow10_128_offset = 0;
+inline constexpr unsigned __int128 pow10_128[40] = {
+    UINT64_C(0),
+    UINT64_C(10),
+    UINT64_C(100),
+    UINT64_C(1000),
+    UINT64_C(10000),
+    UINT64_C(100000),
+    UINT64_C(1000000),
+    UINT64_C(10000000),
+    UINT64_C(100000000),
+    UINT64_C(1000000000),
+    UINT64_C(10000000000),
+    UINT64_C(100000000000),
+    UINT64_C(1000000000000),
+    UINT64_C(10000000000000),
+    UINT64_C(100000000000000),
+    UINT64_C(1000000000000000),
+    UINT64_C(10000000000000000),
+    UINT64_C(100000000000000000),
+    UINT64_C(1000000000000000000),
+    UINT64_C(10000000000000000000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(10),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(100),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(1000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(10000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(100000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(1000000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(10000000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(100000000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(1000000000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(10000000000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(100000000000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(1000000000000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(10000000000000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(100000000000000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(1000000000000000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(10000000000000000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(100000000000000000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(1000000000000000000),
+    (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(10000000000000000000),
+    ((unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(10000000000000000000)) * 10
+};
+
 inline constexpr const char digits_base_10[200] = {
     '0','0', '0','1', '0','2', '0','3', '0','4', '0','5', '0','6', '0','7', '0','8', '0','9',
     '1','0', '1','1', '1','2', '1','3', '1','4', '1','5', '1','6', '1','7', '1','8', '1','9',
@@ -270,9 +316,39 @@ inline char* base_10_u64(char* p, uint64_t v) noexcept {
     return append10(p, v);
 }
 
+// 10^exp; exp in [19, 39] suffices for base_10_u128 (to_chars_base_10.h __pow_10)
+inline unsigned __int128 pow_10_128(int exp) noexcept {
+    return pow10_128[exp - pow10_128_offset];
+}
+
+// Ported from to_chars_base_10.h __base_10_u128.  Precondition: value > UINT64_MAX.
+inline char* base_10_u128(char* buffer, unsigned __int128 value) noexcept {
+    // Unlike the 64 to 32 bit case the "upper half" can't be stored in the
+    // "lower half".  Handle the top most digits separately.
+    // 64  bit                             18'446'744'073'709'551'615 (20 digits)
+    // 128 bit    340'282'366'920'938'463'463'374'607'431'768'211'455 (39 digits)
+    if (value >= pow_10_128(38)) {
+        // step 1: top [0-1] digits
+        buffer = append1(buffer, static_cast<uint32_t>(value / pow_10_128(38)));
+        value %= pow_10_128(38);
+        // step 2: always 19 digits (leading zeros must be kept)
+        buffer = append9(buffer, static_cast<uint32_t>(value / pow_10_128(29)));
+        value %= pow_10_128(29);
+        buffer = append10(buffer, static_cast<uint64_t>(value / pow_10_128(19)));
+        value %= pow_10_128(19);
+    } else {
+        // step 2: determine the position of the leading non-zero digit
+        buffer = base_10_u64(buffer, static_cast<uint64_t>(value / pow_10_128(19)));
+        value %= pow_10_128(19);
+    }
+    // step 3: low 19 digits
+    buffer = append9(buffer, static_cast<uint32_t>(value / 10000000000));
+    buffer = append10(buffer, static_cast<uint64_t>(value % 10000000000));
+    return buffer;
+}
+
 //===----------------------------------------------------------------------===//
 // __traits_base / __traits (traits.h — width estimation + digit reading)
-// Port: no __uint128_t specialization for simplicity (we only need 32/64 bit)
 //===----------------------------------------------------------------------===//
 
 // mul_overflow: returns true if a*b overflows into r
@@ -317,6 +393,27 @@ struct traits_base<T, enable_if_t<sizeof(T) == sizeof(uint64_t)>> {
     }
 
     static constexpr const uint64_t* pow() noexcept { return pow10_64; }
+};
+
+// For types == 128 bits: __uint128_t arithmetic (traits.h __traits_base 128 path)
+template<class T>
+struct traits_base<T, enable_if_t<sizeof(T) == sizeof(unsigned __int128)>> {
+    using type = unsigned __int128;
+
+    // Precondition: v > UINT64_MAX (the to_chars_itoa 128-bit overload
+    // dispatches smaller values to the 64-bit code path).
+    static constexpr int width(T v) noexcept {
+        // There's always a bit set in the upper 64 bits.
+        auto t = (128 - __builtin_clzll(static_cast<uint64_t>(v >> 64))) * 1233 >> 12;
+        // t is adjusted since the lookup table misses the lower entries.
+        return t - (v < pow10_128[t - pow10_128_offset]) + 1;
+    }
+
+    static char* convert(char* p, T v) noexcept {
+        return base_10_u128(p, v);
+    }
+
+    static constexpr const unsigned __int128* pow() noexcept { return pow10_128; }
 };
 
 template<class T>
@@ -379,8 +476,15 @@ constexpr int countl_zero_u(T v) noexcept {
     if constexpr (sizeof(T) <= sizeof(unsigned int))
         return __builtin_clz(static_cast<unsigned int>(v))
                - (numeric_limits<unsigned int>::digits - numeric_limits<T>::digits);
-    else
+    else if constexpr (sizeof(T) <= sizeof(unsigned long long))
         return __builtin_clzll(static_cast<unsigned long long>(v));
+    else {
+        // 128-bit: split into halves (callers guarantee v != 0 via v|1)
+        auto high = static_cast<unsigned long long>(v >> 64);
+        if (high != 0)
+            return __builtin_clzll(high);
+        return 64 + __builtin_clzll(static_cast<unsigned long long>(v));
+    }
 }
 
 // Unsigned base-2 width
@@ -512,6 +616,21 @@ to_chars_result to_chars_itoa(char* first, char* last, T value) {
     return {last, errc::value_too_large};
 }
 
+// 128-bit base-10 itoa overload (to_chars_integral.h __to_chars_itoa<__uint128_t>).
+// When the value fits in 64 bits use the 64-bit code path; this reduces the
+// number of expensive 128-bit calculations.  NOTE the 128-bit code path
+// (traits_base width/convert) REQUIRES this dispatch.
+inline to_chars_result to_chars_itoa(char* first, char* last, unsigned __int128 value) {
+    if (value <= numeric_limits<uint64_t>::max())
+        return to_chars_itoa(first, last, static_cast<uint64_t>(value));
+
+    using tx = traits<unsigned __int128>;
+    ptrdiff_t diff = last - first;
+    if (tx::digits <= diff || tx::width(value) <= diff)
+        return {tx::convert(first, value), errc{}};
+    return {last, errc::value_too_large};
+}
+
 // Base-10 itoa (signed) — prepend '-', recurse on unsigned
 template<class T>
     requires is_signed_v<T>
@@ -552,13 +671,15 @@ to_chars_result to_chars_integral_impl(char* first, char* last, T value, int bas
     return {last, errc{}};
 }
 
-// Promote small types to their 32-bit/64-bit equivalent for base-specific paths
-// libc++ uses __make_32_64_or_128_bit_t; we inline the same logic here.
+// Promote small types to their 32/64/128-bit equivalent for base-specific paths
+// (libc++ __make_32_64_or_128_bit_t)
 template<class T>
 struct make_32_64_bit {
     using type = conditional_t<is_signed_v<T>,
-        conditional_t<(sizeof(T) <= 4), int32_t, int64_t>,
-        conditional_t<(sizeof(T) <= 4), uint32_t, uint64_t>>;
+        conditional_t<(sizeof(T) <= 4), int32_t,
+            conditional_t<(sizeof(T) <= 8), int64_t, __int128>>,
+        conditional_t<(sizeof(T) <= 4), uint32_t,
+            conditional_t<(sizeof(T) <= 8), uint64_t, unsigned __int128>>>;
 };
 template<class T>
 using make_32_64_bit_t = typename make_32_64_bit<T>::type;
@@ -744,6 +865,159 @@ inline from_chars_result from_chars_integral(
     return sign_combinator(first, last, value, from_chars_integral<U>, base);
 }
 
+//===----------------------------------------------------------------------===//
+// from_chars floating-point.
+//
+// DEVIATION from libc++: libc++ implements from_chars(float/double) with a
+// vendored copy of fast_float (libcxx src/from_chars_floating_point.cpp +
+// src/include/from_chars_floating_point.h).  Porting fast_float wholesale is
+// out of scope for libcis.  Instead — as libstdc++ historically did — we
+// pre-validate the [charconv.from.chars] grammar ourselves (longest valid
+// prefix for the requested chars_format; no leading '+', no whitespace;
+// inf/nan handled directly) and delegate the numeric conversion of the
+// validated prefix to strtof/strtod/strtold on a bounded, null-terminated
+// copy.  glibc's strtod family is correctly rounded, so results match
+// fast_float.  ERANGE maps to errc::result_out_of_range, but only when the
+// result is 0 or infinity: glibc also raises ERANGE for representable
+// subnormals, which from_chars must accept (e.g. "7.411412e-39" as float).
+//===----------------------------------------------------------------------===//
+
+// Case-insensitive ASCII prefix match of [p, last) against lowercase lit[0..n).
+inline bool fp_icase_prefix(const char* p, const char* last, const char* lit, int n) noexcept {
+    if (last - p < n)
+        return false;
+    for (int i = 0; i < n; ++i) {
+        char c = p[i];
+        if (c >= 'A' && c <= 'Z')
+            c = static_cast<char>(c - 'A' + 'a');
+        if (c != lit[i])
+            return false;
+    }
+    return true;
+}
+
+template<class Fp>
+from_chars_result from_chars_floating(const char* first, const char* last,
+                                      Fp& value, chars_format fmt) {
+    const char* p = first;
+    if (p == last)
+        return {first, errc::invalid_argument};
+
+    bool neg = false;
+    if (*p == '-') {
+        neg = true;
+        ++p;
+        if (p == last)
+            return {first, errc::invalid_argument};
+    }
+
+    // inf / infinity (any format)
+    if (fp_icase_prefix(p, last, "inf", 3)) {
+        const char* e = p + 3;
+        if (fp_icase_prefix(e, last, "inity", 5))
+            e += 5;
+        Fp v  = numeric_limits<Fp>::infinity();
+        value = neg ? -v : v;
+        return {e, errc{}};
+    }
+    // nan, with optional (n-char-sequence) of [A-Za-z0-9_]
+    if (fp_icase_prefix(p, last, "nan", 3)) {
+        const char* e = p + 3;
+        if (e != last && *e == '(') {
+            const char* q = e + 1;
+            while (q != last &&
+                   (*q == '_' || ('0' <= *q && *q <= '9') ||
+                    ('a' <= *q && *q <= 'z') || ('A' <= *q && *q <= 'Z')))
+                ++q;
+            if (q != last && *q == ')')
+                e = q + 1;
+        }
+        Fp v  = numeric_limits<Fp>::quiet_NaN();
+        value = neg ? -v : v;
+        return {e, errc{}};
+    }
+
+    const bool hex = fmt == chars_format::hex;
+    auto is_digit  = [hex](char c) {
+        return ('0' <= c && c <= '9') ||
+               (hex && (('a' <= c && c <= 'f') || ('A' <= c && c <= 'F')));
+    };
+
+    // mantissa: digits [. digits] — at least one digit overall
+    int ndigits = 0;
+    while (p != last && is_digit(*p)) {
+        ++p;
+        ++ndigits;
+    }
+    if (p != last && *p == '.') {
+        ++p;
+        while (p != last && is_digit(*p)) {
+            ++p;
+            ++ndigits;
+        }
+    }
+    if (ndigits == 0)
+        return {first, errc::invalid_argument};
+
+    // exponent: (e|E) for decimal, (p|P) for hex, optional sign, >= 1 digit.
+    // fixed never consumes an exponent; scientific requires one.
+    const char* end = p;
+    bool has_exp    = false;
+    if (fmt != chars_format::fixed && p != last) {
+        char c = *p;
+        if (hex ? (c == 'p' || c == 'P') : (c == 'e' || c == 'E')) {
+            const char* q = p + 1;
+            if (q != last && (*q == '+' || *q == '-'))
+                ++q;
+            const char* d = q;
+            while (d != last && '0' <= *d && *d <= '9')
+                ++d;
+            if (d != q) {
+                end     = d;
+                has_exp = true;
+            }
+        }
+    }
+    if (fmt == chars_format::scientific && !has_exp)
+        return {first, errc::invalid_argument};
+
+    // Convert the validated prefix via strtof/strtod/strtold on a bounded,
+    // null-terminated copy (a "0x" prefix is inserted for hex format).
+    size_t len = static_cast<size_t>(end - first);
+    char stack_buf[128];
+    char* buf = (len + 3 <= sizeof(stack_buf)) ? stack_buf : new char[len + 3];
+    char* b   = buf;
+    const char* src = first;
+    if (neg) {
+        *b++ = '-';
+        ++src;
+    }
+    if (hex) {
+        *b++ = '0';
+        *b++ = 'x';
+    }
+    for (; src != end; ++src)
+        *b++ = *src;
+    *b = '\0';
+
+    errno = 0;
+    Fp v;
+    if constexpr (is_same_v<Fp, float>)
+        v = ::strtof(buf, nullptr);
+    else if constexpr (is_same_v<Fp, double>)
+        v = ::strtod(buf, nullptr);
+    else
+        v = ::strtold(buf, nullptr);
+    int err = errno;
+    if (buf != stack_buf)
+        delete[] buf;
+
+    value = v;
+    if (err == ERANGE && (v == Fp(0) || __builtin_isinf(v)))
+        return {end, errc::result_out_of_range};
+    return {end, errc{}};
+}
+
 } // namespace detail
 
 //===----------------------------------------------------------------------===//
@@ -791,9 +1065,27 @@ inline from_chars_result from_chars(const char* first, const char* last, T& valu
 }
 
 //===----------------------------------------------------------------------===//
-// FLOATING-POINT OVERLOADS — NOT IMPLEMENTED
-// Intentionally deleted: libc++'s Ryu-based float implementation is very large
-// and not yet ported.  Any accidental use will produce a clear diagnostic.
+// Public API: from_chars (floating-point overloads)
+// See the DEVIATION comment on detail::from_chars_floating.
+//===----------------------------------------------------------------------===//
+
+inline from_chars_result from_chars(const char* first, const char* last,
+                                    float& value, chars_format fmt = chars_format::general) {
+    return detail::from_chars_floating(first, last, value, fmt);
+}
+inline from_chars_result from_chars(const char* first, const char* last,
+                                    double& value, chars_format fmt = chars_format::general) {
+    return detail::from_chars_floating(first, last, value, fmt);
+}
+inline from_chars_result from_chars(const char* first, const char* last,
+                                    long double& value, chars_format fmt = chars_format::general) {
+    return detail::from_chars_floating(first, last, value, fmt);
+}
+
+//===----------------------------------------------------------------------===//
+// FLOATING-POINT to_chars — NOT IMPLEMENTED
+// Intentionally deleted: libc++'s Ryu-based float-to-string implementation is
+// very large and not yet ported.  Any accidental use produces a diagnostic.
 //===----------------------------------------------------------------------===//
 to_chars_result to_chars(char*, char*, float)                              = delete;
 to_chars_result to_chars(char*, char*, double)                             = delete;
@@ -804,9 +1096,5 @@ to_chars_result to_chars(char*, char*, long double, chars_format)          = del
 to_chars_result to_chars(char*, char*, float,       chars_format, int)     = delete;
 to_chars_result to_chars(char*, char*, double,      chars_format, int)     = delete;
 to_chars_result to_chars(char*, char*, long double, chars_format, int)     = delete;
-
-from_chars_result from_chars(const char*, const char*, float&,       chars_format) = delete;
-from_chars_result from_chars(const char*, const char*, double&,      chars_format) = delete;
-from_chars_result from_chars(const char*, const char*, long double&, chars_format) = delete;
 
 } // namespace std
