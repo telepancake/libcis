@@ -47,8 +47,14 @@ for r in tests:
     drv = "/tmp/rf_drv.cpp"
     open(drv, "w").write(f'#include "{src}"\nint main(){{ return {r["entry"]}; }}\n')
     exe = "/tmp/rf_exe"
-    p = subprocess.run(CIS + [drv] + LINK + ["-o", exe],
-                       capture_output=True, text=True, timeout=180)
+    try:
+        p = subprocess.run(CIS + [drv] + LINK + ["-o", exe],
+                           capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        buckets["compile-fail"] += 1
+        cerr["compile-timeout"] += 1
+        cfail.append((r["file"], "compile-timeout (180s)"))
+        continue
     if p.returncode != 0:
         buckets["compile-fail"] += 1
         m = re.search(r"error: (.+)", p.stderr)
