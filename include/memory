@@ -17,6 +17,8 @@
 #include <bits/pointer.h>
 #include <compare>
 #include <cstdint>  // uintptr_t
+#include <atomic>   // memory_order (for the [util.smartptr.shared.atomic] API)
+#include <iosfwd>   // basic_ostream forward declaration (for operator<<)
 // <functional> is included here (before namespace std) so that <tuple>'s
 // uses_allocator definition (pulled in transitively) is authoritative.
 // <memory> itself does NOT redefine uses_allocator — it reuses the one
@@ -1031,11 +1033,99 @@ inline void* align(size_t alignment, size_t sz, void*& ptr, size_t& space) {
 // (from __memory/assume_aligned.h)
 //===----------------------------------------------------------------------===//
 
+// libc++ guards the __builtin_assume_aligned call with
+// __libcpp_is_constant_evaluated(); during constant evaluation it just
+// returns the pointer (gcc-10 rejects the builtin in constexpr contexts).
 template<size_t N, class T>
 [[nodiscard]] constexpr T* assume_aligned(T* ptr) noexcept {
     static_assert(N != 0 && (N & (N - 1)) == 0,
         "std::assume_aligned<N>(p) requires N to be a power of two");
-    return static_cast<T*>(__builtin_assume_aligned(ptr, N));
+    if (is_constant_evaluated()) {
+        return ptr;
+    } else {
+        return static_cast<T*>(__builtin_assume_aligned(ptr, N));
+    }
+}
+
+//===----------------------------------------------------------------------===//
+// raw_storage_iterator  (C++17-deprecated, C++20-removed; kept as an extension
+// — the libc++ test suite always sets
+// _LIBCPP_ENABLE_CXX20_REMOVED_RAW_STORAGE_ITERATOR)
+// (from __memory/raw_storage_iterator.h)
+//===----------------------------------------------------------------------===//
+
+template<class OutputIterator, class T>
+class raw_storage_iterator {
+private:
+    OutputIterator x_;
+
+public:
+    typedef output_iterator_tag iterator_category;
+    typedef void                value_type;
+    typedef ptrdiff_t           difference_type;  // void before C++20
+    typedef void                pointer;
+    typedef void                reference;
+
+    explicit raw_storage_iterator(OutputIterator x) : x_(x) {}
+    [[nodiscard]] raw_storage_iterator& operator*() { return *this; }
+    raw_storage_iterator& operator=(const T& element) {
+        ::new(static_cast<void*>(std::addressof(*x_))) T(element);
+        return *this;
+    }
+    raw_storage_iterator& operator=(T&& element) {
+        ::new(static_cast<void*>(std::addressof(*x_))) T(std::move(element));
+        return *this;
+    }
+    raw_storage_iterator& operator++() {
+        ++x_;
+        return *this;
+    }
+    raw_storage_iterator operator++(int) {
+        raw_storage_iterator t(*this);
+        ++x_;
+        return t;
+    }
+    [[nodiscard]] OutputIterator base() const { return x_; }
+};
+
+//===----------------------------------------------------------------------===//
+// get_temporary_buffer / return_temporary_buffer
+// (C++17-deprecated, C++20-removed; kept as an extension — the libc++ test
+// suite always sets _LIBCPP_ENABLE_CXX20_REMOVED_TEMPORARY_BUFFER)
+// (from __memory/temporary_buffer.h; the allocation loop including the
+// overaligned handling is from __memory/unique_temporary_buffer.h
+// __allocate_unique_temporary_buffer; the deallocation mirrors
+// __libcpp_deallocate_unsized which selects the aligned operator delete
+// for overaligned types)
+//===----------------------------------------------------------------------===//
+
+template<class T>
+[[nodiscard]] pair<T*, ptrdiff_t> get_temporary_buffer(ptrdiff_t n) noexcept {
+    T* ptr = nullptr;
+    const ptrdiff_t max_count =
+        (~ptrdiff_t(0) ^ ptrdiff_t(ptrdiff_t(1) << (sizeof(ptrdiff_t) * __CHAR_BIT__ - 1))) /
+        sizeof(T);
+    if (n > max_count)
+        n = max_count;
+    while (n > 0) {
+        if (alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__) {
+            ptr = static_cast<T*>(::operator new(n * sizeof(T), align_val_t(alignof(T)), nothrow));
+        } else {
+            ptr = static_cast<T*>(::operator new(n * sizeof(T), nothrow));
+        }
+        if (ptr)
+            break;
+        n /= 2;
+    }
+    return pair<T*, ptrdiff_t>(ptr, n);
+}
+
+template<class T>
+inline void return_temporary_buffer(T* p) noexcept {
+    if (alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__)
+        ::operator delete(p, align_val_t(alignof(T)));
+    else
+        ::operator delete(p);
 }
 
 } // namespace std
@@ -1305,28 +1395,38 @@ public:
 
 namespace detail {
 
-// Y* is "compatible with" T* for shared_ptr<T> purposes
+// Ported from libc++ __memory/shared_ptr.h:
+// http://eel.is/c++draft/util.sharedptr#util.smartptr.shared.general-6
+// A pointer type Y* is said to be compatible with a pointer type T*
+// when either Y* is convertible to T* or Y is U[N] and T is cv U[].
+// (libc++ __bounded_convertible_to_unbounded_v / __compatible_with_v)
 template<class Y, class T>
-inline constexpr bool sp_compatible_v = is_convertible_v<Y*, T*>;
+inline constexpr bool sp_bounded_convertible_to_unbounded_v = false;
 
-template<class Y, size_t N, class T>
-inline constexpr bool sp_bounded_to_unbounded_v = is_same_v<remove_cv_t<T>, Y[]>;
+template<class U, size_t N, class T>
+inline constexpr bool sp_bounded_convertible_to_unbounded_v<U[N], T> =
+    is_same_v<remove_cv_t<T>, U[]>;
 
 template<class Y, class T>
-inline constexpr bool sp_fully_compatible_v =
-    sp_compatible_v<Y, T> ||
-    (is_array_v<Y> && sp_bounded_to_unbounded_v<
-        remove_extent_t<Y>,
-        extent_v<Y>,  // We use extent_v for the N in Y[N]
-        T>);
-// Simpler: just reuse is_convertible for non-array, for arrays check manually.
-// The bounded-to-unbounded case is: Y is U[N] and T is cv U[].
-// We simplify to: compatible_with = is_convertible<Y*, T*> OR
-//   (is_bounded_array<Y> AND T is same as remove_extent_t<Y>[])
+inline constexpr bool sp_compatible_v =
+    is_convertible_v<Y*, T*> || sp_bounded_convertible_to_unbounded_v<Y, T>;
 
-// raw pointer compatibility for constructors
-template<class Y, class T>
+// Constructors that take raw pointers have a different set of "compatible"
+// constraints (libc++ __raw_pointer_compatible_with_v):
+// http://eel.is/c++draft/util.sharedptr#util.smartptr.shared.const-9.1
+// - If T is an array type, then either T is U[N] and Y(*)[N] is convertible
+//   to T*, or T is U[] and Y(*)[] is convertible to T*.
+// - If T is not an array type, then Y* is convertible to T*.
+template<class Y, class T, class = void>
 inline constexpr bool sp_raw_ptr_compatible_v = !is_array_v<T> && is_convertible_v<Y*, T*>;
+
+template<class Y, class U, size_t N>
+inline constexpr bool
+    sp_raw_ptr_compatible_v<Y, U[N], enable_if_t<is_convertible_v<Y(*)[N], U(*)[N]>>> = true;
+
+template<class Y, class U>
+inline constexpr bool
+    sp_raw_ptr_compatible_v<Y, U[], enable_if_t<is_convertible_v<Y(*)[], U(*)[]>>> = true;
 
 // deletable helpers
 template<class Ptr, class = void>
@@ -1627,6 +1727,11 @@ public:
     [[nodiscard]] long use_count() const noexcept {
         return cntrl_ ? cntrl_->use_count() : 0;
     }
+
+    // C++20-removed member, kept as an extension (the libc++ test suite always
+    // sets _LIBCPP_ENABLE_CXX20_REMOVED_SHARED_PTR_UNIQUE).
+    // (from libc++ __memory/shared_ptr.h shared_ptr::unique)
+    [[nodiscard]] bool unique() const noexcept { return use_count() == 1; }
 
     explicit operator bool() const noexcept { return ptr_ != nullptr; }
 
@@ -1976,6 +2081,7 @@ struct owner_less<void> {
 
 //===----------------------------------------------------------------------===//
 // make_shared / allocate_shared / make_shared_for_overwrite
+// (from libc++ __memory/shared_ptr.h)
 //===----------------------------------------------------------------------===//
 
 template<class T, class Alloc, class... Args>
@@ -1999,29 +2105,555 @@ make_shared(Args&&... args) {
                                forward<Args>(args)...);
 }
 
-template<class T>
+// allocate_shared_for_overwrite / make_shared_for_overwrite, non-array
+// (from libc++ __memory/shared_ptr.h): rebind the user's allocator to
+// sp_for_overwrite_tag — sp_counted_emplace dispatches on that value_type to
+// default-initialize instead of value-initialize.
+template<class T, class Alloc>
     requires (!is_array_v<T>)
 [[nodiscard]] shared_ptr<T>
-allocate_shared_for_overwrite(const allocator<T>& /* a */) {
-    using OverwriteAlloc = allocator<sp_for_overwrite_tag>;
-    OverwriteAlloc oa;
-    // Use sp_counted_emplace with the for_overwrite tag allocator.
-    // We pass a "rebound to sp_for_overwrite_tag" allocator so the control
-    // block knows to use default-init instead of value-init.
-    using CB = sp_counted_emplace<T, OverwriteAlloc>;
-    using CbAlloc = typename allocator_traits<OverwriteAlloc>::template rebind_alloc<CB>;
-    using CbTraits = allocator_traits<CbAlloc>;
-    CbAlloc ca(oa);
-    CB* cb = CbTraits::allocate(ca, 1);
-    ::new(static_cast<void*>(cb)) CB(oa);
-    return shared_ptr<T>::create_with_control_block(cb->get_elem(), cb);
+allocate_shared_for_overwrite(const Alloc& a) {
+    using ForOverwriteAllocator =
+        typename allocator_traits<Alloc>::template rebind_alloc<sp_for_overwrite_tag>;
+    ForOverwriteAllocator alloc(a);
+    return std::allocate_shared<T>(alloc);
 }
 
 template<class T>
     requires (!is_array_v<T>)
 [[nodiscard]] shared_ptr<T>
 make_shared_for_overwrite() {
-    return allocate_shared_for_overwrite<T>(allocator<T>());
+    return std::allocate_shared_for_overwrite<T>(allocator<remove_cv_t<T>>());
+}
+
+//===----------------------------------------------------------------------===//
+// Array support for make_shared / allocate_shared (C++20)
+//
+// Helper algorithms ported from libc++:
+//   detail::reverse_destroy
+//     — __memory/destroy.h __reverse_destroy
+//   detail::allocator_destroy_multidimensional,
+//   detail::allocator_construct_at_multidimensional,
+//   detail::uninitialized_allocator_fill_n_multidimensional,
+//   detail::uninitialized_allocator_value_construct_n_multidimensional
+//     — __memory/uninitialized_algorithms.h (same names, __-prefixed).
+// Under -fno-exceptions the libc++ exception guards around the construction
+// loops are no-ops (construction failure cannot unwind), so they are omitted.
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+// from libc++ __memory/destroy.h __reverse_destroy
+template<class BidirIter>
+constexpr void reverse_destroy(BidirIter first, BidirIter last) {
+    while (last != first) {
+        --last;
+        std::destroy_at(std::addressof(*last));
+    }
+}
+
+// Destroys every element in [first, last) FROM RIGHT TO LEFT using allocator
+// destruction. C-style-array elements are recursively destroyed elementwise.
+// (libc++ __allocator_destroy_multidimensional)
+template<class Alloc, class BidirIter>
+constexpr void
+allocator_destroy_multidimensional(Alloc& alloc, BidirIter first, BidirIter last) noexcept {
+    using ValueType = typename iterator_traits<BidirIter>::value_type;
+
+    if (first == last)
+        return;
+
+    if constexpr (is_array_v<ValueType>) {
+        static_assert(!is_unbounded_array_v<ValueType>,
+            "arrays of unbounded arrays don't exist, but if they did we would mess up here");
+
+        using Element = remove_extent_t<ValueType>;
+        typename allocator_traits<Alloc>::template rebind_alloc<Element> elem_alloc(alloc);
+        do {
+            --last;
+            decltype(auto) array = *last;
+            detail::allocator_destroy_multidimensional(
+                elem_alloc, array, array + extent_v<ValueType>);
+        } while (last != first);
+    } else {
+        do {
+            --last;
+            allocator_traits<Alloc>::destroy(alloc, std::addressof(*last));
+        } while (last != first);
+    }
+}
+
+// Constructs the object at the given location using the allocator's construct
+// method; arrays are allocator-constructed elementwise, recursively.
+// (libc++ __allocator_construct_at_multidimensional)
+template<class Alloc, class T>
+constexpr void allocator_construct_at_multidimensional(Alloc& alloc, T* loc) {
+    if constexpr (is_array_v<T>) {
+        using Element = remove_extent_t<T>;
+        typename allocator_traits<Alloc>::template rebind_alloc<Element> elem_alloc(alloc);
+        T& array = *loc;
+        for (size_t i = 0; i != extent_v<T>; ++i)
+            detail::allocator_construct_at_multidimensional(
+                elem_alloc, std::addressof(array[i]));
+    } else {
+        allocator_traits<Alloc>::construct(alloc, loc);
+    }
+}
+
+// Same, passing along the provided argument; if T is an array, the argument
+// is assumed to be an array and is copied elementwise.
+// (libc++ __allocator_construct_at_multidimensional)
+template<class Alloc, class T, class Arg>
+constexpr void
+allocator_construct_at_multidimensional(Alloc& alloc, T* loc, Arg const& arg) {
+    if constexpr (is_array_v<T>) {
+        static_assert(is_array_v<Arg>,
+            "Provided non-array initialization argument to "
+            "allocator_construct_at_multidimensional when trying to construct an array.");
+
+        using Element = remove_extent_t<T>;
+        typename allocator_traits<Alloc>::template rebind_alloc<Element> elem_alloc(alloc);
+        T& array = *loc;
+        for (size_t i = 0; i != extent_v<T>; ++i)
+            detail::allocator_construct_at_multidimensional(
+                elem_alloc, std::addressof(array[i]), arg[i]);
+    } else {
+        allocator_traits<Alloc>::construct(alloc, loc, arg);
+    }
+}
+
+// (libc++ __uninitialized_allocator_fill_n_multidimensional)
+template<class Alloc, class BidirIter, class T,
+         class Size = typename iterator_traits<BidirIter>::difference_type>
+constexpr void
+uninitialized_allocator_fill_n_multidimensional(Alloc& alloc, BidirIter it, Size n, T const& value) {
+    using ValueType = typename iterator_traits<BidirIter>::value_type;
+    typename allocator_traits<Alloc>::template rebind_alloc<ValueType> value_alloc(alloc);
+    for (; n != 0; --n, ++it)
+        detail::allocator_construct_at_multidimensional(
+            value_alloc, std::addressof(*it), value);
+}
+
+// Same but with no initialization argument — value-initialization.
+// (libc++ __uninitialized_allocator_value_construct_n_multidimensional)
+template<class Alloc, class BidirIter,
+         class Size = typename iterator_traits<BidirIter>::difference_type>
+constexpr void
+uninitialized_allocator_value_construct_n_multidimensional(Alloc& alloc, BidirIter it, Size n) {
+    using ValueType = typename iterator_traits<BidirIter>::value_type;
+    typename allocator_traits<Alloc>::template rebind_alloc<ValueType> value_alloc(alloc);
+    for (; n != 0; --n, ++it)
+        detail::allocator_construct_at_multidimensional(value_alloc, std::addressof(*it));
+}
+
+} // namespace detail
+
+// (from libc++ __memory/shared_ptr.h __sp_aligned_storage)
+template<size_t Alignment>
+struct sp_aligned_storage {
+    alignas(Alignment) char storage[Alignment];
+};
+
+// (from libc++ __memory/shared_ptr.h __unbounded_array_control_block)
+template<class T, class Alloc>
+struct sp_unbounded_array_control_block;
+
+template<class T, class Alloc>
+struct sp_unbounded_array_control_block<T[], Alloc> : sp_counted_base {
+    constexpr T* get_data() noexcept { return data_; }
+
+    explicit sp_unbounded_array_control_block(Alloc const& alloc, size_t count, T const& arg)
+        : alloc_(alloc), count_(count) {
+        detail::uninitialized_allocator_fill_n_multidimensional(alloc_, data_, count_, arg);
+    }
+
+    explicit sp_unbounded_array_control_block(Alloc const& alloc, size_t count)
+        : alloc_(alloc), count_(count) {
+        if constexpr (is_same_v<typename Alloc::value_type, sp_for_overwrite_tag>) {
+            // We are purposefully not using an allocator-aware default construction
+            // because the spec says so. There's currently no way of expressing
+            // default initialization in an allocator-aware manner anyway.
+            std::uninitialized_default_construct_n(data_, count_);
+        } else {
+            detail::uninitialized_allocator_value_construct_n_multidimensional(
+                alloc_, data_, count_);
+        }
+    }
+
+    // Returns the number of bytes required to store a control block followed by
+    // the given number of elements of T, with the whole storage being aligned to
+    // a multiple of T's alignment. (libc++ __bytes_for)
+    static constexpr size_t bytes_for(size_t elements) {
+        // When there's 0 elements, the control block alone is enough since it
+        // holds one element. Otherwise, we allocate one fewer element than
+        // requested because the control block already holds one. The bitwise
+        // formula below ensures we allocate enough bytes for the whole
+        // allocation to be a multiple of T's alignment.
+        size_t bytes = elements == 0
+            ? sizeof(sp_unbounded_array_control_block)
+            : (elements - 1) * sizeof(T) + sizeof(sp_unbounded_array_control_block);
+        constexpr size_t align = alignof(sp_unbounded_array_control_block);
+        return (bytes + align - 1) & ~(align - 1);
+    }
+
+    ~sp_unbounded_array_control_block() override {
+    } // can't be `= default` because of the sometimes-non-trivial union member data_
+
+    void on_zero_shared() noexcept override {
+        if constexpr (is_same_v<typename Alloc::value_type, sp_for_overwrite_tag>) {
+            detail::reverse_destroy(data_, data_ + count_);
+        } else {
+            typename allocator_traits<Alloc>::template rebind_alloc<T> value_alloc(alloc_);
+            detail::allocator_destroy_multidimensional(value_alloc, data_, data_ + count_);
+        }
+    }
+
+    void on_zero_shared_weak() noexcept override {
+        using AlignedStorage =
+            sp_aligned_storage<alignof(sp_unbounded_array_control_block)>;
+        using StorageAlloc =
+            typename allocator_traits<Alloc>::template rebind_alloc<AlignedStorage>;
+        using PtrTraits = pointer_traits<typename allocator_traits<StorageAlloc>::pointer>;
+
+        StorageAlloc tmp(alloc_);
+        alloc_.~Alloc();
+        size_t size = sp_unbounded_array_control_block::bytes_for(count_);
+        AlignedStorage* storage = reinterpret_cast<AlignedStorage*>(this);
+        allocator_traits<StorageAlloc>::deallocate(
+            tmp, PtrTraits::pointer_to(*storage), size / sizeof(AlignedStorage));
+    }
+
+    [[no_unique_address]] Alloc alloc_;
+    size_t count_;
+    union {
+        T data_[1];
+    };
+};
+
+namespace detail {
+
+// (from libc++ __memory/shared_ptr.h __allocate_shared_unbounded_array)
+template<class Array, class Alloc, class... Arg>
+shared_ptr<Array> allocate_shared_unbounded_array(const Alloc& a, size_t n, Arg&&... arg) {
+    static_assert(is_unbounded_array_v<Array>);
+    // We compute the number of bytes necessary to hold the control block and the
+    // array elements. Then, we allocate an array of properly-aligned dummy structs
+    // large enough to hold the control block and array. This allows shifting the
+    // burden of aligning memory properly from us to the allocator.
+    using ControlBlock   = sp_unbounded_array_control_block<Array, Alloc>;
+    using AlignedStorage = sp_aligned_storage<alignof(ControlBlock)>;
+    using StorageAlloc   =
+        typename allocator_traits<Alloc>::template rebind_alloc<AlignedStorage>;
+    StorageAlloc sa(a);
+    ControlBlock* control_block = reinterpret_cast<ControlBlock*>(
+        std::addressof(*allocator_traits<StorageAlloc>::allocate(
+            sa, ControlBlock::bytes_for(n) / sizeof(AlignedStorage))));
+    ::new(static_cast<void*>(control_block)) ControlBlock(a, n, std::forward<Arg>(arg)...);
+    return shared_ptr<Array>::create_with_control_block(
+        control_block->get_data(), control_block);
+}
+
+} // namespace detail
+
+// (from libc++ __memory/shared_ptr.h __bounded_array_control_block)
+template<class T, class Alloc>
+struct sp_bounded_array_control_block;
+
+template<class T, size_t Count, class Alloc>
+struct sp_bounded_array_control_block<T[Count], Alloc> : sp_counted_base {
+    constexpr T* get_data() noexcept { return data_; }
+
+    explicit sp_bounded_array_control_block(Alloc const& alloc, T const& arg)
+        : alloc_(alloc) {
+        detail::uninitialized_allocator_fill_n_multidimensional(
+            alloc_, std::addressof(data_[0]), Count, arg);
+    }
+
+    explicit sp_bounded_array_control_block(Alloc const& alloc) : alloc_(alloc) {
+        if constexpr (is_same_v<typename Alloc::value_type, sp_for_overwrite_tag>) {
+            // We are purposefully not using an allocator-aware default construction
+            // because the spec says so. There's currently no way of expressing
+            // default initialization in an allocator-aware manner anyway.
+            std::uninitialized_default_construct_n(std::addressof(data_[0]), Count);
+        } else {
+            detail::uninitialized_allocator_value_construct_n_multidimensional(
+                alloc_, std::addressof(data_[0]), Count);
+        }
+    }
+
+    ~sp_bounded_array_control_block() override {
+    } // can't be `= default` because of the sometimes-non-trivial union member data_
+
+    void on_zero_shared() noexcept override {
+        if constexpr (is_same_v<typename Alloc::value_type, sp_for_overwrite_tag>) {
+            detail::reverse_destroy(data_, data_ + Count);
+        } else {
+            typename allocator_traits<Alloc>::template rebind_alloc<T> value_alloc(alloc_);
+            detail::allocator_destroy_multidimensional(value_alloc, data_, data_ + Count);
+        }
+    }
+
+    void on_zero_shared_weak() noexcept override {
+        using CbAlloc =
+            typename allocator_traits<Alloc>::template rebind_alloc<sp_bounded_array_control_block>;
+        using PtrTraits = pointer_traits<typename allocator_traits<CbAlloc>::pointer>;
+
+        CbAlloc tmp(alloc_);
+        alloc_.~Alloc();
+        allocator_traits<CbAlloc>::deallocate(tmp, PtrTraits::pointer_to(*this), 1);
+    }
+
+    [[no_unique_address]] Alloc alloc_;
+    union {
+        T data_[Count];
+    };
+};
+
+namespace detail {
+
+// (from libc++ __memory/shared_ptr.h __allocate_shared_bounded_array)
+template<class Array, class Alloc, class... Arg>
+shared_ptr<Array> allocate_shared_bounded_array(const Alloc& a, Arg&&... arg) {
+    static_assert(is_bounded_array_v<Array>);
+    using ControlBlock = sp_bounded_array_control_block<Array, Alloc>;
+    using CbAlloc      = typename allocator_traits<Alloc>::template rebind_alloc<ControlBlock>;
+
+    CbAlloc ca(a);
+    ControlBlock* control_block = reinterpret_cast<ControlBlock*>(
+        std::addressof(*allocator_traits<CbAlloc>::allocate(ca, 1)));
+    ::new(static_cast<void*>(control_block)) ControlBlock(a, std::forward<Arg>(arg)...);
+    return shared_ptr<Array>::create_with_control_block(
+        control_block->get_data(), control_block);
+}
+
+} // namespace detail
+
+// bounded array variants (from libc++ __memory/shared_ptr.h, C++20)
+template<class T, class Alloc>
+    requires is_bounded_array_v<T>
+[[nodiscard]] shared_ptr<T> allocate_shared(const Alloc& a) {
+    return detail::allocate_shared_bounded_array<T>(a);
+}
+
+template<class T, class Alloc>
+    requires is_bounded_array_v<T>
+[[nodiscard]] shared_ptr<T> allocate_shared(const Alloc& a, const remove_extent_t<T>& u) {
+    return detail::allocate_shared_bounded_array<T>(a, u);
+}
+
+template<class T, class Alloc>
+    requires is_bounded_array_v<T>
+[[nodiscard]] shared_ptr<T> allocate_shared_for_overwrite(const Alloc& a) {
+    using ForOverwriteAllocator =
+        typename allocator_traits<Alloc>::template rebind_alloc<sp_for_overwrite_tag>;
+    ForOverwriteAllocator alloc(a);
+    return detail::allocate_shared_bounded_array<T>(alloc);
+}
+
+template<class T>
+    requires is_bounded_array_v<T>
+[[nodiscard]] shared_ptr<T> make_shared() {
+    return detail::allocate_shared_bounded_array<T>(allocator<T>());
+}
+
+template<class T>
+    requires is_bounded_array_v<T>
+[[nodiscard]] shared_ptr<T> make_shared(const remove_extent_t<T>& u) {
+    return detail::allocate_shared_bounded_array<T>(allocator<T>(), u);
+}
+
+template<class T>
+    requires is_bounded_array_v<T>
+[[nodiscard]] shared_ptr<T> make_shared_for_overwrite() {
+    return detail::allocate_shared_bounded_array<T>(allocator<sp_for_overwrite_tag>());
+}
+
+// unbounded array variants (from libc++ __memory/shared_ptr.h, C++20)
+template<class T, class Alloc>
+    requires is_unbounded_array_v<T>
+[[nodiscard]] shared_ptr<T> allocate_shared(const Alloc& a, size_t n) {
+    return detail::allocate_shared_unbounded_array<T>(a, n);
+}
+
+template<class T, class Alloc>
+    requires is_unbounded_array_v<T>
+[[nodiscard]] shared_ptr<T>
+allocate_shared(const Alloc& a, size_t n, const remove_extent_t<T>& u) {
+    return detail::allocate_shared_unbounded_array<T>(a, n, u);
+}
+
+template<class T, class Alloc>
+    requires is_unbounded_array_v<T>
+[[nodiscard]] shared_ptr<T> allocate_shared_for_overwrite(const Alloc& a, size_t n) {
+    using ForOverwriteAllocator =
+        typename allocator_traits<Alloc>::template rebind_alloc<sp_for_overwrite_tag>;
+    ForOverwriteAllocator alloc(a);
+    return detail::allocate_shared_unbounded_array<T>(alloc, n);
+}
+
+template<class T>
+    requires is_unbounded_array_v<T>
+[[nodiscard]] shared_ptr<T> make_shared(size_t n) {
+    return detail::allocate_shared_unbounded_array<T>(allocator<T>(), n);
+}
+
+template<class T>
+    requires is_unbounded_array_v<T>
+[[nodiscard]] shared_ptr<T> make_shared(size_t n, const remove_extent_t<T>& u) {
+    return detail::allocate_shared_unbounded_array<T>(allocator<T>(), n, u);
+}
+
+template<class T>
+    requires is_unbounded_array_v<T>
+[[nodiscard]] shared_ptr<T> make_shared_for_overwrite(size_t n) {
+    return detail::allocate_shared_unbounded_array<T>(allocator<sp_for_overwrite_tag>(), n);
+}
+
+//===----------------------------------------------------------------------===//
+// operator<< for shared_ptr and unique_ptr
+//
+// shared_ptr: declared in libc++ __memory/shared_ptr.h, defined in
+// __ostream/basic_ostream.h. unique_ptr (C++20, P1132): defined in
+// __ostream/basic_ostream.h with a SFINAE constraint that the pointer is
+// streamable. basic_ostream is forward-declared in <iosfwd>; the bodies are
+// only instantiated at a call site, where <ostream> must be complete.
+//===----------------------------------------------------------------------===//
+
+template<class CharT, class Traits, class Y>
+inline basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, shared_ptr<Y> const& p) {
+    return os << p.get();
+}
+
+template<class CharT, class Traits, class Y, class D,
+         class = enable_if_t<is_same_v<
+             void,
+             void_t<decltype(declval<basic_ostream<CharT, Traits>&>()
+                             << declval<typename unique_ptr<Y, D>::pointer>())>>>>
+inline basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, unique_ptr<Y, D> const& p) {
+    return os << p.get();
+}
+
+//===----------------------------------------------------------------------===//
+// shared_ptr atomic access [util.smartptr.shared.atomic] (the C++11 API)
+//
+// Ported from libc++ __memory/shared_ptr.h (the atomic_* free functions) and
+// src/memory.cpp (__sp_mut / __get_sp_mut: a 32-entry mutex table indexed by
+// hashing the shared_ptr's address). libc++ keeps the mutex table in the
+// built library; we are header-only, so the table is a function-local static
+// array and the mutex is a tiny spinlock on __atomic builtins.
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+class sp_mut {
+    int lx_ = 0;  // 0 = unlocked, 1 = locked
+
+    sp_mut(const sp_mut&) = delete;
+    sp_mut& operator=(const sp_mut&) = delete;
+
+public:
+    constexpr sp_mut() noexcept = default;
+
+    void lock() noexcept {
+        while (__atomic_exchange_n(&lx_, 1, __ATOMIC_ACQUIRE) != 0) {
+            while (__atomic_load_n(&lx_, __ATOMIC_RELAXED) != 0) {
+                // spin
+            }
+        }
+    }
+
+    void unlock() noexcept { __atomic_store_n(&lx_, 0, __ATOMIC_RELEASE); }
+};
+
+// libc++ __get_sp_mut (src/memory.cpp)
+inline sp_mut& get_sp_mut(const void* p) {
+    constexpr size_t sp_mut_count = 32;
+    static sp_mut muts[sp_mut_count];
+    return muts[hash<const void*>()(p) & (sp_mut_count - 1)];
+}
+
+} // namespace detail
+
+template<class T>
+inline bool atomic_is_lock_free(const shared_ptr<T>*) {
+    return false;
+}
+
+template<class T>
+shared_ptr<T> atomic_load(const shared_ptr<T>* p) {
+    detail::sp_mut& m = detail::get_sp_mut(p);
+    m.lock();
+    shared_ptr<T> q = *p;
+    m.unlock();
+    return q;
+}
+
+template<class T>
+inline shared_ptr<T> atomic_load_explicit(const shared_ptr<T>* p, memory_order) {
+    return std::atomic_load(p);
+}
+
+template<class T>
+void atomic_store(shared_ptr<T>* p, shared_ptr<T> r) {
+    detail::sp_mut& m = detail::get_sp_mut(p);
+    m.lock();
+    p->swap(r);
+    m.unlock();
+}
+
+template<class T>
+inline void atomic_store_explicit(shared_ptr<T>* p, shared_ptr<T> r, memory_order) {
+    std::atomic_store(p, r);
+}
+
+template<class T>
+shared_ptr<T> atomic_exchange(shared_ptr<T>* p, shared_ptr<T> r) {
+    detail::sp_mut& m = detail::get_sp_mut(p);
+    m.lock();
+    p->swap(r);
+    m.unlock();
+    return r;
+}
+
+template<class T>
+inline shared_ptr<T> atomic_exchange_explicit(shared_ptr<T>* p, shared_ptr<T> r, memory_order) {
+    return std::atomic_exchange(p, r);
+}
+
+template<class T>
+bool atomic_compare_exchange_strong(shared_ptr<T>* p, shared_ptr<T>* v, shared_ptr<T> w) {
+    shared_ptr<T> temp;
+    detail::sp_mut& m = detail::get_sp_mut(p);
+    m.lock();
+    if (p->owner_equivalent(*v)) {
+        std::swap(temp, *p);
+        *p = w;
+        m.unlock();
+        return true;
+    }
+    std::swap(temp, *v);
+    *v = *p;
+    m.unlock();
+    return false;
+}
+
+template<class T>
+inline bool atomic_compare_exchange_weak(shared_ptr<T>* p, shared_ptr<T>* v, shared_ptr<T> w) {
+    return std::atomic_compare_exchange_strong(p, v, w);
+}
+
+template<class T>
+inline bool atomic_compare_exchange_strong_explicit(
+    shared_ptr<T>* p, shared_ptr<T>* v, shared_ptr<T> w, memory_order, memory_order) {
+    return std::atomic_compare_exchange_strong(p, v, w);
+}
+
+template<class T>
+inline bool atomic_compare_exchange_weak_explicit(
+    shared_ptr<T>* p, shared_ptr<T>* v, shared_ptr<T> w, memory_order, memory_order) {
+    return std::atomic_compare_exchange_weak(p, v, w);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2036,10 +2668,38 @@ struct hash<shared_ptr<T>> {
     }
 };
 
+// Poisoned-hash support, ported from libc++ __functional/hash.h
+// (__check_hash_requirements / __has_enabled_hash / __enable_hash_helper):
+// the hash<unique_ptr> specialisation is itself disabled (so the deleted
+// primary hash template is picked) unless hash<pointer> is enabled.
+namespace detail {
+
+template<class Key, class Hash = hash<Key>>
+inline constexpr bool check_hash_requirements_v =
+    is_copy_constructible_v<Hash> && is_move_constructible_v<Hash> &&
+    is_invocable_r_v<size_t, Hash, const Key&>;
+
+template<class Key, class Hash = hash<Key>>
+inline constexpr bool has_enabled_hash_v =
+    check_hash_requirements_v<Key, Hash> && is_default_constructible_v<Hash>;
+
+template<class Type, class>
+using enable_hash_helper_imp = Type;
+
+template<class Type, class... Keys>
+using enable_hash_helper =
+    enable_hash_helper_imp<Type, enable_if_t<(has_enabled_hash_v<Keys> && ...)>>;
+
+} // namespace detail
+
+// NOT noexcept: the user's hash<pointer> may throw
+// (libc++ __memory/unique_ptr.h hash<unique_ptr> is not noexcept either).
 template<class T, class D>
-struct hash<unique_ptr<T, D>> {
-    [[nodiscard]] size_t operator()(const unique_ptr<T, D>& p) const noexcept {
-        return hash<typename unique_ptr<T, D>::pointer>()(p.get());
+struct hash<detail::enable_hash_helper<
+    unique_ptr<T, D>, typename unique_ptr<T, D>::pointer>> {
+    [[nodiscard]] size_t operator()(const unique_ptr<T, D>& p) const {
+        using pointer = typename unique_ptr<T, D>::pointer;
+        return hash<pointer>()(p.get());
     }
 };
 
