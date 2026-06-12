@@ -14,15 +14,19 @@
 //   __functional/function.h            -> function<R(Args...)>
 //   __functional/perfect_forward.h     -> detail::perfect_forward_impl (internal)
 //
+//   __functional/default_searcher.h    -> default_searcher
+//   __functional/boyer_moore_searcher.h-> boyer_moore_searcher, boyer_moore_horspool_searcher
+//   __functional/unary_negate.h        -> unary_negate, not1 (C++20-removed; provided)
+//   __functional/binary_negate.h       -> binary_negate, not2 (C++20-removed; provided)
+//
 // OMITTED (noted):
-//   default_searcher, boyer_moore_searcher, boyer_moore_horspool_searcher
-//     — heavy optional components; omitted per task spec.
 //   function::target() / function::target_type()
 //     — require typeid (RTTI); omitted under -fno-rtti (noted in comment below).
 //
 // Empty-function call behaviour (no exceptions):
 //   Calling an empty std::function uses __builtin_trap() instead of
-//   throwing bad_function_call. bad_function_call is still defined as a type.
+//   throwing bad_function_call. bad_function_call is still defined as a type
+//   (derived from std::exception, with what()).
 //
 // reference_wrapper INVOKE bullets:
 //   The type_traits INVOKE machinery only had bullets 1,3,4,6,7.
@@ -34,6 +38,8 @@
 #include <type_traits>
 #include <utility>
 #include <tuple>
+#include <exception>        // exception (base of bad_function_call)
+#include <iterator>         // iterator_traits (searchers)
 #include <new>              // placement new
 #include <bits/pointer.h>   // addressof
 #include <bits/identity.h>  // identity (do NOT redefine)
@@ -68,7 +74,7 @@ public:
         noexcept(noexcept(fun(declval<U>())))
     {
         type& ref = static_cast<U&&>(u);
-        ptr_ = addressof(ref);
+        ptr_ = std::addressof(ref);
     }
 
     // Access
@@ -84,7 +90,7 @@ public:
         // Uses the public std::invoke defined below (forward declaration OK
         // because invoke is defined after reference_wrapper in this file).
         // We call detail::invoke_impl directly to avoid circular dependency.
-        return detail::invoke_impl(get(), forward<ArgTypes>(args)...);
+        return detail::invoke_impl(get(), std::forward<ArgTypes>(args)...);
     }
 };
 
@@ -151,7 +157,7 @@ constexpr invoke_result_t<Fn, Args...>
 invoke(Fn&& f, Args&&... args)
     noexcept(is_nothrow_invocable_v<Fn, Args...>)
 {
-    return detail::invoke_impl(forward<Fn>(f), forward<Args>(args)...);
+    return detail::invoke_impl(std::forward<Fn>(f), std::forward<Args>(args)...);
 }
 
 // invoke_r (C++23, but included since we're targeting C++20+)
@@ -162,9 +168,9 @@ invoke_r(Fn&& f, Args&&... args)
     noexcept(is_nothrow_invocable_r_v<Result, Fn, Args...>)
 {
     if constexpr (is_void_v<Result>) {
-        static_cast<void>(invoke(forward<Fn>(f), forward<Args>(args)...));
+        static_cast<void>(std::invoke(std::forward<Fn>(f), std::forward<Args>(args)...));
     } else {
-        return invoke(forward<Fn>(f), forward<Args>(args)...);
+        return std::invoke(std::forward<Fn>(f), std::forward<Args>(args)...);
     }
 }
 
@@ -189,7 +195,7 @@ public:
     operator()(ArgTypes&&... args) const
         noexcept(is_nothrow_invocable_v<const Tp&, ArgTypes...>)
     {
-        return detail::invoke_impl(f_, forward<ArgTypes>(args)...);
+        return detail::invoke_impl(f_, std::forward<ArgTypes>(args)...);
     }
 };
 
@@ -203,89 +209,111 @@ mem_fn(Rp Tp::* pm) noexcept {
 // Arithmetic functors: plus, minus, multiplies, divides, modulus, negate
 // (from libc++ __functional/operations.h)
 // Includes transparent void specialisations.
+//
+// The typed (non-void) functors carry the C++17-deprecated argument_type /
+// result_type typedefs: the suite runs with libc++'s
+// _LIBCPP_ENABLE_CXX20_REMOVED_BINDER_TYPEDEFS semantics, where each functor
+// inherits __unary_function / __binary_function (here: detail::*_function_base).
 //===----------------------------------------------------------------------===//
 
+namespace detail {
+
+template<class Arg, class Result>
+struct unary_function_base {
+    using argument_type = Arg;
+    using result_type   = Result;
+};
+
+template<class Arg1, class Arg2, class Result>
+struct binary_function_base {
+    using first_argument_type  = Arg1;
+    using second_argument_type = Arg2;
+    using result_type          = Result;
+};
+
+} // namespace detail
+
 template<class T = void>
-struct plus {
+struct plus : detail::binary_function_base<T, T, T> {
     constexpr T operator()(const T& x, const T& y) const { return x + y; }
 };
 template<>
 struct plus<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) + forward<T2>(u)))
-        -> decltype(forward<T1>(t) + forward<T2>(u))
-    { return forward<T1>(t) + forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) + std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) + std::forward<T2>(u))
+    { return std::forward<T1>(t) + std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct minus {
+struct minus : detail::binary_function_base<T, T, T> {
     constexpr T operator()(const T& x, const T& y) const { return x - y; }
 };
 template<>
 struct minus<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) - forward<T2>(u)))
-        -> decltype(forward<T1>(t) - forward<T2>(u))
-    { return forward<T1>(t) - forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) - std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) - std::forward<T2>(u))
+    { return std::forward<T1>(t) - std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct multiplies {
+struct multiplies : detail::binary_function_base<T, T, T> {
     constexpr T operator()(const T& x, const T& y) const { return x * y; }
 };
 template<>
 struct multiplies<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) * forward<T2>(u)))
-        -> decltype(forward<T1>(t) * forward<T2>(u))
-    { return forward<T1>(t) * forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) * std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) * std::forward<T2>(u))
+    { return std::forward<T1>(t) * std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct divides {
+struct divides : detail::binary_function_base<T, T, T> {
     constexpr T operator()(const T& x, const T& y) const { return x / y; }
 };
 template<>
 struct divides<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) / forward<T2>(u)))
-        -> decltype(forward<T1>(t) / forward<T2>(u))
-    { return forward<T1>(t) / forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) / std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) / std::forward<T2>(u))
+    { return std::forward<T1>(t) / std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct modulus {
+struct modulus : detail::binary_function_base<T, T, T> {
     constexpr T operator()(const T& x, const T& y) const { return x % y; }
 };
 template<>
 struct modulus<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) % forward<T2>(u)))
-        -> decltype(forward<T1>(t) % forward<T2>(u))
-    { return forward<T1>(t) % forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) % std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) % std::forward<T2>(u))
+    { return std::forward<T1>(t) % std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct negate {
+struct negate : detail::unary_function_base<T, T> {
     constexpr T operator()(const T& x) const { return -x; }
 };
 template<>
 struct negate<void> {
     template<class T>
     constexpr auto operator()(T&& x) const
-        noexcept(noexcept(-forward<T>(x)))
-        -> decltype(-forward<T>(x))
-    { return -forward<T>(x); }
+        noexcept(noexcept(-std::forward<T>(x)))
+        -> decltype(-std::forward<T>(x))
+    { return -std::forward<T>(x); }
     using is_transparent = void;
 };
 
@@ -296,86 +324,86 @@ struct negate<void> {
 //===----------------------------------------------------------------------===//
 
 template<class T = void>
-struct equal_to {
+struct equal_to : detail::binary_function_base<T, T, bool> {
     constexpr bool operator()(const T& x, const T& y) const { return x == y; }
 };
 template<>
 struct equal_to<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) == forward<T2>(u)))
-        -> decltype(forward<T1>(t) == forward<T2>(u))
-    { return forward<T1>(t) == forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) == std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) == std::forward<T2>(u))
+    { return std::forward<T1>(t) == std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct not_equal_to {
+struct not_equal_to : detail::binary_function_base<T, T, bool> {
     constexpr bool operator()(const T& x, const T& y) const { return x != y; }
 };
 template<>
 struct not_equal_to<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) != forward<T2>(u)))
-        -> decltype(forward<T1>(t) != forward<T2>(u))
-    { return forward<T1>(t) != forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) != std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) != std::forward<T2>(u))
+    { return std::forward<T1>(t) != std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct less {
+struct less : detail::binary_function_base<T, T, bool> {
     constexpr bool operator()(const T& x, const T& y) const { return x < y; }
 };
 template<>
 struct less<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) < forward<T2>(u)))
-        -> decltype(forward<T1>(t) < forward<T2>(u))
-    { return forward<T1>(t) < forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) < std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) < std::forward<T2>(u))
+    { return std::forward<T1>(t) < std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct greater {
+struct greater : detail::binary_function_base<T, T, bool> {
     constexpr bool operator()(const T& x, const T& y) const { return x > y; }
 };
 template<>
 struct greater<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) > forward<T2>(u)))
-        -> decltype(forward<T1>(t) > forward<T2>(u))
-    { return forward<T1>(t) > forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) > std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) > std::forward<T2>(u))
+    { return std::forward<T1>(t) > std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct less_equal {
+struct less_equal : detail::binary_function_base<T, T, bool> {
     constexpr bool operator()(const T& x, const T& y) const { return x <= y; }
 };
 template<>
 struct less_equal<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) <= forward<T2>(u)))
-        -> decltype(forward<T1>(t) <= forward<T2>(u))
-    { return forward<T1>(t) <= forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) <= std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) <= std::forward<T2>(u))
+    { return std::forward<T1>(t) <= std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct greater_equal {
+struct greater_equal : detail::binary_function_base<T, T, bool> {
     constexpr bool operator()(const T& x, const T& y) const { return x >= y; }
 };
 template<>
 struct greater_equal<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) >= forward<T2>(u)))
-        -> decltype(forward<T1>(t) >= forward<T2>(u))
-    { return forward<T1>(t) >= forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) >= std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) >= std::forward<T2>(u))
+    { return std::forward<T1>(t) >= std::forward<T2>(u); }
     using is_transparent = void;
 };
 
@@ -384,44 +412,44 @@ struct greater_equal<void> {
 //===----------------------------------------------------------------------===//
 
 template<class T = void>
-struct logical_and {
+struct logical_and : detail::binary_function_base<T, T, bool> {
     constexpr bool operator()(const T& x, const T& y) const { return x && y; }
 };
 template<>
 struct logical_and<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) && forward<T2>(u)))
-        -> decltype(forward<T1>(t) && forward<T2>(u))
-    { return forward<T1>(t) && forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) && std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) && std::forward<T2>(u))
+    { return std::forward<T1>(t) && std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct logical_or {
+struct logical_or : detail::binary_function_base<T, T, bool> {
     constexpr bool operator()(const T& x, const T& y) const { return x || y; }
 };
 template<>
 struct logical_or<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) || forward<T2>(u)))
-        -> decltype(forward<T1>(t) || forward<T2>(u))
-    { return forward<T1>(t) || forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) || std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) || std::forward<T2>(u))
+    { return std::forward<T1>(t) || std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct logical_not {
+struct logical_not : detail::unary_function_base<T, bool> {
     constexpr bool operator()(const T& x) const { return !x; }
 };
 template<>
 struct logical_not<void> {
     template<class T>
     constexpr auto operator()(T&& x) const
-        noexcept(noexcept(!forward<T>(x)))
-        -> decltype(!forward<T>(x))
-    { return !forward<T>(x); }
+        noexcept(noexcept(!std::forward<T>(x)))
+        -> decltype(!std::forward<T>(x))
+    { return !std::forward<T>(x); }
     using is_transparent = void;
 };
 
@@ -430,58 +458,58 @@ struct logical_not<void> {
 //===----------------------------------------------------------------------===//
 
 template<class T = void>
-struct bit_and {
+struct bit_and : detail::binary_function_base<T, T, T> {
     constexpr T operator()(const T& x, const T& y) const { return x & y; }
 };
 template<>
 struct bit_and<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) & forward<T2>(u)))
-        -> decltype(forward<T1>(t) & forward<T2>(u))
-    { return forward<T1>(t) & forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) & std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) & std::forward<T2>(u))
+    { return std::forward<T1>(t) & std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct bit_or {
+struct bit_or : detail::binary_function_base<T, T, T> {
     constexpr T operator()(const T& x, const T& y) const { return x | y; }
 };
 template<>
 struct bit_or<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) | forward<T2>(u)))
-        -> decltype(forward<T1>(t) | forward<T2>(u))
-    { return forward<T1>(t) | forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) | std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) | std::forward<T2>(u))
+    { return std::forward<T1>(t) | std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct bit_xor {
+struct bit_xor : detail::binary_function_base<T, T, T> {
     constexpr T operator()(const T& x, const T& y) const { return x ^ y; }
 };
 template<>
 struct bit_xor<void> {
     template<class T1, class T2>
     constexpr auto operator()(T1&& t, T2&& u) const
-        noexcept(noexcept(forward<T1>(t) ^ forward<T2>(u)))
-        -> decltype(forward<T1>(t) ^ forward<T2>(u))
-    { return forward<T1>(t) ^ forward<T2>(u); }
+        noexcept(noexcept(std::forward<T1>(t) ^ std::forward<T2>(u)))
+        -> decltype(std::forward<T1>(t) ^ std::forward<T2>(u))
+    { return std::forward<T1>(t) ^ std::forward<T2>(u); }
     using is_transparent = void;
 };
 
 template<class T = void>
-struct bit_not {
+struct bit_not : detail::unary_function_base<T, T> {
     constexpr T operator()(const T& x) const { return ~x; }
 };
 template<>
 struct bit_not<void> {
     template<class T>
     constexpr auto operator()(T&& x) const
-        noexcept(noexcept(~forward<T>(x)))
-        -> decltype(~forward<T>(x))
-    { return ~forward<T>(x); }
+        noexcept(noexcept(~std::forward<T>(x)))
+        -> decltype(~std::forward<T>(x))
+    { return ~std::forward<T>(x); }
     using is_transparent = void;
 };
 
@@ -705,7 +733,7 @@ struct scalar_hash<T, 2> {
     size_t operator()(T v) const noexcept {
         union { T t; struct { size_t a; size_t b; } s; } u;
         u.t = v;
-        return hash_memory(addressof(u), sizeof(u));
+        return hash_memory(std::addressof(u), sizeof(u));
     }
 };
 
@@ -714,7 +742,7 @@ struct scalar_hash<T, 3> {
     size_t operator()(T v) const noexcept {
         union { T t; struct { size_t a; size_t b; size_t c; } s; } u;
         u.t = v;
-        return hash_memory(addressof(u), sizeof(u));
+        return hash_memory(std::addressof(u), sizeof(u));
     }
 };
 
@@ -723,13 +751,13 @@ struct scalar_hash<T, 4> {
     size_t operator()(T v) const noexcept {
         union { T t; struct { size_t a; size_t b; size_t c; size_t d; } s; } u;
         u.t = v;
-        return hash_memory(addressof(u), sizeof(u));
+        return hash_memory(std::addressof(u), sizeof(u));
     }
 };
 
 inline size_t hash_combine(size_t lhs, size_t rhs) noexcept {
     hash_pair_t p = { lhs, rhs };
-    return hash_memory(addressof(p), sizeof(p));
+    return hash_memory(std::addressof(p), sizeof(p));
 }
 
 } // namespace detail
@@ -748,7 +776,7 @@ struct hash<T*> {
     size_t operator()(T* v) const noexcept {
         union { T* t; size_t a; } u;
         u.t = v;
-        return detail::hash_memory(addressof(u), sizeof(u));
+        return detail::hash_memory(std::addressof(u), sizeof(u));
     }
 };
 
@@ -860,7 +888,7 @@ public:
     template<class... Args>
         requires is_constructible_v<tuple<BoundArgs...>, Args&&...>
     explicit constexpr perfect_forward_impl(Args&&... bound_args)
-        : bound_args_(forward<Args>(bound_args)...) {}
+        : bound_args_(std::forward<Args>(bound_args)...) {}
 
     perfect_forward_impl(const perfect_forward_impl&) = default;
     perfect_forward_impl(perfect_forward_impl&&)      = default;
@@ -871,9 +899,9 @@ public:
     template<class... Args>
         requires is_invocable_v<Op, BoundArgs&..., Args...>
     constexpr auto operator()(Args&&... args) &
-        noexcept(noexcept(Op()(get<Idx>(bound_args_)..., forward<Args>(args)...)))
-        -> decltype(Op()(get<Idx>(bound_args_)..., forward<Args>(args)...))
-    { return Op()(get<Idx>(bound_args_)..., forward<Args>(args)...); }
+        noexcept(noexcept(Op()(std::get<Idx>(bound_args_)..., std::forward<Args>(args)...)))
+        -> decltype(Op()(std::get<Idx>(bound_args_)..., std::forward<Args>(args)...))
+    { return Op()(std::get<Idx>(bound_args_)..., std::forward<Args>(args)...); }
 
     template<class... Args>
         requires (!is_invocable_v<Op, BoundArgs&..., Args...>)
@@ -883,9 +911,9 @@ public:
     template<class... Args>
         requires is_invocable_v<Op, const BoundArgs&..., Args...>
     constexpr auto operator()(Args&&... args) const&
-        noexcept(noexcept(Op()(get<Idx>(bound_args_)..., forward<Args>(args)...)))
-        -> decltype(Op()(get<Idx>(bound_args_)..., forward<Args>(args)...))
-    { return Op()(get<Idx>(bound_args_)..., forward<Args>(args)...); }
+        noexcept(noexcept(Op()(std::get<Idx>(bound_args_)..., std::forward<Args>(args)...)))
+        -> decltype(Op()(std::get<Idx>(bound_args_)..., std::forward<Args>(args)...))
+    { return Op()(std::get<Idx>(bound_args_)..., std::forward<Args>(args)...); }
 
     template<class... Args>
         requires (!is_invocable_v<Op, const BoundArgs&..., Args...>)
@@ -895,9 +923,9 @@ public:
     template<class... Args>
         requires is_invocable_v<Op, BoundArgs..., Args...>
     constexpr auto operator()(Args&&... args) &&
-        noexcept(noexcept(Op()(get<Idx>(move(bound_args_))..., forward<Args>(args)...)))
-        -> decltype(Op()(get<Idx>(move(bound_args_))..., forward<Args>(args)...))
-    { return Op()(get<Idx>(move(bound_args_))..., forward<Args>(args)...); }
+        noexcept(noexcept(Op()(std::get<Idx>(std::move(bound_args_))..., std::forward<Args>(args)...)))
+        -> decltype(Op()(std::get<Idx>(std::move(bound_args_))..., std::forward<Args>(args)...))
+    { return Op()(std::get<Idx>(std::move(bound_args_))..., std::forward<Args>(args)...); }
 
     template<class... Args>
         requires (!is_invocable_v<Op, BoundArgs..., Args...>)
@@ -907,9 +935,9 @@ public:
     template<class... Args>
         requires is_invocable_v<Op, const BoundArgs..., Args...>
     constexpr auto operator()(Args&&... args) const&&
-        noexcept(noexcept(Op()(get<Idx>(move(bound_args_))..., forward<Args>(args)...)))
-        -> decltype(Op()(get<Idx>(move(bound_args_))..., forward<Args>(args)...))
-    { return Op()(get<Idx>(move(bound_args_))..., forward<Args>(args)...); }
+        noexcept(noexcept(Op()(std::get<Idx>(std::move(bound_args_))..., std::forward<Args>(args)...)))
+        -> decltype(Op()(std::get<Idx>(std::move(bound_args_))..., std::forward<Args>(args)...))
+    { return Op()(std::get<Idx>(std::move(bound_args_))..., std::forward<Args>(args)...); }
 
     template<class... Args>
         requires (!is_invocable_v<Op, const BoundArgs..., Args...>)
@@ -921,14 +949,14 @@ using perfect_forward = perfect_forward_impl<Op, index_sequence_for<Args...>, Ar
 
 } // namespace detail
 
-// not_fn_op: calls !invoke(fn, args...)
+// not_fn_op: calls !std::invoke(fn, args...)
 namespace detail {
 struct not_fn_op {
     template<class... Args>
     constexpr auto operator()(Args&&... args) const
-        noexcept(noexcept(!invoke(forward<Args>(args)...)))
-        -> decltype(!invoke(forward<Args>(args)...))
-    { return !invoke(forward<Args>(args)...); }
+        noexcept(noexcept(!std::invoke(std::forward<Args>(args)...)))
+        -> decltype(!std::invoke(std::forward<Args>(args)...))
+    { return !std::invoke(std::forward<Args>(args)...); }
 };
 } // namespace detail
 
@@ -940,7 +968,7 @@ struct not_fn_t : detail::perfect_forward<detail::not_fn_op, Fn> {
 template<class Fn>
     requires is_constructible_v<decay_t<Fn>, Fn> && is_move_constructible_v<decay_t<Fn>>
 constexpr auto not_fn(Fn&& f) {
-    return not_fn_t<decay_t<Fn>>(forward<Fn>(f));
+    return not_fn_t<decay_t<Fn>>(std::forward<Fn>(f));
 }
 
 //===----------------------------------------------------------------------===//
@@ -952,9 +980,9 @@ namespace detail {
 struct bind_front_op {
     template<class... Args>
     constexpr auto operator()(Args&&... args) const
-        noexcept(noexcept(invoke(forward<Args>(args)...)))
-        -> decltype(invoke(forward<Args>(args)...))
-    { return invoke(forward<Args>(args)...); }
+        noexcept(noexcept(std::invoke(std::forward<Args>(args)...)))
+        -> decltype(std::invoke(std::forward<Args>(args)...))
+    { return std::invoke(std::forward<Args>(args)...); }
 };
 } // namespace detail
 
@@ -970,7 +998,7 @@ template<class Fn, class... Args>
              (is_move_constructible_v<decay_t<Args>> && ...)
 [[nodiscard]] constexpr auto bind_front(Fn&& f, Args&&... args) {
     return bind_front_t<decay_t<Fn>, decay_t<Args>...>(
-        forward<Fn>(f), forward<Args>(args)...);
+        std::forward<Fn>(f), std::forward<Args>(args)...);
 }
 
 //===----------------------------------------------------------------------===//
@@ -987,16 +1015,16 @@ template<size_t NBound, size_t... Ip>
 struct bind_back_op<NBound, index_sequence<Ip...>> {
     template<class Fn2, class BoundArgs, class... Args>
     constexpr auto operator()(Fn2&& f, BoundArgs&& bound_args, Args&&... args) const
-        noexcept(noexcept(invoke(forward<Fn2>(f),
-                                  forward<Args>(args)...,
-                                  get<Ip>(forward<BoundArgs>(bound_args))...)))
-        -> decltype(invoke(forward<Fn2>(f),
-                            forward<Args>(args)...,
-                            get<Ip>(forward<BoundArgs>(bound_args))...))
+        noexcept(noexcept(std::invoke(std::forward<Fn2>(f),
+                                  std::forward<Args>(args)...,
+                                  std::get<Ip>(std::forward<BoundArgs>(bound_args))...)))
+        -> decltype(std::invoke(std::forward<Fn2>(f),
+                            std::forward<Args>(args)...,
+                            std::get<Ip>(std::forward<BoundArgs>(bound_args))...))
     {
-        return invoke(forward<Fn2>(f),
-                      forward<Args>(args)...,
-                      get<Ip>(forward<BoundArgs>(bound_args))...);
+        return std::invoke(std::forward<Fn2>(f),
+                      std::forward<Args>(args)...,
+                      std::get<Ip>(std::forward<BoundArgs>(bound_args))...);
     }
 };
 
@@ -1017,7 +1045,7 @@ template<class Fn, class... Args>
              (is_move_constructible_v<decay_t<Args>> && ...)
 [[nodiscard]] constexpr auto bind_back(Fn&& f, Args&&... args) {
     return bind_back_t<decay_t<Fn>, tuple<decay_t<Args>...>>(
-        forward<Fn>(f), forward_as_tuple(forward<Args>(args)...));
+        std::forward<Fn>(f), forward_as_tuple(std::forward<Args>(args)...));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1088,7 +1116,7 @@ template<class Ti, class... Uj>
 constexpr invoke_result_t<Ti&, Uj...>
 mu_impl(Ti& ti, tuple<Uj...>& uj) {
     return [&]<size_t... Indices>(index_sequence<Indices...>) -> invoke_result_t<Ti&, Uj...> {
-        return ti(forward<Uj>(get<Indices>(uj))...);
+        return ti(std::forward<Uj>(std::get<Indices>(uj))...);
     }(index_sequence_for<Uj...>{});
 }
 
@@ -1099,7 +1127,7 @@ constexpr auto mu_impl(Ti&, Uj& uj)
     -> tuple_element_t<is_placeholder_v<Ti> - 1, Uj>&&
 {
     constexpr size_t idx = is_placeholder_v<Ti> - 1;
-    return forward<tuple_element_t<idx, Uj>>(get<idx>(uj));
+    return std::forward<tuple_element_t<idx, Uj>>(std::get<idx>(uj));
 }
 
 // Case 4: plain value -> return lvalue ref
@@ -1123,24 +1151,34 @@ namespace detail {
         using type = T&;
     };
 
-    // bind_expression case
+    // bind_expression case.  Lazy, like libc++'s __mu_return_invokable: when
+    // the nested bind expression is not invocable with these args, yield nat
+    // instead of hard-erroring inside invoke_result_t (the const-callable
+    // probe of an outer bind must be able to fail softly — PR16343).
+    struct mu_return_nat { using type = nat; };
+
     template<class Ti, class... Uj>
         requires is_bind_expression_v<Ti>
     struct mu_return<Ti, tuple<Uj...>> {
-        using type = invoke_result_t<Ti&, Uj...>;
+        using type = typename conditional_t<is_invocable_v<Ti&, Uj...>,
+                                            invoke_result<Ti&, Uj...>,
+                                            mu_return_nat>::type;
     };
 
-    // placeholder case
+    // placeholder case (only when the placeholder index fits the call args,
+    // mirroring libc++'s __mu_return dispatch)
     template<class Ti, class TupleUj>
-        requires (0 < is_placeholder_v<Ti>)
+        requires (0 < is_placeholder_v<Ti> &&
+                  is_placeholder_v<Ti> <= tuple_size_v<TupleUj>)
     struct mu_return<Ti, TupleUj> {
         using type = tuple_element_t<is_placeholder_v<Ti> - 1, TupleUj>&&;
     };
 
-    // plain value case
+    // plain value case (also covers out-of-range placeholders, like libc++)
     template<class Ti, class TupleUj>
         requires (!is_bind_expression_v<Ti> &&
-                  is_placeholder_v<Ti> == 0 &&
+                  !(0 < is_placeholder_v<Ti> &&
+                    is_placeholder_v<Ti> <= tuple_size_v<TupleUj>) &&
                   !is_ref_wrapper_v<Ti>)
     struct mu_return<Ti, TupleUj> {
         using type = Ti&;
@@ -1188,7 +1226,7 @@ constexpr typename detail::bind_return<Fp, BoundArgs, Args>::type
 apply_functor_impl(Fp& f, BoundArgs& bound_args,
                    index_sequence<Indx...>, Args&& args) {
     return detail::invoke_impl(f,
-        mu_impl(get<Indx>(bound_args), args)...);
+        std::mu_impl(std::get<Indx>(bound_args), args)...);
 }
 
 // bind_impl (internal class)
@@ -1207,22 +1245,22 @@ public:
         requires is_constructible_v<Fd, Gp> &&
                  (!is_same_v<remove_reference_t<Gp>, bind_impl>)
     explicit constexpr bind_impl(Gp&& f, BA&&... bound_args)
-        : f_(forward<Gp>(f)), bound_args_(forward<BA>(bound_args)...) {}
+        : f_(std::forward<Gp>(f)), bound_args_(std::forward<BA>(bound_args)...) {}
 
     template<class... Args>
     constexpr typename detail::bind_return<Fd, Td, tuple<Args&&...>>::type
     operator()(Args&&... args) {
-        return apply_functor_impl(f_, bound_args_,
+        return std::apply_functor_impl(f_, bound_args_,
             index_sequence_for<BoundArgs...>(),
-            tuple<Args&&...>(forward<Args>(args)...));
+            tuple<Args&&...>(std::forward<Args>(args)...));
     }
 
     template<class... Args>
     constexpr typename detail::bind_return<const Fd, const Td, tuple<Args&&...>>::type
     operator()(Args&&... args) const {
-        return apply_functor_impl(f_, bound_args_,
+        return std::apply_functor_impl(f_, bound_args_,
             index_sequence_for<BoundArgs...>(),
-            tuple<Args&&...>(forward<Args>(args)...));
+            tuple<Args&&...>(std::forward<Args>(args)...));
     }
 };
 
@@ -1243,20 +1281,20 @@ public:
         requires is_constructible_v<Fd, Gp> &&
                  (!is_same_v<remove_reference_t<Gp>, bind_r_impl>)
     explicit constexpr bind_r_impl(Gp&& f, BA&&... bound_args)
-        : base(forward<Gp>(f), forward<BA>(bound_args)...) {}
+        : base(std::forward<Gp>(f), std::forward<BA>(bound_args)...) {}
 
     template<class... Args>
         requires (is_convertible_v<typename detail::bind_return<Fd, Td, tuple<Args&&...>>::type, Rp>
                   || is_void_v<Rp>)
     constexpr Rp operator()(Args&&... args) {
-        return invoke_r<Rp>(static_cast<base&>(*this), forward<Args>(args)...);
+        return std::invoke_r<Rp>(static_cast<base&>(*this), std::forward<Args>(args)...);
     }
 
     template<class... Args>
         requires (is_convertible_v<typename detail::bind_return<const Fd, const Td, tuple<Args&&...>>::type, Rp>
                   || is_void_v<Rp>)
     constexpr Rp operator()(Args&&... args) const {
-        return invoke_r<Rp>(static_cast<const base&>(*this), forward<Args>(args)...);
+        return std::invoke_r<Rp>(static_cast<const base&>(*this), std::forward<Args>(args)...);
     }
 };
 
@@ -1267,14 +1305,14 @@ struct is_bind_expression<bind_r_impl<Rp, Fp, BoundArgs...>> : true_type {};
 template<class Fp, class... BoundArgs>
 [[nodiscard]] constexpr bind_impl<Fp, BoundArgs...>
 bind(Fp&& f, BoundArgs&&... bound_args) {
-    return bind_impl<Fp, BoundArgs...>(forward<Fp>(f), forward<BoundArgs>(bound_args)...);
+    return bind_impl<Fp, BoundArgs...>(std::forward<Fp>(f), std::forward<BoundArgs>(bound_args)...);
 }
 
 // bind (typed result)
 template<class Rp, class Fp, class... BoundArgs>
 [[nodiscard]] constexpr bind_r_impl<Rp, Fp, BoundArgs...>
 bind(Fp&& f, BoundArgs&&... bound_args) {
-    return bind_r_impl<Rp, Fp, BoundArgs...>(forward<Fp>(f), forward<BoundArgs>(bound_args)...);
+    return bind_r_impl<Rp, Fp, BoundArgs...>(std::forward<Fp>(f), std::forward<BoundArgs>(bound_args)...);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1293,9 +1331,12 @@ bind(Fp&& f, BoundArgs&&... bound_args) {
 //   comparisons / static_assert. No exception hierarchy (fno-exceptions).
 //===----------------------------------------------------------------------===//
 
-// bad_function_call: a sentinel type; under -fno-exceptions this is never
-// thrown but the type is defined for ABI completeness.
-struct bad_function_call {};
+// bad_function_call: under -fno-exceptions this is never thrown, but the
+// type keeps its standard shape (derives from std::exception, what()).
+class bad_function_call : public exception {
+public:
+    const char* what() const noexcept override { return "std::bad_function_call"; }
+};
 
 // Forward declaration
 template<class Fp>
@@ -1341,7 +1382,7 @@ class fn_func<Fp, Rp(ArgTypes...)> : public fn_base<Rp(ArgTypes...)> {
     Fp func_;
 
 public:
-    explicit fn_func(Fp&& f) : func_(move(f)) {}
+    explicit fn_func(Fp&& f) : func_(std::move(f)) {}
     explicit fn_func(const Fp& f) : func_(f) {}
 
     fn_base<Rp(ArgTypes...)>* clone() const override {
@@ -1353,7 +1394,7 @@ public:
     void destroy() noexcept override { func_.~Fp(); }
     void destroy_deallocate() noexcept override { delete this; }
     Rp operator()(ArgTypes&&... args) override {
-        return invoke_r<Rp>(func_, forward<ArgTypes>(args)...);
+        return std::invoke_r<Rp>(func_, std::forward<ArgTypes>(args)...);
     }
 };
 
@@ -1379,13 +1420,13 @@ public:
         requires (!is_same_v<decay_t<Fp>, value_func>)
     explicit value_func(Fp&& f) : f_(nullptr) {
         using Fun = fn_func<decay_t<Fp>, Rp(ArgTypes...)>;
-        if (fn_is_null(f)) return;
+        if (detail::fn_is_null(f)) return;
         if (sizeof(Fun) <= sizeof(buf_) &&
             is_nothrow_copy_constructible_v<decay_t<Fp>>)
         {
-            f_ = ::new (static_cast<void*>(buf_)) Fun(move(f));
+            f_ = ::new (static_cast<void*>(buf_)) Fun(std::move(f));
         } else {
-            f_ = new Fun(move(f));
+            f_ = new Fun(std::move(f));
         }
     }
 
@@ -1446,11 +1487,11 @@ public:
     Rp operator()(ArgTypes&&... args) const {
         if (f_ == nullptr)
             __builtin_trap(); // empty function call: __builtin_trap instead of throw
-        return (*f_)(forward<ArgTypes>(args)...);
+        return (*f_)(std::forward<ArgTypes>(args)...);
     }
 
     void swap(value_func& other) noexcept {
-        if (addressof(other) == this) return;
+        if (std::addressof(other) == this) return;
         bool this_inline = (reinterpret_cast<void*>(f_) == buf_);
         bool other_inline = (reinterpret_cast<void*>(other.f_) == other.buf_);
 
@@ -1504,10 +1545,10 @@ public:
     function() noexcept {}
     function(nullptr_t) noexcept {}
     function(const function& other) : f_(other.f_) {}
-    function(function&& other) noexcept : f_(move(other.f_)) {}
+    function(function&& other) noexcept : f_(std::move(other.f_)) {}
 
     template<class Fp, class = enable_if_callable<Fp>>
-    function(Fp f) : f_(move(f)) {}
+    function(Fp f) : f_(std::move(f)) {}
 
     // Assignment
     function& operator=(const function& other) {
@@ -1515,7 +1556,7 @@ public:
         return *this;
     }
     function& operator=(function&& other) noexcept {
-        f_ = move(other.f_);
+        f_ = std::move(other.f_);
         return *this;
     }
     function& operator=(nullptr_t) noexcept {
@@ -1524,7 +1565,7 @@ public:
     }
     template<class Fp, class = enable_if_callable<decay_t<Fp>>>
     function& operator=(Fp&& f) {
-        function(forward<Fp>(f)).swap(*this);
+        function(std::forward<Fp>(f)).swap(*this);
         return *this;
     }
 
@@ -1542,7 +1583,7 @@ public:
 
     // Invocation
     Rp operator()(ArgTypes... args) const {
-        return f_(forward<ArgTypes>(args)...);
+        return f_(std::forward<ArgTypes>(args)...);
     }
 
     // target() and target_type() are OMITTED:
@@ -1551,8 +1592,56 @@ public:
 };
 
 // Deduction guides (C++17)
+// (from libc++ __functional/function.h + __type_traits/strip_signature.h)
+namespace detail {
+
+template<class Fp>
+struct strip_signature;
+
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...)> { using type = Rp(Ap...); };
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) const> { using type = Rp(Ap...); };
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) volatile> { using type = Rp(Ap...); };
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) const volatile> { using type = Rp(Ap...); };
+
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) &> { using type = Rp(Ap...); };
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) const &> { using type = Rp(Ap...); };
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) volatile &> { using type = Rp(Ap...); };
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) const volatile &> { using type = Rp(Ap...); };
+
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) noexcept> { using type = Rp(Ap...); };
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) const noexcept> { using type = Rp(Ap...); };
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) volatile noexcept> { using type = Rp(Ap...); };
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) const volatile noexcept> { using type = Rp(Ap...); };
+
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) & noexcept> { using type = Rp(Ap...); };
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) const & noexcept> { using type = Rp(Ap...); };
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) volatile & noexcept> { using type = Rp(Ap...); };
+template<class Rp, class Gp, class... Ap>
+struct strip_signature<Rp (Gp::*)(Ap...) const volatile & noexcept> { using type = Rp(Ap...); };
+
+} // namespace detail
+
 template<class Rp, class... Ap>
 function(Rp (*)(Ap...)) -> function<Rp(Ap...)>;
+
+template<class Fp,
+         class Stripped = typename detail::strip_signature<decltype(&Fp::operator())>::type>
+function(Fp) -> function<Stripped>;
 
 // Comparison with nullptr
 template<class Rp, class... ArgTypes>
@@ -1565,5 +1654,401 @@ template<class Rp, class... ArgTypes>
 inline void swap(function<Rp(ArgTypes...)>& x, function<Rp(ArgTypes...)>& y) noexcept {
     return x.swap(y);
 }
+
+
+//===----------------------------------------------------------------------===//
+// Negators: unary_negate / binary_negate, not1 / not2
+// (from libc++ __functional/unary_negate.h, binary_negate.h)
+// C++17-deprecated / C++20-removed, but the suite runs with libc++'s
+// _LIBCPP_ENABLE_CXX20_REMOVED_NEGATORS semantics, so they are provided.
+//===----------------------------------------------------------------------===//
+
+template<class Predicate>
+class unary_negate
+    : public detail::unary_function_base<typename Predicate::argument_type, bool> {
+    Predicate pred_;
+
+public:
+    constexpr explicit unary_negate(const Predicate& pred) : pred_(pred) {}
+
+    constexpr bool operator()(const typename Predicate::argument_type& x) const {
+        return !pred_(x);
+    }
+};
+
+template<class Predicate>
+inline constexpr unary_negate<Predicate> not1(const Predicate& pred) {
+    return unary_negate<Predicate>(pred);
+}
+
+template<class Predicate>
+class binary_negate
+    : public detail::binary_function_base<typename Predicate::first_argument_type,
+                                          typename Predicate::second_argument_type,
+                                          bool> {
+    Predicate pred_;
+
+public:
+    constexpr explicit binary_negate(const Predicate& pred) : pred_(pred) {}
+
+    constexpr bool operator()(const typename Predicate::first_argument_type& x,
+                              const typename Predicate::second_argument_type& y) const {
+        return !pred_(x, y);
+    }
+};
+
+template<class Predicate>
+inline constexpr binary_negate<Predicate> not2(const Predicate& pred) {
+    return binary_negate<Predicate>(pred);
+}
+
+//===----------------------------------------------------------------------===//
+// Searchers: default_searcher, boyer_moore_searcher,
+//            boyer_moore_horspool_searcher
+// (from libc++ __functional/default_searcher.h, boyer_moore_searcher.h)
+//
+// Adaptation notes (containers):
+//   libc++ stores the BM tables in shared_ptr / unordered_map / vector.
+//   <functional> here cannot include <memory> or <unordered_map> (both include
+//   <functional> back), so the tables live in small internal helpers in
+//   std::detail (deep-copying dynamic arrays).  Behaviour matches: the
+//   searchers remain copyable and the skip table keeps last-insert-wins
+//   semantics like unordered_map operator[].
+//===----------------------------------------------------------------------===//
+
+// default_searcher
+template<class ForwardIterator, class BinaryPredicate = equal_to<>>
+class default_searcher {
+public:
+    constexpr default_searcher(ForwardIterator f, ForwardIterator l,
+                               BinaryPredicate p = BinaryPredicate())
+        : first_(f), last_(l), pred_(p) {}
+
+    template<class ForwardIterator2>
+    constexpr pair<ForwardIterator2, ForwardIterator2>
+    operator()(ForwardIterator2 f, ForwardIterator2 l) const {
+        // Inline forward search (libc++ delegates to std::__search_impl;
+        // <algorithm> includes <functional>, so the loop is replicated here).
+        while (true) {
+            ForwardIterator2 it = f;
+            ForwardIterator pit = first_;
+            while (true) {
+                if (pit == last_)
+                    return pair<ForwardIterator2, ForwardIterator2>(f, it);
+                if (it == l)
+                    return pair<ForwardIterator2, ForwardIterator2>(l, l);
+                if (!pred_(*it, *pit))
+                    break;
+                ++it;
+                ++pit;
+            }
+            ++f;
+        }
+    }
+
+private:
+    ForwardIterator first_;
+    ForwardIterator last_;
+    BinaryPredicate pred_;
+};
+
+namespace detail {
+
+// Deep-copying dynamic array (internal helper for the BM searchers).
+template<class T>
+class bm_dynarray {
+    T* data_ = nullptr;
+    size_t size_ = 0;
+
+public:
+    bm_dynarray() = default;
+    explicit bm_dynarray(size_t n) : data_(n ? new T[n]() : nullptr), size_(n) {}
+    bm_dynarray(const bm_dynarray& other)
+        : data_(other.size_ ? new T[other.size_]() : nullptr), size_(other.size_) {
+        for (size_t i = 0; i < size_; ++i)
+            data_[i] = other.data_[i];
+    }
+    bm_dynarray(bm_dynarray&& other) noexcept : data_(other.data_), size_(other.size_) {
+        other.data_ = nullptr;
+        other.size_ = 0;
+    }
+    bm_dynarray& operator=(bm_dynarray other) noexcept {
+        T* td = data_; data_ = other.data_; other.data_ = td;
+        size_t ts = size_; size_ = other.size_; other.size_ = ts;
+        return *this;
+    }
+    ~bm_dynarray() { delete[] data_; }
+
+    T& operator[](size_t i) noexcept { return data_[i]; }
+    const T& operator[](size_t i) const noexcept { return data_[i]; }
+    size_t size() const noexcept { return size_; }
+};
+
+// Skip table.  General case: association list with last-insert-wins
+// (replaces libc++'s unordered_map-based _BMSkipTable).
+template<class Key, class Value, class Hash, class BinaryPredicate, bool UseArray>
+class bm_skip_table {
+    Value default_value_;
+    BinaryPredicate pred_;
+    bm_dynarray<Key> keys_;
+    bm_dynarray<Value> values_;
+    size_t count_ = 0;
+
+public:
+    explicit bm_skip_table(size_t sz, Value default_value, Hash, BinaryPredicate pred)
+        : default_value_(default_value), pred_(pred), keys_(sz), values_(sz) {}
+
+    void insert(const Key& key, Value val) {
+        for (size_t i = 0; i < count_; ++i) {
+            if (pred_(keys_[i], key)) {
+                values_[i] = val;
+                return;
+            }
+        }
+        keys_[count_] = key;
+        values_[count_] = val;
+        ++count_;
+    }
+
+    Value operator[](const Key& key) const {
+        for (size_t i = 0; i < count_; ++i)
+            if (pred_(keys_[i], key))
+                return values_[i];
+        return default_value_;
+    }
+};
+
+// Special case for small numeric keys: direct-indexed 256-entry table
+// (mirrors libc++'s array-based _BMSkipTable specialisation).
+template<class Key, class Value, class Hash, class BinaryPredicate>
+class bm_skip_table<Key, Value, Hash, BinaryPredicate, true> {
+    using unsigned_key_type = make_unsigned_t<Key>;
+    bm_dynarray<Value> table_;
+    static_assert(sizeof(Key) == 1);
+
+public:
+    explicit bm_skip_table(size_t, Value default_value, Hash, BinaryPredicate)
+        : table_(256) {
+        for (size_t i = 0; i < 256; ++i)
+            table_[i] = default_value;
+    }
+
+    void insert(Key key, Value val) {
+        table_[static_cast<unsigned_key_type>(key)] = val;
+    }
+
+    Value operator[](Key key) const {
+        return table_[static_cast<unsigned_key_type>(key)];
+    }
+};
+
+} // namespace detail
+
+// boyer_moore_searcher
+template<class RandomAccessIterator1,
+         class Hash = hash<typename iterator_traits<RandomAccessIterator1>::value_type>,
+         class BinaryPredicate = equal_to<>>
+class boyer_moore_searcher {
+private:
+    using difference_type = typename iterator_traits<RandomAccessIterator1>::difference_type;
+    using value_type      = typename iterator_traits<RandomAccessIterator1>::value_type;
+    using skip_table_type =
+        detail::bm_skip_table<value_type, difference_type, Hash, BinaryPredicate,
+                              is_integral_v<value_type> && sizeof(value_type) == 1 &&
+                                  is_same_v<Hash, hash<value_type>> &&
+                                  is_same_v<BinaryPredicate, equal_to<>>>;
+
+public:
+    boyer_moore_searcher(RandomAccessIterator1 first,
+                         RandomAccessIterator1 last,
+                         Hash hash = Hash(),
+                         BinaryPredicate pred = BinaryPredicate())
+        : first_(first),
+          last_(last),
+          pred_(pred),
+          pattern_length_(last - first),
+          skip_table_(static_cast<size_t>(pattern_length_), -1, hash, pred_),
+          suffix_(static_cast<size_t>(pattern_length_) + 1) {
+        difference_type i = 0;
+        while (first != last) {
+            skip_table_.insert(*first, i);
+            ++first;
+            ++i;
+        }
+        build_suffix_table(first_, last_, pred_);
+    }
+
+    template<class RandomAccessIterator2>
+    pair<RandomAccessIterator2, RandomAccessIterator2>
+    operator()(RandomAccessIterator2 first, RandomAccessIterator2 last) const {
+        static_assert(
+            is_same_v<remove_cvref_t<typename iterator_traits<RandomAccessIterator1>::value_type>,
+                      remove_cvref_t<typename iterator_traits<RandomAccessIterator2>::value_type>>,
+            "Corpus and Pattern iterators must point to the same type");
+        if (first == last)
+            return make_pair(last, last);
+        if (first_ == last_)
+            return make_pair(first, first);
+        if (pattern_length_ > (last - first))
+            return make_pair(last, last);
+        return search(first, last);
+    }
+
+private:
+    RandomAccessIterator1 first_;
+    RandomAccessIterator1 last_;
+    BinaryPredicate pred_;
+    difference_type pattern_length_;
+    skip_table_type skip_table_;
+    detail::bm_dynarray<difference_type> suffix_;
+
+    template<class RandomAccessIterator2>
+    pair<RandomAccessIterator2, RandomAccessIterator2>
+    search(RandomAccessIterator2 f, RandomAccessIterator2 l) const {
+        RandomAccessIterator2 current    = f;
+        const RandomAccessIterator2 last = l - pattern_length_;
+
+        while (current <= last) {
+            difference_type j = pattern_length_;
+            while (pred_(first_[j - 1], current[j - 1])) {
+                --j;
+                if (j == 0)
+                    return make_pair(current, current + pattern_length_);
+            }
+
+            difference_type k = skip_table_[current[j - 1]];
+            difference_type m = j - k - 1;
+            if (k < j && m > suffix_[static_cast<size_t>(j)])
+                current += m;
+            else
+                current += suffix_[static_cast<size_t>(j)];
+        }
+        return make_pair(l, l);
+    }
+
+    void compute_bm_prefix(RandomAccessIterator1 first, bool reversed, size_t count,
+                           BinaryPredicate pred,
+                           detail::bm_dynarray<difference_type>& prefix) {
+        // libc++ runs this once forward and once over reverse_iterators;
+        // "reversed" indexes from the back instead.
+        auto at = [&](size_t i) -> decltype(auto) {
+            return reversed ? first[static_cast<difference_type>(count - 1 - i)]
+                            : first[static_cast<difference_type>(i)];
+        };
+        prefix[0] = 0;
+        size_t k = 0;
+
+        for (size_t i = 1; i != count; ++i) {
+            while (k > 0 && !pred(at(k), at(i)))
+                k = static_cast<size_t>(prefix[k - 1]);
+
+            if (pred(at(k), at(i)))
+                ++k;
+            prefix[i] = static_cast<difference_type>(k);
+        }
+    }
+
+    void build_suffix_table(RandomAccessIterator1 first, RandomAccessIterator1 last,
+                            BinaryPredicate pred) {
+        const size_t count = static_cast<size_t>(last - first);
+
+        if (count == 0)
+            return;
+
+        detail::bm_dynarray<difference_type> scratch(count);
+
+        compute_bm_prefix(first, false, count, pred, scratch);
+        for (size_t i = 0; i <= count; ++i)
+            suffix_[i] = static_cast<difference_type>(count) - scratch[count - 1];
+
+        compute_bm_prefix(first, true, count, pred, scratch);
+
+        for (size_t i = 0; i != count; ++i) {
+            const size_t j = count - static_cast<size_t>(scratch[i]);
+            const difference_type k =
+                static_cast<difference_type>(i) - scratch[i] + 1;
+
+            if (suffix_[j] > k)
+                suffix_[j] = k;
+        }
+    }
+};
+
+// boyer_moore_horspool_searcher
+template<class RandomAccessIterator1,
+         class Hash = hash<typename iterator_traits<RandomAccessIterator1>::value_type>,
+         class BinaryPredicate = equal_to<>>
+class boyer_moore_horspool_searcher {
+private:
+    using difference_type = typename iterator_traits<RandomAccessIterator1>::difference_type;
+    using value_type      = typename iterator_traits<RandomAccessIterator1>::value_type;
+    using skip_table_type =
+        detail::bm_skip_table<value_type, difference_type, Hash, BinaryPredicate,
+                              is_integral_v<value_type> && sizeof(value_type) == 1 &&
+                                  is_same_v<Hash, hash<value_type>> &&
+                                  is_same_v<BinaryPredicate, equal_to<>>>;
+
+public:
+    boyer_moore_horspool_searcher(RandomAccessIterator1 first,
+                                  RandomAccessIterator1 last,
+                                  Hash hash = Hash(),
+                                  BinaryPredicate pred = BinaryPredicate())
+        : first_(first),
+          last_(last),
+          pred_(pred),
+          pattern_length_(last - first),
+          skip_table_(static_cast<size_t>(pattern_length_), pattern_length_, hash, pred_) {
+        if (first == last)
+            return;
+        --last;
+        difference_type i = 0;
+        while (first != last) {
+            skip_table_.insert(*first, pattern_length_ - 1 - i);
+            ++first;
+            ++i;
+        }
+    }
+
+    template<class RandomAccessIterator2>
+    pair<RandomAccessIterator2, RandomAccessIterator2>
+    operator()(RandomAccessIterator2 first, RandomAccessIterator2 last) const {
+        static_assert(
+            is_same_v<remove_cvref_t<typename iterator_traits<RandomAccessIterator1>::value_type>,
+                      remove_cvref_t<typename iterator_traits<RandomAccessIterator2>::value_type>>,
+            "Corpus and Pattern iterators must point to the same type");
+        if (first == last)
+            return make_pair(last, last);
+        if (first_ == last_)
+            return make_pair(first, first);
+        if (pattern_length_ > (last - first))
+            return make_pair(last, last);
+        return search(first, last);
+    }
+
+private:
+    RandomAccessIterator1 first_;
+    RandomAccessIterator1 last_;
+    BinaryPredicate pred_;
+    difference_type pattern_length_;
+    skip_table_type skip_table_;
+
+    template<class RandomAccessIterator2>
+    pair<RandomAccessIterator2, RandomAccessIterator2>
+    search(RandomAccessIterator2 f, RandomAccessIterator2 l) const {
+        RandomAccessIterator2 current    = f;
+        const RandomAccessIterator2 last = l - pattern_length_;
+
+        while (current <= last) {
+            difference_type j = pattern_length_;
+            while (pred_(first_[j - 1], current[j - 1])) {
+                --j;
+                if (j == 0)
+                    return make_pair(current, current + pattern_length_);
+            }
+            current += skip_table_[current[pattern_length_ - 1]];
+        }
+        return make_pair(l, l);
+    }
+};
 
 } // namespace std

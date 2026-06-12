@@ -1489,7 +1489,9 @@ namespace detail {
     template<class Ret, class Fp, class... Args>
     struct invokable_r {
         template<class XFp, class... XArgs>
-        static decltype(invoke_impl(declval<XFp>(), declval<XArgs>()...))
+        // Qualified call: suppresses ADL, which would otherwise instantiate
+        // incomplete associated classes of the argument types (robust_against_adl).
+        static decltype(detail::invoke_impl(declval<XFp>(), declval<XArgs>()...))
         try_call(int);
         template<class XFp, class... XArgs>
         static nat try_call(...);
@@ -1512,7 +1514,7 @@ namespace detail {
     template<class Ret, class Fp, class... Args>
     struct nothrow_invokable_r_impl<true, true, Ret, Fp, Args...> {
         static constexpr bool value =
-            noexcept(invoke_impl(declval<Fp>(), declval<Args>()...));
+            noexcept(detail::invoke_impl(declval<Fp>(), declval<Args>()...));
     };
     // Ret is non-void: a single noexcept over probe<Ret>(<prvalue call result>)
     // captures BOTH the call's noexcept and the prvalue->Ret param-init noexcept,
@@ -1521,7 +1523,7 @@ namespace detail {
     template<class Ret, class Fp, class... Args>
     struct nothrow_invokable_r_impl<true, false, Ret, Fp, Args...> {
         static constexpr bool value =
-            noexcept(nothrow_ret_probe<Ret>(invoke_impl(declval<Fp>(), declval<Args>()...)));
+            noexcept(detail::nothrow_ret_probe<Ret>(detail::invoke_impl(declval<Fp>(), declval<Args>()...)));
     };
 
     template<class Ret, class Fp, class... Args>
