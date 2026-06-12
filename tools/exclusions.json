@@ -3,6 +3,8 @@
 
   "utilities/tuple/tuple.tuple/tuple.cnstr/recursion_depth.pass.cpp": "gcc-10 compiler limit at tuple<512 elements>: gcc10std discriminator (g++-10 with its OWN libstdc++, no -nostdinc++/-Iinclude) dies with 'template instantiation depth exceeds maximum of 900' in /usr/include/c++/10/type_traits; on libcis cc1plus is OOM-killed at the same depth. Red on both backends -> compiler limitation, not a libcis defect.",
 
+  "containers/views/views.span/span.cons/span.pass.cpp": "gcc constexpr limitation with volatile class-type arrays: check_cvs<std::string>() builds volatile std::string arrays inside static_assert(test()). Fails on gcc10std AND on g++-13 with its OWN constexpr-capable libstdc++ (error inside /usr/include/c++/13/span); only clang+libc++ accepts. Not fixable in library code.",
+
   "iterators/predef.iterators/reverse.iterators/reverse.iter.cmp/three-way.pass.cpp": "gcc-10 constexpr defect: NaN relational comparison inside the TEST'S OWN operator<=> ('(+QNaN > 0.0) is not a constant expression') during static_assert(tests()). Fails identically on the gcc10std discriminator (g++-10 + its own libstdc++, no -nostdinc++/-Iinclude); g++-13 accepts the same TU. Library-independent.",
 
   "utilities/smartptr/unique.ptr/unique.ptr.class/unique.ptr.observers/op_subscript.runtime.pass.cpp": "gcc-10 grammar gap: the test uses a parameterless template-lambda `[]<class T> { ... }` (valid C++20, accepted by g++-13). g++-10 rejects it with 'expected ( before { token' on the gcc10std discriminator too (compiled without -nostdinc++/-Iinclude) -- a parse error in the test itself, independent of the library. Not fixable in library code.",

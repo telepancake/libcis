@@ -658,6 +658,17 @@ basic_ostream<char, Traits>& operator<<(basic_ostream<char, Traits>& os, const u
     return detail::put_character_sequence(os, reinterpret_cast<const char*>(s), char_traits<char>::length(reinterpret_cast<const char*>(s)));
 }
 
+// [string.view.io] operator<< for basic_string_view (libc++ declares it in
+// <string_view> and routes through __put_character_sequence; <ostream> always
+// has <string_view> in scope here, so the definition lives next to the other
+// character-sequence inserters).
+template<class CharT, class Traits>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, basic_string_view<CharT, Traits> sv)
+{
+    return detail::put_character_sequence(os, sv.data(), sv.size());
+}
+
 // C++20 deleted overloads for mixed char types
 template<class Traits>
 basic_ostream<char, Traits>& operator<<(basic_ostream<char, Traits>&, wchar_t) = delete;

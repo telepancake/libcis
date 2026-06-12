@@ -599,12 +599,14 @@ public:
     constexpr basic_string_view(const CharT* s)
         : data_(s), size_(traits_type::length(s)) {}
 
-    // C++20: iterator-pair constructor
-    template<class It, class End>
-        requires (is_same_v<typename iterator_traits<It>::value_type, CharT> &&
+    // C++20: iterator-sentinel constructor ([string.view.cons], libc++ form:
+    // contiguous_iterator + sized_sentinel_for, value_type must match exactly,
+    // data pointer recovered with std::to_address)
+    template<contiguous_iterator It, sized_sentinel_for<It> End>
+        requires (is_same_v<iter_value_t<It>, CharT> &&
                   !is_convertible_v<End, size_type>)
     constexpr basic_string_view(It begin, End end)
-        : data_(begin), size_(static_cast<size_type>(end - begin)) {}
+        : data_(std::to_address(begin)), size_(static_cast<size_type>(end - begin)) {}
 
     // [string.view.iterators]
     [[nodiscard]] constexpr const_iterator begin()  const noexcept { return data_; }
@@ -876,6 +878,10 @@ private:
     const value_type* data_;
     size_type         size_;
 };
+
+// [string.view.deduct]
+template<contiguous_iterator It, sized_sentinel_for<It> End>
+basic_string_view(It, End) -> basic_string_view<iter_value_t<It>>;
 
 //===----------------------------------------------------------------------===//
 // Typedefs

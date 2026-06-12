@@ -554,7 +554,7 @@ public:
     template<class T>
         requires (detail::sv_compatible_v<CharT, Traits, T> &&
                   !is_same_v<remove_cvref_t<T>, basic_string>)
-    explicit basic_string(const T& t, const allocator_type& a = allocator_type())
+    constexpr explicit basic_string(const T& t, const allocator_type& a = allocator_type())
         : rep_(), alloc_(a)
     {
         basic_string_view<CharT, Traits> sv = t;
