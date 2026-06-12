@@ -2045,3 +2045,6 @@ struct hash<unique_ptr<T, D>> {
 
 } // namespace std
 
+#include <bits/memory_ranges.h>
+
+
