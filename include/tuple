@@ -50,19 +50,8 @@ struct tuple_element<I, tuple<Ts...>> {
     using type = typename detail::tuple_element_impl<I, Ts...>::type;
 };
 
-// cv-qualified specialisations for tuple_element
-template<size_t I, class T>
-struct tuple_element<I, const T> {
-    using type = const typename tuple_element<I, T>::type;
-};
-template<size_t I, class T>
-struct tuple_element<I, volatile T> {
-    using type = volatile typename tuple_element<I, T>::type;
-};
-template<size_t I, class T>
-struct tuple_element<I, const volatile T> {
-    using type = const volatile typename tuple_element<I, T>::type;
-};
+// cv-qualified tuple_element specialisations now live in <utility> (included
+// above), so the tuple protocol works without <tuple>.
 
 template<size_t I, class T>
 using tuple_element_t = typename tuple_element<I, T>::type;
@@ -74,14 +63,7 @@ using tuple_element_t = typename tuple_element<I, T>::type;
 template<class... Ts>
 struct tuple_size<tuple<Ts...>> : integral_constant<size_t, sizeof...(Ts)> {};
 
-template<class T>
-struct tuple_size<const T> : tuple_size<T> {};
-
-template<class T>
-struct tuple_size<volatile T> : tuple_size<T> {};
-
-template<class T>
-struct tuple_size<const volatile T> : tuple_size<T> {};
+// cv-qualified tuple_size specialisations now live in <utility> (included above).
 
 template<class T>
 inline constexpr size_t tuple_size_v = tuple_size<T>::value;

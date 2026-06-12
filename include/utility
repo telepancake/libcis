@@ -209,6 +209,23 @@ template<class...> class tuple;
 template<class T> struct tuple_size;
 template<size_t I, class T> struct tuple_element;
 
+// The cv-qualified generic specializations live HERE, not in <tuple>: the tuple
+// protocol (and structured bindings) on pair must work from <utility> alone, so
+// tuple_size<const pair> / tuple_element<I, const pair> have to be visible
+// without <tuple>.  <tuple> includes <utility>, so it inherits them.
+template<class T> struct tuple_size<const T>          : tuple_size<T> {};
+template<class T> struct tuple_size<volatile T>       : tuple_size<T> {};
+template<class T> struct tuple_size<const volatile T> : tuple_size<T> {};
+template<size_t I, class T> struct tuple_element<I, const T> {
+    using type = const typename tuple_element<I, T>::type;
+};
+template<size_t I, class T> struct tuple_element<I, volatile T> {
+    using type = volatile typename tuple_element<I, T>::type;
+};
+template<size_t I, class T> struct tuple_element<I, const volatile T> {
+    using type = const volatile typename tuple_element<I, T>::type;
+};
+
 namespace detail {
     // is_implicitly_default_constructible
     template<class T>
@@ -317,7 +334,7 @@ struct pair {
     // Copy assignment
     constexpr pair& operator=(
         conditional_t<is_copy_assignable_v<T1> && is_copy_assignable_v<T2>,
-                      pair, detail::is_implicitly_default_constructible<pair>> const& p)
+                      pair, detail::nat> const& p)
         noexcept(is_nothrow_copy_assignable_v<T1> &&
                  is_nothrow_copy_assignable_v<T2>)
     {
@@ -329,7 +346,7 @@ struct pair {
     // Move assignment
     constexpr pair& operator=(
         conditional_t<is_move_assignable_v<T1> && is_move_assignable_v<T2>,
-                      pair, detail::is_implicitly_default_constructible<pair>>&& p)
+                      pair, detail::nat>&& p)
         noexcept(is_nothrow_move_assignable_v<T1> &&
                  is_nothrow_move_assignable_v<T2>)
     {
@@ -392,8 +409,15 @@ constexpr bool operator==(const pair<T1,T2>& x, const pair<U1,U2>& y) {
     return x.first == y.first && x.second == y.second;
 }
 
+// Explicit return type, NOT auto: it forces both members' orderings to the
+// common comparison category (the two returns differ otherwise -> inconsistent
+// auto deduction), AND makes the operator SFINAE-friendly -- if a member pair is
+// not comparable, synth_three_way_result is ill-formed in the signature and the
+// operator is removed from the candidate set instead of hard-erroring.
 template<class T1, class T2, class U1, class U2>
-constexpr auto operator<=>(const pair<T1,T2>& x, const pair<U1,U2>& y) {
+constexpr common_comparison_category_t<detail::synth_three_way_result<T1,U1>,
+                                       detail::synth_three_way_result<T2,U2>>
+operator<=>(const pair<T1,T2>& x, const pair<U1,U2>& y) {
     if (auto c = detail::synth_three_way(x.first, y.first); c != 0)
         return c;
     return detail::synth_three_way(x.second, y.second);
