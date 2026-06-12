@@ -293,8 +293,12 @@ struct pair {
                  is_nothrow_copy_constructible_v<T2>)
         : first(t1), second(t2) {}
 
-    // Forwarding constructor from U1, U2
-    template<class U1 = T1, class U2 = T2,
+    // Forwarding constructor from U1, U2.  NO U1=T1/U2=T2 defaults: those are the
+    // C++23 P1951 change, and ctor.brace-init.P1951 (REQUIRES: <=c++20) checks the
+    // pre-P1951 behavior -- with the defaults the forwarding ctor stays viable for
+    // a braced/non-deduced argument and wrongly out-competes pair(const T1&,
+    // const T2&).  Matches libc++'s C++20 branch.
+    template<class U1, class U2,
              enable_if_t<pair_check<T1,T2>::template is_pair_constructible<U1, U2>(), int> = 0>
     constexpr explicit(!pair_check<T1,T2>::template is_implicit<U1, U2>())
     pair(U1&& u1, U2&& u2)
