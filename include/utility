@@ -80,21 +80,14 @@ void as_const(const T&&) = delete;
 
 //===----------------------------------------------------------------------===//
 // [utility.swap], swap (__utility/swap.h)
-// The forward declarations in <type_traits> are:
-//   template<class T>
-//     requires (is_move_constructible_v<T> && is_move_assignable_v<T>)
-//   void swap(T& x, T& y) noexcept(...);
-//   template<class T, size_t N>
-//     requires (is_move_constructible_v<T> && is_move_assignable_v<T>)
-//   void swap(T (&a)[N], T (&b)[N]) noexcept(...);
-// We provide the definitions here with matching constraints.
+// The forward declarations live in <type_traits> (swap is needed there for the
+// is_swappable traits).  They use enable_if SFINAE on the return type, NOT a
+// requires-clause -- see the rationale in <type_traits>.  These definitions
+// match those declarations exactly.
 //===----------------------------------------------------------------------===//
 
-// Definitions matching the forward-declarations in <type_traits> exactly
-// (both constexpr, as C++20 requires).
 template<class T>
-    requires (is_move_constructible_v<T> && is_move_assignable_v<T>)
-constexpr void swap(T& x, T& y)
+constexpr swap_result_t<T> swap(T& x, T& y)
     noexcept(is_nothrow_move_constructible_v<T> &&
              is_nothrow_move_assignable_v<T>)
 {
@@ -103,10 +96,9 @@ constexpr void swap(T& x, T& y)
     y = move(tmp);
 }
 
-template<class T, size_t N>
-    requires (is_move_constructible_v<T> && is_move_assignable_v<T>)
+template<class T, size_t N, enable_if_t<is_swappable_v<T>, int>>
 constexpr void swap(T (&a)[N], T (&b)[N])
-    noexcept(noexcept(swap(*a, *b)))
+    noexcept(is_nothrow_swappable_v<T>)
 {
     for (size_t i = 0; i != N; ++i)
         swap(a[i], b[i]);
