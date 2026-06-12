@@ -57,9 +57,11 @@ rfail = []
 cfail = []
 for r in tests:
     src = os.path.abspath(os.path.join("test/std", r["file"]))
-    drv = "/tmp/rf_drv.cpp"
+    # PID-unique temp paths: concurrent run_files invocations (parallel
+    # subtree gates) must not clobber each other's driver/executable.
+    drv = f"/tmp/rf_drv_{os.getpid()}.cpp"
     open(drv, "w").write(f'#include "{src}"\nint main(){{ return {r["entry"]}; }}\n')
-    exe = "/tmp/rf_exe"
+    exe = f"/tmp/rf_exe_{os.getpid()}"
     try:
         p = subprocess.run(CIS + [drv] + LINK + ["-o", exe],
                            capture_output=True, text=True, timeout=180)
