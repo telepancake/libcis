@@ -764,7 +764,11 @@ public:
         noexcept(alloc_traits::propagate_on_container_move_assignment::value ||
                  alloc_traits::is_always_equal::value)
     {
-        if (this == &other) return *this;
+        // gcc-10 constexpr rejects comparing `this` against a pointer to a
+        // different complete object (PR89074-class); libc++'s move-assign has
+        // no self-check at all, so skipping it during constant evaluation is
+        // conforming (constexpr self-move is then valid-but-unspecified).
+        if (!__builtin_is_constant_evaluated() && this == &other) return *this;
         if constexpr (alloc_traits::propagate_on_container_move_assignment::value) {
             if (is_long())
                 alloc_traits::deallocate(alloc_, get_long_pointer(), get_long_cap());

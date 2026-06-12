@@ -93,12 +93,20 @@ template<class To, class From>
     requires (sizeof(To) == sizeof(From) &&
               is_trivially_copyable_v<To> &&
               is_trivially_copyable_v<From>)
+#if __has_builtin(__builtin_bit_cast)
+[[nodiscard]] constexpr To bit_cast(const From& from) noexcept {
+    return __builtin_bit_cast(To, from);
+}
+#else
 [[nodiscard]] inline To bit_cast(const From& from) noexcept {
-    // Not constexpr: __builtin_bit_cast unavailable in gcc-10.2.
+    // DEVIATION from libc++ (which uses __builtin_bit_cast unconditionally):
+    // gcc-10.2 lacks the builtin (added in gcc-11), and a constexpr bit_cast
+    // cannot be expressed in C++ without it. Runtime-only memcpy fallback.
     To to;
     __builtin_memcpy(&to, &from, sizeof(To));
     return to;
 }
+#endif
 
 //===----------------------------------------------------------------------===//
 // Internal dispatch: countl_zero / countr_zero / popcount per type width

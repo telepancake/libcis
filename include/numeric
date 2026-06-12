@@ -24,6 +24,7 @@
 #include <type_traits>  // common_type_t, make_unsigned_t, is_integral_v, etc.
 #include <limits>       // numeric_limits (midpoint, gcd)
 #include <bit>          // countr_zero (gcd binary algorithm)
+#include <execution>    // execution policies (PSTL overloads run sequentially)
 
 namespace std {
 
@@ -64,7 +65,8 @@ reduce(InputIterator first, InputIterator last, T init, BinaryOp b) {
 template<class InputIterator, class T>
 constexpr T
 reduce(InputIterator first, InputIterator last, T init) {
-    return reduce(first, last, init, plus<>());
+    // move: T is only required to be MoveConstructible ([reduce]/(2))
+    return reduce(first, last, std::move(init), plus<>());
 }
 
 template<class InputIterator>
@@ -105,6 +107,54 @@ transform_reduce(InputIterator1 first1, InputIterator1 last1,
                  InputIterator2 first2, T init) {
     return transform_reduce(first1, last1, first2, move(init),
                             plus<>(), multiplies<>());
+}
+
+//===----------------------------------------------------------------------===//
+// Execution-policy overloads ([reduce]/[transform.reduce] with policies).
+// libcis runs every policy SEQUENTIALLY (policy types come from <execution>);
+// libc++ does the same when _LIBCPP_HAS_PARALLEL_ALGORITHMS is off.
+//===----------------------------------------------------------------------===//
+
+template<class ExecutionPolicy, class ForwardIterator,
+         enable_if_t<is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>, int> = 0>
+typename iterator_traits<ForwardIterator>::value_type
+reduce(ExecutionPolicy&&, ForwardIterator first, ForwardIterator last) {
+    return std::reduce(first, last);
+}
+
+template<class ExecutionPolicy, class ForwardIterator, class T,
+         enable_if_t<is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>, int> = 0>
+T reduce(ExecutionPolicy&&, ForwardIterator first, ForwardIterator last, T init) {
+    return std::reduce(first, last, std::move(init));
+}
+
+template<class ExecutionPolicy, class ForwardIterator, class T, class BinaryOp,
+         enable_if_t<is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>, int> = 0>
+T reduce(ExecutionPolicy&&, ForwardIterator first, ForwardIterator last, T init, BinaryOp b) {
+    return std::reduce(first, last, std::move(init), std::move(b));
+}
+
+template<class ExecutionPolicy, class ForwardIterator, class T, class BinaryOp, class UnaryOp,
+         enable_if_t<is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>, int> = 0>
+T transform_reduce(ExecutionPolicy&&, ForwardIterator first, ForwardIterator last,
+                   T init, BinaryOp b, UnaryOp u) {
+    return std::transform_reduce(first, last, std::move(init), std::move(b), std::move(u));
+}
+
+template<class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2, class T,
+         enable_if_t<is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>, int> = 0>
+T transform_reduce(ExecutionPolicy&&, ForwardIterator1 first1, ForwardIterator1 last1,
+                   ForwardIterator2 first2, T init) {
+    return std::transform_reduce(first1, last1, first2, std::move(init));
+}
+
+template<class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2, class T,
+         class BinaryOp1, class BinaryOp2,
+         enable_if_t<is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>, int> = 0>
+T transform_reduce(ExecutionPolicy&&, ForwardIterator1 first1, ForwardIterator1 last1,
+                   ForwardIterator2 first2, T init, BinaryOp1 b1, BinaryOp2 b2) {
+    return std::transform_reduce(first1, last1, first2, std::move(init),
+                                 std::move(b1), std::move(b2));
 }
 
 //===----------------------------------------------------------------------===//

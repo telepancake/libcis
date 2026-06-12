@@ -1,0 +1,7 @@
+// <ctgmath> -- deprecated in C++17, removed in C++20, kept as an extension
+// (matches libc++, which still provides it as <cmath> + <complex>).
+// Ported from libc++ include/ctgmath.
+#pragma once
+
+#include <cmath>
+#include <complex>

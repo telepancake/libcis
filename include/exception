@@ -70,6 +70,12 @@ terminate_handler set_terminate(terminate_handler) noexcept;
 // a thin null-only handle: internally a void* that is always nullptr.
 // It satisfies NullablePointer (C++20 [nullablepointer.requirements]).
 //===----------------------------------------------------------------------===//
+class exception_ptr;
+// Declared [[noreturn]] FIRST: later declarations (the in-class friend and
+// the definition) may then repeat or omit the attribute; g++-13 hard-errors
+// if the first-seen declaration lacks it while a later one adds it.
+[[noreturn]] void rethrow_exception(exception_ptr);
+
 class exception_ptr {
     void* ptr;
 
@@ -109,9 +115,13 @@ public:
         return a.ptr != b.ptr;
     }
 
-    // Friends that need to access ptr.
+    // Friends that need to access ptr. NOTE: no [[noreturn]] on the friend
+    // declaration -- a later [[noreturn]] definition may ADD the attribute,
+    // but if the friend decl carried it while an earlier declaration did not
+    // (or vice versa, depending on include order), g++-13 hard-errors with
+    // "declared [[noreturn]] but its first declaration was not".
     friend exception_ptr current_exception() noexcept;
-    [[noreturn]] friend void rethrow_exception(exception_ptr);
+    friend void rethrow_exception(exception_ptr);
 };
 
 //===----------------------------------------------------------------------===//

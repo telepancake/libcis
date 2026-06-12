@@ -138,7 +138,9 @@ protected:
     static constexpr bool is_modulo  = !is_signed;
 
 #if defined(__i386__) || defined(__x86_64__) || defined(__wasm__)
-    static constexpr bool traps = __is_same(decltype(+type(0)), type);
+    // libc++: ALL integral types trap on x86 (integer division by zero),
+    // including the ones that promote (char/short/bool).
+    static constexpr bool traps = true;
 #else
     static constexpr bool traps = false;
 #endif

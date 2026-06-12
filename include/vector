@@ -1130,6 +1130,11 @@ private:
     friend constexpr bit_iterator<Dp, false> bit_copy(bit_iterator<Dp, IC>, bit_iterator<Dp, IC>, bit_iterator<Dp, false>) noexcept;
     template<class Dp, bool IC>
     friend constexpr bit_iterator<Dp, false> bit_copy_backward(bit_iterator<Dp, IC>, bit_iterator<Dp, IC>, bit_iterator<Dp, false>) noexcept;
+    template<class Dp, bool IC>
+    friend constexpr typename bit_iterator<Dp, IC>::difference_type
+    count(const bit_iterator<Dp, IC>&, const bit_iterator<Dp, IC>&, const bool&);
+    template<class Dp>
+    friend constexpr void fill(const bit_iterator<Dp, false>&, const bit_iterator<Dp, false>&, const bool&);
 
     constexpr explicit bit_iterator(storage_pointer s, unsigned ctz) noexcept
         : seg_(s), ctz_(ctz) {}
@@ -1189,6 +1194,12 @@ public:
     constexpr bit_iterator& operator-=(difference_type n) noexcept { return *this += -n; }
 
     constexpr bit_iterator operator+(difference_type n) const noexcept {
+        // Direct construction (rather than copy + +=) keeps the constexpr
+        // operation count low; vector<bool> algorithm tests run millions of
+        // iterator adds inside a single constant evaluation.
+        if (n >= 0)
+            return bit_iterator(seg_ + (n + ctz_) / difference_type(bits_per_word),
+                                static_cast<unsigned>((n + ctz_) % difference_type(bits_per_word)));
         bit_iterator t = *this;
         return t += n;
     }
@@ -1241,9 +1252,11 @@ constexpr void bit_fill_n(bit_iterator<Cp, false> first,
     // middle whole words
     storage_type fill_val = val ? static_cast<storage_type>(~storage_type(0)) : storage_type(0);
     auto nw = n / bpw;
-    std::fill_n(first.seg_, nw, fill_val);
     n -= nw * bpw;
-    first.seg_ += nw;
+    for (; nw > 0; --nw) {
+        *first.seg_ = fill_val;
+        ++first.seg_;
+    }
     // last partial word
     if (n > 0) {
         storage_type m = bit_trailing_mask<storage_type>(
@@ -1715,10 +1728,10 @@ public:
     }
 
     // Iterators
-    [[nodiscard]] constexpr iterator               begin()  noexcept       { return make_iter(0); }
-    [[nodiscard]] constexpr const_iterator         begin()  const noexcept { return make_iter(0); }
-    [[nodiscard]] constexpr iterator               end()    noexcept       { return make_iter(size_); }
-    [[nodiscard]] constexpr const_iterator         end()    const noexcept { return make_iter(size_); }
+    [[nodiscard]] constexpr iterator               begin()  noexcept       { return iterator(begin_, 0); }
+    [[nodiscard]] constexpr const_iterator         begin()  const noexcept { return const_iterator(begin_, 0); }
+    [[nodiscard]] constexpr iterator               end()    noexcept       { return iterator(begin_ + size_ / bits_per_word, static_cast<unsigned>(size_ % bits_per_word)); }
+    [[nodiscard]] constexpr const_iterator         end()    const noexcept { return const_iterator(begin_ + size_ / bits_per_word, static_cast<unsigned>(size_ % bits_per_word)); }
     [[nodiscard]] constexpr reverse_iterator       rbegin() noexcept       { return reverse_iterator(end()); }
     [[nodiscard]] constexpr const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
     [[nodiscard]] constexpr reverse_iterator       rend()   noexcept       { return reverse_iterator(begin()); }

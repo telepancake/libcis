@@ -1,0 +1,5 @@
+// <ccomplex> — deprecated in C++17, removed in C++20; provided as an
+// extension (matches libc++). Mechanically ported from libc++ include/ccomplex.
+#pragma once
+
+#include <complex>

@@ -497,12 +497,17 @@ private:
         fmt[fi++] = '%';
         if (showps) fmt[fi++] = '+';
         if (showpt) fmt[fi++] = '#';
-        fmt[fi++] = '.';
-        // precision: max 99 to be safe
-        int prec_val = (prec > 0 && prec <= 99) ? static_cast<int>(prec) : 6;
-        if (prec == 0 && floatf == 0) prec_val = 6; // default
-        if (prec_val >= 10) { fmt[fi++] = static_cast<char>('0' + prec_val / 10); }
-        fmt[fi++] = static_cast<char>('0' + prec_val % 10);
+        // Hexfloat (fixed|scientific) takes NO precision: libc++ __num_put
+        // omits it so %a prints the exact shortest representation, making
+        // stream round-trips lossless.
+        if (floatf != (ios_base::fixed | ios_base::scientific)) {
+            fmt[fi++] = '.';
+            // precision: max 99 to be safe
+            int prec_val = (prec > 0 && prec <= 99) ? static_cast<int>(prec) : 6;
+            if (prec == 0 && floatf == 0) prec_val = 6; // default
+            if (prec_val >= 10) { fmt[fi++] = static_cast<char>('0' + prec_val / 10); }
+            fmt[fi++] = static_cast<char>('0' + prec_val % 10);
+        }
         if (floatf == ios_base::fixed)
             fmt[fi++] = 'f';
         else if (floatf == ios_base::scientific)
@@ -544,10 +549,13 @@ private:
         fmt[fi++] = '%';
         if (showps) fmt[fi++] = '+';
         if (showpt) fmt[fi++] = '#';
-        fmt[fi++] = '.';
-        int prec_val = (prec > 0 && prec <= 99) ? static_cast<int>(prec) : 6;
-        if (prec_val >= 10) { fmt[fi++] = static_cast<char>('0' + prec_val / 10); }
-        fmt[fi++] = static_cast<char>('0' + prec_val % 10);
+        // Hexfloat takes NO precision; see put_float above.
+        if (floatf != (ios_base::fixed | ios_base::scientific)) {
+            fmt[fi++] = '.';
+            int prec_val = (prec > 0 && prec <= 99) ? static_cast<int>(prec) : 6;
+            if (prec_val >= 10) { fmt[fi++] = static_cast<char>('0' + prec_val / 10); }
+            fmt[fi++] = static_cast<char>('0' + prec_val % 10);
+        }
         fmt[fi++] = 'L'; // long double
         if (floatf == ios_base::fixed)
             fmt[fi++] = 'f';

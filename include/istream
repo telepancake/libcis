@@ -500,12 +500,17 @@ private:
             bool is_sign       = (n == 0 && (nc == '+' || nc == '-'));
             bool is_hex_prefix = (n == 1 && buf[0] == '0' && (nc == 'x' || nc == 'X'));
             bool is_hex_digit  = (nc >= 'a' && nc <= 'f') || (nc >= 'A' && nc <= 'F');
+            // 'p'/'P' is the hexfloat exponent marker; libc++ num_get's source
+            // table includes "pP", needed to read back hexfloat output (which
+            // the <random> distribution operator<< emits).
             bool is_float_char = allow_float_chars &&
-                                 (nc == '.' || nc == 'e' || nc == 'E' || nc == '+' || nc == '-');
-            // A '+' or '-' after e/E in float context
+                                 (nc == '.' || nc == 'e' || nc == 'E' ||
+                                  nc == 'p' || nc == 'P' || nc == '+' || nc == '-');
+            // A '+' or '-' after e/E/p/P in float context
             bool is_exp_sign   = allow_float_chars && n > 0 &&
                                  (nc == '+' || nc == '-') &&
-                                 (buf[n-1] == 'e' || buf[n-1] == 'E');
+                                 (buf[n-1] == 'e' || buf[n-1] == 'E' ||
+                                  buf[n-1] == 'p' || buf[n-1] == 'P');
 
             // Check if this character can be consumed
             bool can_consume = is_digit_char || is_sign || is_hex_prefix || is_hex_digit ||

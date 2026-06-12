@@ -239,9 +239,28 @@ using ::nearbyintl;
 using ::nextafter;
 using ::nextafterf;
 using ::nextafterl;
+// C++ overloads for nextafter (from libc++ cmath): float/long double variants
+// must call the correct C function rather than promoting to double, which
+// would collapse adjacent values back together.
+inline float nextafter(float x, float y) noexcept { return __builtin_nextafterf(x, y); }
+inline long double nextafter(long double x, long double y) noexcept { return __builtin_nextafterl(x, y); }
+template<class A1, class A2>
+    requires(std::is_arithmetic_v<A1> && std::is_arithmetic_v<A2>)
+inline promote_t<A1, A2> nextafter(A1 x, A2 y) noexcept {
+    using result_type = promote_t<A1, A2>;
+    static_assert(!(std::is_same_v<A1, result_type> && std::is_same_v<A2, result_type>));
+    return std::nextafter(static_cast<result_type>(x), static_cast<result_type>(y));
+}
 using ::nexttoward;
 using ::nexttowardf;
 using ::nexttowardl;
+inline float nexttoward(float x, long double y) noexcept { return __builtin_nexttowardf(x, y); }
+inline long double nexttoward(long double x, long double y) noexcept { return __builtin_nexttowardl(x, y); }
+template<class Integer>
+    requires std::is_integral_v<Integer>
+inline double nexttoward(Integer x, long double y) noexcept {
+    return __builtin_nexttoward(static_cast<double>(x), y);
+}
 using ::remainder;
 using ::remainderf;
 using ::remainderl;

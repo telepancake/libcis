@@ -1,13 +1,12 @@
 // <complex> — complex number types and math functions.
 // Mechanically ported from libc++ include/complex
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
-//
-// NOTE: stream operators operator<< / operator>> are DEFERRED — they depend
-// on <iostream>/<sstream> which we have not ported yet.
 #pragma once
 
 #include <type_traits>
 #include <cmath>
+#include <limits>
+#include <sstream> // for std::basic_ostringstream (operator<<)
 
 namespace std {
 
@@ -316,12 +315,157 @@ operator-(const T& x, const complex<T>& y) {
     complex<T> t(-y); t += x; return t;
 }
 
-// multiply: floating-point uses compiler _Complex arithmetic for correct NaN handling
+// Constexpr-safe IEEE arithmetic helpers. The gcc-10 frontend rejects any
+// floating operation that would raise FE_INVALID / FE_DIVBYZERO / FE_OVERFLOW
+// in a constant expression (inf-inf, inf*0, x/0, overflow), so the constexpr
+// paths of operator* and operator/ must emulate those IEEE results explicitly.
+// (Documented deviation: libc++ release/20 relies on clang's constexpr
+// _Complex arithmetic; gcc-10 has neither that nor permissive constexpr FP.)
+namespace detail {
+
+template<class T>
+constexpr T complex_nan() { return numeric_limits<T>::quiet_NaN(); }
+
+// __builtin_fabs / __builtin_copysign are double-only; these are the
+// type-generic constexpr equivalents (__builtin_isnan/isinf/signbit are
+// type-generic in gcc).
+template<class T>
+constexpr T cx_fabs(T x) { return x < T(0) ? -x : x; }
+
+template<class T>
+constexpr T cx_copysign(T x, T s) {
+    x = std::detail::cx_fabs(x);
+    return __builtin_signbit(s) ? -x : x;
+}
+
+template<class T>
+constexpr T complex_inf(T sign) {
+    return std::detail::cx_copysign(numeric_limits<T>::infinity(), sign);
+}
+
+template<class T>
+constexpr T cx_mul(T a, T b) {
+    if (__builtin_isnan(a) || __builtin_isnan(b))
+        return complex_nan<T>();
+    if (__builtin_isinf(a) || __builtin_isinf(b)) {
+        if (a == T(0) || b == T(0))
+            return complex_nan<T>();
+        return complex_inf<T>(a * (b < T(0) ? T(-1) : T(1)));
+    }
+    // finite * finite: predict overflow to avoid a constexpr-rejected op
+    // (|b| <= 1 cannot overflow; |b| > 1 keeps max()/|b| itself finite)
+    if (std::detail::cx_fabs(b) > T(1) &&
+        std::detail::cx_fabs(a) > numeric_limits<T>::max() / std::detail::cx_fabs(b))
+        return complex_inf<T>(a * (b < T(0) ? T(-1) : T(1)));
+    return a * b;
+}
+
+template<class T>
+constexpr T cx_add(T a, T b) {
+    if (__builtin_isnan(a) || __builtin_isnan(b))
+        return complex_nan<T>();
+    if (__builtin_isinf(a) && __builtin_isinf(b))
+        return (a > T(0)) == (b > T(0)) ? a : complex_nan<T>();
+    if (__builtin_isinf(a)) return a;
+    if (__builtin_isinf(b)) return b;
+    // finite + finite: a/2 + b/2 is exact at large magnitudes, so this
+    // detects overflow of a + b without performing it
+    if (std::detail::cx_fabs(a / T(2) + b / T(2)) > numeric_limits<T>::max() / T(2))
+        return complex_inf<T>(a);
+    return a + b;
+}
+
+template<class T>
+constexpr T cx_sub(T a, T b) { return std::detail::cx_add(a, -b); }
+
+template<class T>
+constexpr T cx_div(T a, T b) {
+    if (__builtin_isnan(a) || __builtin_isnan(b))
+        return complex_nan<T>();
+    if (__builtin_isinf(a)) {
+        if (__builtin_isinf(b))
+            return complex_nan<T>();
+        return complex_inf<T>(a * (__builtin_signbit(b) ? T(-1) : T(1)));
+    }
+    if (__builtin_isinf(b))
+        return std::detail::cx_copysign(T(0), a) * (__builtin_signbit(b) ? T(-1) : T(1));
+    if (b == T(0)) {
+        if (a == T(0))
+            return complex_nan<T>();
+        return complex_inf<T>(a * (__builtin_signbit(b) ? T(-1) : T(1)));
+    }
+    // finite / finite: predict overflow
+    if (std::detail::cx_fabs(b) < T(1) &&
+        std::detail::cx_fabs(a) > numeric_limits<T>::max() * std::detail::cx_fabs(b))
+        return complex_inf<T>(a * (__builtin_signbit(b) ? T(-1) : T(1)));
+    return a / b;
+}
+
+} // namespace detail
+
+// multiply: floating-point uses compiler _Complex arithmetic for correct NaN
+// handling (libc++ release/20 always uses the builtin — clang evaluates
+// _Complex arithmetic in constexpr). gcc-10 cannot constant-evaluate _Complex
+// multiply/divide with NaN/inf operands, so during constant evaluation we use
+// the Annex-G recovery algorithm libc++ <= 19 / compiler-rt __mulXc3 use
+// (documented deviation: same observable semantics, needed for gcc-10).
 template<class T>
 requires is_floating_point_v<T>
 constexpr complex<T>
-operator*(const complex<T>& lhs, const complex<T>& rhs) {
-    auto res = lhs.builtin() * rhs.builtin();
+operator*(const complex<T>& z, const complex<T>& w) {
+    if (is_constant_evaluated()) {
+        T a = z.real();
+        T b = z.imag();
+        T c = w.real();
+        T d = w.imag();
+        T ac = detail::cx_mul(a, c);
+        T bd = detail::cx_mul(b, d);
+        T ad = detail::cx_mul(a, d);
+        T bc = detail::cx_mul(b, c);
+        T x = detail::cx_sub(ac, bd);
+        T y = detail::cx_add(ad, bc);
+        if (__builtin_isnan(x) && __builtin_isnan(y)) {
+            bool recalc = false;
+            if (__builtin_isinf(a) || __builtin_isinf(b)) {
+                a = detail::cx_copysign(__builtin_isinf(a) ? T(1) : T(0), a);
+                b = detail::cx_copysign(__builtin_isinf(b) ? T(1) : T(0), b);
+                if (__builtin_isnan(c))
+                    c = detail::cx_copysign(T(0), c);
+                if (__builtin_isnan(d))
+                    d = detail::cx_copysign(T(0), d);
+                recalc = true;
+            }
+            if (__builtin_isinf(c) || __builtin_isinf(d)) {
+                c = detail::cx_copysign(__builtin_isinf(c) ? T(1) : T(0), c);
+                d = detail::cx_copysign(__builtin_isinf(d) ? T(1) : T(0), d);
+                if (__builtin_isnan(a))
+                    a = detail::cx_copysign(T(0), a);
+                if (__builtin_isnan(b))
+                    b = detail::cx_copysign(T(0), b);
+                recalc = true;
+            }
+            if (!recalc && (__builtin_isinf(ac) || __builtin_isinf(bd) ||
+                            __builtin_isinf(ad) || __builtin_isinf(bc))) {
+                if (__builtin_isnan(a))
+                    a = detail::cx_copysign(T(0), a);
+                if (__builtin_isnan(b))
+                    b = detail::cx_copysign(T(0), b);
+                if (__builtin_isnan(c))
+                    c = detail::cx_copysign(T(0), c);
+                if (__builtin_isnan(d))
+                    d = detail::cx_copysign(T(0), d);
+                recalc = true;
+            }
+            if (recalc) {
+                x = detail::cx_mul(T(INFINITY),
+                        detail::cx_sub(detail::cx_mul(a, c), detail::cx_mul(b, d)));
+                y = detail::cx_mul(T(INFINITY),
+                        detail::cx_add(detail::cx_mul(a, d), detail::cx_mul(b, c)));
+            }
+        }
+        return complex<T>(x, y);
+    }
+    auto res = z.builtin() * w.builtin();
     return complex<T>(__real__ res, __imag__ res);
 }
 
@@ -344,12 +488,75 @@ operator*(const T& x, const complex<T>& y) {
     complex<T> t(y); t *= x; return t;
 }
 
-// divide: floating-point uses compiler _Complex arithmetic
+// divide: floating-point uses compiler _Complex arithmetic; constexpr path is
+// the Smith algorithm with Annex-G recovery (libc++ <= 19 / compiler-rt
+// __divXc3) — see the deviation note on operator* above.
 template<class T>
 requires is_floating_point_v<T>
 constexpr complex<T>
-operator/(const complex<T>& lhs, const complex<T>& rhs) {
-    auto res = lhs.builtin() / rhs.builtin();
+operator/(const complex<T>& z, const complex<T>& w) {
+    if (is_constant_evaluated()) {
+        int ilogbw = 0;
+        T a = z.real();
+        T b = z.imag();
+        T c = w.real();
+        T d = w.imag();
+        // __builtin_logb / __builtin_scalbn only constant-fold for finite
+        // nonzero arguments in gcc-10; emulate logb's special cases by hand.
+        T mc = detail::cx_fabs(c);
+        T md = detail::cx_fabs(d);
+        T m = __builtin_isnan(mc) ? md : (__builtin_isnan(md) ? mc : (mc > md ? mc : md));
+        T logbw;
+        if (__builtin_isnan(m))
+            logbw = m;
+        else if (__builtin_isinf(m))
+            logbw = m;
+        else if (m == T(0))
+            logbw = -numeric_limits<T>::infinity();
+        else
+            logbw = __builtin_logb(m);
+        if (__builtin_isfinite(logbw)) {
+            ilogbw = static_cast<int>(logbw);
+            // scalbn is a no-op on NaN/inf/0 but does not constant-fold for them
+            if (__builtin_isfinite(c) && c != T(0))
+                c = __builtin_scalbn(c, -ilogbw);
+            if (__builtin_isfinite(d) && d != T(0))
+                d = __builtin_scalbn(d, -ilogbw);
+        }
+        T denom = detail::cx_add(detail::cx_mul(c, c), detail::cx_mul(d, d));
+        T x = detail::cx_div(detail::cx_add(detail::cx_mul(a, c), detail::cx_mul(b, d)), denom);
+        T y = detail::cx_div(detail::cx_sub(detail::cx_mul(b, c), detail::cx_mul(a, d)), denom);
+        if (ilogbw != 0) {
+            if (__builtin_isfinite(x) && x != T(0))
+                x = __builtin_scalbn(x, -ilogbw);
+            if (__builtin_isfinite(y) && y != T(0))
+                y = __builtin_scalbn(y, -ilogbw);
+        }
+        if (__builtin_isnan(x) && __builtin_isnan(y)) {
+            if ((denom == T(0)) && (!__builtin_isnan(a) || !__builtin_isnan(b))) {
+                x = detail::cx_mul(T(detail::cx_copysign(T(INFINITY), c)), a);
+                y = detail::cx_mul(T(detail::cx_copysign(T(INFINITY), c)), b);
+            } else if ((__builtin_isinf(a) || __builtin_isinf(b)) &&
+                       __builtin_isfinite(c) && __builtin_isfinite(d)) {
+                a = detail::cx_copysign(__builtin_isinf(a) ? T(1) : T(0), a);
+                b = detail::cx_copysign(__builtin_isinf(b) ? T(1) : T(0), b);
+                x = detail::cx_mul(T(INFINITY),
+                        detail::cx_add(detail::cx_mul(a, c), detail::cx_mul(b, d)));
+                y = detail::cx_mul(T(INFINITY),
+                        detail::cx_sub(detail::cx_mul(b, c), detail::cx_mul(a, d)));
+            } else if (__builtin_isinf(logbw) && logbw > T(0) &&
+                       __builtin_isfinite(a) && __builtin_isfinite(b)) {
+                c = detail::cx_copysign(__builtin_isinf(c) ? T(1) : T(0), c);
+                d = detail::cx_copysign(__builtin_isinf(d) ? T(1) : T(0), d);
+                x = detail::cx_mul(T(0),
+                        detail::cx_add(detail::cx_mul(a, c), detail::cx_mul(b, d)));
+                y = detail::cx_mul(T(0),
+                        detail::cx_sub(detail::cx_mul(b, c), detail::cx_mul(a, d)));
+            }
+        }
+        return complex<T>(x, y);
+    }
+    auto res = z.builtin() / w.builtin();
     return complex<T>(__real__ res, __imag__ res);
 }
 
@@ -550,7 +757,7 @@ template<class T>
 // log10
 template<class T>
 [[nodiscard]] complex<T> log10(const complex<T>& x) {
-    return log(x) / std::log(T(10));
+    return log(x) / T(std::log(T(10)));
 }
 
 // sqrt
@@ -565,7 +772,10 @@ template<class T>
         return complex<T>(std::isnan(x.imag()) ? x.imag() : T(0),
                           std::copysign(x.real(), x.imag()));
     }
-    return polar(std::sqrt(abs(x)), arg(x) / T(2));
+    // NOTE: T(...) casts because libcis <cmath> lacks the float/long double
+    // overloads of ::sqrt (glibc math.h only declares double sqrt(double) for
+    // deduction here); libc++ relies on its own cmath overload set.
+    return polar(T(std::sqrt(abs(x))), arg(x) / T(2));
 }
 
 // exp
@@ -595,14 +805,27 @@ template<class T>
     return exp(y * log(x));
 }
 
-template<class T>
-[[nodiscard]] complex<T> pow(const complex<T>& x, const T& y) {
-    return pow(x, complex<T>(y));
+template<class T, class U>
+[[nodiscard]] complex<promote_t<T, U>>
+pow(const complex<T>& x, const complex<U>& y) {
+    using result_type = complex<promote_t<T, U>>;
+    return std::pow(result_type(x), result_type(y));
 }
 
-template<class T>
-[[nodiscard]] complex<T> pow(const T& x, const complex<T>& y) {
-    return pow(complex<T>(x), y);
+template<class T, class U>
+requires is_arithmetic_v<U>
+[[nodiscard]] complex<promote_t<T, U>>
+pow(const complex<T>& x, const U& y) {
+    using result_type = complex<promote_t<T, U>>;
+    return std::pow(result_type(x), result_type(y));
+}
+
+template<class T, class U>
+requires is_arithmetic_v<T>
+[[nodiscard]] complex<promote_t<T, U>>
+pow(const T& x, const complex<U>& y) {
+    using result_type = complex<promote_t<T, U>>;
+    return std::pow(result_type(x), result_type(y));
 }
 
 // Internal helper: sqr(x) = x^2 (avoids calling pow)
@@ -729,7 +952,7 @@ template<class T>
         if (!std::isfinite(x.imag()))
             return complex<T>(std::copysign(T(1), x.real()), T(0));
         return complex<T>(std::copysign(T(1), x.real()),
-                          std::copysign(T(0), std::sin(T(2) * x.imag())));
+                          std::copysign(T(0), T(std::sin(T(2) * x.imag()))));
     }
     if (std::isnan(x.real()) && x.imag() == 0)
         return x;
@@ -806,6 +1029,67 @@ template<class T>
 [[nodiscard]] complex<T> tan(const complex<T>& x) {
     complex<T> z = tanh(complex<T>(-x.imag(), x.real()));
     return complex<T>(z.imag(), -z.real());
+}
+
+//===----------------------------------------------------------------------===//
+// Stream operators
+//===----------------------------------------------------------------------===//
+
+template<class T, class CharT, class Traits>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, complex<T>& x) {
+    if (is.good()) {
+        std::ws(is);
+        if (is.peek() == CharT('(')) {
+            is.get();
+            T r;
+            is >> r;
+            if (!is.fail()) {
+                std::ws(is);
+                CharT c = is.peek();
+                if (c == CharT(',')) {
+                    is.get();
+                    T i;
+                    is >> i;
+                    if (!is.fail()) {
+                        std::ws(is);
+                        c = is.peek();
+                        if (c == CharT(')')) {
+                            is.get();
+                            x = complex<T>(r, i);
+                        } else
+                            is.setstate(is.failbit);
+                    } else
+                        is.setstate(is.failbit);
+                } else if (c == CharT(')')) {
+                    is.get();
+                    x = complex<T>(r, T(0));
+                } else
+                    is.setstate(is.failbit);
+            } else
+                is.setstate(is.failbit);
+        } else {
+            T r;
+            is >> r;
+            if (!is.fail())
+                x = complex<T>(r, T(0));
+            else
+                is.setstate(is.failbit);
+        }
+    } else
+        is.setstate(is.failbit);
+    return is;
+}
+
+template<class T, class CharT, class Traits>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const complex<T>& x) {
+    basic_ostringstream<CharT, Traits> s;
+    s.flags(os.flags());
+    s.imbue(os.getloc());
+    s.precision(os.precision());
+    s << '(' << x.real() << ',' << x.imag() << ')';
+    return os << s.str();
 }
 
 //===----------------------------------------------------------------------===//

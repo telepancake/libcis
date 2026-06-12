@@ -21,6 +21,9 @@
 #include <numeric>
 #include <iterator>
 #include <bit>
+#include <string>
+#include <istream>
+#include <ostream>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -50,10 +53,19 @@ struct log2_imp<unsigned long long, 0, Rp> {
     static const size_t value = Rp + 1;
 };
 
+template <__uint128_t Xp, size_t Rp>
+struct log2_imp<__uint128_t, Xp, Rp> {
+    static const size_t value =
+        (Xp >> 64) ? (64 + log2_imp<unsigned long long, (Xp >> 64), 63>::value)
+                   : log2_imp<unsigned long long, Xp, 63>::value;
+};
+
 template <class UIntType, UIntType Xp>
 struct rand_log2 {
-    static const size_t value =
-        log2_imp<unsigned long long, Xp, sizeof(UIntType) * __CHAR_BIT__ - 1>::value;
+    static const size_t value = log2_imp<
+        conditional_t<sizeof(UIntType) <= sizeof(unsigned long long),
+                      unsigned long long, __uint128_t>,
+        Xp, sizeof(UIntType) * __CHAR_BIT__ - 1>::value;
 };
 
 //===----------------------------------------------------------------------===//
@@ -83,6 +95,8 @@ template <> struct rand_is_valid_inttype<unsigned short>     : true_type {};
 template <> struct rand_is_valid_inttype<unsigned int>       : true_type {};
 template <> struct rand_is_valid_inttype<unsigned long>      : true_type {};
 template <> struct rand_is_valid_inttype<unsigned long long> : true_type {};
+template <> struct rand_is_valid_inttype<__int128_t>          : true_type {}; // extension
+template <> struct rand_is_valid_inttype<__uint128_t>         : true_type {}; // extension
 
 template <class, class = void>
 struct rand_is_valid_urng : false_type {};
@@ -91,6 +105,32 @@ struct rand_is_valid_urng<G,
     enable_if_t<is_unsigned_v<typename G::result_type> &&
                 is_same_v<decltype(declval<G&>()()), typename G::result_type>>>
     : true_type {};
+
+//===----------------------------------------------------------------------===//
+// Internal: save_flags (libc++ __save_flags from <iosfwd>; lives here because
+// <random> is its only libcis user)
+//===----------------------------------------------------------------------===//
+
+template <class CharT, class Traits>
+class save_flags {
+    typedef basic_ios<CharT, Traits> stream_type;
+    typedef typename stream_type::fmtflags fmtflags;
+
+    stream_type& stream_;
+    fmtflags fmtflags_;
+    CharT fill_;
+
+public:
+    save_flags(const save_flags&)            = delete;
+    save_flags& operator=(const save_flags&) = delete;
+
+    explicit save_flags(stream_type& stream)
+        : stream_(stream), fmtflags_(stream.flags()), fill_(stream.fill()) {}
+    ~save_flags() {
+        stream_.flags(fmtflags_);
+        stream_.fill(fill_);
+    }
+};
 
 //===----------------------------------------------------------------------===//
 // linear_congruential_engine helpers (lce_ta)
@@ -112,8 +152,8 @@ struct lce_alg_picker {
         : Part  ? LCE_Part
         : Schrage ? LCE_Schrage
                   : LCE_Promote;
-    static_assert(Mp != (unsigned long long)(-1) || Full || Part || Schrage,
-        "linear_congruential_engine: unsupported parameters (no __int128)");
+    // 64-bit parameters that fit none of Full/Part/Schrage promote to
+    // unsigned __int128 (always available on this target), see LCE_Promote.
 };
 
 template <unsigned long long a,
@@ -349,7 +389,42 @@ public:
                            const linear_congruential_engine& rhs) {
         return !(lhs == rhs);
     }
+
+    template <class CharT, class Traits, class UI, UI A, UI C, UI M>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os,
+               const linear_congruential_engine<UI, A, C, M>& x);
+    template <class CharT, class Traits, class UI, UI A, UI C, UI M>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is,
+               linear_congruential_engine<UI, A, C, M>& x);
 };
+
+// [rand.eng.lcong] stream operators — libc++ __random/linear_congruential_engine.h
+template <class CharT, class Traits, class UI, UI A, UI C, UI M>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os,
+           const linear_congruential_engine<UI, A, C, M>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> Ostream;
+    os.flags(Ostream::dec | Ostream::left);
+    os.fill(os.widen(' '));
+    return os << x.x_;
+}
+
+template <class CharT, class Traits, class UI, UI A, UI C, UI M>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is,
+           linear_congruential_engine<UI, A, C, M>& x) {
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    UI t;
+    is >> t;
+    if (!is.fail())
+        x.x_ = t;
+    return is;
+}
 
 using minstd_rand0 = linear_congruential_engine<uint_fast32_t, 16807, 0, 2147483647>;
 using minstd_rand  = linear_congruential_engine<uint_fast32_t, 48271, 0, 2147483647>;
@@ -497,6 +572,19 @@ public:
         return !(lhs == rhs);
     }
 
+    template <class CharT, class Traits, class UI,
+              size_t W2, size_t N2, size_t M2, size_t R2, UI A2,
+              size_t U2, UI D2, size_t S2, UI B2, size_t T2, UI C2, size_t L2, UI F2>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os,
+               const mersenne_twister_engine<UI, W2, N2, M2, R2, A2, U2, D2, S2, B2, T2, C2, L2, F2>& x);
+    template <class CharT, class Traits, class UI,
+              size_t W2, size_t N2, size_t M2, size_t R2, UI A2,
+              size_t U2, UI D2, size_t S2, UI B2, size_t T2, UI C2, size_t L2, UI F2>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is,
+               mersenne_twister_engine<UI, W2, N2, M2, R2, A2, U2, D2, S2, B2, T2, C2, L2, F2>& x);
+
 private:
     template <size_t count>
     static result_type mt_lshift(result_type x) {
@@ -509,6 +597,46 @@ private:
         else                      return result_type(0);
     }
 };
+
+// [rand.eng.mers] stream operators — libc++ __random/mersenne_twister_engine.h
+template <class CharT, class Traits, class UI,
+          size_t W2, size_t N2, size_t M2, size_t R2, UI A2,
+          size_t U2, UI D2, size_t S2, UI B2, size_t T2, UI C2, size_t L2, UI F2>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os,
+           const mersenne_twister_engine<UI, W2, N2, M2, R2, A2, U2, D2, S2, B2, T2, C2, L2, F2>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> Ostream;
+    os.flags(Ostream::dec | Ostream::left);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    os << x.x_[x.i_];
+    for (size_t j = x.i_ + 1; j < N2; ++j)
+        os << sp << x.x_[j];
+    for (size_t j = 0; j < x.i_; ++j)
+        os << sp << x.x_[j];
+    return os;
+}
+
+template <class CharT, class Traits, class UI,
+          size_t W2, size_t N2, size_t M2, size_t R2, UI A2,
+          size_t U2, UI D2, size_t S2, UI B2, size_t T2, UI C2, size_t L2, UI F2>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is,
+           mersenne_twister_engine<UI, W2, N2, M2, R2, A2, U2, D2, S2, B2, T2, C2, L2, F2>& x) {
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    UI t[N2];
+    for (size_t i = 0; i < N2; ++i)
+        is >> t[i];
+    if (!is.fail()) {
+        for (size_t i = 0; i < N2; ++i)
+            x.x_[i] = t[i];
+        x.i_ = 0;
+    }
+    return is;
+}
 
 using mt19937 = mersenne_twister_engine<
     uint_fast32_t, 32, 624, 397, 31,
@@ -637,7 +765,54 @@ public:
                            const subtract_with_carry_engine& rhs) {
         return !(lhs == rhs);
     }
+
+    template <class CharT, class Traits, class UI, size_t W2, size_t S2, size_t R2>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os,
+               const subtract_with_carry_engine<UI, W2, S2, R2>& x);
+    template <class CharT, class Traits, class UI, size_t W2, size_t S2, size_t R2>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is,
+               subtract_with_carry_engine<UI, W2, S2, R2>& x);
 };
+
+// [rand.eng.sub] stream operators — libc++ __random/subtract_with_carry_engine.h
+template <class CharT, class Traits, class UI, size_t W2, size_t S2, size_t R2>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os,
+           const subtract_with_carry_engine<UI, W2, S2, R2>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> Ostream;
+    os.flags(Ostream::dec | Ostream::left);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    os << x.x_[x.i_];
+    for (size_t j = x.i_ + 1; j < R2; ++j)
+        os << sp << x.x_[j];
+    for (size_t j = 0; j < x.i_; ++j)
+        os << sp << x.x_[j];
+    os << sp << x.c_;
+    return os;
+}
+
+template <class CharT, class Traits, class UI, size_t W2, size_t S2, size_t R2>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is,
+           subtract_with_carry_engine<UI, W2, S2, R2>& x) {
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    UI t[R2 + 1];
+    for (size_t i = 0; i < R2 + 1; ++i)
+        is >> t[i];
+    if (!is.fail()) {
+        for (size_t i = 0; i < R2; ++i)
+            x.x_[i] = t[i];
+        x.c_ = t[R2];
+        x.i_ = 0;
+    }
+    return is;
+}
 
 using ranlux24_base = subtract_with_carry_engine<uint_fast32_t, 24, 10, 24>;
 using ranlux48_base = subtract_with_carry_engine<uint_fast64_t, 48,  5, 12>;
@@ -703,7 +878,46 @@ public:
                            const discard_block_engine& rhs) {
         return !(lhs == rhs);
     }
+
+    template <class CharT, class Traits, class Eng, size_t P2, size_t R2>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os,
+               const discard_block_engine<Eng, P2, R2>& x);
+    template <class CharT, class Traits, class Eng, size_t P2, size_t R2>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is,
+               discard_block_engine<Eng, P2, R2>& x);
 };
+
+// [rand.adapt.disc] stream operators — libc++ __random/discard_block_engine.h
+template <class CharT, class Traits, class Eng, size_t P2, size_t R2>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os,
+           const discard_block_engine<Eng, P2, R2>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> Ostream;
+    os.flags(Ostream::dec | Ostream::left);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    return os << x.e_ << sp << x.n_;
+}
+
+template <class CharT, class Traits, class Eng, size_t P2, size_t R2>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is,
+           discard_block_engine<Eng, P2, R2>& x) {
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    Eng e;
+    int n;
+    is >> e >> n;
+    if (!is.fail()) {
+        x.e_ = e;
+        x.n_ = n;
+    }
+    return is;
+}
 
 using ranlux24 = discard_block_engine<ranlux24_base, 223, 23>;
 using ranlux48 = discard_block_engine<ranlux48_base, 389, 11>;
@@ -814,6 +1028,11 @@ public:
         return !(lhs == rhs);
     }
 
+    template <class CharT, class Traits, class Eng, size_t W2, class UI>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is,
+               independent_bits_engine<Eng, W2, UI>& x);
+
 private:
     template <size_t count>
     static result_type ibe_lshift(result_type x) {
@@ -821,6 +1040,25 @@ private:
         else                      return result_type(0);
     }
 };
+
+// [rand.adapt.ibits] stream operators — libc++ __random/independent_bits_engine.h
+template <class CharT, class Traits, class Eng, size_t W2, class UI>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os,
+           const independent_bits_engine<Eng, W2, UI>& x) {
+    return os << x.base();
+}
+
+template <class CharT, class Traits, class Eng, size_t W2, class UI>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is,
+           independent_bits_engine<Eng, W2, UI>& x) {
+    Eng e;
+    is >> e;
+    if (!is.fail())
+        x.e_ = e;
+    return is;
+}
 
 //===----------------------------------------------------------------------===//
 // shuffle_order_engine
@@ -913,6 +1151,15 @@ public:
         return !(lhs == rhs);
     }
 
+    template <class CharT, class Traits, class Eng, size_t K2>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os,
+               const shuffle_order_engine<Eng, K2>& x);
+    template <class CharT, class Traits, class Eng, size_t K2>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is,
+               shuffle_order_engine<Eng, K2>& x);
+
 private:
     void init() {
         for (size_t j = 0; j < k; ++j) v_[j] = e_();
@@ -927,6 +1174,43 @@ private:
         return y_;
     }
 };
+
+// [rand.adapt.shuf] stream operators — libc++ __random/shuffle_order_engine.h
+template <class CharT, class Traits, class Eng, size_t K2>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os,
+           const shuffle_order_engine<Eng, K2>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> Ostream;
+    os.flags(Ostream::dec | Ostream::left);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    os << x.e_ << sp << x.v_[0];
+    for (size_t i = 1; i < K2; ++i)
+        os << sp << x.v_[i];
+    return os << sp << x.y_;
+}
+
+template <class CharT, class Traits, class Eng, size_t K2>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is,
+           shuffle_order_engine<Eng, K2>& x) {
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    Eng e;
+    typename shuffle_order_engine<Eng, K2>::result_type vp[K2 + 1];
+    is >> e;
+    for (size_t i = 0; i < K2 + 1; ++i)
+        is >> vp[i];
+    if (!is.fail()) {
+        x.e_ = e;
+        for (size_t i = 0; i < K2; ++i)
+            x.v_[i] = vp[i];
+        x.y_ = vp[K2];
+    }
+    return is;
+}
 
 using knuth_b = shuffle_order_engine<minstd_rand0, 256>;
 
@@ -949,11 +1233,14 @@ public:
     static constexpr result_type min() { return 0; }
     static constexpr result_type max() { return 0xFFFFFFFFu; }
 
-    random_device() {
-        fd_ = ::open("/dev/urandom", O_RDONLY);
+    // libc++ __random/random_device.h (_LIBCPP_USING_DEV_RANDOM): the token
+    // names the device file. Failure throws system_error in libc++; with
+    // -fno-exceptions we trap.
+    random_device() : random_device("/dev/urandom") {}
+    explicit random_device(const string& token) {
+        fd_ = ::open(token.c_str(), O_RDONLY);
         if (fd_ < 0) __builtin_trap();
     }
-    explicit random_device(const char* /*token*/) : random_device() {}
     ~random_device() { if (fd_ >= 0) ::close(fd_); }
 
     random_device(const random_device&)            = delete;
@@ -1471,6 +1758,13 @@ public:
     friend bool operator!=(const normal_distribution& x, const normal_distribution& y) {
         return !(x == y);
     }
+
+    template <class CharT, class Traits, class RT>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os, const normal_distribution<RT>& x);
+    template <class CharT, class Traits, class RT>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is, normal_distribution<RT>& x);
 };
 
 //===----------------------------------------------------------------------===//
@@ -1721,6 +2015,12 @@ public:
     private:
         void init();
         friend class discrete_distribution;
+        template <class CharT, class Traits, class IT>
+        friend basic_ostream<CharT, Traits>&
+        operator<<(basic_ostream<CharT, Traits>& os, const discrete_distribution<IT>& x);
+        template <class CharT, class Traits, class IT>
+        friend basic_istream<CharT, Traits>&
+        operator>>(basic_istream<CharT, Traits>& is, discrete_distribution<IT>& x);
     };
 
 private:
@@ -1759,6 +2059,13 @@ public:
     friend bool operator!=(const discrete_distribution& x, const discrete_distribution& y) {
         return !(x == y);
     }
+
+    template <class CharT, class Traits, class IT>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os, const discrete_distribution<IT>& x);
+    template <class CharT, class Traits, class IT>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is, discrete_distribution<IT>& x);
 };
 
 template <class IntType>
@@ -2353,6 +2660,13 @@ public:
                            const lognormal_distribution& y) {
         return !(x == y);
     }
+
+    template <class CharT, class Traits, class RT>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os, const lognormal_distribution<RT>& x);
+    template <class CharT, class Traits, class RT>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is, lognormal_distribution<RT>& x);
 };
 
 //===----------------------------------------------------------------------===//
@@ -2624,6 +2938,12 @@ public:
 
         void init();
         friend class piecewise_constant_distribution;
+        template <class CharT, class Traits, class RT>
+        friend basic_ostream<CharT, Traits>&
+        operator<<(basic_ostream<CharT, Traits>& os, const piecewise_constant_distribution<RT>& x);
+        template <class CharT, class Traits, class RT>
+        friend basic_istream<CharT, Traits>&
+        operator>>(basic_istream<CharT, Traits>& is, piecewise_constant_distribution<RT>& x);
 
     public:
         typedef piecewise_constant_distribution distribution_type;
@@ -2688,6 +3008,13 @@ public:
                            const piecewise_constant_distribution& y) {
         return !(x == y);
     }
+
+    template <class CharT, class Traits, class RT>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os, const piecewise_constant_distribution<RT>& x);
+    template <class CharT, class Traits, class RT>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is, piecewise_constant_distribution<RT>& x);
 };
 
 template <class RealType>
@@ -2803,6 +3130,12 @@ public:
 
         void init();
         friend class piecewise_linear_distribution;
+        template <class CharT, class Traits, class RT>
+        friend basic_ostream<CharT, Traits>&
+        operator<<(basic_ostream<CharT, Traits>& os, const piecewise_linear_distribution<RT>& x);
+        template <class CharT, class Traits, class RT>
+        friend basic_istream<CharT, Traits>&
+        operator>>(basic_istream<CharT, Traits>& is, piecewise_linear_distribution<RT>& x);
 
     public:
         typedef piecewise_linear_distribution distribution_type;
@@ -2867,6 +3200,13 @@ public:
                            const piecewise_linear_distribution& y) {
         return !(x == y);
     }
+
+    template <class CharT, class Traits, class RT>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os, const piecewise_linear_distribution<RT>& x);
+    template <class CharT, class Traits, class RT>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is, piecewise_linear_distribution<RT>& x);
 };
 
 template <class RealType>
@@ -2978,6 +3318,603 @@ RealType piecewise_linear_distribution<RealType>::operator()(URNG& g, const para
     const result_type deltab = bk1 - bk;
     return (bk * dk1 - bk1 * dk +
             std::sqrt(deltab * (deltab * dk * dk + 2 * deltad * u))) / deltad;
+}
+
+//===----------------------------------------------------------------------===//
+// Distribution stream operators — ported from libc++ __random/*.h
+//===----------------------------------------------------------------------===//
+
+template <class CharT, class Traits, class IT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const uniform_int_distribution<IT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> Ostream;
+    os.flags(Ostream::dec | Ostream::left);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    return os << x.a() << sp << x.b();
+}
+
+template <class CharT, class Traits, class IT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, uniform_int_distribution<IT>& x) {
+    typedef uniform_int_distribution<IT> Eng;
+    typedef typename Eng::result_type result_type;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    result_type a;
+    result_type b;
+    is >> a >> b;
+    if (!is.fail())
+        x.param(param_type(a, b));
+    return is;
+}
+
+template <class CharT, class Traits, class RT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const uniform_real_distribution<RT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    return os << x.a() << sp << x.b();
+}
+
+template <class CharT, class Traits, class RT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, uniform_real_distribution<RT>& x) {
+    typedef uniform_real_distribution<RT> Eng;
+    typedef typename Eng::result_type result_type;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    result_type a;
+    result_type b;
+    is >> a >> b;
+    if (!is.fail())
+        x.param(param_type(a, b));
+    return is;
+}
+
+template <class CharT, class Traits>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const bernoulli_distribution& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    return os << x.p();
+}
+
+template <class CharT, class Traits>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, bernoulli_distribution& x) {
+    typedef bernoulli_distribution Eng;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    double p;
+    is >> p;
+    if (!is.fail())
+        x.param(param_type(p));
+    return is;
+}
+
+template <class CharT, class Traits, class IT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const binomial_distribution<IT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    return os << x.t() << sp << x.p();
+}
+
+template <class CharT, class Traits, class IT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, binomial_distribution<IT>& x) {
+    typedef binomial_distribution<IT> Eng;
+    typedef typename Eng::result_type result_type;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    result_type t;
+    double p;
+    is >> t >> p;
+    if (!is.fail())
+        x.param(param_type(t, p));
+    return is;
+}
+
+template <class CharT, class Traits, class IT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const geometric_distribution<IT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    return os << x.p();
+}
+
+template <class CharT, class Traits, class IT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, geometric_distribution<IT>& x) {
+    typedef geometric_distribution<IT> Eng;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    double p;
+    is >> p;
+    if (!is.fail())
+        x.param(param_type(p));
+    return is;
+}
+
+template <class CharT, class Traits, class IT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const negative_binomial_distribution<IT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    return os << x.k() << sp << x.p();
+}
+
+template <class CharT, class Traits, class IT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, negative_binomial_distribution<IT>& x) {
+    typedef negative_binomial_distribution<IT> Eng;
+    typedef typename Eng::result_type result_type;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    result_type k;
+    double p;
+    is >> k >> p;
+    if (!is.fail())
+        x.param(param_type(k, p));
+    return is;
+}
+
+template <class CharT, class Traits, class IT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const poisson_distribution<IT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    return os << x.mean();
+}
+
+template <class CharT, class Traits, class IT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, poisson_distribution<IT>& x) {
+    typedef poisson_distribution<IT> Eng;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    double mean;
+    is >> mean;
+    if (!is.fail())
+        x.param(param_type(mean));
+    return is;
+}
+
+template <class CharT, class Traits, class RT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const exponential_distribution<RT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    return os << x.lambda();
+}
+
+template <class CharT, class Traits, class RT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, exponential_distribution<RT>& x) {
+    typedef exponential_distribution<RT> Eng;
+    typedef typename Eng::result_type result_type;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    result_type lambda;
+    is >> lambda;
+    if (!is.fail())
+        x.param(param_type(lambda));
+    return is;
+}
+
+template <class CharT, class Traits, class RT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const gamma_distribution<RT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    os << x.alpha() << sp << x.beta();
+    return os;
+}
+
+template <class CharT, class Traits, class RT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, gamma_distribution<RT>& x) {
+    typedef gamma_distribution<RT> Eng;
+    typedef typename Eng::result_type result_type;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    result_type alpha;
+    result_type beta;
+    is >> alpha >> beta;
+    if (!is.fail())
+        x.param(param_type(alpha, beta));
+    return is;
+}
+
+template <class CharT, class Traits, class RT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const weibull_distribution<RT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    os << x.a() << sp << x.b();
+    return os;
+}
+
+template <class CharT, class Traits, class RT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, weibull_distribution<RT>& x) {
+    typedef weibull_distribution<RT> Eng;
+    typedef typename Eng::result_type result_type;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    result_type a;
+    result_type b;
+    is >> a >> b;
+    if (!is.fail())
+        x.param(param_type(a, b));
+    return is;
+}
+
+template <class CharT, class Traits, class RT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const extreme_value_distribution<RT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    os << x.a() << sp << x.b();
+    return os;
+}
+
+template <class CharT, class Traits, class RT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, extreme_value_distribution<RT>& x) {
+    typedef extreme_value_distribution<RT> Eng;
+    typedef typename Eng::result_type result_type;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    result_type a;
+    result_type b;
+    is >> a >> b;
+    if (!is.fail())
+        x.param(param_type(a, b));
+    return is;
+}
+
+template <class CharT, class Traits, class RT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const normal_distribution<RT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    os << x.mean() << sp << x.stddev() << sp << x.v_hot_;
+    if (x.v_hot_)
+        os << sp << x.v_;
+    return os;
+}
+
+template <class CharT, class Traits, class RT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, normal_distribution<RT>& x) {
+    typedef normal_distribution<RT> Eng;
+    typedef typename Eng::result_type result_type;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    result_type mean;
+    result_type stddev;
+    result_type vp = 0;
+    bool v_hot     = false;
+    is >> mean >> stddev >> v_hot;
+    if (v_hot)
+        is >> vp;
+    if (!is.fail()) {
+        x.param(param_type(mean, stddev));
+        x.v_hot_ = v_hot;
+        x.v_     = vp;
+    }
+    return is;
+}
+
+template <class CharT, class Traits, class RT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const lognormal_distribution<RT>& x) {
+    return os << x.nd_;
+}
+
+template <class CharT, class Traits, class RT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, lognormal_distribution<RT>& x) {
+    return is >> x.nd_;
+}
+
+template <class CharT, class Traits, class RT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const chi_squared_distribution<RT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    os << x.n();
+    return os;
+}
+
+template <class CharT, class Traits, class RT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, chi_squared_distribution<RT>& x) {
+    typedef chi_squared_distribution<RT> Eng;
+    typedef typename Eng::result_type result_type;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    result_type n;
+    is >> n;
+    if (!is.fail())
+        x.param(param_type(n));
+    return is;
+}
+
+template <class CharT, class Traits, class RT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const cauchy_distribution<RT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    os << x.a() << sp << x.b();
+    return os;
+}
+
+template <class CharT, class Traits, class RT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, cauchy_distribution<RT>& x) {
+    typedef cauchy_distribution<RT> Eng;
+    typedef typename Eng::result_type result_type;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    result_type a;
+    result_type b;
+    is >> a >> b;
+    if (!is.fail())
+        x.param(param_type(a, b));
+    return is;
+}
+
+template <class CharT, class Traits, class RT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const fisher_f_distribution<RT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    os << x.m() << sp << x.n();
+    return os;
+}
+
+template <class CharT, class Traits, class RT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, fisher_f_distribution<RT>& x) {
+    typedef fisher_f_distribution<RT> Eng;
+    typedef typename Eng::result_type result_type;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    result_type m;
+    result_type n;
+    is >> m >> n;
+    if (!is.fail())
+        x.param(param_type(m, n));
+    return is;
+}
+
+template <class CharT, class Traits, class RT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const student_t_distribution<RT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    os << x.n();
+    return os;
+}
+
+template <class CharT, class Traits, class RT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, student_t_distribution<RT>& x) {
+    typedef student_t_distribution<RT> Eng;
+    typedef typename Eng::result_type result_type;
+    typedef typename Eng::param_type param_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    result_type n;
+    is >> n;
+    if (!is.fail())
+        x.param(param_type(n));
+    return is;
+}
+
+template <class CharT, class Traits, class IT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const discrete_distribution<IT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    size_t n = x.p_.p_.size();
+    os << n;
+    for (size_t i = 0; i < n; ++i)
+        os << sp << x.p_.p_[i];
+    return os;
+}
+
+template <class CharT, class Traits, class IT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, discrete_distribution<IT>& x) {
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    size_t n;
+    is >> n;
+    vector<double> p(n);
+    for (size_t i = 0; i < n; ++i)
+        is >> p[i];
+    if (!is.fail())
+        swap(x.p_.p_, p);
+    return is;
+}
+
+template <class CharT, class Traits, class RT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const piecewise_constant_distribution<RT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    size_t n = x.p_.b_.size();
+    os << n;
+    for (size_t i = 0; i < n; ++i)
+        os << sp << x.p_.b_[i];
+    n = x.p_.densities_.size();
+    os << sp << n;
+    for (size_t i = 0; i < n; ++i)
+        os << sp << x.p_.densities_[i];
+    n = x.p_.areas_.size();
+    os << sp << n;
+    for (size_t i = 0; i < n; ++i)
+        os << sp << x.p_.areas_[i];
+    return os;
+}
+
+template <class CharT, class Traits, class RT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, piecewise_constant_distribution<RT>& x) {
+    typedef piecewise_constant_distribution<RT> Eng;
+    typedef typename Eng::result_type result_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    size_t n;
+    is >> n;
+    vector<result_type> b(n);
+    for (size_t i = 0; i < n; ++i)
+        is >> b[i];
+    is >> n;
+    vector<result_type> densities(n);
+    for (size_t i = 0; i < n; ++i)
+        is >> densities[i];
+    is >> n;
+    vector<result_type> areas(n);
+    for (size_t i = 0; i < n; ++i)
+        is >> areas[i];
+    if (!is.fail()) {
+        swap(x.p_.b_, b);
+        swap(x.p_.densities_, densities);
+        swap(x.p_.areas_, areas);
+    }
+    return is;
+}
+
+template <class CharT, class Traits, class RT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const piecewise_linear_distribution<RT>& x) {
+    save_flags<CharT, Traits> lx(os);
+    typedef basic_ostream<CharT, Traits> OStream;
+    os.flags(OStream::dec | OStream::left | OStream::fixed | OStream::scientific);
+    CharT sp = os.widen(' ');
+    os.fill(sp);
+    size_t n = x.p_.b_.size();
+    os << n;
+    for (size_t i = 0; i < n; ++i)
+        os << sp << x.p_.b_[i];
+    n = x.p_.densities_.size();
+    os << sp << n;
+    for (size_t i = 0; i < n; ++i)
+        os << sp << x.p_.densities_[i];
+    n = x.p_.areas_.size();
+    os << sp << n;
+    for (size_t i = 0; i < n; ++i)
+        os << sp << x.p_.areas_[i];
+    return os;
+}
+
+template <class CharT, class Traits, class RT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, piecewise_linear_distribution<RT>& x) {
+    typedef piecewise_linear_distribution<RT> Eng;
+    typedef typename Eng::result_type result_type;
+    save_flags<CharT, Traits> lx(is);
+    typedef basic_istream<CharT, Traits> Istream;
+    is.flags(Istream::dec | Istream::skipws);
+    size_t n;
+    is >> n;
+    vector<result_type> b(n);
+    for (size_t i = 0; i < n; ++i)
+        is >> b[i];
+    is >> n;
+    vector<result_type> densities(n);
+    for (size_t i = 0; i < n; ++i)
+        is >> densities[i];
+    is >> n;
+    vector<result_type> areas(n);
+    for (size_t i = 0; i < n; ++i)
+        is >> areas[i];
+    if (!is.fail()) {
+        swap(x.p_.b_, b);
+        swap(x.p_.densities_, densities);
+        swap(x.p_.areas_, areas);
+    }
+    return is;
 }
 
 } // namespace std

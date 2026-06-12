@@ -40,8 +40,46 @@
 #include <compare>
 #include <new>
 #include <cstddef>
+#include <execution>
 
 namespace std {
+
+//===----------------------------------------------------------------------===//
+// detail::convert_to_integral (from __utility/convert_to_integral.h)
+// Converts user-defined integer-like count types to a real integral type so
+// the *_n algorithm loops use built-in arithmetic/comparisons.
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+    inline constexpr int                convert_to_integral(int v)                { return v; }
+    inline constexpr unsigned           convert_to_integral(unsigned v)           { return v; }
+    inline constexpr long               convert_to_integral(long v)               { return v; }
+    inline constexpr unsigned long      convert_to_integral(unsigned long v)      { return v; }
+    inline constexpr long long          convert_to_integral(long long v)          { return v; }
+    inline constexpr unsigned long long convert_to_integral(unsigned long long v) { return v; }
+    inline constexpr __int128_t         convert_to_integral(__int128_t v)         { return v; }
+    inline constexpr __uint128_t        convert_to_integral(__uint128_t v)        { return v; }
+
+    template<class Fp, enable_if_t<is_floating_point_v<Fp>, int> = 0>
+    constexpr long long convert_to_integral(Fp v) { return static_cast<long long>(v); }
+
+    template<class T, bool = is_enum_v<T>>
+    struct sfinae_underlying_type {
+        using type = __underlying_type(T);
+        using promoted_type = decltype(((type)1) + 0);
+    };
+    template<class T>
+    struct sfinae_underlying_type<T, false> {};
+
+    template<class T, enable_if_t<is_enum_v<T>, int> = 0>
+    constexpr typename sfinae_underlying_type<T>::promoted_type
+    convert_to_integral(T v) { return static_cast<typename sfinae_underlying_type<T>::promoted_type>(v); }
+
+    // Fallback for class types convertible to an integral (e.g. the test
+    // suite's UserDefinedIntegral): use the promoted result of `v + 0`.
+    template<class T, enable_if_t<is_class_v<T>, int> = 0>
+    constexpr decltype(declval<T>() + 0) convert_to_integral(T v) { return v + 0; }
+} // namespace detail
 
 //===----------------------------------------------------------------------===//
 // [alg.min.max] — min, max, minmax, clamp
@@ -143,30 +181,44 @@ minmax(const T& a, const T& b) {
                    : pair<const T&, const T&>(a, b);
 }
 
-// minmax (initializer_list, comparator)
+// minmax (initializer_list, comparator) — pairwise algorithm from
+// libc++ __algorithm/minmax_element.h: at most 3n/2 comparisons, and the
+// max is the LAST maximal element (min is the first minimal element).
 template<class T, class Compare>
 [[nodiscard]] constexpr pair<T, T>
 minmax(initializer_list<T> t, Compare comp) {
-    auto it = t.begin();
-    T mn = *it, mx = *it;
-    for (++it; it != t.end(); ++it) {
-        if (comp(*it, mn)) mn = *it;
-        if (comp(mx, *it)) mx = *it;
+    const T* first = t.begin();
+    const T* last  = t.end();
+    pair<const T*, const T*> result(first, first);
+    if (first != last && ++first != last) {
+        if (comp(*first, *result.first))
+            result.first = first;
+        else
+            result.second = first;
+        while (++first != last) {
+            const T* i = first;
+            if (++first == last) {
+                if (comp(*i, *result.first)) result.first = i;
+                else if (!comp(*i, *result.second)) result.second = i;
+                break;
+            }
+            if (comp(*first, *i)) {
+                if (comp(*first, *result.first)) result.first = first;
+                if (!comp(*i, *result.second)) result.second = i;
+            } else {
+                if (comp(*i, *result.first)) result.first = i;
+                if (!comp(*first, *result.second)) result.second = first;
+            }
+        }
     }
-    return {mn, mx};
+    return {*result.first, *result.second};
 }
 
 // minmax (initializer_list, operator<)
 template<class T>
 [[nodiscard]] constexpr pair<T, T>
 minmax(initializer_list<T> t) {
-    auto it = t.begin();
-    T mn = *it, mx = *it;
-    for (++it; it != t.end(); ++it) {
-        if (*it < mn) mn = *it;
-        if (mx < *it) mx = *it;
-    }
-    return {mn, mx};
+    return std::minmax(t, less<>{});
 }
 
 // clamp (comparator)
@@ -313,7 +365,8 @@ for_each(InputIter first, InputIter last, Function f) {
 template<class InputIter, class Size, class Function>
 constexpr InputIter
 for_each_n(InputIter first, Size n, Function f) {
-    for (Size i = 0; i < n; ++i, ++first)
+    auto count = detail::convert_to_integral(n);
+    for (; count > 0; --count, (void)++first)
         f(*first);
     return first;
 }
@@ -344,7 +397,7 @@ template<class InputIter1, class InputIter2, class BinaryPred>
 mismatch(InputIter1 first1, InputIter1 last1,
          InputIter2 first2, InputIter2 last2,
          BinaryPred pred) {
-    for (; first1 != last1 && first2 != last2 && pred(*first1, *first2); ++first1, ++first2)
+    for (; first1 != last1 && first2 != last2 && pred(*first1, *first2); ++first1, (void)++first2)
         ;
     return {first1, first2};
 }
@@ -364,7 +417,7 @@ template<class InputIter1, class InputIter2, class BinaryPred>
 mismatch(InputIter1 first1, InputIter1 last1,
          InputIter2 first2,
          BinaryPred pred) {
-    for (; first1 != last1 && pred(*first1, *first2); ++first1, ++first2)
+    for (; first1 != last1 && pred(*first1, *first2); ++first1, (void)++first2)
         ;
     return {first1, first2};
 }
@@ -382,7 +435,16 @@ template<class InputIter1, class InputIter2, class BinaryPred>
 equal(InputIter1 first1, InputIter1 last1,
       InputIter2 first2, InputIter2 last2,
       BinaryPred pred) {
-    for (; first1 != last1 && first2 != last2; ++first1, ++first2)
+    // libc++: when both ranges are random-access, a length mismatch returns
+    // false with ZERO predicate applications (the tests assert the count).
+    if constexpr (is_convertible_v<typename iterator_traits<InputIter1>::iterator_category,
+                                   random_access_iterator_tag> &&
+                  is_convertible_v<typename iterator_traits<InputIter2>::iterator_category,
+                                   random_access_iterator_tag>) {
+        if (last1 - first1 != last2 - first2)
+            return false;
+    }
+    for (; first1 != last1 && first2 != last2; ++first1, (void)++first2)
         if (!pred(*first1, *first2)) return false;
     return first1 == last1 && first2 == last2;
 }
@@ -401,7 +463,7 @@ template<class InputIter1, class InputIter2, class BinaryPred>
 equal(InputIter1 first1, InputIter1 last1,
       InputIter2 first2,
       BinaryPred pred) {
-    for (; first1 != last1; ++first1, ++first2)
+    for (; first1 != last1; ++first1, (void)++first2)
         if (!pred(*first1, *first2)) return false;
     return true;
 }
@@ -530,7 +592,7 @@ template<class ForwardIter, class BinaryPred>
 adjacent_find(ForwardIter first, ForwardIter last, BinaryPred pred) {
     if (first != last) {
         ForwardIter next = first;
-        for (++next; next != last; ++first, ++next)
+        for (++next; next != last; ++first, (void)++next)
             if (pred(*first, *next)) return first;
     }
     return last;
@@ -652,7 +714,8 @@ template<class ForwardIter, class Size, class T, class BinaryPred>
 [[nodiscard]] constexpr ForwardIter
 search_n(ForwardIter first, ForwardIter last,
          Size count, const T& value, BinaryPred pred) {
-    return detail::search_n_forward_impl(first, last, count, value, pred);
+    return detail::search_n_forward_impl(first, last,
+                                         detail::convert_to_integral(count), value, pred);
 }
 
 template<class ForwardIter, class Size, class T>
@@ -670,7 +733,7 @@ search_n(ForwardIter first, ForwardIter last,
 template<class InputIter, class OutputIter>
 constexpr OutputIter
 copy(InputIter first, InputIter last, OutputIter result) {
-    for (; first != last; ++first, ++result)
+    for (; first != last; ++first, (void)++result)
         *result = *first;
     return result;
 }
@@ -688,9 +751,23 @@ copy_if(InputIter first, InputIter last, OutputIter result, Pred pred) {
 template<class InputIter, class Size, class OutputIter>
 constexpr OutputIter
 copy_n(InputIter first, Size n, OutputIter result) {
-    for (Size i = 0; i < n; ++i, ++first, ++result)
-        *result = *first;
-    return result;
+    if constexpr (is_convertible_v<typename iterator_traits<InputIter>::iterator_category,
+                                   random_access_iterator_tag>) {
+        using diff_t = typename iterator_traits<InputIter>::difference_type;
+        return std::copy(first, first + static_cast<diff_t>(detail::convert_to_integral(n)), result);
+    } else {
+        auto count = detail::convert_to_integral(n);
+        if (count > 0) {
+            *result = *first;
+            ++result;
+            for (--count; count > 0; --count) {
+                ++first;
+                *result = *first;
+                ++result;
+            }
+        }
+        return result;
+    }
 }
 
 // copy_backward
@@ -706,7 +783,7 @@ copy_backward(BidiIter1 first, BidiIter1 last, BidiIter2 result) {
 template<class InputIter, class OutputIter>
 constexpr OutputIter
 move(InputIter first, InputIter last, OutputIter result) {
-    for (; first != last; ++first, ++result)
+    for (; first != last; ++first, (void)++result)
         *result = std::move(*first);
     return result;
 }
@@ -732,7 +809,8 @@ fill(ForwardIter first, ForwardIter last, const T& value) {
 template<class OutputIter, class Size, class T>
 constexpr OutputIter
 fill_n(OutputIter first, Size n, const T& value) {
-    for (Size i = 0; i < n; ++i, ++first)
+    auto count = detail::convert_to_integral(n);
+    for (; count > 0; --count, (void)++first)
         *first = value;
     return first;
 }
@@ -741,7 +819,7 @@ fill_n(OutputIter first, Size n, const T& value) {
 template<class InputIter, class OutputIter, class UnaryOp>
 constexpr OutputIter
 transform(InputIter first, InputIter last, OutputIter result, UnaryOp op) {
-    for (; first != last; ++first, ++result)
+    for (; first != last; ++first, (void)++result)
         *result = op(*first);
     return result;
 }
@@ -751,7 +829,7 @@ template<class InputIter1, class InputIter2, class OutputIter, class BinaryOp>
 constexpr OutputIter
 transform(InputIter1 first1, InputIter1 last1,
           InputIter2 first2, OutputIter result, BinaryOp op) {
-    for (; first1 != last1; ++first1, ++first2, ++result)
+    for (; first1 != last1; ++first1, (void)++first2, (void)++result)
         *result = op(*first1, *first2);
     return result;
 }
@@ -768,7 +846,8 @@ generate(ForwardIter first, ForwardIter last, Generator gen) {
 template<class OutputIter, class Size, class Generator>
 constexpr OutputIter
 generate_n(OutputIter first, Size n, Generator gen) {
-    for (Size i = 0; i < n; ++i, ++first)
+    auto count = detail::convert_to_integral(n);
+    for (; count > 0; --count, (void)++first)
         *first = gen();
     return first;
 }
@@ -833,7 +912,7 @@ template<class InputIter, class OutputIter, class Pred, class T>
 constexpr OutputIter
 replace_copy_if(InputIter first, InputIter last, OutputIter result,
                 Pred pred, const T& new_value) {
-    for (; first != last; ++first, ++result)
+    for (; first != last; ++first, (void)++result)
         *result = pred(*first) ? new_value : *first;
     return result;
 }
@@ -852,7 +931,7 @@ replace_copy(InputIter first, InputIter last, OutputIter result,
 template<class ForwardIter1, class ForwardIter2>
 constexpr ForwardIter2
 swap_ranges(ForwardIter1 first1, ForwardIter1 last1, ForwardIter2 first2) {
-    for (; first1 != last1; ++first1, ++first2)
+    for (; first1 != last1; ++first1, (void)++first2)
         swap(*first1, *first2);
     return first2;
 }
@@ -1178,7 +1257,7 @@ template<class InputIter1, class InputIter2, class Compare>
 lexicographical_compare(InputIter1 first1, InputIter1 last1,
                         InputIter2 first2, InputIter2 last2,
                         Compare comp) {
-    for (; first2 != last2; ++first1, ++first2) {
+    for (; first2 != last2; ++first1, (void)++first2) {
         if (first1 == last1 || comp(*first1, *first2)) return true;
         if (comp(*first2, *first1)) return false;
     }
@@ -1209,7 +1288,7 @@ lexicographical_compare_three_way(InputIter1 first1, InputIter1 last1,
         DiffT len1 = last1 - first1;
         DiffT len2 = last2 - first2;
         DiffT min_len = len1 < len2 ? len1 : len2;
-        for (DiffT i = 0; i < min_len; ++i, ++first1, ++first2) {
+        for (DiffT i = 0; i < min_len; ++i, (void)++first1, (void)++first2) {
             auto c = comp(*first1, *first2);
             if (c != 0) return c;
         }
@@ -1444,7 +1523,7 @@ template<class RandomIter, class Compare>
 constexpr void
 sort_heap(RandomIter first, RandomIter last, Compare comp) {
     for (typename iterator_traits<RandomIter>::difference_type n = last - first;
-         n > 1; --last, --n)
+         n > 1; --last, (void)--n)
         pop_heap(first, last, comp);
 }
 
@@ -1637,7 +1716,7 @@ partial_sort_copy(InputIter first, InputIter last,
                   Compare comp) {
     RandomIter r = result_first;
     if (r != result_last) {
-        for (; first != last && r != result_last; ++first, ++r)
+        for (; first != last && r != result_last; ++first, (void)++r)
             *r = *first;
         make_heap(result_first, r, comp);
         typename iterator_traits<RandomIter>::difference_type len = r - result_first;
@@ -1967,6 +2046,13 @@ template<class RandomIter, class Compare>
 constexpr void
 sort(RandomIter first, RandomIter last, Compare comp) {
     if (first == last) return;
+    if (is_constant_evaluated()) {
+        // introsort uses non-constexpr helpers; insertion sort is fully
+        // constexpr (libc++ similarly takes a simpler path when constant
+        // evaluated).
+        detail::insertion_sort(first, last, comp);
+        return;
+    }
     using diff_t = typename iterator_traits<RandomIter>::difference_type;
     diff_t depth = diff_t(2) * diff_t(detail::bit_log2(
         (unsigned long long)(last - first)));
@@ -2051,14 +2137,14 @@ namespace detail {
         using value_type = typename iterator_traits<BidiIter>::value_type;
         if (len1 <= len2) {
             value_type* p = buff;
-            for (BidiIter i = first; i != middle; ++i, ++p)
+            for (BidiIter i = first; i != middle; ++i, (void)++p)
                 ::new (static_cast<void*>(p)) value_type(std::move(*i));
             half_inplace_merge(buff, p, middle, last, first, comp);
             // destroy temporaries
             for (value_type* q = buff; q != p; ++q) q->~value_type();
         } else {
             value_type* p = buff;
-            for (BidiIter i = middle; i != last; ++i, ++p)
+            for (BidiIter i = middle; i != last; ++i, (void)++p)
                 ::new (static_cast<void*>(p)) value_type(std::move(*i));
             // reverse-merge: use reverse_iterator + inverted comp
             using RBi = reverse_iterator<BidiIter>;
@@ -2084,7 +2170,7 @@ namespace detail {
             if (len1 <= buff_size || len2 <= buff_size)
                 return buffered_inplace_merge(first, middle, last, comp, len1, len2, buff);
             // Shrink left range
-            for (; true; ++first, --len1) {
+            for (; true; ++first, (void)--len1) {
                 if (len1 == 0) return;
                 if (comp(*middle, *first)) break;
             }
@@ -2170,7 +2256,7 @@ namespace detail {
                       OutIter result, Compare& comp) {
         for (; first1 != last1; ++result) {
             if (first2 == last2) {
-                for (; first1 != last1; ++first1, ++result)
+                for (; first1 != last1; ++first1, (void)++result)
                     *result = std::move(*first1);
                 return;
             }
@@ -2180,7 +2266,7 @@ namespace detail {
                 *result = std::move(*first1); ++first1;
             }
         }
-        for (; first2 != last2; ++first2, ++result)
+        for (; first2 != last2; ++first2, (void)++result)
             *result = std::move(*first2);
     }
 
@@ -2213,7 +2299,7 @@ namespace detail {
             stable_sort_impl(m, last, comp, len - l2, buff, buff_size);
             // merge first..m and m..last into buff, then copy back
             value_type* bp = buff;
-            for (RandomIter i = first; i != m; ++i, ++bp)
+            for (RandomIter i = first; i != m; ++i, (void)++bp)
                 ::new (static_cast<void*>(bp)) value_type(std::move(*i));
             value_type* bend = bp;
             bp = buff;
@@ -2308,25 +2394,155 @@ set_union(InputIter1 first1, InputIter1 last1,
     return set_union(first1, last1, first2, last2, result, less<>{});
 }
 
-// set_intersection (with comparator) — classic single-pass variant
+// set_intersection — ported from libc++ __algorithm/set_intersection.h,
+// including the one-sided binary search optimization for forward iterators
+// (required for the documented comparison-complexity guarantees).
+namespace detail {
+    template<class I1, class I2, class O>
+    struct set_intersection_result3 {
+        I1 in1;
+        I2 in2;
+        O  out;
+    };
+
+    // __lower_bound_bisecting
+    template<class Iter, class T, class Comp>
+    constexpr Iter
+    lower_bound_bisecting(Iter first, const T& value,
+                          typename iterator_traits<Iter>::difference_type len,
+                          Comp& comp) {
+        while (len != 0) {
+            auto l2 = len / 2;
+            Iter m = first;
+            std::advance(m, l2);
+            if (comp(*m, value)) {
+                first = ++m;
+                len -= l2 + 1;
+            } else {
+                len = l2;
+            }
+        }
+        return first;
+    }
+
+    // __lower_bound_onesided (meta binary search)
+    template<class Iter, class Sent, class T, class Comp>
+    constexpr Iter
+    lower_bound_onesided(Iter first, Sent last, const T& value, Comp& comp) {
+        // step = 0, ensuring we can always short-circuit when distance is 1 later on
+        if (first == last || !comp(*first, value))
+            return first;
+        using Distance = typename iterator_traits<Iter>::difference_type;
+        for (Distance step = 1; first != last; step <<= 1) {
+            Iter it = first;
+            Distance traveled = 0;
+            for (; traveled != step && it != last; ++traveled)
+                ++it;
+            Distance dist = traveled;
+            // once we reach the last range where the needle can be we must
+            // start looking inwards, bisecting that range
+            if (it == last || !comp(*it, value)) {
+                // we've already checked the previous value and it was less; we
+                // can save one comparison by skipping bisection
+                if (dist == 1)
+                    return it;
+                return detail::lower_bound_bisecting(first, value, dist, comp);
+            }
+            // range not found, move forward!
+            first = it;
+        }
+        return first;
+    }
+
+    // __set_intersection_add_output_if_equal
+    template<class I1, class I2, class O>
+    constexpr void
+    set_intersection_add_output_if_equal(bool may_be_equal,
+                                         I1& first1, I2& first2, O& result,
+                                         bool& prev_may_be_equal) {
+        if (may_be_equal && prev_may_be_equal) {
+            *result = *first1;
+            ++result;
+            ++first1;
+            ++first2;
+            prev_may_be_equal = false;
+        } else {
+            prev_may_be_equal = may_be_equal;
+        }
+    }
+
+    // forward/forward: one-sided binary search version
+    template<class I1, class S1, class I2, class S2, class O, class Comp>
+    constexpr set_intersection_result3<I1, I2, O>
+    set_intersection_impl(I1 first1, S1 last1, I2 first2, S2 last2, O result,
+                          Comp&& comp,
+                          forward_iterator_tag, forward_iterator_tag) {
+        bool prev_may_be_equal = false;
+        while (first2 != last2) {
+            I1 first1_next = detail::lower_bound_onesided(first1, last1, *first2, comp);
+            std::swap(first1_next, first1);
+            // keeping in mind that a==b iff !(a<b) && !(b<a):
+            // if we can't advance first1, that means !(*first1 < *first2),
+            // therefore may_be_equal==true
+            detail::set_intersection_add_output_if_equal(
+                first1 == first1_next, first1, first2, result, prev_may_be_equal);
+            if (first1 == last1)
+                break;
+            I2 first2_next = detail::lower_bound_onesided(first2, last2, *first1, comp);
+            std::swap(first2_next, first2);
+            detail::set_intersection_add_output_if_equal(
+                first2 == first2_next, first1, first2, result, prev_may_be_equal);
+        }
+        while (first1 != last1)
+            ++first1;
+        while (first2 != last2)
+            ++first2;
+        return {std::move(first1), std::move(first2), std::move(result)};
+    }
+
+    // input iterators: classic single-pass version
+    template<class I1, class S1, class I2, class S2, class O, class Comp>
+    constexpr set_intersection_result3<I1, I2, O>
+    set_intersection_impl(I1 first1, S1 last1, I2 first2, S2 last2, O result,
+                          Comp&& comp,
+                          input_iterator_tag, input_iterator_tag) {
+        while (first1 != last1 && first2 != last2) {
+            if (comp(*first1, *first2)) {
+                ++first1;
+            } else {
+                if (!comp(*first2, *first1)) {
+                    *result = *first1;
+                    ++result;
+                    ++first1;
+                }
+                ++first2;
+            }
+        }
+        while (first1 != last1)
+            ++first1;
+        while (first2 != last2)
+            ++first2;
+        return {std::move(first1), std::move(first2), std::move(result)};
+    }
+
+    template<class Iter>
+    using set_intersection_dispatch_tag =
+        conditional_t<is_convertible_v<typename iterator_traits<Iter>::iterator_category,
+                                       forward_iterator_tag>,
+                      forward_iterator_tag, input_iterator_tag>;
+} // namespace detail
+
+// set_intersection (with comparator)
 template<class InputIter1, class InputIter2, class OutputIter, class Compare>
 constexpr OutputIter
 set_intersection(InputIter1 first1, InputIter1 last1,
                  InputIter2 first2, InputIter2 last2,
                  OutputIter result, Compare comp) {
-    while (first1 != last1 && first2 != last2) {
-        if (comp(*first1, *first2)) {
-            ++first1;
-        } else {
-            if (!comp(*first2, *first1)) {
-                *result = *first1;
-                ++result;
-                ++first1;
-            }
-            ++first2;
-        }
-    }
-    return result;
+    return detail::set_intersection_impl(
+               std::move(first1), std::move(last1),
+               std::move(first2), std::move(last2), std::move(result), comp,
+               detail::set_intersection_dispatch_tag<InputIter1>{},
+               detail::set_intersection_dispatch_tag<InputIter2>{}).out;
 }
 
 // set_intersection (operator<)
@@ -2500,7 +2716,7 @@ namespace detail {
             // Copy false-elements from buffer back starting at first
             ForwardIter ret = first;  // save partition point
             i = first;
-            for (value_type* q = buff; q != p; ++q, ++i) {
+            for (value_type* q = buff; q != p; ++q, (void)++i) {
                 *i = std::move(*q);
                 q->~value_type();
             }
@@ -2654,7 +2870,7 @@ template<class ForwardIter1, class ForwardIter2, class BinaryPred>
 is_permutation(ForwardIter1 first1, ForwardIter1 last1,
                ForwardIter2 first2, BinaryPred pred) {
     // Skip equal prefix
-    for (; first1 != last1; ++first1, ++first2)
+    for (; first1 != last1; ++first1, (void)++first2)
         if (!pred(*first1, *first2)) break;
     if (first1 == last1) return true;
     using diff_t = typename iterator_traits<ForwardIter1>::difference_type;
@@ -2694,6 +2910,15 @@ template<class ForwardIter1, class ForwardIter2, class BinaryPred>
 is_permutation(ForwardIter1 first1, ForwardIter1 last1,
                ForwardIter2 first2, ForwardIter2 last2,
                BinaryPred pred) {
+    // libc++: when both ranges are random-access, a length mismatch returns
+    // false with ZERO predicate applications (the tests assert the count).
+    if constexpr (is_convertible_v<typename iterator_traits<ForwardIter1>::iterator_category,
+                                   random_access_iterator_tag> &&
+                  is_convertible_v<typename iterator_traits<ForwardIter2>::iterator_category,
+                                   random_access_iterator_tag>) {
+        if (last1 - first1 != last2 - first2)
+            return false;
+    }
     // Skip equal prefix
     while (first1 != last1 && first2 != last2) {
         if (!pred(*first1, *first2)) break;
@@ -2923,7 +3148,7 @@ struct for_each_n_fn {
                  invocable<Fun&, invoke_result_t<Proj&, iter_reference_t<I>>>
     constexpr in_fun_result<I, Fun>
     operator()(I first, iter_difference_t<I> n, Fun f, Proj proj = {}) const {
-        for (iter_difference_t<I> i = 0; i < n; ++i, ++first)
+        for (iter_difference_t<I> i = 0; i < n; ++i, (void)++first)
             std::invoke(f, std::invoke(proj, *first));
         return {std::move(first), std::move(f)};
     }
@@ -3132,7 +3357,7 @@ struct adjacent_find_fn {
     operator()(I first, S last, Pred pred = {}, Proj proj = {}) const {
         if (first == last) return first;
         I nxt = first;
-        for (++nxt; nxt != last; ++first, ++nxt)
+        for (++nxt; nxt != last; ++first, (void)++nxt)
             if (std::invoke(pred,
                             std::invoke(proj, *first),
                             std::invoke(proj, *nxt)))
@@ -3238,10 +3463,11 @@ struct mismatch_fn {
              class Proj1 = identity,
              class Proj2 = identity>
         requires indirect_binary_predicate<Pred, projected<I1, Proj1>, projected<I2, Proj2>>
-    [[nodiscard]] constexpr mismatch_result<I1, I2>
+    [[nodiscard]] constexpr auto
     operator()(I1 first1, S1 last1, I2 first2, S2 last2,
-               Pred pred = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
-        for (; first1 != last1 && first2 != last2; ++first1, ++first2)
+               Pred pred = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const
+        -> mismatch_result<I1, I2> {
+        for (; first1 != last1 && first2 != last2; ++first1, (void)++first2)
             if (!std::invoke(pred,
                              std::invoke(proj1, *first1),
                              std::invoke(proj2, *first2)))
@@ -3281,7 +3507,7 @@ struct equal_fn {
     [[nodiscard]] constexpr bool
     operator()(I1 first1, S1 last1, I2 first2, S2 last2,
                Pred pred = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
-        for (; first1 != last1 && first2 != last2; ++first1, ++first2)
+        for (; first1 != last1 && first2 != last2; ++first1, (void)++first2)
             if (!std::invoke(pred,
                              std::invoke(proj1, *first1),
                              std::invoke(proj2, *first2)))
@@ -3316,7 +3542,7 @@ struct copy_fn {
         requires indirectly_copyable<I, O>
     constexpr in_out_result<I, O>
     operator()(I first, S last, O result) const {
-        for (; first != last; ++first, ++result)
+        for (; first != last; ++first, (void)++result)
             *result = *first;
         return {std::move(first), std::move(result)};
     }
@@ -3365,7 +3591,7 @@ struct copy_n_fn {
         requires indirectly_copyable<I, O>
     constexpr in_out_result<I, O>
     operator()(I first, iter_difference_t<I> n, O result) const {
-        for (iter_difference_t<I> i = 0; i < n; ++i, ++first, ++result)
+        for (iter_difference_t<I> i = 0; i < n; ++i, (void)++first, (void)++result)
             *result = *first;
         return {std::move(first), std::move(result)};
     }
@@ -3382,7 +3608,7 @@ struct move_fn {
         requires indirectly_movable<I, O>
     constexpr in_out_result<I, O>
     operator()(I first, S last, O result) const {
-        for (; first != last; ++first, ++result)
+        for (; first != last; ++first, (void)++result)
             *result = ranges::iter_move(first);
         return {std::move(first), std::move(result)};
     }
@@ -3423,7 +3649,7 @@ struct fill_n_fn {
     template<class T, output_iterator<const T&> O>
     constexpr O
     operator()(O first, iter_difference_t<O> n, const T& value) const {
-        for (iter_difference_t<O> i = 0; i < n; ++i, ++first)
+        for (iter_difference_t<O> i = 0; i < n; ++i, (void)++first)
             *first = value;
         return first;
     }
@@ -3444,7 +3670,7 @@ struct transform_fn {
         requires indirectly_writable<O, indirect_result_t<F&, projected<I, Proj>>>
     constexpr in_out_result<I, O>
     operator()(I first, S last, O result, F op, Proj proj = {}) const {
-        for (; first != last; ++first, ++result)
+        for (; first != last; ++first, (void)++result)
             *result = std::invoke(op, std::invoke(proj, *first));
         return {std::move(first), std::move(result)};
     }
@@ -3473,7 +3699,7 @@ struct transform_fn {
     operator()(I1 first1, S1 last1, I2 first2, S2 last2,
                O result, F op, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
         for (; first1 != last1 && first2 != last2;
-               ++first1, ++first2, ++result)
+               ++first1, (void)++first2, (void)++result)
             *result = std::invoke(op,
                                   std::invoke(proj1, *first1),
                                   std::invoke(proj2, *first2));
@@ -3529,7 +3755,7 @@ struct generate_n_fn {
         requires invocable<F&> && output_iterator<O, invoke_result_t<F&>>
     constexpr O
     operator()(O first, iter_difference_t<O> n, F gen) const {
-        for (iter_difference_t<O> i = 0; i < n; ++i, ++first)
+        for (iter_difference_t<O> i = 0; i < n; ++i, (void)++first)
             *first = std::invoke(gen);
         return first;
     }
@@ -4131,7 +4357,7 @@ struct is_sorted_fn {
     operator()(I first, S last, Comp comp = {}, Proj proj = {}) const {
         if (first == last) return true;
         I nxt = first;
-        for (++nxt; nxt != last; ++first, ++nxt)
+        for (++nxt; nxt != last; ++first, (void)++nxt)
             if (std::invoke(comp, std::invoke(proj, *nxt), std::invoke(proj, *first)))
                 return false;
         return true;
@@ -4341,6 +4567,1207 @@ struct is_heap_fn {
 
 inline constexpr is_heap_fn is_heap{};
 
+
+//===----------------------------------------------------------------------===//
+// Additional result-type aliases ([algorithms.results] continued)
+//===----------------------------------------------------------------------===//
+
+template<class I, class O>
+using copy_result            = in_out_result<I, O>;
+template<class I, class O>
+using copy_n_result          = in_out_result<I, O>;
+template<class I, class O>
+using copy_if_result         = in_out_result<I, O>;
+template<class I1, class I2>
+using copy_backward_result   = in_out_result<I1, I2>;
+template<class I, class O>
+using move_result            = in_out_result<I, O>;
+template<class I1, class I2>
+using move_backward_result   = in_out_result<I1, I2>;
+template<class I1, class I2>
+using swap_ranges_result     = in_in_result<I1, I2>;
+template<class I, class O>
+using unary_transform_result = in_out_result<I, O>;
+template<class I1, class I2, class O>
+using binary_transform_result = in_in_out_result<I1, I2, O>;
+template<class I, class O>
+using replace_copy_result    = in_out_result<I, O>;
+template<class I, class O>
+using replace_copy_if_result = in_out_result<I, O>;
+template<class I, class O>
+using remove_copy_result     = in_out_result<I, O>;
+template<class I, class O>
+using remove_copy_if_result  = in_out_result<I, O>;
+template<class I, class O>
+using unique_copy_result     = in_out_result<I, O>;
+template<class I, class O1, class O2>
+using partition_copy_result  = in_out_out_result<I, O1, O2>;
+template<class I, class O>
+using partial_sort_copy_result = in_out_result<I, O>;
+template<class I1, class I2, class O>
+using merge_result           = in_in_out_result<I1, I2, O>;
+template<class I1, class I2, class O>
+using set_union_result       = in_in_out_result<I1, I2, O>;
+template<class I1, class I2, class O>
+using set_intersection_result = in_in_out_result<I1, I2, O>;
+template<class I, class O>
+using set_difference_result  = in_out_result<I, O>;
+template<class I1, class I2, class O>
+using set_symmetric_difference_result = in_in_out_result<I1, I2, O>;
+template<class T>
+using minmax_result          = min_max_result<T>;
+template<class I>
+using minmax_element_result  = min_max_result<I>;
+template<class I>
+using next_permutation_result = in_found_result<I>;
+template<class I>
+using prev_permutation_result = in_found_result<I>;
+template<class I, class F>
+using for_each_n_result      = in_fun_result<I, F>;
+
+//===----------------------------------------------------------------------===//
+// Internal projected-predicate helpers
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+    // Unary predicate through a projection.
+    template<class Pred, class Proj>
+    struct proj_pred {
+        Pred& pred;
+        Proj& proj;
+        template<class T>
+        constexpr bool operator()(T&& a) {
+            return std::invoke(pred, std::invoke(proj, std::forward<T>(a)));
+        }
+    };
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
+// ranges::copy_backward, ranges::move_backward
+//===----------------------------------------------------------------------===//
+
+struct copy_backward_fn {
+    template<bidirectional_iterator I1, sentinel_for<I1> S1, bidirectional_iterator I2>
+        requires indirectly_copyable<I1, I2>
+    constexpr copy_backward_result<I1, I2>
+    operator()(I1 first, S1 last, I2 result) const {
+        I1 last_it = ranges::next(first, last);
+        for (I1 i = last_it; i != first;)
+            *--result = *--i;
+        return {std::move(last_it), std::move(result)};
+    }
+
+    template<bidirectional_range R, bidirectional_iterator I>
+        requires indirectly_copyable<iterator_t<R>, I>
+    constexpr copy_backward_result<borrowed_iterator_t<R>, I>
+    operator()(R&& r, I result) const {
+        return (*this)(ranges::begin(r), ranges::end(r), std::move(result));
+    }
+};
+
+inline constexpr copy_backward_fn copy_backward{};
+
+struct move_backward_fn {
+    template<bidirectional_iterator I1, sentinel_for<I1> S1, bidirectional_iterator I2>
+        requires indirectly_movable<I1, I2>
+    constexpr move_backward_result<I1, I2>
+    operator()(I1 first, S1 last, I2 result) const {
+        I1 last_it = ranges::next(first, last);
+        for (I1 i = last_it; i != first;)
+            *--result = ranges::iter_move(--i);
+        return {std::move(last_it), std::move(result)};
+    }
+
+    template<bidirectional_range R, bidirectional_iterator I>
+        requires indirectly_movable<iterator_t<R>, I>
+    constexpr move_backward_result<borrowed_iterator_t<R>, I>
+    operator()(R&& r, I result) const {
+        return (*this)(ranges::begin(r), ranges::end(r), std::move(result));
+    }
+};
+
+inline constexpr move_backward_fn move_backward{};
+
+//===----------------------------------------------------------------------===//
+// ranges::swap_ranges
+//===----------------------------------------------------------------------===//
+
+struct swap_ranges_fn {
+    template<input_iterator I1, sentinel_for<I1> S1,
+             input_iterator I2, sentinel_for<I2> S2>
+        requires indirectly_swappable<I1, I2>
+    constexpr swap_ranges_result<I1, I2>
+    operator()(I1 first1, S1 last1, I2 first2, S2 last2) const {
+        for (; first1 != last1 && first2 != last2; ++first1, (void)++first2)
+            ranges::iter_swap(first1, first2);
+        return {std::move(first1), std::move(first2)};
+    }
+
+    template<input_range R1, input_range R2>
+        requires indirectly_swappable<iterator_t<R1>, iterator_t<R2>>
+    constexpr swap_ranges_result<borrowed_iterator_t<R1>, borrowed_iterator_t<R2>>
+    operator()(R1&& r1, R2&& r2) const {
+        return (*this)(ranges::begin(r1), ranges::end(r1),
+                       ranges::begin(r2), ranges::end(r2));
+    }
+};
+
+inline constexpr swap_ranges_fn swap_ranges{};
+
+//===----------------------------------------------------------------------===//
+// ranges::lexicographical_compare
+//===----------------------------------------------------------------------===//
+
+struct lexicographical_compare_fn {
+    template<input_iterator I1, sentinel_for<I1> S1,
+             input_iterator I2, sentinel_for<I2> S2,
+             class Proj1 = identity, class Proj2 = identity,
+             indirect_strict_weak_order<projected<I1, Proj1>, projected<I2, Proj2>> Comp = less>
+    [[nodiscard]] constexpr bool
+    operator()(I1 first1, S1 last1, I2 first2, S2 last2,
+               Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        for (; first2 != last2; ++first1, (void)++first2) {
+            if (first1 == last1 ||
+                std::invoke(comp, std::invoke(proj1, *first1), std::invoke(proj2, *first2)))
+                return true;
+            if (std::invoke(comp, std::invoke(proj2, *first2), std::invoke(proj1, *first1)))
+                return false;
+        }
+        return false;
+    }
+
+    template<input_range R1, input_range R2,
+             class Proj1 = identity, class Proj2 = identity,
+             indirect_strict_weak_order<projected<iterator_t<R1>, Proj1>,
+                                        projected<iterator_t<R2>, Proj2>> Comp = less>
+    [[nodiscard]] constexpr bool
+    operator()(R1&& r1, R2&& r2, Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        return (*this)(ranges::begin(r1), ranges::end(r1),
+                       ranges::begin(r2), ranges::end(r2),
+                       std::move(comp), std::move(proj1), std::move(proj2));
+    }
+};
+
+inline constexpr lexicographical_compare_fn lexicographical_compare{};
+
+//===----------------------------------------------------------------------===//
+// ranges::search, ranges::search_n, ranges::find_end
+//===----------------------------------------------------------------------===//
+
+struct search_fn {
+    template<forward_iterator I1, sentinel_for<I1> S1,
+             forward_iterator I2, sentinel_for<I2> S2,
+             class Pred = equal_to,
+             class Proj1 = identity, class Proj2 = identity>
+        requires indirectly_comparable<I1, I2, Pred, Proj1, Proj2>
+    [[nodiscard]] constexpr subrange<I1>
+    operator()(I1 first1, S1 last1, I2 first2, S2 last2,
+               Pred pred = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        if (first2 == last2)
+            return {first1, first1};
+        while (true) {
+            while (true) {
+                if (first1 == last1)
+                    return {first1, first1};
+                if (std::invoke(pred, std::invoke(proj1, *first1), std::invoke(proj2, *first2)))
+                    break;
+                ++first1;
+            }
+            I1 m1 = first1;
+            I2 m2 = first2;
+            while (true) {
+                if (++m2 == last2)
+                    return {first1, ++m1};
+                if (++m1 == last1)
+                    return {m1, m1};
+                if (!std::invoke(pred, std::invoke(proj1, *m1), std::invoke(proj2, *m2))) {
+                    ++first1;
+                    break;
+                }
+            }
+        }
+    }
+
+    template<forward_range R1, forward_range R2,
+             class Pred = equal_to,
+             class Proj1 = identity, class Proj2 = identity>
+        requires indirectly_comparable<iterator_t<R1>, iterator_t<R2>, Pred, Proj1, Proj2>
+    [[nodiscard]] constexpr borrowed_subrange_t<R1>
+    operator()(R1&& r1, R2&& r2, Pred pred = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        return (*this)(ranges::begin(r1), ranges::end(r1),
+                       ranges::begin(r2), ranges::end(r2),
+                       std::move(pred), std::move(proj1), std::move(proj2));
+    }
+};
+
+inline constexpr search_fn search{};
+
+struct search_n_fn {
+    template<forward_iterator I, sentinel_for<I> S,
+             class T,
+             class Pred = equal_to,
+             class Proj = identity>
+        requires indirectly_comparable<I, const T*, Pred, Proj>
+    [[nodiscard]] constexpr subrange<I>
+    operator()(I first, S last, iter_difference_t<I> count, const T& value,
+               Pred pred = {}, Proj proj = {}) const {
+        if (count <= 0)
+            return {first, first};
+        while (true) {
+            while (true) {
+                if (first == last)
+                    return {first, first};
+                if (std::invoke(pred, std::invoke(proj, *first), value))
+                    break;
+                ++first;
+            }
+            I m = first;
+            iter_difference_t<I> c = 0;
+            while (true) {
+                if (++c == count)
+                    return {first, ++m};
+                if (++m == last)
+                    return {m, m};
+                if (!std::invoke(pred, std::invoke(proj, *m), value)) {
+                    first = m;
+                    ++first;
+                    break;
+                }
+            }
+        }
+    }
+
+    template<forward_range R, class T,
+             class Pred = equal_to,
+             class Proj = identity>
+        requires indirectly_comparable<iterator_t<R>, const T*, Pred, Proj>
+    [[nodiscard]] constexpr borrowed_subrange_t<R>
+    operator()(R&& r, range_difference_t<R> count, const T& value,
+               Pred pred = {}, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r), count, value,
+                       std::move(pred), std::move(proj));
+    }
+};
+
+inline constexpr search_n_fn search_n{};
+
+struct find_end_fn {
+    template<forward_iterator I1, sentinel_for<I1> S1,
+             forward_iterator I2, sentinel_for<I2> S2,
+             class Pred = equal_to,
+             class Proj1 = identity, class Proj2 = identity>
+        requires indirectly_comparable<I1, I2, Pred, Proj1, Proj2>
+    [[nodiscard]] constexpr subrange<I1>
+    operator()(I1 first1, S1 last1, I2 first2, S2 last2,
+               Pred pred = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        if (first2 == last2) {
+            I1 tail = ranges::next(first1, last1);
+            return {tail, tail};
+        }
+        subrange<I1> result = ranges::search(first1, last1, first2, last2, pred, proj1, proj2);
+        if (result.empty())
+            return result;
+        while (true) {
+            I1 nxt = result.begin();
+            ++nxt;
+            subrange<I1> next_result = ranges::search(nxt, last1, first2, last2, pred, proj1, proj2);
+            if (next_result.empty())
+                return result;
+            result = next_result;
+        }
+    }
+
+    template<forward_range R1, forward_range R2,
+             class Pred = equal_to,
+             class Proj1 = identity, class Proj2 = identity>
+        requires indirectly_comparable<iterator_t<R1>, iterator_t<R2>, Pred, Proj1, Proj2>
+    [[nodiscard]] constexpr borrowed_subrange_t<R1>
+    operator()(R1&& r1, R2&& r2, Pred pred = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        return (*this)(ranges::begin(r1), ranges::end(r1),
+                       ranges::begin(r2), ranges::end(r2),
+                       std::move(pred), std::move(proj1), std::move(proj2));
+    }
+};
+
+inline constexpr find_end_fn find_end{};
+
+//===----------------------------------------------------------------------===//
+// ranges::includes
+//===----------------------------------------------------------------------===//
+
+struct includes_fn {
+    template<input_iterator I1, sentinel_for<I1> S1,
+             input_iterator I2, sentinel_for<I2> S2,
+             class Proj1 = identity, class Proj2 = identity,
+             indirect_strict_weak_order<projected<I1, Proj1>, projected<I2, Proj2>> Comp = less>
+    [[nodiscard]] constexpr bool
+    operator()(I1 first1, S1 last1, I2 first2, S2 last2,
+               Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        for (; first2 != last2; ++first1) {
+            if (first1 == last1 ||
+                std::invoke(comp, std::invoke(proj2, *first2), std::invoke(proj1, *first1)))
+                return false;
+            if (!std::invoke(comp, std::invoke(proj1, *first1), std::invoke(proj2, *first2)))
+                ++first2;
+        }
+        return true;
+    }
+
+    template<input_range R1, input_range R2,
+             class Proj1 = identity, class Proj2 = identity,
+             indirect_strict_weak_order<projected<iterator_t<R1>, Proj1>,
+                                        projected<iterator_t<R2>, Proj2>> Comp = less>
+    [[nodiscard]] constexpr bool
+    operator()(R1&& r1, R2&& r2, Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        return (*this)(ranges::begin(r1), ranges::end(r1),
+                       ranges::begin(r2), ranges::end(r2),
+                       std::move(comp), std::move(proj1), std::move(proj2));
+    }
+};
+
+inline constexpr includes_fn includes{};
+
+//===----------------------------------------------------------------------===//
+// ranges::merge, ranges::inplace_merge
+//===----------------------------------------------------------------------===//
+
+struct merge_fn {
+    template<input_iterator I1, sentinel_for<I1> S1,
+             input_iterator I2, sentinel_for<I2> S2,
+             weakly_incrementable O,
+             class Comp = less,
+             class Proj1 = identity, class Proj2 = identity>
+        requires mergeable<I1, I2, O, Comp, Proj1, Proj2>
+    constexpr merge_result<I1, I2, O>
+    operator()(I1 first1, S1 last1, I2 first2, S2 last2, O result,
+               Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        for (; first1 != last1 && first2 != last2; ++result) {
+            if (std::invoke(comp, std::invoke(proj2, *first2), std::invoke(proj1, *first1))) {
+                *result = *first2;
+                ++first2;
+            } else {
+                *result = *first1;
+                ++first1;
+            }
+        }
+        for (; first1 != last1; ++first1, (void)++result)
+            *result = *first1;
+        for (; first2 != last2; ++first2, (void)++result)
+            *result = *first2;
+        return {std::move(first1), std::move(first2), std::move(result)};
+    }
+
+    template<input_range R1, input_range R2, weakly_incrementable O,
+             class Comp = less,
+             class Proj1 = identity, class Proj2 = identity>
+        requires mergeable<iterator_t<R1>, iterator_t<R2>, O, Comp, Proj1, Proj2>
+    constexpr merge_result<borrowed_iterator_t<R1>, borrowed_iterator_t<R2>, O>
+    operator()(R1&& r1, R2&& r2, O result,
+               Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        return (*this)(ranges::begin(r1), ranges::end(r1),
+                       ranges::begin(r2), ranges::end(r2), std::move(result),
+                       std::move(comp), std::move(proj1), std::move(proj2));
+    }
+};
+
+inline constexpr merge_fn merge{};
+
+struct inplace_merge_fn {
+    template<bidirectional_iterator I, sentinel_for<I> S,
+             class Comp = less,
+             class Proj = identity>
+        requires sortable<I, Comp, Proj>
+    I
+    operator()(I first, I middle, S last, Comp comp = {}, Proj proj = {}) const {
+        I tail = ranges::next(first, last);
+        detail::proj_comp<Comp, Proj> pc{comp, proj};
+        std::inplace_merge(std::move(first), std::move(middle), tail, pc);
+        return tail;
+    }
+
+    template<bidirectional_range R,
+             class Comp = less,
+             class Proj = identity>
+        requires sortable<iterator_t<R>, Comp, Proj>
+    borrowed_iterator_t<R>
+    operator()(R&& r, iterator_t<R> middle, Comp comp = {}, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), std::move(middle), ranges::end(r),
+                       std::move(comp), std::move(proj));
+    }
+};
+
+inline constexpr inplace_merge_fn inplace_merge{};
+
+//===----------------------------------------------------------------------===//
+// ranges set operations
+//===----------------------------------------------------------------------===//
+
+struct set_union_fn {
+    template<input_iterator I1, sentinel_for<I1> S1,
+             input_iterator I2, sentinel_for<I2> S2,
+             weakly_incrementable O,
+             class Comp = less,
+             class Proj1 = identity, class Proj2 = identity>
+        requires mergeable<I1, I2, O, Comp, Proj1, Proj2>
+    constexpr set_union_result<I1, I2, O>
+    operator()(I1 first1, S1 last1, I2 first2, S2 last2, O result,
+               Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        for (; first1 != last1 && first2 != last2; ++result) {
+            if (std::invoke(comp, std::invoke(proj2, *first2), std::invoke(proj1, *first1))) {
+                *result = *first2;
+                ++first2;
+            } else {
+                if (!std::invoke(comp, std::invoke(proj1, *first1), std::invoke(proj2, *first2)))
+                    ++first2;
+                *result = *first1;
+                ++first1;
+            }
+        }
+        for (; first1 != last1; ++first1, (void)++result)
+            *result = *first1;
+        for (; first2 != last2; ++first2, (void)++result)
+            *result = *first2;
+        return {std::move(first1), std::move(first2), std::move(result)};
+    }
+
+    template<input_range R1, input_range R2, weakly_incrementable O,
+             class Comp = less,
+             class Proj1 = identity, class Proj2 = identity>
+        requires mergeable<iterator_t<R1>, iterator_t<R2>, O, Comp, Proj1, Proj2>
+    constexpr set_union_result<borrowed_iterator_t<R1>, borrowed_iterator_t<R2>, O>
+    operator()(R1&& r1, R2&& r2, O result,
+               Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        return (*this)(ranges::begin(r1), ranges::end(r1),
+                       ranges::begin(r2), ranges::end(r2), std::move(result),
+                       std::move(comp), std::move(proj1), std::move(proj2));
+    }
+};
+
+inline constexpr set_union_fn set_union{};
+
+struct set_intersection_fn {
+    template<input_iterator I1, sentinel_for<I1> S1,
+             input_iterator I2, sentinel_for<I2> S2,
+             weakly_incrementable O,
+             class Comp = less,
+             class Proj1 = identity, class Proj2 = identity>
+        requires mergeable<I1, I2, O, Comp, Proj1, Proj2>
+    constexpr set_intersection_result<I1, I2, O>
+    operator()(I1 first1, S1 last1, I2 first2, S2 last2, O result,
+               Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        auto pc = [&](auto&& lhs, auto&& rhs) -> bool {
+            return std::invoke(comp,
+                               std::invoke(proj1, std::forward<decltype(lhs)>(lhs)),
+                               std::invoke(proj2, std::forward<decltype(rhs)>(rhs)));
+        };
+        using Tag1 = conditional_t<forward_iterator<I1>,
+                                   forward_iterator_tag, input_iterator_tag>;
+        using Tag2 = conditional_t<forward_iterator<I2>,
+                                   forward_iterator_tag, input_iterator_tag>;
+        auto ret = std::detail::set_intersection_impl(
+            std::move(first1), std::move(last1),
+            std::move(first2), std::move(last2), std::move(result), pc,
+            Tag1{}, Tag2{});
+        return {std::move(ret.in1), std::move(ret.in2), std::move(ret.out)};
+    }
+
+    template<input_range R1, input_range R2, weakly_incrementable O,
+             class Comp = less,
+             class Proj1 = identity, class Proj2 = identity>
+        requires mergeable<iterator_t<R1>, iterator_t<R2>, O, Comp, Proj1, Proj2>
+    constexpr set_intersection_result<borrowed_iterator_t<R1>, borrowed_iterator_t<R2>, O>
+    operator()(R1&& r1, R2&& r2, O result,
+               Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        return (*this)(ranges::begin(r1), ranges::end(r1),
+                       ranges::begin(r2), ranges::end(r2), std::move(result),
+                       std::move(comp), std::move(proj1), std::move(proj2));
+    }
+};
+
+inline constexpr set_intersection_fn set_intersection{};
+
+struct set_difference_fn {
+    template<input_iterator I1, sentinel_for<I1> S1,
+             input_iterator I2, sentinel_for<I2> S2,
+             weakly_incrementable O,
+             class Comp = less,
+             class Proj1 = identity, class Proj2 = identity>
+        requires mergeable<I1, I2, O, Comp, Proj1, Proj2>
+    constexpr set_difference_result<I1, O>
+    operator()(I1 first1, S1 last1, I2 first2, S2 last2, O result,
+               Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        while (first1 != last1 && first2 != last2) {
+            if (std::invoke(comp, std::invoke(proj1, *first1), std::invoke(proj2, *first2))) {
+                *result = *first1;
+                ++first1;
+                ++result;
+            } else if (std::invoke(comp, std::invoke(proj2, *first2), std::invoke(proj1, *first1))) {
+                ++first2;
+            } else {
+                ++first1;
+                ++first2;
+            }
+        }
+        for (; first1 != last1; ++first1, (void)++result)
+            *result = *first1;
+        return {std::move(first1), std::move(result)};
+    }
+
+    template<input_range R1, input_range R2, weakly_incrementable O,
+             class Comp = less,
+             class Proj1 = identity, class Proj2 = identity>
+        requires mergeable<iterator_t<R1>, iterator_t<R2>, O, Comp, Proj1, Proj2>
+    constexpr set_difference_result<borrowed_iterator_t<R1>, O>
+    operator()(R1&& r1, R2&& r2, O result,
+               Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        return (*this)(ranges::begin(r1), ranges::end(r1),
+                       ranges::begin(r2), ranges::end(r2), std::move(result),
+                       std::move(comp), std::move(proj1), std::move(proj2));
+    }
+};
+
+inline constexpr set_difference_fn set_difference{};
+
+struct set_symmetric_difference_fn {
+    template<input_iterator I1, sentinel_for<I1> S1,
+             input_iterator I2, sentinel_for<I2> S2,
+             weakly_incrementable O,
+             class Comp = less,
+             class Proj1 = identity, class Proj2 = identity>
+        requires mergeable<I1, I2, O, Comp, Proj1, Proj2>
+    constexpr set_symmetric_difference_result<I1, I2, O>
+    operator()(I1 first1, S1 last1, I2 first2, S2 last2, O result,
+               Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        while (first1 != last1 && first2 != last2) {
+            if (std::invoke(comp, std::invoke(proj1, *first1), std::invoke(proj2, *first2))) {
+                *result = *first1;
+                ++result;
+                ++first1;
+            } else if (std::invoke(comp, std::invoke(proj2, *first2), std::invoke(proj1, *first1))) {
+                *result = *first2;
+                ++result;
+                ++first2;
+            } else {
+                ++first1;
+                ++first2;
+            }
+        }
+        for (; first1 != last1; ++first1, (void)++result)
+            *result = *first1;
+        for (; first2 != last2; ++first2, (void)++result)
+            *result = *first2;
+        return {std::move(first1), std::move(first2), std::move(result)};
+    }
+
+    template<input_range R1, input_range R2, weakly_incrementable O,
+             class Comp = less,
+             class Proj1 = identity, class Proj2 = identity>
+        requires mergeable<iterator_t<R1>, iterator_t<R2>, O, Comp, Proj1, Proj2>
+    constexpr set_symmetric_difference_result<borrowed_iterator_t<R1>, borrowed_iterator_t<R2>, O>
+    operator()(R1&& r1, R2&& r2, O result,
+               Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        return (*this)(ranges::begin(r1), ranges::end(r1),
+                       ranges::begin(r2), ranges::end(r2), std::move(result),
+                       std::move(comp), std::move(proj1), std::move(proj2));
+    }
+};
+
+inline constexpr set_symmetric_difference_fn set_symmetric_difference{};
+
+//===----------------------------------------------------------------------===//
+// ranges::is_permutation
+//===----------------------------------------------------------------------===//
+
+struct is_permutation_fn {
+    template<forward_iterator I1, sentinel_for<I1> S1,
+             forward_iterator I2, sentinel_for<I2> S2,
+             class Proj1 = identity, class Proj2 = identity,
+             indirect_equivalence_relation<projected<I1, Proj1>, projected<I2, Proj2>> Pred = equal_to>
+    [[nodiscard]] constexpr bool
+    operator()(I1 first1, S1 last1, I2 first2, S2 last2,
+               Pred pred = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        // Skip the common prefix.
+        while (first1 != last1 && first2 != last2) {
+            if (!std::invoke(pred, std::invoke(proj1, *first1), std::invoke(proj2, *first2)))
+                break;
+            ++first1;
+            ++first2;
+        }
+        if (first1 == last1)
+            return first2 == last2;
+        if (first2 == last2)
+            return false;
+        auto l1 = ranges::distance(first1, last1);
+        auto l2 = ranges::distance(first2, last2);
+        if (l1 != l2)
+            return false;
+        I1 last1_it = ranges::next(first1, last1);
+        I2 last2_it = ranges::next(first2, last2);
+        for (I1 i = first1; i != last1_it; ++i) {
+            bool already = false;
+            for (I1 j = first1; j != i; ++j)
+                if (std::invoke(pred, std::invoke(proj1, *j), std::invoke(proj1, *i))) {
+                    already = true;
+                    break;
+                }
+            if (already)
+                continue;
+            decltype(l1) c2 = 0;
+            for (I2 j = first2; j != last2_it; ++j)
+                if (std::invoke(pred, std::invoke(proj1, *i), std::invoke(proj2, *j)))
+                    ++c2;
+            if (c2 == 0)
+                return false;
+            decltype(l1) c1 = 1;
+            for (I1 j = ranges::next(i); j != last1_it; ++j)
+                if (std::invoke(pred, std::invoke(proj1, *i), std::invoke(proj1, *j)))
+                    ++c1;
+            if (c1 != c2)
+                return false;
+        }
+        return true;
+    }
+
+    template<forward_range R1, forward_range R2,
+             class Proj1 = identity, class Proj2 = identity,
+             indirect_equivalence_relation<projected<iterator_t<R1>, Proj1>,
+                                           projected<iterator_t<R2>, Proj2>> Pred = equal_to>
+    [[nodiscard]] constexpr bool
+    operator()(R1&& r1, R2&& r2, Pred pred = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        return (*this)(ranges::begin(r1), ranges::end(r1),
+                       ranges::begin(r2), ranges::end(r2),
+                       std::move(pred), std::move(proj1), std::move(proj2));
+    }
+};
+
+inline constexpr is_permutation_fn is_permutation{};
+
+//===----------------------------------------------------------------------===//
+// ranges::unique, ranges::unique_copy
+//===----------------------------------------------------------------------===//
+
+struct unique_fn {
+    template<permutable I, sentinel_for<I> S,
+             class Proj = identity,
+             indirect_equivalence_relation<projected<I, Proj>> Comp = equal_to>
+    [[nodiscard]] constexpr subrange<I>
+    operator()(I first, S last, Comp comp = {}, Proj proj = {}) const {
+        // adjacent_find
+        I tail = ranges::next(first, last);
+        detail::proj_comp<Comp, Proj> pc{comp, proj};
+        I ret = std::unique(std::move(first), tail, pc);
+        return {std::move(ret), std::move(tail)};
+    }
+
+    template<forward_range R,
+             class Proj = identity,
+             indirect_equivalence_relation<projected<iterator_t<R>, Proj>> Comp = equal_to>
+        requires permutable<iterator_t<R>>
+    [[nodiscard]] constexpr borrowed_subrange_t<R>
+    operator()(R&& r, Comp comp = {}, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r),
+                       std::move(comp), std::move(proj));
+    }
+};
+
+inline constexpr unique_fn unique{};
+
+struct unique_copy_fn {
+    template<input_iterator I, sentinel_for<I> S, weakly_incrementable O,
+             class Proj = identity,
+             indirect_equivalence_relation<projected<I, Proj>> Comp = equal_to>
+        requires indirectly_copyable<I, O> &&
+                 (forward_iterator<I> ||
+                  (input_iterator<O> && same_as<iter_value_t<I>, iter_value_t<O>>) ||
+                  indirectly_copyable_storable<I, O>)
+    constexpr unique_copy_result<I, O>
+    operator()(I first, S last, O result, Comp comp = {}, Proj proj = {}) const {
+        if (first == last)
+            return {std::move(first), std::move(result)};
+        if constexpr (forward_iterator<I>) {
+            I i = first;
+            *result = *i;
+            ++result;
+            while (++first != last) {
+                if (!std::invoke(comp, std::invoke(proj, *i), std::invoke(proj, *first))) {
+                    *result = *first;
+                    ++result;
+                    i = first;
+                }
+            }
+            return {std::move(first), std::move(result)};
+        } else {
+            iter_value_t<I> t(*first);
+            *result = t;
+            ++result;
+            while (++first != last) {
+                if (!std::invoke(comp, std::invoke(proj, t), std::invoke(proj, *first))) {
+                    t = *first;
+                    *result = t;
+                    ++result;
+                }
+            }
+            return {std::move(first), std::move(result)};
+        }
+    }
+
+    template<input_range R, weakly_incrementable O,
+             class Proj = identity,
+             indirect_equivalence_relation<projected<iterator_t<R>, Proj>> Comp = equal_to>
+        requires indirectly_copyable<iterator_t<R>, O> &&
+                 (forward_iterator<iterator_t<R>> ||
+                  (input_iterator<O> && same_as<range_value_t<R>, iter_value_t<O>>) ||
+                  indirectly_copyable_storable<iterator_t<R>, O>)
+    constexpr unique_copy_result<borrowed_iterator_t<R>, O>
+    operator()(R&& r, O result, Comp comp = {}, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r), std::move(result),
+                       std::move(comp), std::move(proj));
+    }
+};
+
+inline constexpr unique_copy_fn unique_copy{};
+
+//===----------------------------------------------------------------------===//
+// ranges::remove_copy, ranges::remove_copy_if,
+// ranges::replace_copy, ranges::replace_copy_if
+//===----------------------------------------------------------------------===//
+
+struct remove_copy_if_fn {
+    template<input_iterator I, sentinel_for<I> S, weakly_incrementable O,
+             class Proj = identity,
+             indirect_unary_predicate<projected<I, Proj>> Pred>
+        requires indirectly_copyable<I, O>
+    constexpr remove_copy_if_result<I, O>
+    operator()(I first, S last, O result, Pred pred, Proj proj = {}) const {
+        for (; first != last; ++first) {
+            if (!std::invoke(pred, std::invoke(proj, *first))) {
+                *result = *first;
+                ++result;
+            }
+        }
+        return {std::move(first), std::move(result)};
+    }
+
+    template<input_range R, weakly_incrementable O,
+             class Proj = identity,
+             indirect_unary_predicate<projected<iterator_t<R>, Proj>> Pred>
+        requires indirectly_copyable<iterator_t<R>, O>
+    constexpr remove_copy_if_result<borrowed_iterator_t<R>, O>
+    operator()(R&& r, O result, Pred pred, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r), std::move(result),
+                       std::move(pred), std::move(proj));
+    }
+};
+
+inline constexpr remove_copy_if_fn remove_copy_if{};
+
+struct remove_copy_fn {
+    template<input_iterator I, sentinel_for<I> S, weakly_incrementable O,
+             class T, class Proj = identity>
+        requires indirectly_copyable<I, O> &&
+                 indirect_binary_predicate<equal_to, projected<I, Proj>, const T*>
+    constexpr remove_copy_result<I, O>
+    operator()(I first, S last, O result, const T& value, Proj proj = {}) const {
+        for (; first != last; ++first) {
+            if (!(std::invoke(proj, *first) == value)) {
+                *result = *first;
+                ++result;
+            }
+        }
+        return {std::move(first), std::move(result)};
+    }
+
+    template<input_range R, weakly_incrementable O, class T, class Proj = identity>
+        requires indirectly_copyable<iterator_t<R>, O> &&
+                 indirect_binary_predicate<equal_to, projected<iterator_t<R>, Proj>, const T*>
+    constexpr remove_copy_result<borrowed_iterator_t<R>, O>
+    operator()(R&& r, O result, const T& value, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r), std::move(result),
+                       value, std::move(proj));
+    }
+};
+
+inline constexpr remove_copy_fn remove_copy{};
+
+struct replace_copy_fn {
+    template<input_iterator I, sentinel_for<I> S,
+             class T1, class T2, output_iterator<const T2&> O,
+             class Proj = identity>
+        requires indirectly_copyable<I, O> &&
+                 indirect_binary_predicate<equal_to, projected<I, Proj>, const T1*>
+    constexpr replace_copy_result<I, O>
+    operator()(I first, S last, O result, const T1& old_value, const T2& new_value,
+               Proj proj = {}) const {
+        for (; first != last; ++first, (void)++result) {
+            if (std::invoke(proj, *first) == old_value)
+                *result = new_value;
+            else
+                *result = *first;
+        }
+        return {std::move(first), std::move(result)};
+    }
+
+    template<input_range R, class T1, class T2, output_iterator<const T2&> O,
+             class Proj = identity>
+        requires indirectly_copyable<iterator_t<R>, O> &&
+                 indirect_binary_predicate<equal_to, projected<iterator_t<R>, Proj>, const T1*>
+    constexpr replace_copy_result<borrowed_iterator_t<R>, O>
+    operator()(R&& r, O result, const T1& old_value, const T2& new_value,
+               Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r), std::move(result),
+                       old_value, new_value, std::move(proj));
+    }
+};
+
+inline constexpr replace_copy_fn replace_copy{};
+
+struct replace_copy_if_fn {
+    template<input_iterator I, sentinel_for<I> S,
+             class T, output_iterator<const T&> O,
+             class Proj = identity,
+             indirect_unary_predicate<projected<I, Proj>> Pred>
+        requires indirectly_copyable<I, O>
+    constexpr replace_copy_if_result<I, O>
+    operator()(I first, S last, O result, Pred pred, const T& new_value,
+               Proj proj = {}) const {
+        for (; first != last; ++first, (void)++result) {
+            if (std::invoke(pred, std::invoke(proj, *first)))
+                *result = new_value;
+            else
+                *result = *first;
+        }
+        return {std::move(first), std::move(result)};
+    }
+
+    template<input_range R, class T, output_iterator<const T&> O,
+             class Proj = identity,
+             indirect_unary_predicate<projected<iterator_t<R>, Proj>> Pred>
+        requires indirectly_copyable<iterator_t<R>, O>
+    constexpr replace_copy_if_result<borrowed_iterator_t<R>, O>
+    operator()(R&& r, O result, Pred pred, const T& new_value, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r), std::move(result),
+                       std::move(pred), new_value, std::move(proj));
+    }
+};
+
+inline constexpr replace_copy_if_fn replace_copy_if{};
+
+//===----------------------------------------------------------------------===//
+// ranges::is_partitioned, ranges::partition, ranges::partition_copy,
+// ranges::stable_partition
+//===----------------------------------------------------------------------===//
+
+struct is_partitioned_fn {
+    template<input_iterator I, sentinel_for<I> S,
+             class Proj = identity,
+             indirect_unary_predicate<projected<I, Proj>> Pred>
+    [[nodiscard]] constexpr bool
+    operator()(I first, S last, Pred pred, Proj proj = {}) const {
+        for (; first != last; ++first)
+            if (!std::invoke(pred, std::invoke(proj, *first)))
+                break;
+        if (first == last)
+            return true;
+        ++first;
+        for (; first != last; ++first)
+            if (std::invoke(pred, std::invoke(proj, *first)))
+                return false;
+        return true;
+    }
+
+    template<input_range R,
+             class Proj = identity,
+             indirect_unary_predicate<projected<iterator_t<R>, Proj>> Pred>
+    [[nodiscard]] constexpr bool
+    operator()(R&& r, Pred pred, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r),
+                       std::move(pred), std::move(proj));
+    }
+};
+
+inline constexpr is_partitioned_fn is_partitioned{};
+
+struct partition_fn {
+    template<permutable I, sentinel_for<I> S,
+             class Proj = identity,
+             indirect_unary_predicate<projected<I, Proj>> Pred>
+    constexpr subrange<I>
+    operator()(I first, S last, Pred pred, Proj proj = {}) const {
+        I tail = ranges::next(first, last);
+        detail::proj_pred<Pred, Proj> pp{pred, proj};
+        I mid = std::partition(std::move(first), tail, pp);
+        return {std::move(mid), std::move(tail)};
+    }
+
+    template<forward_range R,
+             class Proj = identity,
+             indirect_unary_predicate<projected<iterator_t<R>, Proj>> Pred>
+        requires permutable<iterator_t<R>>
+    constexpr borrowed_subrange_t<R>
+    operator()(R&& r, Pred pred, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r),
+                       std::move(pred), std::move(proj));
+    }
+};
+
+inline constexpr partition_fn partition{};
+
+struct partition_copy_fn {
+    template<input_iterator I, sentinel_for<I> S,
+             weakly_incrementable O1, weakly_incrementable O2,
+             class Proj = identity,
+             indirect_unary_predicate<projected<I, Proj>> Pred>
+        requires indirectly_copyable<I, O1> && indirectly_copyable<I, O2>
+    constexpr partition_copy_result<I, O1, O2>
+    operator()(I first, S last, O1 out_true, O2 out_false, Pred pred, Proj proj = {}) const {
+        for (; first != last; ++first) {
+            if (std::invoke(pred, std::invoke(proj, *first))) {
+                *out_true = *first;
+                ++out_true;
+            } else {
+                *out_false = *first;
+                ++out_false;
+            }
+        }
+        return {std::move(first), std::move(out_true), std::move(out_false)};
+    }
+
+    template<input_range R,
+             weakly_incrementable O1, weakly_incrementable O2,
+             class Proj = identity,
+             indirect_unary_predicate<projected<iterator_t<R>, Proj>> Pred>
+        requires indirectly_copyable<iterator_t<R>, O1> &&
+                 indirectly_copyable<iterator_t<R>, O2>
+    constexpr partition_copy_result<borrowed_iterator_t<R>, O1, O2>
+    operator()(R&& r, O1 out_true, O2 out_false, Pred pred, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r),
+                       std::move(out_true), std::move(out_false),
+                       std::move(pred), std::move(proj));
+    }
+};
+
+inline constexpr partition_copy_fn partition_copy{};
+
+struct stable_partition_fn {
+    template<bidirectional_iterator I, sentinel_for<I> S,
+             class Proj = identity,
+             indirect_unary_predicate<projected<I, Proj>> Pred>
+        requires permutable<I>
+    subrange<I>
+    operator()(I first, S last, Pred pred, Proj proj = {}) const {
+        I tail = ranges::next(first, last);
+        detail::proj_pred<Pred, Proj> pp{pred, proj};
+        I mid = std::stable_partition(std::move(first), tail, pp);
+        return {std::move(mid), std::move(tail)};
+    }
+
+    template<bidirectional_range R,
+             class Proj = identity,
+             indirect_unary_predicate<projected<iterator_t<R>, Proj>> Pred>
+        requires permutable<iterator_t<R>>
+    borrowed_subrange_t<R>
+    operator()(R&& r, Pred pred, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r),
+                       std::move(pred), std::move(proj));
+    }
+};
+
+inline constexpr stable_partition_fn stable_partition{};
+
+//===----------------------------------------------------------------------===//
+// ranges::partial_sort_copy
+//===----------------------------------------------------------------------===//
+
+struct partial_sort_copy_fn {
+    template<input_iterator I1, sentinel_for<I1> S1,
+             random_access_iterator I2, sentinel_for<I2> S2,
+             class Comp = less,
+             class Proj1 = identity, class Proj2 = identity>
+        requires indirectly_copyable<I1, I2> &&
+                 sortable<I2, Comp, Proj2> &&
+                 indirect_strict_weak_order<Comp, projected<I1, Proj1>, projected<I2, Proj2>>
+    constexpr partial_sort_copy_result<I1, I2>
+    operator()(I1 first, S1 last, I2 result_first, S2 result_last,
+               Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        I2 r = result_first;
+        detail::proj_comp<Comp, Proj2> pc2{comp, proj2};
+        if (r != result_last) {
+            for (; first != last && r != result_last; ++first, (void)++r)
+                *r = *first;
+            std::make_heap(result_first, r, pc2);
+            iter_difference_t<I2> len = r - result_first;
+            for (; first != last; ++first) {
+                if (std::invoke(comp, std::invoke(proj1, *first),
+                                std::invoke(proj2, *result_first))) {
+                    *result_first = *first;
+                    std::detail::sift_down(result_first, pc2, len,
+                                           iter_difference_t<I2>(0));
+                }
+            }
+            std::sort_heap(result_first, r, pc2);
+        }
+        // Consume the rest of the input range.
+        while (first != last)
+            ++first;
+        return {std::move(first), std::move(r)};
+    }
+
+    template<input_range R1, random_access_range R2,
+             class Comp = less,
+             class Proj1 = identity, class Proj2 = identity>
+        requires indirectly_copyable<iterator_t<R1>, iterator_t<R2>> &&
+                 sortable<iterator_t<R2>, Comp, Proj2> &&
+                 indirect_strict_weak_order<Comp, projected<iterator_t<R1>, Proj1>,
+                                            projected<iterator_t<R2>, Proj2>>
+    constexpr partial_sort_copy_result<borrowed_iterator_t<R1>, borrowed_iterator_t<R2>>
+    operator()(R1&& r, R2&& result_r,
+               Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r),
+                       ranges::begin(result_r), ranges::end(result_r),
+                       std::move(comp), std::move(proj1), std::move(proj2));
+    }
+};
+
+inline constexpr partial_sort_copy_fn partial_sort_copy{};
+
+//===----------------------------------------------------------------------===//
+// ranges::is_sorted_until, ranges::is_heap_until
+//===----------------------------------------------------------------------===//
+
+struct is_sorted_until_fn {
+    template<forward_iterator I, sentinel_for<I> S,
+             class Proj = identity,
+             indirect_strict_weak_order<projected<I, Proj>> Comp = less>
+    [[nodiscard]] constexpr I
+    operator()(I first, S last, Comp comp = {}, Proj proj = {}) const {
+        if (first == last)
+            return first;
+        I nxt = first;
+        for (++nxt; nxt != last; ++first, (void)++nxt)
+            if (std::invoke(comp, std::invoke(proj, *nxt), std::invoke(proj, *first)))
+                return nxt;
+        return nxt;
+    }
+
+    template<forward_range R,
+             class Proj = identity,
+             indirect_strict_weak_order<projected<iterator_t<R>, Proj>> Comp = less>
+    [[nodiscard]] constexpr borrowed_iterator_t<R>
+    operator()(R&& r, Comp comp = {}, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r),
+                       std::move(comp), std::move(proj));
+    }
+};
+
+inline constexpr is_sorted_until_fn is_sorted_until{};
+
+struct is_heap_until_fn {
+    template<random_access_iterator I, sentinel_for<I> S,
+             class Proj = identity,
+             indirect_strict_weak_order<projected<I, Proj>> Comp = less>
+    [[nodiscard]] constexpr I
+    operator()(I first, S last, Comp comp = {}, Proj proj = {}) const {
+        I tail = ranges::next(first, last);
+        detail::proj_comp<Comp, Proj> pc{comp, proj};
+        return std::is_heap_until(std::move(first), std::move(tail), pc);
+    }
+
+    template<random_access_range R,
+             class Proj = identity,
+             indirect_strict_weak_order<projected<iterator_t<R>, Proj>> Comp = less>
+    [[nodiscard]] constexpr borrowed_iterator_t<R>
+    operator()(R&& r, Comp comp = {}, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r),
+                       std::move(comp), std::move(proj));
+    }
+};
+
+inline constexpr is_heap_until_fn is_heap_until{};
+
+//===----------------------------------------------------------------------===//
+// ranges::minmax_element
+//===----------------------------------------------------------------------===//
+
+struct minmax_element_fn {
+    template<forward_iterator I, sentinel_for<I> S,
+             class Proj = identity,
+             indirect_strict_weak_order<projected<I, Proj>> Comp = less>
+    [[nodiscard]] constexpr minmax_element_result<I>
+    operator()(I first, S last, Comp comp = {}, Proj proj = {}) const {
+        I tail = ranges::next(first, last);
+        detail::proj_comp<Comp, Proj> pc{comp, proj};
+        auto result = std::minmax_element(std::move(first), std::move(tail), pc);
+        return {std::move(result.first), std::move(result.second)};
+    }
+
+    template<forward_range R,
+             class Proj = identity,
+             indirect_strict_weak_order<projected<iterator_t<R>, Proj>> Comp = less>
+    [[nodiscard]] constexpr minmax_element_result<borrowed_iterator_t<R>>
+    operator()(R&& r, Comp comp = {}, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r),
+                       std::move(comp), std::move(proj));
+    }
+};
+
+inline constexpr minmax_element_fn minmax_element{};
+
+//===----------------------------------------------------------------------===//
+// ranges::next_permutation, ranges::prev_permutation
+//===----------------------------------------------------------------------===//
+
+struct next_permutation_fn {
+    template<bidirectional_iterator I, sentinel_for<I> S,
+             class Comp = less,
+             class Proj = identity>
+        requires sortable<I, Comp, Proj>
+    constexpr next_permutation_result<I>
+    operator()(I first, S last, Comp comp = {}, Proj proj = {}) const {
+        I tail = ranges::next(first, last);
+        detail::proj_comp<Comp, Proj> pc{comp, proj};
+        bool found = std::next_permutation(std::move(first), tail, pc);
+        return {std::move(tail), found};
+    }
+
+    template<bidirectional_range R,
+             class Comp = less,
+             class Proj = identity>
+        requires sortable<iterator_t<R>, Comp, Proj>
+    constexpr next_permutation_result<borrowed_iterator_t<R>>
+    operator()(R&& r, Comp comp = {}, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r),
+                       std::move(comp), std::move(proj));
+    }
+};
+
+inline constexpr next_permutation_fn next_permutation{};
+
+struct prev_permutation_fn {
+    template<bidirectional_iterator I, sentinel_for<I> S,
+             class Comp = less,
+             class Proj = identity>
+        requires sortable<I, Comp, Proj>
+    constexpr prev_permutation_result<I>
+    operator()(I first, S last, Comp comp = {}, Proj proj = {}) const {
+        I tail = ranges::next(first, last);
+        detail::proj_comp<Comp, Proj> pc{comp, proj};
+        bool found = std::prev_permutation(std::move(first), tail, pc);
+        return {std::move(tail), found};
+    }
+
+    template<bidirectional_range R,
+             class Comp = less,
+             class Proj = identity>
+        requires sortable<iterator_t<R>, Comp, Proj>
+    constexpr prev_permutation_result<borrowed_iterator_t<R>>
+    operator()(R&& r, Comp comp = {}, Proj proj = {}) const {
+        return (*this)(ranges::begin(r), ranges::end(r),
+                       std::move(comp), std::move(proj));
+    }
+};
+
+inline constexpr prev_permutation_fn prev_permutation{};
+
 } // namespace ranges
 
 } // namespace std
@@ -4380,6 +5807,402 @@ void shuffle(RandomAccessIterator first, RandomAccessIterator last,
                 std::iter_swap(first, first + i);
         }
     }
+}
+
+} // namespace std
+
+//===----------------------------------------------------------------------===//
+// sample  (from __algorithm/sample.h) — same uniform_int_distribution
+// forward-declaration technique as shuffle above.
+//===----------------------------------------------------------------------===//
+
+namespace std {
+
+namespace detail {
+    // Reservoir sampling: input population iterator, random-access output.
+    template<class PopIter, class SampleIter, class Distance, class URBG>
+    SampleIter sample_impl(PopIter first, PopIter last, SampleIter out,
+                           Distance n, URBG& g, input_iterator_tag) {
+        using D = uniform_int_distribution<Distance>;
+        Distance k = 0;
+        for (; first != last && k < n; ++first, (void)++k)
+            out[k] = *first;
+        Distance sz = k;
+        for (; first != last; ++first, (void)++k) {
+            Distance r = D(0, k)(g);
+            if (r < sz)
+                out[r] = *first;
+        }
+        return out + std::min(n, k);
+    }
+
+    // Selection sampling: forward population iterator, any output.
+    template<class PopIter, class SampleIter, class Distance, class URBG>
+    SampleIter sample_impl(PopIter first, PopIter last, SampleIter out,
+                           Distance n, URBG& g, forward_iterator_tag) {
+        using D = uniform_int_distribution<Distance>;
+        Distance unsampled_sz = static_cast<Distance>(std::distance(first, last));
+        for (n = std::min(n, unsampled_sz); n != 0; ++first) {
+            Distance r = D(0, --unsampled_sz)(g);
+            if (r < n) {
+                *out = *first;
+                ++out;
+                --n;
+            }
+        }
+        return out;
+    }
+} // namespace detail
+
+template<class PopIter, class SampleIter, class Distance, class URBG>
+SampleIter sample(PopIter first, PopIter last, SampleIter out,
+                  Distance n, URBG&& g) {
+    using PopCat = typename iterator_traits<PopIter>::iterator_category;
+    using Difference = typename iterator_traits<PopIter>::difference_type;
+    static_assert(is_convertible_v<PopCat, forward_iterator_tag> ||
+                  is_convertible_v<typename iterator_traits<SampleIter>::iterator_category,
+                                   random_access_iterator_tag>,
+                  "SampleIterator must meet the requirements of RandomAccessIterator");
+    using CommonType = common_type_t<Distance, Difference>;
+    using Tag = conditional_t<is_convertible_v<PopCat, forward_iterator_tag>,
+                              forward_iterator_tag, input_iterator_tag>;
+    return detail::sample_impl(first, last, out,
+                               static_cast<CommonType>(n), g, Tag{});
+}
+
+//===----------------------------------------------------------------------===//
+// vector<bool> bit_iterator fast paths for count/fill
+// (from libc++ __algorithm/count.h __count_bool and __fill_n_bool;
+//  bit_iterator and bit_fill_n live in <vector>, which includes <algorithm>,
+//  so only forward declarations appear here — instantiation happens at the
+//  caller, where <vector> is complete. bit_count is a friend of bit_iterator.)
+//===----------------------------------------------------------------------===//
+
+template<class Cp, bool IsConst>
+class bit_iterator;
+
+template<class Cp>
+constexpr void bit_fill_n(bit_iterator<Cp, false> first,
+                          typename Cp::size_type n, bool val) noexcept;
+
+// count specialization for vector<bool> iterators (friend of bit_iterator)
+template<class Cp, bool IsConst>
+[[nodiscard]] constexpr typename bit_iterator<Cp, IsConst>::difference_type
+count(const bit_iterator<Cp, IsConst>& first, const bit_iterator<Cp, IsConst>& last,
+      const bool& value) {
+    using difference_type = typename bit_iterator<Cp, IsConst>::difference_type;
+    using storage_type    = typename Cp::storage_type;
+    const unsigned bpw = Cp::bits_per_word;
+    difference_type total =
+        (last.seg_ - first.seg_) * difference_type(bpw) +
+        difference_type(last.ctz_) - difference_type(first.ctz_);
+    typename Cp::size_type n = static_cast<typename Cp::size_type>(total);
+    difference_type r = 0;
+    auto seg = first.seg_;
+    // first partial word
+    if (n > 0 && first.ctz_ != 0) {
+        unsigned clz_f = bpw - first.ctz_;
+        typename Cp::size_type dn = clz_f < n ? clz_f : n;
+        storage_type m =
+            (static_cast<storage_type>(~storage_type(0)) >> (clz_f - dn)) &
+            (static_cast<storage_type>(~storage_type(0)) << first.ctz_);
+        r += __builtin_popcountll(static_cast<unsigned long long>(*seg & m));
+        n -= dn;
+        ++seg;
+    }
+    // whole words
+    for (; n >= bpw; n -= bpw) {
+        r += __builtin_popcountll(static_cast<unsigned long long>(*seg));
+        ++seg;
+    }
+    // last partial word
+    if (n > 0) {
+        storage_type m = static_cast<storage_type>(~storage_type(0)) >> (bpw - n);
+        r += __builtin_popcountll(static_cast<unsigned long long>(*seg & m));
+    }
+    return value ? r : total - r;
+}
+
+// fill specialization for vector<bool> iterators (friend of bit_iterator)
+template<class Cp>
+constexpr void
+fill(const bit_iterator<Cp, false>& first, const bit_iterator<Cp, false>& last,
+     const bool& value) {
+    using storage_type = typename Cp::storage_type;
+    const unsigned bpw = Cp::bits_per_word;
+    using difference_type = typename bit_iterator<Cp, false>::difference_type;
+    typename Cp::size_type n = static_cast<typename Cp::size_type>(
+        (last.seg_ - first.seg_) * difference_type(bpw) +
+        difference_type(last.ctz_) - difference_type(first.ctz_));
+    if (n == 0)
+        return;
+    auto seg = first.seg_;
+    // first partial word
+    if (first.ctz_ != 0) {
+        unsigned clz_f = bpw - first.ctz_;
+        typename Cp::size_type dn = clz_f < n ? clz_f : n;
+        storage_type m =
+            (static_cast<storage_type>(~storage_type(0)) >> (clz_f - dn)) &
+            (static_cast<storage_type>(~storage_type(0)) << first.ctz_);
+        if (value) *seg |=  m;
+        else       *seg &= ~m;
+        n -= dn;
+        ++seg;
+    }
+    // middle whole words
+    storage_type fill_val = value ? static_cast<storage_type>(~storage_type(0)) : storage_type(0);
+    for (; n >= bpw; n -= bpw) {
+        *seg = fill_val;
+        ++seg;
+    }
+    // last partial word
+    if (n > 0) {
+        storage_type m = static_cast<storage_type>(~storage_type(0)) >> (bpw - n);
+        if (value) *seg |=  m;
+        else       *seg &= ~m;
+    }
+}
+
+// fill_n specialization for vector<bool> iterators
+template<class Cp, class Size>
+constexpr bit_iterator<Cp, false>
+fill_n(bit_iterator<Cp, false> first, Size n, const bool& value) {
+    auto count = static_cast<typename Cp::size_type>(detail::convert_to_integral(n));
+    std::bit_fill_n(first, count, value);
+    return first + static_cast<typename bit_iterator<Cp, false>::difference_type>(count);
+}
+
+} // namespace std
+
+//===----------------------------------------------------------------------===//
+// Execution-policy overloads ([algorithms.parallel], from libc++ pstl.h)
+// libcis executes every policy sequentially by forwarding to the classic
+// algorithms. Overloads SFINAE on is_execution_policy (enable_if rather than
+// requires: these share overload sets with the non-policy versions).
+//===----------------------------------------------------------------------===//
+
+namespace std {
+
+namespace detail {
+    template<class Policy>
+    using enable_if_execution_policy =
+        enable_if_t<is_execution_policy_v<remove_cv_t<remove_reference_t<Policy>>>, int>;
+} // namespace detail
+
+template<class Policy, class ForwardIter, class Pred,
+         detail::enable_if_execution_policy<Policy> = 0>
+bool all_of(Policy&&, ForwardIter first, ForwardIter last, Pred pred) {
+    return std::all_of(first, last, pred);
+}
+
+template<class Policy, class ForwardIter, class Pred,
+         detail::enable_if_execution_policy<Policy> = 0>
+bool any_of(Policy&&, ForwardIter first, ForwardIter last, Pred pred) {
+    return std::any_of(first, last, pred);
+}
+
+template<class Policy, class ForwardIter, class Pred,
+         detail::enable_if_execution_policy<Policy> = 0>
+bool none_of(Policy&&, ForwardIter first, ForwardIter last, Pred pred) {
+    return std::none_of(first, last, pred);
+}
+
+template<class Policy, class ForwardIter, class T,
+         detail::enable_if_execution_policy<Policy> = 0>
+typename iterator_traits<ForwardIter>::difference_type
+count(Policy&&, ForwardIter first, ForwardIter last, const T& value) {
+    return std::count(first, last, value);
+}
+
+template<class Policy, class ForwardIter, class Pred,
+         detail::enable_if_execution_policy<Policy> = 0>
+typename iterator_traits<ForwardIter>::difference_type
+count_if(Policy&&, ForwardIter first, ForwardIter last, Pred pred) {
+    return std::count_if(first, last, pred);
+}
+
+template<class Policy, class ForwardIter1, class ForwardIter2,
+         detail::enable_if_execution_policy<Policy> = 0>
+bool equal(Policy&&, ForwardIter1 first1, ForwardIter1 last1, ForwardIter2 first2) {
+    return std::equal(first1, last1, first2);
+}
+
+template<class Policy, class ForwardIter1, class ForwardIter2, class BinaryPred,
+         detail::enable_if_execution_policy<Policy> = 0>
+bool equal(Policy&&, ForwardIter1 first1, ForwardIter1 last1, ForwardIter2 first2,
+           BinaryPred pred) {
+    return std::equal(first1, last1, first2, pred);
+}
+
+template<class Policy, class ForwardIter1, class ForwardIter2,
+         detail::enable_if_execution_policy<Policy> = 0>
+bool equal(Policy&&, ForwardIter1 first1, ForwardIter1 last1,
+           ForwardIter2 first2, ForwardIter2 last2) {
+    return std::equal(first1, last1, first2, last2);
+}
+
+template<class Policy, class ForwardIter1, class ForwardIter2, class BinaryPred,
+         detail::enable_if_execution_policy<Policy> = 0>
+bool equal(Policy&&, ForwardIter1 first1, ForwardIter1 last1,
+           ForwardIter2 first2, ForwardIter2 last2, BinaryPred pred) {
+    return std::equal(first1, last1, first2, last2, pred);
+}
+
+template<class Policy, class ForwardIter, class T,
+         detail::enable_if_execution_policy<Policy> = 0>
+void fill(Policy&&, ForwardIter first, ForwardIter last, const T& value) {
+    std::fill(first, last, value);
+}
+
+template<class Policy, class ForwardIter, class Size, class T,
+         detail::enable_if_execution_policy<Policy> = 0>
+ForwardIter fill_n(Policy&&, ForwardIter first, Size n, const T& value) {
+    return std::fill_n(first, n, value);
+}
+
+template<class Policy, class ForwardIter, class T,
+         detail::enable_if_execution_policy<Policy> = 0>
+ForwardIter find(Policy&&, ForwardIter first, ForwardIter last, const T& value) {
+    return std::find(first, last, value);
+}
+
+template<class Policy, class ForwardIter, class Pred,
+         detail::enable_if_execution_policy<Policy> = 0>
+ForwardIter find_if(Policy&&, ForwardIter first, ForwardIter last, Pred pred) {
+    return std::find_if(first, last, pred);
+}
+
+template<class Policy, class ForwardIter, class Pred,
+         detail::enable_if_execution_policy<Policy> = 0>
+ForwardIter find_if_not(Policy&&, ForwardIter first, ForwardIter last, Pred pred) {
+    return std::find_if_not(first, last, pred);
+}
+
+template<class Policy, class ForwardIter, class Function,
+         detail::enable_if_execution_policy<Policy> = 0>
+void for_each(Policy&&, ForwardIter first, ForwardIter last, Function f) {
+    std::for_each(first, last, std::move(f));
+}
+
+template<class Policy, class ForwardIter, class Size, class Function,
+         detail::enable_if_execution_policy<Policy> = 0>
+ForwardIter for_each_n(Policy&&, ForwardIter first, Size n, Function f) {
+    return std::for_each_n(first, n, std::move(f));
+}
+
+template<class Policy, class ForwardIter, class Generator,
+         detail::enable_if_execution_policy<Policy> = 0>
+void generate(Policy&&, ForwardIter first, ForwardIter last, Generator gen) {
+    std::generate(first, last, std::move(gen));
+}
+
+template<class Policy, class ForwardIter, class Size, class Generator,
+         detail::enable_if_execution_policy<Policy> = 0>
+ForwardIter generate_n(Policy&&, ForwardIter first, Size n, Generator gen) {
+    return std::generate_n(first, n, std::move(gen));
+}
+
+template<class Policy, class ForwardIter, class Pred,
+         detail::enable_if_execution_policy<Policy> = 0>
+bool is_partitioned(Policy&&, ForwardIter first, ForwardIter last, Pred pred) {
+    return std::is_partitioned(first, last, pred);
+}
+
+template<class Policy, class ForwardIter1, class ForwardIter2, class ForwardIter,
+         detail::enable_if_execution_policy<Policy> = 0>
+ForwardIter merge(Policy&&, ForwardIter1 first1, ForwardIter1 last1,
+                  ForwardIter2 first2, ForwardIter2 last2, ForwardIter result) {
+    return std::merge(first1, last1, first2, last2, result);
+}
+
+template<class Policy, class ForwardIter1, class ForwardIter2, class ForwardIter,
+         class Compare,
+         detail::enable_if_execution_policy<Policy> = 0>
+ForwardIter merge(Policy&&, ForwardIter1 first1, ForwardIter1 last1,
+                  ForwardIter2 first2, ForwardIter2 last2, ForwardIter result,
+                  Compare comp) {
+    return std::merge(first1, last1, first2, last2, result, comp);
+}
+
+template<class Policy, class ForwardIter1, class ForwardIter2,
+         detail::enable_if_execution_policy<Policy> = 0>
+ForwardIter2 move(Policy&&, ForwardIter1 first, ForwardIter1 last, ForwardIter2 result) {
+    return std::move(first, last, result);
+}
+
+template<class Policy, class ForwardIter, class T,
+         detail::enable_if_execution_policy<Policy> = 0>
+void replace(Policy&&, ForwardIter first, ForwardIter last,
+             const T& old_value, const T& new_value) {
+    std::replace(first, last, old_value, new_value);
+}
+
+template<class Policy, class ForwardIter, class Pred, class T,
+         detail::enable_if_execution_policy<Policy> = 0>
+void replace_if(Policy&&, ForwardIter first, ForwardIter last,
+                Pred pred, const T& new_value) {
+    std::replace_if(first, last, pred, new_value);
+}
+
+template<class Policy, class ForwardIter1, class ForwardIter2, class T,
+         detail::enable_if_execution_policy<Policy> = 0>
+ForwardIter2 replace_copy(Policy&&, ForwardIter1 first, ForwardIter1 last,
+                          ForwardIter2 result,
+                          const T& old_value, const T& new_value) {
+    return std::replace_copy(first, last, result, old_value, new_value);
+}
+
+template<class Policy, class ForwardIter1, class ForwardIter2, class Pred, class T,
+         detail::enable_if_execution_policy<Policy> = 0>
+ForwardIter2 replace_copy_if(Policy&&, ForwardIter1 first, ForwardIter1 last,
+                             ForwardIter2 result, Pred pred, const T& new_value) {
+    return std::replace_copy_if(first, last, result, pred, new_value);
+}
+
+template<class Policy, class ForwardIter1, class ForwardIter2,
+         detail::enable_if_execution_policy<Policy> = 0>
+ForwardIter2 rotate_copy(Policy&&, ForwardIter1 first, ForwardIter1 middle,
+                         ForwardIter1 last, ForwardIter2 result) {
+    return std::rotate_copy(first, middle, last, result);
+}
+
+template<class Policy, class RandomIter,
+         detail::enable_if_execution_policy<Policy> = 0>
+void sort(Policy&&, RandomIter first, RandomIter last) {
+    std::sort(first, last);
+}
+
+template<class Policy, class RandomIter, class Compare,
+         detail::enable_if_execution_policy<Policy> = 0>
+void sort(Policy&&, RandomIter first, RandomIter last, Compare comp) {
+    std::sort(first, last, comp);
+}
+
+template<class Policy, class RandomIter,
+         detail::enable_if_execution_policy<Policy> = 0>
+void stable_sort(Policy&&, RandomIter first, RandomIter last) {
+    std::stable_sort(first, last);
+}
+
+template<class Policy, class RandomIter, class Compare,
+         detail::enable_if_execution_policy<Policy> = 0>
+void stable_sort(Policy&&, RandomIter first, RandomIter last, Compare comp) {
+    std::stable_sort(first, last, comp);
+}
+
+template<class Policy, class ForwardIter1, class ForwardIter2, class UnaryOp,
+         detail::enable_if_execution_policy<Policy> = 0>
+ForwardIter2 transform(Policy&&, ForwardIter1 first, ForwardIter1 last,
+                       ForwardIter2 result, UnaryOp op) {
+    return std::transform(first, last, result, std::move(op));
+}
+
+template<class Policy, class ForwardIter1, class ForwardIter2, class ForwardIter,
+         class BinaryOp,
+         detail::enable_if_execution_policy<Policy> = 0>
+ForwardIter transform(Policy&&, ForwardIter1 first1, ForwardIter1 last1,
+                      ForwardIter2 first2, ForwardIter result, BinaryOp op) {
+    return std::transform(first1, last1, first2, result, std::move(op));
 }
 
 } // namespace std
