@@ -164,7 +164,7 @@ private:
         short_rep s;
         long_rep  l;
         unsigned char raw[sizeof(long_rep)]; // for flag detection
-        rep_t() : s{} {}
+        constexpr rep_t() : s{} {}
     };
 
     rep_t          rep_;
@@ -176,29 +176,36 @@ private:
     // rep accessors
     // -------------------------------------------------------------------------
 
-    // is_long: bit 0 of the first byte of the union
-    bool is_long() const noexcept { return (rep_.raw[0] & 1) != 0; }
+    // is_long: bit 0 of the first byte of the union.
+    // In constant evaluation the string is ALWAYS in the long (heap) rep —
+    // the short rep needs reinterpret_cast / inactive-union-member reads,
+    // which are forbidden in constexpr (libc++ uses the same strategy of
+    // special-casing constant evaluation).
+    constexpr bool is_long() const noexcept {
+        if (std::is_constant_evaluated()) return true;
+        return (rep_.raw[0] & 1) != 0;
+    }
     static constexpr bool fits_in_sso(size_type sz) { return sz < min_cap; }
 
     // short accessors
     // size stored in bits [7:1] of flag_sz byte: size = flag_sz >> 1
-    size_type get_short_size() const noexcept {
+    constexpr size_type get_short_size() const noexcept {
         return static_cast<size_type>(rep_.s.flag_sz >> 1);
     }
-    void set_short_size(size_type n) noexcept {
+    constexpr void set_short_size(size_type n) noexcept {
         rep_.s.flag_sz = static_cast<unsigned char>(n << 1); // bit 0 = 0 (short)
     }
 
     // long accessors
     // cap_word: bit 0 = 1, cap = cap_word >> 1 (i.e., real_cap / 2 stored)
-    size_type get_long_size()    const noexcept { return rep_.l.sz; }
-    void set_long_size(size_type n) noexcept    { rep_.l.sz = n; }
-    size_type get_long_cap()    const noexcept  { return rep_.l.cap_word & ~size_type(1); }
-    void set_long_cap_word(size_type real_cap) noexcept {
+    constexpr size_type get_long_size()    const noexcept { return rep_.l.sz; }
+    constexpr void set_long_size(size_type n) noexcept    { rep_.l.sz = n; }
+    constexpr size_type get_long_cap()    const noexcept  { return rep_.l.cap_word & ~size_type(1); }
+    constexpr void set_long_cap_word(size_type real_cap) noexcept {
         rep_.l.cap_word = real_cap | size_type(1); // keep bit 0 = 1
     }
-    pointer get_long_pointer() noexcept         { return rep_.l.data; }
-    const_pointer get_long_pointer() const noexcept { return rep_.l.data; }
+    constexpr pointer get_long_pointer() noexcept         { return rep_.l.data; }
+    constexpr const_pointer get_long_pointer() const noexcept { return rep_.l.data; }
 
     pointer get_short_pointer() noexcept {
         // The data array starts at byte offset 1 in short_rep.
@@ -210,18 +217,18 @@ private:
         return reinterpret_cast<const_pointer>(rep_.s.data_bytes);
     }
 
-    pointer get_pointer() noexcept {
+    constexpr pointer get_pointer() noexcept {
         return is_long() ? get_long_pointer() : get_short_pointer();
     }
-    const_pointer get_pointer() const noexcept {
+    constexpr const_pointer get_pointer() const noexcept {
         return is_long() ? get_long_pointer() : get_short_pointer();
     }
 
     // unified size get/set
-    size_type get_size() const noexcept {
+    constexpr size_type get_size() const noexcept {
         return is_long() ? get_long_size() : get_short_size();
     }
-    void set_size(size_type n) noexcept {
+    constexpr void set_size(size_type n) noexcept {
         if (is_long()) set_long_size(n);
         else           set_short_size(n);
     }
@@ -232,7 +239,7 @@ private:
 
     static constexpr size_type align_val = 8; // allocation alignment hint
 
-    static size_type align_alloc_size(size_type sz) noexcept {
+    static constexpr size_type align_alloc_size(size_type sz) noexcept {
         // Round up (sz+1) to a multiple of boundary, ensuring we allocate enough.
         const size_type boundary =
             sizeof(value_type) < align_val
@@ -252,6 +259,32 @@ private:
         return required > dbl ? required : dbl;
     }
 
+    // Allocate `actual` characters and (in constant evaluation) begin the
+    // lifetime of every element so they can be written through Traits ops.
+    constexpr pointer alloc_chars(size_type actual) {
+        pointer p = alloc_traits::allocate(alloc_, actual);
+        if (std::is_constant_evaluated()) {
+            for (size_type i = 0; i < actual; ++i)
+                std::construct_at(p + i, value_type());
+        }
+        return p;
+    }
+
+    // Reset *this to an empty string without freeing anything (the caller
+    // owns/has taken the old buffer).  In constant evaluation this allocates
+    // an empty long buffer (constexpr strings are always long).
+    constexpr void reset_to_empty_rep() {
+        if (std::is_constant_evaluated()) {
+            size_type actual = align_alloc_size(0);
+            pointer p = alloc_chars(actual);
+            rep_.l = long_rep{actual | size_type(1), 0, p};
+        } else {
+            rep_ = rep_t{};
+            set_short_size(0);
+            traits_type::assign(get_short_pointer()[0], value_type());
+        }
+    }
+
     // Allocate a long buffer of at least min_capacity characters (not counting null).
     // Stores cap_word in rep.l; caller must set rep_.l.sz and rep_.l.data.
     pointer alloc_long_buf(size_type min_capacity) {
@@ -263,7 +296,7 @@ private:
     }
 
     // Free current long buffer (does NOT change rep)
-    void dealloc_long() noexcept {
+    constexpr void dealloc_long() noexcept {
         if (is_long())
             alloc_traits::deallocate(alloc_, rep_.l.data, get_long_cap());
     }
@@ -271,35 +304,35 @@ private:
     // -------------------------------------------------------------------------
     // init(const CharT*, size_type)  — core initialiser
     // -------------------------------------------------------------------------
-    void init(const value_type* s, size_type sz) {
+    constexpr void init(const value_type* s, size_type sz) {
         if (sz > max_size()) __builtin_trap(); // would throw length_error
-        if (fits_in_sso(sz)) {
+        if (!std::is_constant_evaluated() && fits_in_sso(sz)) {
             set_short_size(sz);
             value_type* p = get_short_pointer();
             traits_type::copy(p, s, sz);
             traits_type::assign(p[sz], value_type());
         } else {
-            pointer p = alloc_long_buf(sz);
-            rep_.l.data = p;
-            rep_.l.sz   = sz;
+            size_type actual = align_alloc_size(sz);
+            pointer p = alloc_chars(actual);
             traits_type::copy(p, s, sz);
             traits_type::assign(p[sz], value_type());
+            rep_.l = long_rep{actual | size_type(1), sz, p};
         }
     }
 
-    void init(size_type n, value_type c) {
+    constexpr void init(size_type n, value_type c) {
         if (n > max_size()) __builtin_trap(); // would throw length_error
-        if (fits_in_sso(n)) {
+        if (!std::is_constant_evaluated() && fits_in_sso(n)) {
             set_short_size(n);
             value_type* p = get_short_pointer();
             traits_type::assign(p, n, c);
             traits_type::assign(p[n], value_type());
         } else {
-            pointer p = alloc_long_buf(n);
-            rep_.l.data = p;
-            rep_.l.sz   = n;
+            size_type actual = align_alloc_size(n);
+            pointer p = alloc_chars(actual);
             traits_type::assign(p, n, c);
             traits_type::assign(p[n], value_type());
+            rep_.l = long_rep{actual | size_type(1), n, p};
         }
     }
 
@@ -427,36 +460,48 @@ public:
     // Constructors
     // =========================================================================
 
-    basic_string() noexcept(noexcept(allocator_type())) : rep_(), alloc_() {
-        set_short_size(0);
-        traits_type::assign(get_short_pointer()[0], value_type());
+    constexpr basic_string() noexcept(noexcept(allocator_type())) : rep_(), alloc_() {
+        if (std::is_constant_evaluated()) {
+            reset_to_empty_rep();
+        } else {
+            set_short_size(0);
+            traits_type::assign(get_short_pointer()[0], value_type());
+        }
     }
 
-    explicit basic_string(const allocator_type& a) noexcept : rep_(), alloc_(a) {
-        set_short_size(0);
-        traits_type::assign(get_short_pointer()[0], value_type());
+    explicit constexpr basic_string(const allocator_type& a) noexcept : rep_(), alloc_(a) {
+        if (std::is_constant_evaluated()) {
+            reset_to_empty_rep();
+        } else {
+            set_short_size(0);
+            traits_type::assign(get_short_pointer()[0], value_type());
+        }
     }
 
     // copy ctor
-    basic_string(const basic_string& other)
+    constexpr basic_string(const basic_string& other)
         : rep_(), alloc_(alloc_traits::select_on_container_copy_construction(other.alloc_))
     {
         init(other.data(), other.size());
     }
 
-    basic_string(const basic_string& other, const allocator_type& a)
+    constexpr basic_string(const basic_string& other, const allocator_type& a)
         : rep_(), alloc_(a)
     {
         init(other.data(), other.size());
     }
 
     // move ctor
-    basic_string(basic_string&& other) noexcept
+    constexpr basic_string(basic_string&& other) noexcept
         : rep_(other.rep_), alloc_(move(other.alloc_))
     {
-        other.rep_ = rep_t{};
-        other.set_short_size(0);
-        traits_type::assign(other.get_short_pointer()[0], value_type());
+        if (std::is_constant_evaluated()) {
+            other.reset_to_empty_rep();
+        } else {
+            other.rep_ = rep_t{};
+            other.set_short_size(0);
+            traits_type::assign(other.get_short_pointer()[0], value_type());
+        }
     }
 
     basic_string(basic_string&& other, const allocator_type& a) : rep_(), alloc_(a) {
@@ -472,13 +517,13 @@ public:
     }
 
     // from const CharT*
-    basic_string(const value_type* s, const allocator_type& a = allocator_type())
+    constexpr basic_string(const value_type* s, const allocator_type& a = allocator_type())
         : rep_(), alloc_(a)
     {
         init(s, traits_type::length(s));
     }
 
-    basic_string(const value_type* s, size_type n, const allocator_type& a = allocator_type())
+    constexpr basic_string(const value_type* s, size_type n, const allocator_type& a = allocator_type())
         : rep_(), alloc_(a)
     {
         init(s, n);
@@ -488,7 +533,7 @@ public:
     basic_string(nullptr_t) = delete;
 
     // count + char
-    basic_string(size_type n, value_type c, const allocator_type& a = allocator_type())
+    constexpr basic_string(size_type n, value_type c, const allocator_type& a = allocator_type())
         : rep_(), alloc_(a)
     {
         init(n, c);
@@ -551,7 +596,7 @@ public:
     }
 
     // destructor
-    ~basic_string() {
+    constexpr ~basic_string() {
         if (is_long())
             alloc_traits::deallocate(alloc_, rep_.l.data, get_long_cap());
     }
@@ -623,7 +668,7 @@ public:
     basic_string& operator=(nullptr_t) = delete;
 
     // string_view conversion
-    operator basic_string_view<CharT, Traits>() const noexcept {
+    constexpr operator basic_string_view<CharT, Traits>() const noexcept {
         return basic_string_view<CharT, Traits>(data(), size());
     }
 
@@ -650,11 +695,11 @@ public:
     // Capacity
     // =========================================================================
 
-    [[nodiscard]] size_type size()   const noexcept { return get_size(); }
-    [[nodiscard]] size_type length() const noexcept { return size(); }
-    [[nodiscard]] bool empty() const noexcept { return size() == 0; }
+    [[nodiscard]] constexpr size_type size()   const noexcept { return get_size(); }
+    [[nodiscard]] constexpr size_type length() const noexcept { return size(); }
+    [[nodiscard]] constexpr bool empty() const noexcept { return size() == 0; }
 
-    [[nodiscard]] size_type max_size() const noexcept {
+    [[nodiscard]] constexpr size_type max_size() const noexcept {
         size_type m = alloc_traits::max_size(alloc_);
         // With endian_factor==2 cap must be even so max usable size decreases
         if (m <= numeric_limits<size_type>::max() / 2) {
@@ -666,7 +711,7 @@ public:
         }
     }
 
-    [[nodiscard]] size_type capacity() const noexcept {
+    [[nodiscard]] constexpr size_type capacity() const noexcept {
         return (is_long() ? get_long_cap()
                           : static_cast<size_type>(min_cap)) - 1;
     }
@@ -746,9 +791,9 @@ public:
     [[nodiscard]] reference       back()        noexcept { return *(get_pointer() + size() - 1); }
     [[nodiscard]] const_reference back()  const noexcept { return *(data() + size() - 1); }
 
-    [[nodiscard]] const value_type* c_str() const noexcept { return data(); }
-    [[nodiscard]] const value_type* data()  const noexcept { return get_pointer(); }
-    [[nodiscard]]       value_type* data()        noexcept { return get_pointer(); }
+    [[nodiscard]] constexpr const value_type* c_str() const noexcept { return data(); }
+    [[nodiscard]] constexpr const value_type* data()  const noexcept { return get_pointer(); }
+    [[nodiscard]] constexpr       value_type* data()        noexcept { return get_pointer(); }
 
     allocator_type get_allocator() const noexcept { return alloc_; }
 
@@ -1337,7 +1382,7 @@ public:
     // compare
     // =========================================================================
 
-    int compare(const basic_string& str) const noexcept {
+    constexpr int compare(const basic_string& str) const noexcept {
         return basic_string_view<CharT, Traits>(*this).compare(
                basic_string_view<CharT, Traits>(str));
     }
@@ -1350,7 +1395,7 @@ public:
         return basic_string_view<CharT, Traits>(*this).substr(pos1, n1).compare(
                basic_string_view<CharT, Traits>(str).substr(pos2, n2));
     }
-    int compare(const value_type* s) const noexcept {
+    constexpr int compare(const value_type* s) const noexcept {
         return basic_string_view<CharT, Traits>(*this).compare(
                basic_string_view<CharT, Traits>(s));
     }
@@ -1447,7 +1492,7 @@ basic_string(basic_string_view<CharT, Traits>,
 //=============================================================================
 
 template<class CharT, class Traits, class Alloc>
-[[nodiscard]] bool
+[[nodiscard]] constexpr bool
 operator==(const basic_string<CharT, Traits, Alloc>& lhs,
            const basic_string<CharT, Traits, Alloc>& rhs) noexcept {
     if (lhs.size() != rhs.size()) return false;
@@ -1456,7 +1501,7 @@ operator==(const basic_string<CharT, Traits, Alloc>& lhs,
 
 // rhs const CharT* (C++20: == synthesises !=)
 template<class CharT, class Traits, class Alloc>
-[[nodiscard]] bool
+[[nodiscard]] constexpr bool
 operator==(const basic_string<CharT, Traits, Alloc>& lhs,
            const CharT* rhs) noexcept {
     return lhs.compare(rhs) == 0;
