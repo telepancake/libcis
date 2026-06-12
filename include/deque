@@ -10,6 +10,7 @@
 
 #include <memory_resource>
 #include <memory>
+#include <list>   // detail::container_is_allocator_v (shared with <list>)
 #include <iterator>
 #include <algorithm>
 #include <compare>
@@ -165,11 +166,150 @@ private:
 
     template<class VT2, class Pp2, class Rp2, class MP2, class DT2, DT2>
     friend class deque_iterator;
+
+    // Access hook for the block-wise copy/move algorithm overloads below
+    // (libc++ declares the algorithms themselves as friends; one access
+    // struct keeps the friend surface small).
+    friend struct deque_iter_access;
+};
+
+// Internal accessor for deque_iterator's representation, used by the
+// segmented (block-wise) copy/move overloads below.
+struct deque_iter_access {
+    template<class It> static auto& map(It& i) noexcept { return i.m_iter; }
+    template<class It> static auto& ptr(It& i) noexcept { return i.ptr; }
 };
 
 template<class VT, class Pp, class Rp, class MP, class DT, DT BS>
 const DT deque_iterator<VT,Pp,Rp,MP,DT,BS>::block_size_val =
     deque_block_size<VT, DT>::value;
+
+//===----------------------------------------------------------------------===//
+// Segmented copy/move overloads for deque_iterator.
+// libc++ dispatches std::copy/std::move through __segmented_iterator_traits;
+// libcis has no segmented-iterator machinery in <algorithm>, so (like
+// pre-LLVM-15 libc++ <deque>) the specialized overloads live here. They also
+// keep user iterator types with a deleted operator, out of the generic
+// comma-using loops in <algorithm>.
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+template<class T>
+inline constexpr bool deque_is_iterator_v = false;
+template<class V, class P, class R, class MP, class D, D BS>
+inline constexpr bool deque_is_iterator_v<deque_iterator<V, P, R, MP, D, BS>> = true;
+
+template<class V, class P, class R, class MP, class D, D BS>
+constexpr D deque_iter_block_size(const deque_iterator<V, P, R, MP, D, BS>&) {
+    return BS;
+}
+
+template<bool IsMove, class In, class Out>
+Out deque_seg_copy(In f, In l, Out r) {
+    using A = deque_iter_access;
+    if constexpr (deque_is_iterator_v<In> && deque_is_iterator_v<Out>) {
+        using D = typename In::difference_type;
+        D n = l - f;
+        while (n > 0) {
+            auto fb = A::ptr(f);
+            auto fe = *A::map(f) + deque_iter_block_size(f);
+            auto rb = A::ptr(r);
+            auto re = *A::map(r) + deque_iter_block_size(r);
+            D db = fe - fb;
+            if (re - rb < db) db = re - rb;
+            if (n < db)       db = n;
+            auto q = rb;
+            for (auto p = fb; p != fb + db; ++p, (void)++q) {
+                if constexpr (IsMove) *q = std::move(*p);
+                else                  *q = *p;
+            }
+            f += db;
+            r += db;
+            n -= db;
+        }
+        return r;
+    } else if constexpr (deque_is_iterator_v<In>) {
+        using D = typename In::difference_type;
+        D n = l - f;
+        while (n > 0) {
+            auto fb = A::ptr(f);
+            auto fe = *A::map(f) + deque_iter_block_size(f);
+            D db = fe - fb;
+            if (n < db) db = n;
+            for (auto p = fb; p != fb + db; ++p, (void)++r) {
+                if constexpr (IsMove) *r = std::move(*p);
+                else                  *r = *p;
+            }
+            f += db;
+            n -= db;
+        }
+        return r;
+    } else if constexpr (is_base_of_v<random_access_iterator_tag,
+                             typename iterator_traits<In>::iterator_category>) {
+        using D = typename Out::difference_type;
+        D n = static_cast<D>(l - f);
+        while (n > 0) {
+            auto rb = A::ptr(r);
+            auto re = *A::map(r) + deque_iter_block_size(r);
+            D db = re - rb;
+            if (n < db) db = n;
+            for (auto p = rb; p != rb + db; ++p, (void)++f) {
+                if constexpr (IsMove) *p = std::move(*f);
+                else                  *p = *f;
+            }
+            r += db;
+            n -= db;
+        }
+        return r;
+    } else {
+        for (; f != l; ++f, (void)++r) {
+            if constexpr (IsMove) *r = std::move(*f);
+            else                  *r = *f;
+        }
+        return r;
+    }
+}
+
+} // namespace detail
+
+template<class InputIter, class V, class P, class R, class MP, class D, D BS>
+inline deque_iterator<V, P, R, MP, D, BS>
+copy(InputIter f, InputIter l, deque_iterator<V, P, R, MP, D, BS> r) {
+    return detail::deque_seg_copy<false>(f, l, r);
+}
+
+template<class V, class P, class R, class MP, class D, D BS, class OutIter>
+inline OutIter
+copy(deque_iterator<V, P, R, MP, D, BS> f, deque_iterator<V, P, R, MP, D, BS> l, OutIter r) {
+    return detail::deque_seg_copy<false>(f, l, r);
+}
+
+template<class V, class P1, class R1, class M1, class P2, class R2, class M2, class D, D BS>
+inline deque_iterator<V, P2, R2, M2, D, BS>
+copy(deque_iterator<V, P1, R1, M1, D, BS> f, deque_iterator<V, P1, R1, M1, D, BS> l,
+     deque_iterator<V, P2, R2, M2, D, BS> r) {
+    return detail::deque_seg_copy<false>(f, l, r);
+}
+
+template<class InputIter, class V, class P, class R, class MP, class D, D BS>
+inline deque_iterator<V, P, R, MP, D, BS>
+move(InputIter f, InputIter l, deque_iterator<V, P, R, MP, D, BS> r) {
+    return detail::deque_seg_copy<true>(f, l, r);
+}
+
+template<class V, class P, class R, class MP, class D, D BS, class OutIter>
+inline OutIter
+move(deque_iterator<V, P, R, MP, D, BS> f, deque_iterator<V, P, R, MP, D, BS> l, OutIter r) {
+    return detail::deque_seg_copy<true>(f, l, r);
+}
+
+template<class V, class P1, class R1, class M1, class P2, class R2, class M2, class D, D BS>
+inline deque_iterator<V, P2, R2, M2, D, BS>
+move(deque_iterator<V, P1, R1, M1, D, BS> f, deque_iterator<V, P1, R1, M1, D, BS> l,
+     deque_iterator<V, P2, R2, M2, D, BS> r) {
+    return detail::deque_seg_copy<true>(f, l, r);
+}
 
 //===----------------------------------------------------------------------===//
 // deque_map — a growable array of block-pointers.
@@ -568,7 +708,7 @@ private:
         if (back_spare() < n) add_back_capacity(n - back_spare());
         allocator_type& a = alloc_ref();
         iterator e = end();
-        for (size_type i = 0; i < n; ++i, ++e) {
+        for (size_type i = 0; i < n; ++i, (void)++e) {
             alloc_traits::construct(a, addressof(*e));
             ++size_;
         }
@@ -578,7 +718,7 @@ private:
         if (back_spare() < n) add_back_capacity(n - back_spare());
         allocator_type& a = alloc_ref();
         iterator e = end();
-        for (size_type i = 0; i < n; ++i, ++e) {
+        for (size_type i = 0; i < n; ++i, (void)++e) {
             alloc_traits::construct(a, addressof(*e), v);
             ++size_;
         }
@@ -595,7 +735,7 @@ private:
         if (back_spare() < n) add_back_capacity(n - back_spare());
         allocator_type& a = alloc_ref();
         iterator e = end();
-        for (size_type i = 0; i < n; ++i, (void)++e, ++f) {   // (void): user types may delete operator,
+        for (size_type i = 0; i < n; ++i, (void)++e, (void)++f) {   // (void): user types may delete operator,
             alloc_traits::construct(a, addressof(*e), *f);
             ++size_;
         }
@@ -621,7 +761,7 @@ private:
     void assign_with_sentinel(InputIter f, Sentinel l) {
         iterator i = begin();
         iterator e = end();
-        for (; f != l && i != e; ++f, ++i)
+        for (; f != l && i != e; ++f, (void)++i)
             *i = *f;
         if (f != l)
             append_iter(f, l);
@@ -636,7 +776,8 @@ private:
             std::copy(f, l, begin());
             append_fwd(l, n - size_);
         } else {
-            erase_to_end(std::copy_n(f, n, begin()));
+            // use std::copy so the deque_iterator overload above applies
+            erase_to_end(std::copy(f, f + static_cast<difference_type>(n), begin()));
         }
     }
 
@@ -684,7 +825,7 @@ private:
             if (bs > n) { bs = n; fe = fb + bs; }
             if (fb <= vt && vt < fe)
                 vt = (const_iterator(f.m_iter, vt) += (r - f)).ptr;
-            for (; fb != fe; ++fb, ++r, ++size_)
+            for (; fb != fe; ++fb, (void)++r, (void)++size_)
                 alloc_traits::construct(a, addressof(*r), std::move(*fb));
             n -= bs;
             f += bs;
@@ -751,6 +892,12 @@ public:
         if (n > 0) append_n(n);
     }
 
+    // libc++ guards the (n, alloc) and (n, v, alloc) constructors with
+    // __is_allocator in a default template parameter so the implicit
+    // deduction guides SFINAE away for non-allocators before
+    // allocator_traits<Alloc> gets hard-instantiated in the signature.
+    template<class Alloc2 = Allocator,
+             enable_if_t<detail::container_is_allocator_v<Alloc2>, int> = 0>
     explicit deque(size_type n, const allocator_type& a)
         : map_(), start_(0), size_(0), alloc_(a) {
         if (n > 0) append_n(n);
@@ -761,6 +908,8 @@ public:
         if (n > 0) append_n(n, v);
     }
 
+    template<class Alloc2 = Allocator,
+             enable_if_t<detail::container_is_allocator_v<Alloc2>, int> = 0>
     deque(size_type n, const value_type& v, const allocator_type& a)
         : map_(), start_(0), size_(0), alloc_(a) {
         if (n > 0) append_n(n, v);
@@ -804,7 +953,7 @@ public:
         append_fwd(c.begin(), c.size());
     }
 
-    deque(const deque& c, const allocator_type& a)
+    deque(const deque& c, const type_identity_t<allocator_type>& a)
         : map_(), start_(0), size_(0), alloc_(a) {
         append_fwd(c.begin(), c.size());
     }
@@ -816,7 +965,7 @@ public:
         c.start_ = c.size_ = 0;
     }
 
-    deque(deque&& c, const allocator_type& a)
+    deque(deque&& c, const type_identity_t<allocator_type>& a)
         : map_(), start_(0), size_(0), alloc_(a) {
         if (a == c.alloc_ref()) {
             map_    = std::move(c.map_);
@@ -832,7 +981,7 @@ public:
     ~deque() {
         clear();
         allocator_type& a = alloc_ref();
-        for (auto* p : map_)
+        for (pointer p : map_)
             alloc_traits::deallocate(a, p, block_size);
     }
 
@@ -1251,7 +1400,7 @@ private:
             iterator old_begin = begin();
             iterator i         = old_begin;
             if (n > pos) {
-                for (size_type m = n - pos; m; --m, --start_, ++size_)
+                for (size_type m = n - pos; m; --m, (void)--start_, (void)++size_)
                     alloc_traits::construct(a, addressof(*--i), v);
                 n = pos;
             }
@@ -1271,7 +1420,7 @@ private:
             iterator i       = old_end;
             size_type de     = size_ - pos;
             if (n > de) {
-                for (size_type m = n - de; m; --m, ++i, ++size_)
+                for (size_type m = n - de; m; --m, (void)++i, (void)++size_)
                     alloc_traits::construct(a, addressof(*i), v);
                 n = de;
             }
@@ -1287,24 +1436,83 @@ private:
         return begin() + pos;
     }
 
+    // temp_buf — minimal stand-in for libc++'s __split_buffer<value_type,
+    // allocator_type&>: a contiguous scratch buffer drawing from the deque's
+    // own allocator (exact-size when the count is known, geometric growth
+    // otherwise), used to buffer insert sources.
+    struct temp_buf {
+        allocator_type& a;
+        pointer   data = nullptr;
+        size_type cap  = 0;
+        size_type n    = 0;
+
+        explicit temp_buf(allocator_type& a_) : a(a_) {}
+        temp_buf(const temp_buf&) = delete;
+        temp_buf& operator=(const temp_buf&) = delete;
+
+        ~temp_buf() {
+            if (data) {
+                value_type* d = std::to_address(data);
+                for (size_type i = 0; i < n; ++i)
+                    alloc_traits::destroy(a, d + i);
+                alloc_traits::deallocate(a, data, cap);
+            }
+        }
+
+        void reserve_exact(size_type c) {
+            data = alloc_traits::allocate(a, c);
+            cap  = c;
+        }
+
+        template<class... Args>
+        void emplace_back(Args&&... args) {
+            if (n == cap) {
+                size_type nc    = cap == 0 ? 4 : 2 * cap;
+                pointer nd      = alloc_traits::allocate(a, nc);
+                value_type* ndr = std::to_address(nd);
+                if (data) {
+                    value_type* dr = std::to_address(data);
+                    for (size_type i = 0; i < n; ++i) {
+                        alloc_traits::construct(a, ndr + i, std::move(dr[i]));
+                        alloc_traits::destroy(a, dr + i);
+                    }
+                    alloc_traits::deallocate(a, data, cap);
+                }
+                data = nd;
+                cap  = nc;
+            }
+            alloc_traits::construct(a, std::to_address(data) + n,
+                                    std::forward<Args>(args)...);
+            ++n;
+        }
+
+        value_type* begin() noexcept { return std::to_address(data); }
+        value_type* end()   noexcept { return std::to_address(data) + n; }
+    };
+
     //--- insert_input: input-iterator insert ---
     template<class InputIter, class Sentinel>
     iterator insert_input(const_iterator cp, InputIter f, Sentinel l) {
-        // collect into a temp buffer then insert
-        deque<value_type, allocator_type> buf(alloc_ref());
+        // libc++ collects into a __split_buffer, then inserts via move_iterator
+        temp_buf buf(alloc_ref());
         for (; f != l; ++f)
-            buf.push_back(*f);
-        return insert_bidi(cp, buf.begin(), buf.end(),
-                           static_cast<size_type>(buf.size()));
+            buf.emplace_back(*f);
+        return insert_bidi(cp, std::make_move_iterator(buf.begin()),
+                           std::make_move_iterator(buf.end()),
+                           static_cast<size_type>(buf.n));
     }
 
     //--- insert_fwd: forward-iterator insert ---
     template<class FwdIter>
     iterator insert_fwd(const_iterator cp, FwdIter f, size_type n) {
         if (n == 0) return begin() + (cp - begin());
-        // Collect into temp, then insert as bidirectional
-        deque<value_type, allocator_type> buf(f, std::next(f, n), alloc_ref());
-        return insert_bidi(cp, buf.begin(), buf.end(), n);
+        // Collect into an exact-size temp buffer, then insert as bidirectional
+        temp_buf buf(alloc_ref());
+        buf.reserve_exact(n);
+        for (size_type i = 0; i < n; ++i, (void)++f)
+            buf.emplace_back(*f);
+        return insert_bidi(cp, std::make_move_iterator(buf.begin()),
+                           std::make_move_iterator(buf.end()), n);
     }
 
     //--- insert_bidi: bidirectional-iterator insert (knows n upfront) ---
@@ -1324,7 +1532,7 @@ private:
             BiIter m = f;
             if (n > pos) {
                 m = (pos < n / 2) ? std::prev(l, pos) : std::next(f, n - pos);
-                for (BiIter j = m; j != f; --start_, ++size_)
+                for (BiIter j = m; j != f; --start_, (void)++size_)
                     alloc_traits::construct(a, addressof(*--i), *--j);
                 n = pos;
             }
@@ -1348,13 +1556,13 @@ private:
             size_type de = size_ - pos;
             if (n > de) {
                 m = (de < n / 2) ? std::next(f, de) : std::prev(l, n - de);
-                for (BiIter j = m; j != l; ++i, ++j, ++size_)
+                for (BiIter j = m; j != l; ++i, (void)++j, (void)++size_)
                     alloc_traits::construct(a, addressof(*i), *j);
                 n = de;
             }
             if (n > 0) {
                 iterator oen = old_end - n;
-                for (iterator j = oen; j != old_end; ++i, ++j, ++size_)
+                for (iterator j = oen; j != old_end; ++i, (void)++j, (void)++size_)
                     alloc_traits::construct(a, addressof(*i), std::move(*j));
                 if (n < de)
                     old_end = std::move_backward(old_end - de, oen, old_end);
@@ -1376,11 +1584,13 @@ const typename deque<T,A>::difference_type deque<T,A>::block_size =
 
 template<class InputIter,
          class Alloc = allocator<typename iterator_traits<InputIter>::value_type>>
-    requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    requires requires { typename iterator_traits<InputIter>::iterator_category; } &&
+             detail::container_is_allocator_v<Alloc>
 deque(InputIter, InputIter) -> deque<typename iterator_traits<InputIter>::value_type, Alloc>;
 
 template<class InputIter, class Alloc>
-    requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    requires requires { typename iterator_traits<InputIter>::iterator_category; } &&
+             detail::container_is_allocator_v<Alloc>
 deque(InputIter, InputIter, Alloc) -> deque<typename iterator_traits<InputIter>::value_type, Alloc>;
 
 //===----------------------------------------------------------------------===//
