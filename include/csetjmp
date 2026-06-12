@@ -1,0 +1,13 @@
+// <csetjmp> -- C setjmp/longjmp in namespace std.
+// Mechanically ported from libc++ include/csetjmp.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+#pragma once
+
+#include <setjmp.h>
+
+namespace std {
+
+using ::jmp_buf;
+using ::longjmp;
+
+} // namespace std

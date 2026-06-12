@@ -73,6 +73,10 @@ struct destroying_delete_t {
 };
 inline constexpr destroying_delete_t destroying_delete{};
 
+// Feature-test macro lives with the facility ([version.syn]: <new> defines it
+// too); gcc-10 has the core-language support (__cpp_impl_destroying_delete).
+#define __cpp_lib_destroying_delete 201806L
+
 //===----------------------------------------------------------------------===//
 // launder  (__new/launder.h) — C++17
 // __builtin_launder is available in gcc-10.2.

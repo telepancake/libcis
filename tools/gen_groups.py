@@ -32,12 +32,12 @@ SRC_DIR = "build/groups/src"
 RUN_TIMEOUT = 120  # seconds per test binary
 
 BACKENDS = {
-    "libcis":    ("g++-10",     "-std=gnu++20 -fno-exceptions -fno-rtti -nostdinc++ -Iinclude -Itest/std -Itest/std/support -O0 -w", True),
+    "libcis":    ("g++-10",     "-std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -nostdinc++ -Iinclude -Itest/std -Itest/std/support -O0 -w", True),
     "libcxx":    ("clang++-20", "-std=gnu++20 -stdlib=libc++ -fno-exceptions -fno-rtti -Itest/std -Itest/std/support -O0 -w", False),
     "libstdcxx": ("g++-14",     "-std=gnu++20 -fno-exceptions -fno-rtti -Itest/std -Itest/std/support -O0 -w", False),
     # discriminator: gcc-10 with its OWN libstdc++.  A test red here and red on
     # libcis is a gcc-10 limitation; red only on libcis is a libcis bug.
-    "gcc10std":  ("g++-10",     "-std=gnu++20 -fno-exceptions -fno-rtti -Itest/std -Itest/std/support -O0 -w", False),
+    "gcc10std":  ("g++-10",     "-std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -Itest/std -Itest/std/support -O0 -w", False),
 }
 
 

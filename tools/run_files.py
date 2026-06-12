@@ -20,7 +20,8 @@ import collections
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
 
-CIS = ("g++-10 -std=gnu++20 -fno-exceptions -fno-rtti -nostdinc++ -Iinclude "
+# -fcoroutines: gcc-10 gates the C++20 co_* keywords behind it (later gccs do not)
+CIS = ("g++-10 -std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -nostdinc++ -Iinclude "
        "-Itest/std -Itest/std/support -O0 -w").split()
 LINK = "build/groups/libcis/libsupport.a -nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc".split()
 

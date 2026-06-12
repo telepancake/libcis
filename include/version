@@ -13,6 +13,7 @@
 // ---- C++14 features ----
 #define __cpp_lib_chrono_udls                          201304L
 #define __cpp_lib_complex_udls                         201309L
+#define __cpp_lib_destroying_delete 201806L
 #define __cpp_lib_exchange_function                    201304L
 #define __cpp_lib_generic_associative_lookup           201304L
 #define __cpp_lib_integer_sequence                     201304L

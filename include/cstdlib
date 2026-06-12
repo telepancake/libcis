@@ -4,6 +4,7 @@
 #pragma once
 
 #include <stdlib.h>
+#include <bits/fp_abs.h>  // floating std::abs overloads ([c.math.abs] puts them here too)
 
 namespace std {
 
@@ -41,6 +42,10 @@ using ::llabs;
 using ::div;
 using ::ldiv;
 using ::lldiv;
+
+// [c.math]: C++ adds div overloads for long/long long (C names them ldiv/lldiv).
+inline ldiv_t  div(long x, long y)           { return ::ldiv(x, y); }
+inline lldiv_t div(long long x, long long y) { return ::lldiv(x, y); }
 using ::mblen;
 using ::mbtowc;
 using ::wctomb;
