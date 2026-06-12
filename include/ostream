@@ -29,6 +29,7 @@
 #include <charconv>  // to_chars, chars_format
 #include <cstring>   // strlen
 #include <string_view> // char_traits
+#include <system_error> // error_code (inserter below)
 
 namespace std {
 
@@ -699,6 +700,14 @@ template<class CharT, class Traits>
 basic_ostream<CharT, Traits>& flush(basic_ostream<CharT, Traits>& os) {
     os.flush();
     return os;
+}
+
+// error_code inserter ([syserr.errcode.nonmembers]; defined in <ostream> as in
+// libc++ __ostream/basic_ostream.h).
+template<class CharT, class Traits>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const error_code& ec) {
+    return os << ec.category().name() << ':' << ec.value();
 }
 
 // rvalue stream insertion
