@@ -17,6 +17,7 @@
 #include <type_traits>
 #include <utility>
 #include <new>
+#include <typeinfo>   // type_info (for any::type()'s signature)
 #include <initializer_list>
 #include <functional>
 #include <exception>
@@ -209,9 +210,14 @@ public:
     // --- observers ---
     [[nodiscard]] bool has_value() const noexcept { return h_ != nullptr; }
 
-    // type() OMITTED — requires RTTI (type_info). Under -fno-rtti it cannot
-    // be implemented. Use any_cast<T> with the fallback-typeid mechanism.
-    // const type_info& type() const noexcept;  // OMITTED
+    // type() exists for the API surface ([any.observers]): the transferred
+    // tests excise every evaluated use (rtti untestable on target) but still
+    // check its declaration via unevaluated contexts (ASSERT_NOEXCEPT).
+    // Under -fno-rtti there is no typeid to return, so calling it traps —
+    // same convention as the library's other would-throw paths.
+    [[nodiscard]] const type_info& type() const noexcept {
+        __builtin_trap();   // would return typeid(T); impossible without RTTI
+    }
 
 private:
     using HandleFuncPtr = void* (*)(any_imp::Action, const any*, any*, const void*);
@@ -352,7 +358,14 @@ template<class V>
     if (a && a->h_) {
         void* p = a->call(any_imp::Action::Get, nullptr,
                           any_imp::get_fallback_typeid<V>());
-        return static_cast<add_pointer_t<V>>(p);
+        // An any can never store a function type, but any_cast<void()> must
+        // still compile and yield nullptr: static_cast from void* to a
+        // function pointer is ill-formed, so dispatch like libc++'s
+        // __pointer_or_func_cast instead of casting unconditionally.
+        if constexpr (is_function_v<V>)
+            return nullptr;
+        else
+            return static_cast<add_pointer_t<V>>(p);
     }
     return nullptr;
 }

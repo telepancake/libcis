@@ -35,11 +35,42 @@ ROOT = T.ROOT
 REC_DIR = os.path.join(ROOT, "build", "recs")
 
 
+# Appended to the copied test_macros.h. Some support headers (any_helpers.h,
+# atomic_helpers.h, ...) use libc++-INTERNAL _LIBCPP_AVAILABILITY_* macros
+# unguarded; they only preprocess against libc++'s own <__config>. Every
+# backend here that is not libc++ (libcis, libstdcxx, gcc10std) needs them
+# defined away or the headers fail to PARSE ("expected initializer before").
+SUPPORT_COMPAT = """
+// --- libcis compatibility (appended by tools/gen_transfer.py) ---
+// libc++-internal availability markers used unguarded by support headers;
+// no-ops on every non-libc++ backend.
+#ifndef _LIBCPP_AVAILABILITY_THROW_BAD_ANY_CAST
+#  define _LIBCPP_AVAILABILITY_THROW_BAD_ANY_CAST
+#endif
+#ifndef _LIBCPP_AVAILABILITY_SYNC
+#  define _LIBCPP_AVAILABILITY_SYNC
+#endif
+#ifndef _LIBCPP_AVAILABILITY_TZDB
+#  define _LIBCPP_AVAILABILITY_TZDB
+#endif
+"""
+
+
+def patch_support():
+    """Idempotently append the compat block to the copied test_macros.h."""
+    tm = os.path.join(T.DST_SUPPORT, "test_macros.h")
+    if os.path.exists(tm):
+        cur = open(tm).read()
+        if "libcis compatibility" not in cur:
+            open(tm, "a").write(SUPPORT_COMPAT)
+
+
 def copy_support(subtrees):
     """Static file copies (support harness + each subtree's sibling .h) done at
     generation time -- they are inputs, not transformed artifacts."""
     if not os.path.isdir(T.DST_SUPPORT):
         shutil.copytree(T.SRC_SUPPORT, T.DST_SUPPORT)
+    patch_support()
     for sub in subtrees:
         T.copy_sibling_headers(sub)
 
