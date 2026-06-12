@@ -31,7 +31,7 @@ man = json.load(open("test/std/manifest.json"))
 # Excluded tests carry a written justification (gcc-10 compiler limits proven by
 # the discriminator, target-impossible facilities).  They are NOT the work queue
 # and NOT counted against the verdict: every test NOT excluded must pass.
-excl = {k: v for k, v in json.load(open("test/std/exclusions.json")).items()
+excl = {k: v for k, v in json.load(open("tools/exclusions.json")).items()
         if not k.startswith("_")}
 tests = [r for r in man["transferred"]
          if r["file"].startswith(pre) and r["kind"] == "run" and r.get("entry")

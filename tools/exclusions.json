@@ -1,0 +1,7 @@
+{
+  "_comment": "Tests excluded from the binary CLEAN/NOT-CLEAN verdict, each with a written justification. A test belongs here ONLY when it is not a libcis defect -- typically a gcc-10.2 compiler limitation proven by the discriminator backends (a test red on gcc10std, gcc-10 with its OWN libstdc++, cannot be libcis's fault) or a facility genuinely impossible on the target. Justifications must cite the evidence (which backends fail). This is the denominator of the verdict: every test NOT listed here must pass.",
+
+  "utilities/utility/pairs/pairs.pair/ctor.brace-init.pass.cpp": "gcc overload-resolution limitation: 'explicit X() = default' brace-init makes explicit_vs_implicit_brace_init({{},{}}) ambiguous. Fails identically on gcc-10+libcis, gcc-10+libstdc++ (gcc10std discriminator), AND g++-14+libstdc++; only clang++-20+libc++ passes. Not fixable in library code.",
+
+  "utilities/utility/pairs/pairs.pair/implicit_deduction_guides.pass.cpp": "gcc-10 CTAD limitation: pair class-template-argument-deduction over the archetype test types hard-errors in the archetype's own enable_if SFINAE ctor. Fails on gcc-10+libcis AND gcc-10+libstdc++ (gcc10std discriminator); passes on g++-14+libstdc++ and clang++-20+libc++, so it is gcc-10-specific, not a libcis defect."
+}
