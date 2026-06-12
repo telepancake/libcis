@@ -179,7 +179,7 @@ facets, `chrono` formatting):
 4. In your report, name the libc++ file(s)/sections you ported from, so the
    reviewer can diff intent against source.
 
-### Testing: the ported suite is the only gate. No hand-written smoke tests.
+### Testing: the ported suite is the only gate. State is binary, not a score.
 
 There is no hand-written test suite and no check.sh — they were a pre-port
 crutch that printed a green number ("smoke 68/68") while real bugs (an 8-byte

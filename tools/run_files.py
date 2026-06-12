@@ -58,23 +58,12 @@ for r in tests:
         buckets["run-fail"] += 1
         rfail.append(r["file"])
 
-# The work queue is the FAILURE LIST, not a score.  State is binary: a subtree
-# is CLEAN iff nothing in it fails (every failure is then either a bug to fix or
-# a test to move, justified, into the exclusion set).  The counts are only the
-# size of the queue.
-n = len(tests)
-failing = buckets["compile-fail"] + buckets["run-fail"]
-print(f"== {pre}: {failing} FAILING of {n} (PASS {buckets['PASS']}) ==")
-if rfail:
-    print("RUN-FAIL (compiles, wrong answer/crash):")
-    for f in rfail:
-        print("   ", f)
-if cfail:
-    print("COMPILE-FAIL (the fix/exclude queue):")
-    for f, e in cfail:
-        print(f"    {f}\n        {e}")
-    print("  error-class tally:")
-    for e, c in cerr.most_common(10):
-        print(f"    {c:3d}  {e}")
-print("CLEAN" if failing == 0 else f"NOT CLEAN: {failing} non-excluded tests fail")
-sys.exit(0 if failing == 0 else 1)
+# State is binary: a subtree is CLEAN iff nothing in it fails.  We don't count
+# worms -- we list them, so each can be fixed or moved (justified) into the
+# exclusion set.  No pass-count, no ratio, no error-class census.
+for f in rfail:
+    print(f"FAIL(run)     {f}")
+for f, e in cfail:
+    print(f"FAIL(compile) {f}\n              {e}")
+print("CLEAN" if not (rfail or cfail) else "NOT CLEAN")
+sys.exit(0 if not (rfail or cfail) else 1)
