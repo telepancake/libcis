@@ -1,0 +1,685 @@
+// <experimental/simd> — std::experimental::parallelism_v2 simd / simd_mask
+// Ported from /home/user/llvm-project/libcxx/include/experimental/simd and the
+// experimental/__simd/*.h fragments (LLVM libc++, Apache-2.0 with LLVM exceptions).
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Mechanical substitutions per CONVENTIONS.md:
+//   _LIBCPP_BEGIN_NAMESPACE_EXPERIMENTAL inline namespace parallelism_v2 { ... }
+//     -> namespace std { namespace experimental { inline namespace parallelism_v2 {
+//   _LIBCPP_HIDE_FROM_ABI / _LIBCPP_NODEBUG deleted; _NOEXCEPT -> noexcept.
+//   std::__bit_ceil -> std::bit_ceil; std::__assume_aligned<A,U>(p) -> std::assume_aligned<A>(p).
+//   __remove_cvref_t -> remove_cvref_t. _LIBCPP_HAS_INT128 -> __SIZEOF_INT128__.
+//   _LIBCPP_ASSERT_* dropped. Leading/trailing underscores on names stripped where safe;
+//   internal member/helper names kept with a leading u_ -> renamed without underscores.
+#pragma once
+
+#pragma GCC visibility push(hidden)
+
+#include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <type_traits>
+#include <utility>
+
+#if defined(__AVX__)
+#  define LIBCIS_NATIVE_SIMD_WIDTH_IN_BYTES 32
+#else
+#  define LIBCIS_NATIVE_SIMD_WIDTH_IN_BYTES 16
+#endif
+
+namespace std {
+namespace experimental {
+inline namespace parallelism_v2 {
+
+// ------------------------------ declaration ------------------------------
+namespace simd_abi {
+template <int>
+struct vec_ext;
+struct scalar_abi;
+
+using scalar = scalar_abi;
+
+template <int Np>
+using fixed_size = vec_ext<Np>;
+
+template <class Tp>
+inline constexpr int max_fixed_size = 32;
+
+template <class Tp>
+using compatible = vec_ext<16 / sizeof(Tp)>;
+
+template <class Tp>
+using native = vec_ext<LIBCIS_NATIVE_SIMD_WIDTH_IN_BYTES / sizeof(Tp)>;
+
+template <class Tp, size_t Np, class... Abis>
+struct deduce {
+  using type = fixed_size<Np>;
+};
+
+template <class Tp, size_t Np, class... Abis>
+using deduce_t = typename deduce<Tp, Np, Abis...>::type;
+} // namespace simd_abi
+
+template <class Tp, class Abi>
+struct simd_storage;
+
+template <class Tp, class Abi>
+struct mask_storage;
+
+template <class Tp, class Abi>
+struct simd_operations;
+
+template <class Tp, class Abi>
+struct mask_operations;
+
+struct element_aligned_tag;
+struct vector_aligned_tag;
+template <size_t>
+struct overaligned_tag;
+
+template <class Tp, class Abi = simd_abi::compatible<Tp>>
+class simd;
+
+template <class Tp, class Abi = simd_abi::compatible<Tp>>
+class simd_mask;
+
+// ------------------------------ utility ------------------------------
+template <class Tp>
+inline constexpr bool is_vectorizable_v =
+    is_arithmetic_v<Tp> && !is_const_v<Tp> && !is_volatile_v<Tp> && !is_same_v<Tp, bool>;
+
+template <class Tp>
+auto choose_mask_type() {
+  if constexpr (sizeof(Tp) == 1) {
+    return uint8_t{};
+  } else if constexpr (sizeof(Tp) == 2) {
+    return uint16_t{};
+  } else if constexpr (sizeof(Tp) == 4) {
+    return uint32_t{};
+  } else if constexpr (sizeof(Tp) == 8) {
+    return uint64_t{};
+  }
+#if defined(__SIZEOF_INT128__)
+  else if constexpr (sizeof(Tp) == 16) {
+    return __uint128_t{};
+  }
+#endif
+  else
+    static_assert(sizeof(Tp) == 0, "Unexpected size");
+}
+
+template <class Tp>
+auto constexpr set_all_bits(bool v) {
+  return v ? (numeric_limits<decltype(choose_mask_type<Tp>())>::max()) : 0;
+}
+
+template <class From, class To, class = void>
+inline constexpr bool is_non_narrowing_convertible_v = false;
+
+template <class From, class To>
+inline constexpr bool is_non_narrowing_convertible_v<From, To, std::void_t<decltype(To{std::declval<From>()})>> = true;
+
+template <class Tp, class Up>
+inline constexpr bool can_broadcast_v =
+    (is_vectorizable_v<Up> && is_non_narrowing_convertible_v<Up, Tp>) ||
+    (!is_vectorizable_v<Up> && is_convertible_v<Up, Tp>) || is_same_v<Up, int> ||
+    (is_same_v<Up, unsigned int> && is_unsigned_v<Tp>);
+
+template <class Tp, class Generator, std::size_t Idx, class = void>
+inline constexpr bool is_well_formed = false;
+
+template <class Tp, class Generator, std::size_t Idx>
+inline constexpr bool is_well_formed<
+    Tp,
+    Generator,
+    Idx,
+    std::void_t<decltype(std::declval<Generator>()(integral_constant<size_t, Idx>()))>> =
+    can_broadcast_v<Tp, decltype(std::declval<Generator>()(integral_constant<size_t, Idx>()))>;
+
+template <class Tp, class Generator, std::size_t... Idxes>
+constexpr bool can_generate(index_sequence<Idxes...>) {
+  return (true && ... && is_well_formed<Tp, Generator, Idxes>);
+}
+
+template <class Tp, class Generator, std::size_t Size>
+inline constexpr bool can_generate_v = experimental::can_generate<Tp, Generator>(make_index_sequence<Size>());
+
+// ------------------------------ traits ------------------------------
+template <class Tp>
+inline constexpr bool is_abi_tag_v = false;
+
+template <class Tp>
+struct is_abi_tag : bool_constant<is_abi_tag_v<Tp>> {};
+
+template <class Tp>
+inline constexpr bool is_simd_v = false;
+
+template <class Tp>
+struct is_simd : bool_constant<is_simd_v<Tp>> {};
+
+template <class Tp>
+inline constexpr bool is_simd_mask_v = false;
+
+template <class Tp>
+struct is_simd_mask : bool_constant<is_simd_mask_v<Tp>> {};
+
+template <class Tp>
+inline constexpr bool is_simd_flag_type_v = false;
+
+template <class Tp>
+struct is_simd_flag_type : bool_constant<is_simd_flag_type_v<Tp>> {};
+
+template <class Tp, class Abi = simd_abi::compatible<Tp>, bool = (is_vectorizable_v<Tp> && is_abi_tag_v<Abi>)>
+struct simd_size : integral_constant<size_t, Abi::simd_size_value> {};
+
+template <class Tp, class Abi>
+struct simd_size<Tp, Abi, false> {};
+
+template <class Tp, class Abi = simd_abi::compatible<Tp>>
+inline constexpr size_t simd_size_v = simd_size<Tp, Abi>::value;
+
+template <class Tp,
+          class Up = typename Tp::value_type,
+          bool     = (is_simd_v<Tp> && is_vectorizable_v<Up>) || (is_simd_mask_v<Tp> && is_same_v<Up, bool>)>
+struct memory_alignment : integral_constant<size_t, std::bit_ceil(sizeof(Up) * Tp::size())> {};
+
+template <class Tp, class Up>
+struct memory_alignment<Tp, Up, false> {};
+
+template <class Tp, class Up = typename Tp::value_type>
+inline constexpr size_t memory_alignment_v = memory_alignment<Tp, Up>::value;
+
+// ------------------------------ aligned tags ------------------------------
+struct element_aligned_tag {
+  template <class Tp, class Up = typename Tp::value_type>
+  static constexpr size_t alignment = alignof(Up);
+
+  template <class Tp, class Up>
+  static constexpr Up* apply(Up* ptr) {
+    return ptr;
+  }
+};
+
+template <>
+inline constexpr bool is_simd_flag_type_v<element_aligned_tag> = true;
+
+struct vector_aligned_tag {
+  template <class Tp, class Up = typename Tp::value_type>
+  static constexpr size_t alignment = memory_alignment_v<Tp, remove_const_t<Up>>;
+
+  template <class Tp, class Up>
+  static constexpr Up* apply(Up* ptr) {
+    return std::assume_aligned<alignment<Tp, Up>>(ptr);
+  }
+};
+
+template <>
+inline constexpr bool is_simd_flag_type_v<vector_aligned_tag> = true;
+
+template <size_t Np>
+struct overaligned_tag {
+  template <class Tp, class Up = typename Tp::value_type>
+  static constexpr size_t alignment = Np;
+
+  template <class Tp, class Up>
+  static constexpr Up* apply(Up* ptr) {
+    return std::assume_aligned<alignment<Tp, Up>>(ptr);
+  }
+};
+
+template <size_t Np>
+inline constexpr bool is_simd_flag_type_v<overaligned_tag<Np>> = true;
+
+inline constexpr element_aligned_tag element_aligned{};
+inline constexpr vector_aligned_tag vector_aligned{};
+template <size_t Np>
+inline constexpr overaligned_tag<Np> overaligned{};
+
+// ------------------------------ scalar abi ------------------------------
+namespace simd_abi {
+struct scalar_abi {
+  static constexpr size_t simd_size_value = 1;
+};
+} // namespace simd_abi
+
+template <>
+inline constexpr bool is_abi_tag_v<simd_abi::scalar_abi> = true;
+
+template <class Tp>
+struct simd_storage<Tp, simd_abi::scalar_abi> {
+  Tp data;
+
+  Tp get(size_t) const noexcept { return data; }
+  void set(size_t, Tp v) noexcept { data = v; }
+};
+
+template <class Tp>
+struct mask_storage<Tp, simd_abi::scalar_abi> : simd_storage<bool, simd_abi::scalar_abi> {};
+
+template <class Tp>
+struct simd_operations<Tp, simd_abi::scalar_abi> {
+  using SimdStorage = simd_storage<Tp, simd_abi::scalar_abi>;
+  using MaskStorage = mask_storage<Tp, simd_abi::scalar_abi>;
+
+  static SimdStorage broadcast(Tp v) noexcept { return {v}; }
+
+  template <class Generator>
+  static SimdStorage generate(Generator&& g) noexcept {
+    return {g(std::integral_constant<size_t, 0>())};
+  }
+
+  template <class Up>
+  static void load(SimdStorage& s, const Up* mem) noexcept {
+    s.data = static_cast<Tp>(mem[0]);
+  }
+
+  template <class Up>
+  static void store(SimdStorage s, Up* mem) noexcept {
+    *mem = static_cast<Up>(s.data);
+  }
+
+  static void increment(SimdStorage& s) noexcept { ++s.data; }
+  static void decrement(SimdStorage& s) noexcept { --s.data; }
+  static MaskStorage negate(SimdStorage s) noexcept { return {!s.data}; }
+  static SimdStorage bitwise_not(SimdStorage s) noexcept { return {static_cast<Tp>(~s.data)}; }
+  static SimdStorage unary_minus(SimdStorage s) noexcept { return {static_cast<Tp>(-s.data)}; }
+};
+
+template <class Tp>
+struct mask_operations<Tp, simd_abi::scalar_abi> {
+  using MaskStorage = mask_storage<Tp, simd_abi::scalar_abi>;
+
+  static MaskStorage broadcast(bool v) noexcept { return {v}; }
+  static void load(MaskStorage& s, const bool* mem) noexcept { s.data = mem[0]; }
+  static void store(MaskStorage s, bool* mem) noexcept { mem[0] = s.data; }
+};
+
+// ------------------------------ vec_ext abi ------------------------------
+namespace simd_abi {
+template <int Np>
+struct vec_ext {
+  static constexpr size_t simd_size_value = Np;
+};
+} // namespace simd_abi
+
+template <int Np>
+inline constexpr bool is_abi_tag_v<simd_abi::vec_ext<Np>> = Np > 0 && Np <= 32;
+
+template <class Tp, int Np>
+struct simd_storage<Tp, simd_abi::vec_ext<Np>> {
+  Tp data __attribute__((__vector_size__(std::bit_ceil((sizeof(Tp) * Np)))));
+
+  Tp get(size_t idx) const noexcept { return data[idx]; }
+  void set(size_t idx, Tp v) noexcept { data[idx] = v; }
+};
+
+template <class Tp, int Np>
+struct mask_storage<Tp, simd_abi::vec_ext<Np>>
+    : simd_storage<decltype(experimental::choose_mask_type<Tp>()), simd_abi::vec_ext<Np>> {};
+
+template <class Tp, int Np>
+struct simd_operations<Tp, simd_abi::vec_ext<Np>> {
+  using SimdStorage = simd_storage<Tp, simd_abi::vec_ext<Np>>;
+  using MaskStorage = mask_storage<Tp, simd_abi::vec_ext<Np>>;
+
+  static SimdStorage broadcast(Tp v) noexcept {
+    SimdStorage result;
+    for (int i = 0; i < Np; ++i)
+      result.set(i, v);
+    return result;
+  }
+
+  template <class Generator, size_t... Is>
+  static SimdStorage generate_init(Generator&& g, std::index_sequence<Is...>) {
+    return SimdStorage{{g(std::integral_constant<size_t, Is>())...}};
+  }
+
+  template <class Generator>
+  static SimdStorage generate(Generator&& g) noexcept {
+    return generate_init(std::forward<Generator>(g), std::make_index_sequence<Np>());
+  }
+
+  template <class Up>
+  static void load(SimdStorage& s, const Up* mem) noexcept {
+    for (size_t i = 0; i < (size_t)Np; i++)
+      s.data[i] = static_cast<Tp>(mem[i]);
+  }
+
+  template <class Up>
+  static void store(SimdStorage s, Up* mem) noexcept {
+    for (size_t i = 0; i < (size_t)Np; i++)
+      mem[i] = static_cast<Up>(s.data[i]);
+  }
+
+  static void increment(SimdStorage& s) noexcept { s.data = s.data + 1; }
+  static void decrement(SimdStorage& s) noexcept { s.data = s.data - 1; }
+  static MaskStorage negate(SimdStorage s) noexcept { return {!s.data}; }
+  static SimdStorage bitwise_not(SimdStorage s) noexcept { return {~s.data}; }
+  static SimdStorage unary_minus(SimdStorage s) noexcept { return {-s.data}; }
+};
+
+template <class Tp, int Np>
+struct mask_operations<Tp, simd_abi::vec_ext<Np>> {
+  using MaskStorage = mask_storage<Tp, simd_abi::vec_ext<Np>>;
+
+  static MaskStorage broadcast(bool v) noexcept {
+    MaskStorage result;
+    auto all_bits_v = experimental::set_all_bits<Tp>(v);
+    for (int i = 0; i < Np; ++i)
+      result.set(i, all_bits_v);
+    return result;
+  }
+
+  static void load(MaskStorage& s, const bool* mem) noexcept {
+    for (size_t i = 0; i < (size_t)Np; i++)
+      s.data[i] = experimental::set_all_bits<Tp>(mem[i]);
+  }
+
+  static void store(MaskStorage s, bool* mem) noexcept {
+    for (size_t i = 0; i < (size_t)Np; i++)
+      mem[i] = static_cast<bool>(s.data[i]);
+  }
+};
+
+// ------------------------------ reference ------------------------------
+template <class Tp, class Storage, class Vp>
+class simd_reference {
+  template <class, class>
+  friend class simd;
+  template <class, class>
+  friend class simd_mask;
+
+  Storage& s_;
+  size_t idx_;
+
+  simd_reference(Storage& s, size_t idx) : s_(s), idx_(idx) {}
+
+  Vp get() const noexcept { return s_.get(idx_); }
+
+  void set(Vp v) {
+    if constexpr (is_same_v<Vp, bool>)
+      s_.set(idx_, experimental::set_all_bits<Tp>(v));
+    else
+      s_.set(idx_, v);
+  }
+
+public:
+  using value_type = Vp;
+
+  simd_reference()                      = delete;
+  simd_reference(const simd_reference&) = delete;
+
+  operator value_type() const noexcept { return get(); }
+
+  template <class Up, enable_if_t<is_assignable_v<value_type&, Up&&>, int> = 0>
+  simd_reference operator=(Up&& v) && noexcept {
+    set(static_cast<value_type>(std::forward<Up>(v)));
+    return {s_, idx_};
+  }
+
+  template <class Tp1, class Storage1, class Vp1>
+  friend void swap(simd_reference<Tp1, Storage1, Vp1>&& a, simd_reference<Tp1, Storage1, Vp1>&& b) noexcept;
+  template <class Tp1, class Storage1, class Vp1>
+  friend void swap(Vp1& a, simd_reference<Tp1, Storage1, Vp1>&& b) noexcept;
+  template <class Tp1, class Storage1, class Vp1>
+  friend void swap(simd_reference<Tp1, Storage1, Vp1>&& a, Vp1& b) noexcept;
+
+  template <class Up, class = decltype(std::declval<value_type&>() += std::declval<Up>())>
+  simd_reference operator+=(Up&& v) && noexcept {
+    set(get() + static_cast<value_type>(std::forward<Up>(v)));
+    return {s_, idx_};
+  }
+  template <class Up, class = decltype(std::declval<value_type&>() -= std::declval<Up>())>
+  simd_reference operator-=(Up&& v) && noexcept {
+    set(get() - static_cast<value_type>(std::forward<Up>(v)));
+    return {s_, idx_};
+  }
+  template <class Up, class = decltype(std::declval<value_type&>() *= std::declval<Up>())>
+  simd_reference operator*=(Up&& v) && noexcept {
+    set(get() * static_cast<value_type>(std::forward<Up>(v)));
+    return {s_, idx_};
+  }
+  template <class Up, class = decltype(std::declval<value_type&>() /= std::declval<Up>())>
+  simd_reference operator/=(Up&& v) && noexcept {
+    set(get() / static_cast<value_type>(std::forward<Up>(v)));
+    return {s_, idx_};
+  }
+  template <class Up, class = decltype(std::declval<value_type&>() %= std::declval<Up>())>
+  simd_reference operator%=(Up&& v) && noexcept {
+    set(get() % static_cast<value_type>(std::forward<Up>(v)));
+    return {s_, idx_};
+  }
+  template <class Up, class = decltype(std::declval<value_type&>() &= std::declval<Up>())>
+  simd_reference operator&=(Up&& v) && noexcept {
+    set(get() & static_cast<value_type>(std::forward<Up>(v)));
+    return {s_, idx_};
+  }
+  template <class Up, class = decltype(std::declval<value_type&>() |= std::declval<Up>())>
+  simd_reference operator|=(Up&& v) && noexcept {
+    set(get() | static_cast<value_type>(std::forward<Up>(v)));
+    return {s_, idx_};
+  }
+  template <class Up, class = decltype(std::declval<value_type&>() ^= std::declval<Up>())>
+  simd_reference operator^=(Up&& v) && noexcept {
+    set(get() ^ static_cast<value_type>(std::forward<Up>(v)));
+    return {s_, idx_};
+  }
+  template <class Up, class = decltype(std::declval<value_type&>() <<= std::declval<Up>())>
+  simd_reference operator<<=(Up&& v) && noexcept {
+    set(get() << static_cast<value_type>(std::forward<Up>(v)));
+    return {s_, idx_};
+  }
+  template <class Up, class = decltype(std::declval<value_type&>() >>= std::declval<Up>())>
+  simd_reference operator>>=(Up&& v) && noexcept {
+    set(get() >> static_cast<value_type>(std::forward<Up>(v)));
+    return {s_, idx_};
+  }
+
+  simd_reference operator++() && noexcept {
+    set(get() + 1);
+    return {s_, idx_};
+  }
+  value_type operator++(int) && noexcept {
+    auto r = get();
+    set(get() + 1);
+    return r;
+  }
+  simd_reference operator--() && noexcept {
+    set(get() - 1);
+    return {s_, idx_};
+  }
+  value_type operator--(int) && noexcept {
+    auto r = get();
+    set(get() - 1);
+    return r;
+  }
+};
+
+template <class Tp, class Storage, class Vp>
+void swap(simd_reference<Tp, Storage, Vp>&& a, simd_reference<Tp, Storage, Vp>&& b) noexcept {
+  Vp tmp(std::move(a));
+  std::move(a) = std::move(b);
+  std::move(b) = std::move(tmp);
+}
+
+template <class Tp, class Storage, class Vp>
+void swap(Vp& a, simd_reference<Tp, Storage, Vp>&& b) noexcept {
+  Vp tmp(std::move(a));
+  a            = std::move(b);
+  std::move(b) = std::move(tmp);
+}
+
+template <class Tp, class Storage, class Vp>
+void swap(simd_reference<Tp, Storage, Vp>&& a, Vp& b) noexcept {
+  Vp tmp(std::move(a));
+  std::move(a) = std::move(b);
+  b            = std::move(tmp);
+}
+
+// ------------------------------ simd class ------------------------------
+template <class Simd, class Impl, bool>
+class simd_int_operators {};
+
+template <class Simd, class Impl>
+class simd_int_operators<Simd, Impl, true> {
+public:
+  Simd operator~() const noexcept {
+    return Simd(Impl::bitwise_not((*static_cast<const Simd*>(this)).s_), Simd::storage_tag);
+  }
+};
+
+template <class Tp, class Abi>
+class simd : public simd_int_operators<simd<Tp, Abi>, simd_operations<Tp, Abi>, is_integral_v<Tp>> {
+  using Impl    = simd_operations<Tp, Abi>;
+  using Storage = typename Impl::SimdStorage;
+
+  Storage s_;
+
+  friend class simd_int_operators<simd, Impl, true>;
+
+public:
+  using value_type = Tp;
+  using reference  = simd_reference<Tp, Storage, value_type>;
+  using mask_type  = simd_mask<Tp, Abi>;
+  using abi_type   = Abi;
+
+  static constexpr size_t size() noexcept { return simd_size_v<value_type, abi_type>; }
+
+  simd() noexcept = default;
+
+  struct storage_tag_t {};
+  static constexpr storage_tag_t storage_tag{};
+  explicit operator Storage() const { return s_; }
+  explicit simd(const Storage& s, storage_tag_t) : s_(s) {}
+
+  template <class Up, enable_if_t<can_broadcast_v<value_type, remove_cvref_t<Up>>, int> = 0>
+  simd(Up&& v) noexcept : s_(Impl::broadcast(static_cast<value_type>(v))) {}
+
+  template <class Up,
+            enable_if_t<!is_same_v<Up, Tp> && is_same_v<abi_type, simd_abi::fixed_size<size()>> &&
+                            is_non_narrowing_convertible_v<Up, value_type>,
+                        int> = 0>
+  simd(const simd<Up, simd_abi::fixed_size<size()>>& v) noexcept {
+    for (size_t i = 0; i < size(); i++)
+      (*this)[i] = static_cast<value_type>(v[i]);
+  }
+
+  template <class Generator, enable_if_t<can_generate_v<value_type, Generator, size()>, int> = 0>
+  explicit simd(Generator&& g) noexcept : s_(Impl::generate(std::forward<Generator>(g))) {}
+
+  template <class Up, class Flags, enable_if_t<is_vectorizable_v<Up> && is_simd_flag_type_v<Flags>, int> = 0>
+  simd(const Up* mem, Flags) {
+    Impl::load(s_, Flags::template apply<simd>(mem));
+  }
+
+  template <class Up, class Flags, enable_if_t<is_vectorizable_v<Up> && is_simd_flag_type_v<Flags>, int> = 0>
+  void copy_from(const Up* mem, Flags) {
+    Impl::load(s_, Flags::template apply<simd>(mem));
+  }
+
+  template <class Up, class Flags, enable_if_t<is_vectorizable_v<Up> && is_simd_flag_type_v<Flags>, int> = 0>
+  void copy_to(Up* mem, Flags) const {
+    Impl::store(s_, Flags::template apply<simd>(mem));
+  }
+
+  reference operator[](size_t i) noexcept { return reference(s_, i); }
+  value_type operator[](size_t i) const noexcept { return s_.get(i); }
+
+  simd& operator++() noexcept {
+    Impl::increment(s_);
+    return *this;
+  }
+  simd operator++(int) noexcept {
+    simd r = *this;
+    Impl::increment(s_);
+    return r;
+  }
+  simd& operator--() noexcept {
+    Impl::decrement(s_);
+    return *this;
+  }
+  simd operator--(int) noexcept {
+    simd r = *this;
+    Impl::decrement(s_);
+    return r;
+  }
+  mask_type operator!() const noexcept { return mask_type(Impl::negate(s_), mask_type::storage_tag); }
+  simd operator+() const noexcept { return *this; }
+  simd operator-() const noexcept { return simd(Impl::unary_minus(s_), storage_tag); }
+};
+
+template <class Tp, class Abi>
+inline constexpr bool is_simd_v<simd<Tp, Abi>> = true;
+
+template <class Tp>
+using native_simd = simd<Tp, simd_abi::native<Tp>>;
+
+template <class Tp, int Np>
+using fixed_size_simd = simd<Tp, simd_abi::fixed_size<Np>>;
+
+// ------------------------------ simd_mask class ------------------------------
+template <class Tp, class Abi>
+class simd_mask {
+  using Impl    = mask_operations<Tp, Abi>;
+  using Storage = typename Impl::MaskStorage;
+
+  Storage s_;
+
+public:
+  using value_type = bool;
+  using reference  = simd_reference<Tp, Storage, value_type>;
+  using simd_type  = simd<Tp, Abi>;
+  using abi_type   = Abi;
+
+  static constexpr size_t size() noexcept { return simd_type::size(); }
+
+  simd_mask() noexcept = default;
+
+  struct storage_tag_t {};
+  static constexpr storage_tag_t storage_tag{};
+  explicit operator Storage() const { return s_; }
+  explicit simd_mask(const Storage& s, storage_tag_t) : s_(s) {}
+
+  explicit simd_mask(value_type v) noexcept : s_(Impl::broadcast(v)) {}
+
+  template <class Up, enable_if_t<!is_same_v<Up, Tp> && is_same_v<abi_type, simd_abi::fixed_size<size()>>, int> = 0>
+  simd_mask(const simd_mask<Up, simd_abi::fixed_size<size()>>& v) noexcept {
+    for (size_t i = 0; i < size(); i++)
+      (*this)[i] = v[i];
+  }
+
+  template <class Flags, enable_if_t<is_simd_flag_type_v<Flags>, int> = 0>
+  simd_mask(const value_type* mem, Flags) {
+    Impl::load(s_, Flags::template apply<simd_mask>(mem));
+  }
+
+  template <class Flags, enable_if_t<is_simd_flag_type_v<Flags>, int> = 0>
+  void copy_from(const value_type* mem, Flags) {
+    Impl::load(s_, Flags::template apply<simd_mask>(mem));
+  }
+
+  template <class Flags, enable_if_t<is_simd_flag_type_v<Flags>, int> = 0>
+  void copy_to(value_type* mem, Flags) const {
+    Impl::store(s_, Flags::template apply<simd_mask>(mem));
+  }
+
+  reference operator[](size_t i) noexcept { return reference(s_, i); }
+  value_type operator[](size_t i) const noexcept { return s_.get(i); }
+};
+
+template <class Tp, class Abi>
+inline constexpr bool is_simd_mask_v<simd_mask<Tp, Abi>> = true;
+
+template <class Tp>
+using native_simd_mask = simd_mask<Tp, simd_abi::native<Tp>>;
+
+template <class Tp, int Np>
+using fixed_size_simd_mask = simd_mask<Tp, simd_abi::fixed_size<Np>>;
+
+} // inline namespace parallelism_v2
+} // namespace experimental
+} // namespace std
+
+#pragma GCC visibility pop

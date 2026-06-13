@@ -1,0 +1,71 @@
+// <experimental/type_traits> — std::experimental detection idiom
+// Ported from /home/user/llvm-project/libcxx/include/experimental/type_traits
+// (LLVM libc++, Apache-2.0 with LLVM exceptions).
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// _LIBCPP_BEGIN_NAMESPACE_LFTS -> namespace std { namespace experimental { inline namespace fundamentals_v1 {
+// __nat -> local empty base (makes nonesuch a non-aggregate).
+#pragma once
+
+#pragma GCC visibility push(hidden)
+
+#include <initializer_list>
+#include <type_traits>
+
+namespace std {
+namespace experimental {
+inline namespace fundamentals_v1 {
+
+// 3.3.4, Detection idiom
+template <class...>
+using void_t = void;
+
+namespace detail {
+struct nat {};
+} // namespace detail
+
+struct nonesuch : private detail::nat { // make nonesuch "not an aggregate"
+  ~nonesuch()                     = delete;
+  nonesuch(nonesuch const&)       = delete;
+  void operator=(nonesuch const&) = delete;
+};
+
+template <class Default, class AlwaysVoid, template <class...> class Op, class... Args>
+struct detector {
+  using value_t = false_type;
+  using type    = Default;
+};
+
+template <class Default, template <class...> class Op, class... Args>
+struct detector<Default, void_t<Op<Args...>>, Op, Args...> {
+  using value_t = true_type;
+  using type    = Op<Args...>;
+};
+
+template <template <class...> class Op, class... Args>
+using is_detected = typename detector<nonesuch, void, Op, Args...>::value_t;
+template <template <class...> class Op, class... Args>
+using detected_t = typename detector<nonesuch, void, Op, Args...>::type;
+template <template <class...> class Op, class... Args>
+constexpr bool is_detected_v = is_detected<Op, Args...>::value;
+
+template <class Default, template <class...> class Op, class... Args>
+using detected_or = detector<Default, void, Op, Args...>;
+template <class Default, template <class...> class Op, class... Args>
+using detected_or_t = typename detected_or<Default, Op, Args...>::type;
+
+template <class Expected, template <class...> class Op, class... Args>
+using is_detected_exact = is_same<Expected, detected_t<Op, Args...>>;
+template <class Expected, template <class...> class Op, class... Args>
+constexpr bool is_detected_exact_v = is_detected_exact<Expected, Op, Args...>::value;
+
+template <class To, template <class...> class Op, class... Args>
+using is_detected_convertible = is_convertible<detected_t<Op, Args...>, To>;
+template <class To, template <class...> class Op, class... Args>
+constexpr bool is_detected_convertible_v = is_detected_convertible<To, Op, Args...>::value;
+
+} // inline namespace fundamentals_v1
+} // namespace experimental
+} // namespace std
+
+#pragma GCC visibility pop
