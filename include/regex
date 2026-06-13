@@ -42,19 +42,18 @@ enum syntax_option_type {
     nosubs     = 1 << 1,
     optimize   = 1 << 2,
     collate    = 1 << 3,
-    ECMAScript = 0,       // libc++ non-ABI-break default: 0
     basic      = 1 << 4,
     extended   = 1 << 5,
     awk        = 1 << 6,
     grep       = 1 << 7,
     egrep      = 1 << 8,
-    // 1 << 9 reserved for ECMAScript alternate ABI
+    ECMAScript = 1 << 9,
     multiline  = 1 << 10,
 };
 
-// Internal helper: extract the grammar bits (libc++ lines 869–875, non-ABI-break path)
+// Internal helper: extract the grammar bits (libc++ __get_grammar, NONZERO ABI).
 inline constexpr syntax_option_type get_grammar(syntax_option_type g) {
-    return static_cast<syntax_option_type>(static_cast<int>(g) & 0x1F0);
+    return static_cast<syntax_option_type>(static_cast<int>(g) & 0x3F0);
 }
 
 inline constexpr syntax_option_type operator~(syntax_option_type x) {
@@ -742,7 +741,11 @@ public:
         return matched ? std::distance(this->first, this->second) : 0;
     }
     string_type str() const {
-        return matched ? string_type(this->first, this->second) : string_type();
+        string_type r;
+        if (matched)
+            for (BidirectionalIterator it = this->first; it != this->second; ++it)
+                r.push_back(*it);
+        return r;
     }
     operator string_type() const { return str(); }
 
@@ -814,6 +817,9 @@ inline basic_ostream<CharT, ST>& operator<<(basic_ostream<CharT, ST>& os, const 
     return os << m.str();
 }
 
+template <class _CharT, class _Traits = regex_traits<_CharT> >
+class basic_regex;
+
 template <class BidirectionalIterator,
           class Allocator = allocator<sub_match<BidirectionalIterator>>>
 class match_results;
@@ -832,10 +838,10 @@ public:
 private:
     typedef vector<value_type, allocator_type> container_type;
 
-    container_type matches;
-    value_type unmatched;
-    value_type prefix_match;
-    value_type suffix_match;
+    container_type matches_;
+    value_type unmatched_;
+    value_type prefix_;
+    value_type suffix_;
     bool is_ready;
 
 public:
@@ -852,13 +858,13 @@ public:
     // construct/copy/destroy:
     match_results() : match_results(allocator_type()) {}
     explicit match_results(const allocator_type& a)
-        : matches(a), unmatched(), prefix_match(), suffix_match(), is_ready(false), position_start() {}
+        : matches_(a), unmatched_(), prefix_(), suffix_(), is_ready(false), position_start() {}
 
     bool ready() const { return is_ready; }
 
     // size:
-    size_type size() const noexcept { return matches.size(); }
-    size_type max_size() const noexcept { return matches.max_size(); }
+    size_type size() const noexcept { return matches_.size(); }
+    size_type max_size() const noexcept { return matches_.max_size(); }
     [[nodiscard]] bool empty() const noexcept { return size() == 0; }
 
     // element access:
@@ -868,16 +874,16 @@ public:
     }
     string_type str(size_type sub = 0) const { return (*this)[sub].str(); }
     const_reference operator[](size_type n) const {
-        return n < matches.size() ? matches[n] : unmatched;
+        return n < matches_.size() ? matches_[n] : unmatched_;
     }
 
-    const_reference prefix() const { return prefix_match; }
-    const_reference suffix() const { return suffix_match; }
+    const_reference prefix() const { return prefix_; }
+    const_reference suffix() const { return suffix_; }
 
-    const_iterator begin() const { return empty() ? matches.end() : matches.begin(); }
-    const_iterator end() const { return matches.end(); }
-    const_iterator cbegin() const { return empty() ? matches.end() : matches.begin(); }
-    const_iterator cend() const { return matches.end(); }
+    const_iterator begin() const { return empty() ? matches_.end() : matches_.begin(); }
+    const_iterator end() const { return matches_.end(); }
+    const_iterator cbegin() const { return empty() ? matches_.end() : matches_.begin(); }
+    const_iterator cend() const { return matches_.end(); }
 
     // format:
     template <class OutputIter>
@@ -907,62 +913,69 @@ public:
     }
 
     // allocator:
-    allocator_type get_allocator() const { return matches.get_allocator(); }
+    allocator_type get_allocator() const { return matches_.get_allocator(); }
 
     // swap:
     void swap(match_results& m) {
         using std::swap;
-        swap(matches, m.matches);
-        swap(unmatched, m.unmatched);
-        swap(prefix_match, m.prefix_match);
-        swap(suffix_match, m.suffix_match);
+        swap(matches_, m.matches_);
+        swap(unmatched_, m.unmatched_);
+        swap(prefix_, m.prefix_);
+        swap(suffix_, m.suffix_);
         swap(position_start, m.position_start);
         swap(is_ready, m.is_ready);
     }
 
     template <class B, class A>
-    void assign_from(BidirectionalIterator f,
+    void assign(BidirectionalIterator f,
                      BidirectionalIterator l,
                      const match_results<B, A>& m,
                      bool no_update_pos) {
         B mf = m.prefix().first;
-        matches.resize(m.size());
-        for (size_type i = 0; i < matches.size(); ++i) {
-            matches[i].first   = std::next(f, std::distance(mf, m[i].first));
-            matches[i].second  = std::next(f, std::distance(mf, m[i].second));
-            matches[i].matched = m[i].matched;
+        matches_.resize(m.size());
+        for (size_type i = 0; i < matches_.size(); ++i) {
+            matches_[i].first   = std::next(f, std::distance(mf, m[i].first));
+            matches_[i].second  = std::next(f, std::distance(mf, m[i].second));
+            matches_[i].matched = m[i].matched;
         }
-        unmatched.first   = l;
-        unmatched.second  = l;
-        unmatched.matched = false;
-        prefix_match.first   = std::next(f, std::distance(mf, m.prefix().first));
-        prefix_match.second  = std::next(f, std::distance(mf, m.prefix().second));
-        prefix_match.matched = m.prefix().matched;
-        suffix_match.first   = std::next(f, std::distance(mf, m.suffix().first));
-        suffix_match.second  = std::next(f, std::distance(mf, m.suffix().second));
-        suffix_match.matched = m.suffix().matched;
+        unmatched_.first   = l;
+        unmatched_.second  = l;
+        unmatched_.matched = false;
+        prefix_.first   = std::next(f, std::distance(mf, m.prefix().first));
+        prefix_.second  = std::next(f, std::distance(mf, m.prefix().second));
+        prefix_.matched = m.prefix().matched;
+        suffix_.first   = std::next(f, std::distance(mf, m.suffix().first));
+        suffix_.second  = std::next(f, std::distance(mf, m.suffix().second));
+        suffix_.matched = m.suffix().matched;
         if (!no_update_pos)
-            position_start = prefix_match.first;
+            position_start = prefix_.first;
         is_ready = m.ready();
     }
 
 private:
     void init(unsigned s, BidirectionalIterator f, BidirectionalIterator l, bool no_update_pos = false) {
-        unmatched.first   = l;
-        unmatched.second  = l;
-        unmatched.matched = false;
-        matches.assign(s, unmatched);
-        prefix_match.first   = f;
-        prefix_match.second  = f;
-        prefix_match.matched = false;
-        suffix_match = unmatched;
+        unmatched_.first   = l;
+        unmatched_.second  = l;
+        unmatched_.matched = false;
+        matches_.assign(s, unmatched_);
+        prefix_.first   = f;
+        prefix_.second  = f;
+        prefix_.matched = false;
+        suffix_ = unmatched_;
         if (!no_update_pos)
-            position_start = prefix_match.first;
+            position_start = prefix_.first;
         is_ready = true;
     }
 
-    // Friends to the regex engine (basic_regex, regex_match, __lookahead,
-    // regex_iterator) are omitted until the engine is ported.
+    // Friends to the regex engine.
+    template <class C, class T> friend class basic_regex;
+    template <class C, class T> friend class lookahead;
+    template <class B, class C, class T> friend class regex_iterator;
+    template <class B, class C, class T> friend class regex_token_iterator;
+
+    template <class B, class A, class C, class T>
+    friend bool regex_match(B, B, match_results<B, A>&, const basic_regex<C, T>&,
+                            regex_constants::match_flag_type);
 
     template <class B, class A>
     friend bool operator==(const match_results<B, A>&, const match_results<B, A>&);
@@ -978,7 +991,7 @@ OutputIter match_results<BidirectionalIterator, Allocator>::format(
     if (flags & regex_constants::format_sed) {
         for (; fmt_first != fmt_last; ++fmt_first) {
             if (*fmt_first == '&')
-                output_iter = std::copy(matches[0].first, matches[0].second, output_iter);
+                output_iter = std::copy(matches_[0].first, matches_[0].second, output_iter);
             else if (*fmt_first == '\\' && fmt_first + 1 != fmt_last) {
                 ++fmt_first;
                 if ('0' <= *fmt_first && *fmt_first <= '9') {
@@ -1003,15 +1016,15 @@ OutputIter match_results<BidirectionalIterator, Allocator>::format(
                     break;
                 case '&':
                     ++fmt_first;
-                    output_iter = std::copy(matches[0].first, matches[0].second, output_iter);
+                    output_iter = std::copy(matches_[0].first, matches_[0].second, output_iter);
                     break;
                 case '`':
                     ++fmt_first;
-                    output_iter = std::copy(prefix_match.first, prefix_match.second, output_iter);
+                    output_iter = std::copy(prefix_.first, prefix_.second, output_iter);
                     break;
                 case '\'':
                     ++fmt_first;
-                    output_iter = std::copy(suffix_match.first, suffix_match.second, output_iter);
+                    output_iter = std::copy(suffix_.first, suffix_.second, output_iter);
                     break;
                 default:
                     if ('0' <= fmt_first[1] && fmt_first[1] <= '9') {
@@ -1046,7 +1059,7 @@ bool operator==(const match_results<BidirectionalIterator, Allocator>& x,
         return false;
     if (!x.is_ready)
         return true;
-    return x.matches == y.matches && x.prefix_match == y.prefix_match && x.suffix_match == y.suffix_match;
+    return x.matches_ == y.matches_ && x.prefix_ == y.prefix_ && x.suffix_ == y.suffix_;
 }
 
 template <class BidirectionalIterator, class Allocator>
@@ -1731,6 +1744,50 @@ template <>
 template <>
  void match_any_but_newline<wchar_t>::exec(renfaState&) const;
 
+template <>
+inline void match_any_but_newline<char>::exec(renfaState& s) const {
+  if (s.current_ != s.last_) {
+    switch (*s.current_) {
+    case '\r':
+    case '\n':
+      s.do_   = renfaState::reject;
+      s.node_ = nullptr;
+      break;
+    default:
+      s.do_ = renfaState::accept_and_consume;
+      ++s.current_;
+      s.node_ = this->first();
+      break;
+    }
+  } else {
+    s.do_   = renfaState::reject;
+    s.node_ = nullptr;
+  }
+}
+
+template <>
+inline void match_any_but_newline<wchar_t>::exec(renfaState& s) const {
+  if (s.current_ != s.last_) {
+    switch (*s.current_) {
+    case '\r':
+    case '\n':
+    case 0x2028:
+    case 0x2029:
+      s.do_   = renfaState::reject;
+      s.node_ = nullptr;
+      break;
+    default:
+      s.do_ = renfaState::accept_and_consume;
+      ++s.current_;
+      s.node_ = this->first();
+      break;
+    }
+  } else {
+    s.do_   = renfaState::reject;
+    s.node_ = nullptr;
+  }
+}
+
 // match_char
 
 template <class _CharT>
@@ -2046,7 +2103,7 @@ exit:
 template <class _CharT, class _Traits>
 class lookahead;
 
-template <class _CharT, class _Traits = regex_traits<_CharT> >
+template <class _CharT, class _Traits>
 class  basic_regex;
 
 typedef basic_regex<char> regex;
@@ -2156,7 +2213,9 @@ public:
   template <class _InputIterator, enable_if_t<has_exactly_input_iterator_category<_InputIterator>::value, int> = 0>
    basic_regex&
   assign(_InputIterator first, _InputIterator last, flag_type f = regex_constants::ECMAScript) {
-    basic_string<_CharT> t(first, last);
+    basic_string<_CharT> t;
+    for (; first != last; ++first)
+      t.push_back(*first);
     return assign(t.begin(), t.end(), f);
   }
 
@@ -4259,6 +4318,19 @@ bool basic_regex<_CharT, _Traits>::search(
   return false;
 }
 
+namespace detail {
+// Build a basic_string from an iterator range without using basic_string's
+// range constructor, which (in libcis) relies on a comma-operator pattern that
+// some adaptor iterators delete.
+template <class _CharT, class _Iter>
+basic_string<_CharT> range_to_string(_Iter first, _Iter last) {
+  basic_string<_CharT> s;
+  for (; first != last; ++first)
+    s.push_back(*first);
+  return s;
+}
+} // namespace detail
+
 template <class _BidirectionalIterator, class _Allocator, class _CharT, class _Traits>
 inline  bool
 regex_search(_BidirectionalIterator first,
@@ -4267,7 +4339,7 @@ regex_search(_BidirectionalIterator first,
              const basic_regex<_CharT, _Traits>& e,
              regex_constants::match_flag_type flags = regex_constants::match_default) {
   int offset = (flags & regex_constants::match_prev_avail) ? 1 : 0;
-  basic_string<_CharT> s(std::prev(first, offset), last);
+  basic_string<_CharT> s = detail::range_to_string<_CharT>(std::prev(first, offset), last);
   match_results<const _CharT*> mc;
   bool r = e.search(s.data() + offset, s.data() + s.size(), mc, flags);
   m.assign(first, last, mc, flags & regex_constants::no_update_pos);
@@ -4303,7 +4375,7 @@ regex_search(_BidirectionalIterator first,
              _BidirectionalIterator last,
              const basic_regex<_CharT, _Traits>& e,
              regex_constants::match_flag_type flags = regex_constants::match_default) {
-  basic_string<_CharT> s(first, last);
+  basic_string<_CharT> s = detail::range_to_string<_CharT>(first, last);
   match_results<const _CharT*> mc;
   return e.search(s.data(), s.data() + s.size(), mc, flags);
 }
