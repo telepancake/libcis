@@ -329,6 +329,63 @@ def find_main(tu, path):
     return None
 
 
+def _pp_directive(line):
+    s = line.lstrip()
+    if not s.startswith("#"):
+        return None
+    d = s[1:].lstrip()
+    for kw in ("ifdef", "ifndef", "if", "elif", "else", "endif"):
+        if d == kw or d.startswith(kw + " ") or d.startswith(kw + "("):
+            return kw
+    return None
+
+
+def _pp_unconditional_span(text, ws, we):
+    """Widen [ws, we) so both endpoints sit at preprocessor-conditional depth 0.
+
+    ws moves back before the outermost #if open at ws; we moves forward past the
+    matching #endif of any conditional still open at we. Pure text scan -- never
+    changes which decls are wrapped, only avoids splitting a #if/#endif pair.
+    """
+    lines = []
+    off = 0
+    for line in text.split("\n"):
+        lines.append((off, line))
+        off += len(line) + 1
+    # Stack of #if line-start offsets that are still open at ws.
+    stack = []
+    for lo, line in lines:
+        if lo >= ws:
+            break
+        d = _pp_directive(line)
+        if d in ("if", "ifdef", "ifndef"):
+            stack.append(lo)
+        elif d == "endif" and stack:
+            stack.pop()
+    if stack:
+        ws = stack[0]
+    # From the (possibly new) ws, ensure we is at depth 0: consume any #endif that
+    # closes a conditional opened in [ws, we).
+    depth = 0
+    new_we = we
+    for lo, line in lines:
+        if lo < ws:
+            continue
+        d = _pp_directive(line)
+        if lo < we:
+            if d in ("if", "ifdef", "ifndef"):
+                depth += 1
+            elif d == "endif" and depth > 0:
+                depth -= 1
+        else:
+            if depth == 0:
+                break
+            if d == "endif":
+                depth -= 1
+                new_we = lo + len(line) + 1
+    return ws, new_we
+
+
 def transform(text: str, tu, path: str, slug: str):
     """Returns (output_text, entry_call or None, adapt_counts)."""
     hostile = find_hostile(tu, path)
@@ -343,6 +400,16 @@ def transform(text: str, tu, path: str, slug: str):
                       if p.kind == ci.CursorKind.PARM_DECL)
         args = "0, nullptr" if nparams else ""
         entry = f"libcis_ns_{slug}::main({args})"
+        # ::main implicitly returns 0 on fall-through, but a namespaced main does
+        # not -- a value-less fall-off then becomes UB (garbage exit code, e.g.
+        # re.submatch swap).  Insert an explicit `return 0;` just before main's
+        # closing brace; it is dead code when every path already returns, so it
+        # is always safe and never changes a test's meaning.
+        body = next((c for c in main_cursor.get_children()
+                     if c.kind == ci.CursorKind.COMPOUND_STMT), None)
+        if body is not None:
+            close = body.extent.end.offset - 1  # offset of the closing '}'
+            edits.append((close, close, "\n    return 0;\n"))
 
     # wrap each maximal contiguous run of wrappable decls (main included) in
     # the per-file namespace; `using namespace` keeps unqualified/ADL lookup
@@ -367,6 +434,13 @@ def transform(text: str, tu, path: str, slug: str):
             j += 1
         if j < len(text) and text[j] == ";":
             we = j + 1
+        # The AST is parsed with _LIBCPP_VERSION defined, so the first/last
+        # wrappable decl can sit inside a `#ifdef _LIBCPP_VERSION` block that
+        # libcis (which does not define it) drops -- leaving an unbalanced
+        # `namespace {` ... `}`.  Hoist the open before, and push the close after,
+        # any preprocessor conditional they fall inside, so both braces are
+        # unconditional (mechanical; messages_base was the symptom).
+        ws, we = _pp_unconditional_span(text, ws, we)
         # NO `using namespace` re-export: each file (its helpers AND its main)
         # stays inside libcis_ns_<slug>; the group driver calls main qualified.
         # Re-exporting dragged every file's helpers to global scope, so sibling
