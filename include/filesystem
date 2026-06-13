@@ -2,7 +2,6 @@
 // Mechanically ported from libc++ include/__filesystem/*.h
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 // POSIX '/' separator only (no Win32).
-// DEFERRED: stream operator<< / >> (needs <iostream>); u8path char8_t niceties.
 #pragma once
 
 #include <string>
@@ -15,6 +14,16 @@
 #include <system_error>
 #include <cstdint>
 #include <functional>
+
+#include <iosfwd>  // forward decls of basic_ostream/basic_istream
+
+// NOTE: <ostream>/<istream>/<iomanip> are intentionally NOT included here, to
+// avoid dragging heavy stream/locale machinery (and its ODR interaction with
+// <system_error>) into every filesystem TU. The stream inserters/extractors
+// below are templates instantiated only in the user TU, which includes the
+// relevant stream header. std::quoted is forward-declared just below so the
+// qualified call in the inserter parses; its definition comes from <iomanip>
+// at the point of instantiation.
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -46,8 +55,10 @@ enum class perms : unsigned;
 enum class perm_options : unsigned char;
 enum class copy_options : unsigned short;
 enum class directory_options : unsigned char;
-using file_time_type = std::chrono::time_point<std::chrono::system_clock,
-                                                std::chrono::nanoseconds>;
+// [fs.filesystem.synopsis]: file_time_type is file_clock::time_point, so that
+// file_time_type::clock == chrono::file_clock and clock::now() yields exactly
+// file_time_type (see chrono's file_clock).
+using file_time_type = std::chrono::file_clock::time_point;
 
 //===----------------------------------------------------------------------===//
 // file_type
@@ -249,6 +260,10 @@ template <> struct can_convert_char<char32_t> {
     static constexpr bool value = true;
     using char_type = char32_t;
 };
+template <> struct can_convert_char<char8_t> {
+    static constexpr bool value = true;
+    using char_type = char8_t;
+};
 template <class T> struct can_convert_char<const T> : can_convert_char<T> {};
 
 struct null_sentinel_t {};
@@ -329,24 +344,144 @@ template <class T> struct is_pathable<T, true,  false, false> : is_pathable_stri
 template <class T> struct is_pathable<T, false, true,  false> : is_pathable_char_array<T> {};
 template <class T> struct is_pathable<T, false, false, true>  : is_pathable_iter<T> {};
 
+//===----------------------------------------------------------------------===//
+// Self-contained UTF transcoding (path stores UTF-8 internally on POSIX).
+// Independent of <locale>/<codecvt> (owned by other agents). Decodes any
+// wide encoding (UTF-16 from 16-bit units, UTF-32 from 32-bit units, with
+// the latin1/UCS subset for wchar_t) to/from UTF-8.
+//===----------------------------------------------------------------------===//
+namespace fs_utf {
+
+// Append one Unicode scalar value as UTF-8 to dest.
+inline void utf8_encode(std::string& dest, char32_t cp) {
+    if (cp < 0x80) {
+        dest.push_back(static_cast<char>(cp));
+    } else if (cp < 0x800) {
+        dest.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+        dest.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else if (cp < 0x10000) {
+        dest.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+        dest.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        dest.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else {
+        dest.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+        dest.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+        dest.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        dest.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    }
+}
+
+// Decode the next scalar value from a UTF-8 byte range [b,e). Advances b.
+inline char32_t utf8_decode(const char*& b, const char* e) {
+    unsigned char c = static_cast<unsigned char>(*b++);
+    if (c < 0x80) return c;
+    int extra;
+    char32_t cp;
+    if ((c & 0xE0) == 0xC0) { extra = 1; cp = c & 0x1F; }
+    else if ((c & 0xF0) == 0xE0) { extra = 2; cp = c & 0x0F; }
+    else if ((c & 0xF8) == 0xF0) { extra = 3; cp = c & 0x07; }
+    else return c; // invalid lead byte; pass through
+    for (int i = 0; i < extra && b < e; ++i) {
+        cp = (cp << 6) | (static_cast<unsigned char>(*b++) & 0x3F);
+    }
+    return cp;
+}
+
+// Encode a scalar value into UTF-16 code units appended to a wide string.
+template <class WStr>
+inline void utf16_encode(WStr& dest, char32_t cp) {
+    if (cp < 0x10000) {
+        dest.push_back(static_cast<typename WStr::value_type>(cp));
+    } else {
+        cp -= 0x10000;
+        dest.push_back(static_cast<typename WStr::value_type>(0xD800 | (cp >> 10)));
+        dest.push_back(static_cast<typename WStr::value_type>(0xDC00 | (cp & 0x3FF)));
+    }
+}
+
+// Append UTF-8 bytes [b,e) decoded into a wide string (16- or 32-bit char).
+// Templated on the destination string type so transcoding can target a
+// caller-provided allocator string directly (no default-allocator temporary).
+template <class WStr>
+inline void from_utf8(WStr& dest, const char* b, const char* e) {
+    using ECharT = typename WStr::value_type;
+    while (b < e) {
+        char32_t cp = utf8_decode(b, e);
+        if constexpr (sizeof(ECharT) >= 4) {
+            dest.push_back(static_cast<ECharT>(cp));
+        } else {
+            utf16_encode(dest, cp);
+        }
+    }
+}
+
+// Append a wide range [b,e) (ECharT 16/32-bit) to a UTF-8 std::string.
+template <class ECharT, class Iter>
+inline void to_utf8(std::string& dest, Iter b, Iter e) {
+    if constexpr (sizeof(ECharT) >= 4) {
+        for (; b != e; ++b)
+            utf8_encode(dest, static_cast<char32_t>(static_cast<std::make_unsigned_t<ECharT>>(*b)));
+    } else {
+        // ECharT is 16-bit: combine surrogate pairs.
+        while (b != e) {
+            char32_t u = static_cast<char16_t>(*b++);
+            if (u >= 0xD800 && u <= 0xDBFF && b != e) {
+                char32_t lo = static_cast<char16_t>(*b);
+                if (lo >= 0xDC00 && lo <= 0xDFFF) {
+                    ++b;
+                    u = 0x10000 + ((u - 0xD800) << 10) + (lo - 0xDC00);
+                }
+            }
+            utf8_encode(dest, u);
+        }
+    }
+}
+
+} // namespace fs_utf
+
 // PathCVT: converts from various char types to std::string (POSIX path).
 // For char sources: direct append. For non-char sources: narrow via casting.
+// Generic (wide) PathCVT: transcode UTF-16/UTF-32/wchar_t to UTF-8.
 template <class ECharT>
 struct path_cvt {
     static void append_range(std::string& dest, const ECharT* b, const ECharT* e) {
-        for (; b != e; ++b)
-            dest.push_back(static_cast<char>(*b));
+        fs_utf::to_utf8<ECharT>(dest, b, e);
     }
     template <class Iter>
     static void append_range(std::string& dest, Iter b, Iter e) {
+        std::basic_string<ECharT> tmp;
         for (; b != e; ++b)
-            dest.push_back(static_cast<char>(*b));
+            tmp.push_back(static_cast<ECharT>(*b));
+        fs_utf::to_utf8<ECharT>(dest, tmp.data(), tmp.data() + tmp.size());
     }
     template <class Iter>
     static void append_range(std::string& dest, Iter b, null_sentinel_t) {
         const ECharT sentinel = ECharT{};
+        std::basic_string<ECharT> tmp;
         for (; *b != sentinel; ++b)
-            dest.push_back(static_cast<char>(*b));
+            tmp.push_back(static_cast<ECharT>(*b));
+        fs_utf::to_utf8<ECharT>(dest, tmp.data(), tmp.data() + tmp.size());
+    }
+    template <class Source>
+    static void append_source(std::string& dest, const Source& s) {
+        using Traits = is_pathable<Source>;
+        append_range(dest, Traits::range_begin(s), Traits::range_end(s));
+    }
+};
+
+// char8_t is UTF-8 already: copy bytes verbatim.
+template <>
+struct path_cvt<char8_t> {
+    template <class Iter>
+    static void append_range(std::string& dest, Iter b, Iter e) {
+        for (; b != e; ++b)
+            dest.push_back(static_cast<char>(static_cast<unsigned char>(*b)));
+    }
+    template <class Iter>
+    static void append_range(std::string& dest, Iter b, null_sentinel_t) {
+        const char8_t sentinel = char8_t{};
+        for (; *b != sentinel; ++b)
+            dest.push_back(static_cast<char>(static_cast<unsigned char>(*b)));
     }
     template <class Source>
     static void append_source(std::string& dest, const Source& s) {
@@ -556,8 +691,48 @@ public:
     [[nodiscard]] const value_type* c_str() const noexcept { return pn_.c_str(); }
     operator string_type() const { return pn_; }
 
+    // native format observers (POSIX: native string is UTF-8 in std::string)
     [[nodiscard]] std::string string() const { return pn_; }
+    [[nodiscard]] std::u8string u8string() const {
+        return std::u8string(pn_.begin(), pn_.end());
+    }
+
+    template <class ECharT, class Traits = std::char_traits<ECharT>,
+              class Allocator = std::allocator<ECharT>>
+    [[nodiscard]] std::basic_string<ECharT, Traits, Allocator>
+    string(const Allocator& a = Allocator()) const {
+        std::basic_string<ECharT, Traits, Allocator> s(a);
+        if constexpr (std::is_same_v<ECharT, char>) {
+            s.assign(pn_.begin(), pn_.end());
+        } else if constexpr (std::is_same_v<ECharT, char8_t>) {
+            s.assign(pn_.begin(), pn_.end());
+        } else {
+            // Transcode UTF-8 -> wide directly into the allocator-provided
+            // string so all allocation goes through the supplied allocator.
+            s.reserve(pn_.size());
+            fs_utf::from_utf8(s, pn_.data(), pn_.data() + pn_.size());
+        }
+        return s;
+    }
+
+    [[nodiscard]] std::wstring wstring() const { return string<wchar_t>(); }
+    [[nodiscard]] std::u16string u16string() const { return string<char16_t>(); }
+    [[nodiscard]] std::u32string u32string() const { return string<char32_t>(); }
+
+    // generic format observers (POSIX: identical to native, '/' separators)
     [[nodiscard]] std::string generic_string() const { return pn_; }
+    [[nodiscard]] std::u8string generic_u8string() const { return u8string(); }
+
+    template <class ECharT, class Traits = std::char_traits<ECharT>,
+              class Allocator = std::allocator<ECharT>>
+    [[nodiscard]] std::basic_string<ECharT, Traits, Allocator>
+    generic_string(const Allocator& a = Allocator()) const {
+        return string<ECharT, Traits, Allocator>(a);
+    }
+
+    [[nodiscard]] std::wstring generic_wstring() const { return string<wchar_t>(); }
+    [[nodiscard]] std::u16string generic_u16string() const { return string<char16_t>(); }
+    [[nodiscard]] std::u32string generic_u32string() const { return string<char32_t>(); }
 
     // compare
     [[nodiscard]] int compare(const path& p) const noexcept { return compare_sv(p.pn_); }
@@ -619,6 +794,54 @@ public:
         return result;
     }
 
+    // stream inserters/extractors. Templates on the stream char type, so they
+    // are only instantiated in the user TU (which supplies the stream header).
+    // The quoting logic (equivalent to std::quoted with delim '"', escape '\\')
+    // is inlined here so <iomanip> need not be included by <filesystem>.
+    template <class CharT, class Traits>
+    friend std::basic_ostream<CharT, Traits>&
+    operator<<(std::basic_ostream<CharT, Traits>& os, const path& p) {
+        std::basic_string<CharT, Traits> src = p.string<CharT, Traits>();
+        const CharT delim = CharT('"'), escape = CharT('\\');
+        std::basic_string<CharT, Traits> buf;
+        buf.push_back(delim);
+        for (CharT c : src) {
+            if (Traits::eq(c, escape) || Traits::eq(c, delim))
+                buf.push_back(escape);
+            buf.push_back(c);
+        }
+        buf.push_back(delim);
+        os << buf;
+        return os;
+    }
+
+    template <class CharT, class Traits>
+    friend std::basic_istream<CharT, Traits>&
+    operator>>(std::basic_istream<CharT, Traits>& is, path& p) {
+        const CharT delim = CharT('"'), escape = CharT('\\');
+        std::basic_string<CharT, Traits> tmp;
+        CharT c;
+        is >> c;  // skips leading whitespace
+        if (is.fail()) return is;
+        if (!Traits::eq(c, delim)) {
+            is.putback(c);
+            is >> tmp;
+            p = tmp;
+            return is;
+        }
+        // Inside the quotes: read raw characters (get() does not skip ws).
+        while (is.get(c)) {
+            if (Traits::eq(c, escape)) {
+                if (!is.get(c)) break;
+            } else if (Traits::eq(c, delim)) {
+                break;
+            }
+            tmp.push_back(c);
+        }
+        p = tmp;
+        return is;
+    }
+
     // iterators
     class iterator;
     using const_iterator = iterator;
@@ -640,31 +863,56 @@ private:
     }
 
     std::string_view relative_path_sv() const noexcept {
-        // Skip leading '/'
+        // relative_path = path with the root-path removed. On POSIX there is
+        // no root-name; the root-directory is the leading separator run, so
+        // skip ALL leading '/' characters.
         std::string_view sv(pn_);
-        if (!sv.empty() && sv[0] == '/')
-            sv.remove_prefix(1);
+        size_t i = 0;
+        while (i < sv.size() && sv[i] == '/') ++i;
+        sv.remove_prefix(i);
         return sv;
     }
 
+    // Ported from libc++ path::__parent_path (src/filesystem/path.cpp):
+    // remove a single trailing element. Handles the trailing empty element
+    // (path ending in '/') correctly: "foo/" -> "foo".
     std::string_view parent_path_sv() const noexcept {
         if (pn_.empty())
             return {};
-        // Find last separator
-        auto filename = filename_sv();
-        if (filename.empty())
-            return std::string_view(pn_);
-        // parent is everything before the filename
-        std::size_t end = static_cast<std::size_t>(filename.data() - pn_.data());
-        if (end == 0)
+        std::string_view sv(pn_);
+        // Root-dir-only path (e.g. "/"): parent is itself.
+        bool root = sv[0] == '/';
+        std::string_view rel = sv;
+        if (root) rel.remove_prefix(1);
+        // skip extra leading separators of the root run
+        size_t relStart = 1;
+        if (root) {
+            while (relStart < sv.size() && sv[relStart] == '/') ++relStart;
+        }
+        if (root && relStart >= sv.size())
+            return sv;  // only root dir, no relative path
+        // Find the start of the last element by scanning from the end.
+        size_t end = sv.size();
+        // A trailing separator denotes a trailing empty element; the last
+        // element is empty and starts at end. Otherwise the last element is
+        // the final non-separator run.
+        size_t lastStart;
+        if (sv[end - 1] == '/') {
+            lastStart = end;  // empty trailing element
+        } else {
+            size_t i = end;
+            while (i > 0 && sv[i - 1] != '/') --i;
+            lastStart = i;
+        }
+        // Strip the separators preceding the last element.
+        size_t cut = lastStart;
+        while (cut > 0 && sv[cut - 1] == '/') --cut;
+        // Keep the root separator if present.
+        if (root && cut == 0)
+            cut = 1;
+        if (cut == 0)
             return {};
-        // Don't strip the root slash
-        if (end == 1 && pn_[0] == '/')
-            return std::string_view(pn_.data(), 1);
-        // Strip trailing '/'
-        while (end > 1 && pn_[end - 1] == '/')
-            --end;
-        return std::string_view(pn_.data(), end);
+        return std::string_view(sv.data(), cut);
     }
 
     std::string_view filename_sv() const noexcept {
@@ -704,11 +952,51 @@ private:
         return fname.substr(dot);
     }
 
+    // Component-wise comparison per [fs.path.compare]. Ported from libc++
+    // path::__compare (src/filesystem/path.cpp): compare root-name (none on
+    // POSIX), then root-directory presence, then relative components
+    // lexicographically, then end state. Allocation-free (string_view only).
+    static int compare_sv_static(std::string_view a, std::string_view b) noexcept {
+        // Root-directory: leading '/'.
+        bool aRoot = !a.empty() && a[0] == '/';
+        bool bRoot = !b.empty() && b[0] == '/';
+        if (!aRoot && bRoot) return -1;
+        if (aRoot && !bRoot) return 1;
+        // Consume the entire root-directory separator run (ConsumeRootDir),
+        // so "//" and "/" both reduce to an empty relative path.
+        if (aRoot) { size_t i = 0; while (i < a.size() && a[i] == '/') ++i; a.remove_prefix(i); }
+        if (bRoot) { size_t i = 0; while (i < b.size() && b[i] == '/') ++i; b.remove_prefix(i); }
+        // Relative components, element-by-element. A path ending in a
+        // separator yields a final empty ("") element (as libc++'s
+        // PathParser does), so "a/b/" sorts after "a/b".
+        auto next = [](std::string_view& s, std::string_view& out, bool& trailing) -> bool {
+            // skip separator run
+            bool sawSep = false;
+            while (!s.empty() && s[0] == '/') { s.remove_prefix(1); sawSep = true; }
+            if (s.empty()) {
+                if (sawSep && trailing) { trailing = false; out = std::string_view(); return true; }
+                return false;
+            }
+            size_t n = 0;
+            while (n < s.size() && s[n] != '/') ++n;
+            out = s.substr(0, n);
+            s.remove_prefix(n);
+            return true;
+        };
+        bool ta = true, tb = true;
+        std::string_view ea, eb;
+        while (true) {
+            bool ha = next(a, ea, ta);
+            bool hb = next(b, eb, tb);
+            if (!ha && !hb) return 0;
+            if (!ha) return -1;
+            if (!hb) return 1;
+            int r = ea.compare(eb);
+            if (r != 0) return r < 0 ? -1 : 1;
+        }
+    }
     int compare_sv(std::string_view other) const noexcept {
-        // Compare component-by-component per the standard.
-        // For POSIX paths, simple string comparison is sufficient since
-        // there's only '/' as a separator and no root names.
-        return pn_.compare(other);
+        return compare_sv_static(pn_, other);
     }
 
     // Allow the iterator to access internals
@@ -719,78 +1007,75 @@ private:
 
 inline void swap(path& lhs, path& rhs) noexcept { lhs.swap(rhs); }
 
+// Ported from libc++ hash_value (src/filesystem/path.cpp): combine the hash
+// of each path element (root-directory contributes "/"), so that paths that
+// compare equal hash equally.
 [[nodiscard]] inline size_t hash_value(const path& p) noexcept {
-    return std::hash<std::string>{}(p.native());
+    std::string_view s(p.native());
+    auto hash_combine = [](size_t lhs, size_t rhs) noexcept -> size_t {
+        // Boost-style combine; deterministic and order-sensitive.
+        lhs ^= rhs + 0x9e3779b97f4a7c15ULL + (lhs << 6) + (lhs >> 2);
+        return lhs;
+    };
+    std::hash<std::string_view> hasher;
+    size_t h = 0;
+    bool root = !s.empty() && s[0] == '/';
+    if (root) {
+        h = hash_combine(h, hasher(std::string_view("/")));
+        // Consume the whole root-directory separator run so "//" hashes as "/".
+        size_t i = 0; while (i < s.size() && s[i] == '/') ++i;
+        s.remove_prefix(i);
+    }
+    bool trailing = true;
+    while (true) {
+        bool sawSep = false;
+        while (!s.empty() && s[0] == '/') { s.remove_prefix(1); sawSep = true; }
+        if (s.empty()) {
+            if (sawSep && trailing) {
+                h = hash_combine(h, hasher(std::string_view()));
+            }
+            break;
+        }
+        size_t n = 0;
+        while (n < s.size() && s[n] != '/') ++n;
+        h = hash_combine(h, hasher(s.substr(0, n)));
+        s.remove_prefix(n);
+    }
+    return h;
+}
+
+//===----------------------------------------------------------------------===//
+// u8path — POSIX: input is UTF-8, stored verbatim (char/char8_t only).
+//===----------------------------------------------------------------------===//
+template <class Source,
+          class = std::enable_if_t<is_pathable<Source>::value>>
+[[nodiscard]] path u8path(const Source& s) {
+    static_assert(
+        std::is_same_v<typename is_pathable<Source>::char_type, char8_t> ||
+        std::is_same_v<typename is_pathable<Source>::char_type, char>,
+        "u8path(Source const&) requires Source have a character type of type "
+        "'char' or 'char8_t'");
+    return path(s);
+}
+
+template <class InputIt,
+          class = std::enable_if_t<is_pathable<InputIt>::value>>
+[[nodiscard]] path u8path(InputIt f, InputIt l) {
+    static_assert(
+        std::is_same_v<typename is_pathable<InputIt>::char_type, char8_t> ||
+        std::is_same_v<typename is_pathable<InputIt>::char_type, char>,
+        "u8path(Iter, Iter) requires Iter have a value_type of type 'char'"
+        " or 'char8_t'");
+    return path(f, l);
 }
 
 //===----------------------------------------------------------------------===//
 // path::lexically_normal, lexically_relative — non-trivial, defined after class
 //===----------------------------------------------------------------------===//
 
-inline path path::lexically_normal() const {
-    // Algorithm from the standard:
-    // 1. Replace each slash with preferred_separator (noop on POSIX)
-    // 2. Replace each directory-separator with a single slash
-    // 3. Replace each dot filename with nothing
-    // 4. Replace each non-dot-dot filename followed by a slash and dot-dot with nothing
-    // 5. If path is empty, return "."
-    if (pn_.empty())
-        return path(".");
-
-    // Split into components, process, rebuild
-    std::vector<std::string> parts;
-    bool is_abs = !pn_.empty() && pn_[0] == '/';
-    std::string_view sv(pn_);
-    if (is_abs) sv.remove_prefix(1);
-
-    // Split on '/'
-    while (!sv.empty()) {
-        auto pos = sv.find('/');
-        std::string_view comp;
-        if (pos == std::string_view::npos) {
-            comp = sv;
-            sv = {};
-        } else {
-            comp = sv.substr(0, pos);
-            sv.remove_prefix(pos + 1);
-        }
-        if (comp.empty() || comp == ".")
-            continue;
-        if (comp == "..") {
-            if (parts.empty()) {
-                if (!is_abs)
-                    parts.push_back("..");
-                // else: can't go above root, discard
-            } else if (parts.back() == "..") {
-                parts.push_back("..");
-            } else {
-                parts.pop_back();
-            }
-        } else {
-            parts.push_back(std::string(comp));
-        }
-    }
-
-    // Handle trailing separator: if original ended in '/' and had a filename
-    bool had_trailing_sep = pn_.size() > 1 && pn_.back() == '/';
-
-    std::string result;
-    if (is_abs)
-        result = "/";
-    for (std::size_t i = 0; i < parts.size(); ++i) {
-        if (i > 0 || is_abs) {
-            if (!is_abs || i > 0)
-                result += '/';
-        }
-        result += parts[i];
-    }
-    if (had_trailing_sep && !result.empty() && result.back() != '/')
-        result += '/';
-
-    if (result.empty())
-        return path(".");
-    return path(std::move(result));
-}
+// Ported from libc++ path::lexically_normal (src/filesystem/path.cpp),
+// using the path iterator (whose dereference already yields "/" for the
+// root separator and "" for a trailing separator).
 
 // Helper: split path string into components, excluding '/' and empty parts
 inline std::vector<std::string> path_split_components(const path& p) {
@@ -851,15 +1136,19 @@ inline path path::lexically_relative(const path& base) const {
 //===----------------------------------------------------------------------===//
 // path::iterator
 //===----------------------------------------------------------------------===//
+// POSIX PathParser, ported from libc++ src/filesystem/path_parser.h.
+// No root-name support (no drive letters / network roots) and '/' is the only
+// separator. Drives begin()/end()/increment()/decrement() and the
+// filename/relative/parent decomposition so all of them stay consistent.
 class path::iterator {
 public:
     enum parser_state : unsigned char {
-        singular,
-        before_begin,
-        in_root_dir,
-        in_filenames,
-        in_trailing_sep,
-        at_end
+        singular        = 0,   // default-constructed (== before_begin sentinel)
+        before_begin    = 1,
+        in_root_dir     = 2,
+        in_filenames    = 3,
+        in_trailing_sep = 4,
+        at_end          = 5
     };
 
     using iterator_category  = std::bidirectional_iterator_tag;
@@ -869,7 +1158,7 @@ public:
     using pointer            = const path*;
     using reference          = path;
 
-    iterator() : path_ptr_(nullptr), entry_(), state_(singular) {}
+    iterator() : stashed_elem_(), path_ptr_(nullptr), entry_(), state_(singular) {}
     iterator(const iterator&) = default;
     ~iterator() = default;
     iterator& operator=(const iterator&) = default;
@@ -877,24 +1166,10 @@ public:
     [[nodiscard]] reference operator*() const { return stashed_elem_; }
     pointer operator->() const { return &stashed_elem_; }
 
-    iterator& operator++() {
-        advance();
-        return *this;
-    }
-    iterator operator++(int) {
-        iterator tmp(*this);
-        ++(*this);
-        return tmp;
-    }
-    iterator& operator--() {
-        decrement();
-        return *this;
-    }
-    iterator operator--(int) {
-        iterator tmp(*this);
-        --(*this);
-        return tmp;
-    }
+    iterator& operator++() { increment(); update_stash(); return *this; }
+    iterator operator++(int) { iterator tmp(*this); ++(*this); return tmp; }
+    iterator& operator--() { decrement(); update_stash(); return *this; }
+    iterator operator--(int) { iterator tmp(*this); --(*this); return tmp; }
 
     friend bool operator==(const iterator& lhs, const iterator& rhs) noexcept {
         return lhs.path_ptr_ == rhs.path_ptr_ &&
@@ -907,127 +1182,145 @@ public:
 private:
     friend class path;
 
-    void set_stashed() {
-        stashed_elem_ = path(std::string(entry_));
+    using PosPtr = const char*;
+
+    PosPtr path_data() const noexcept { return path_ptr_->pn_.data(); }
+    PosPtr getAfterBack() const noexcept {
+        return path_ptr_->pn_.data() + path_ptr_->pn_.size();
+    }
+    PosPtr getBeforeFront() const noexcept { return path_ptr_->pn_.data() - 1; }
+
+    static bool isSep(char c) noexcept { return c == '/'; }
+
+    PosPtr getNextTokenStartPos() const noexcept {
+        switch (state_) {
+        case before_begin: return path_data();
+        case in_root_dir:
+        case in_filenames: return &entry_.back() + 1;
+        case in_trailing_sep:
+        case at_end:
+        default:           return getAfterBack();
+        }
+    }
+    PosPtr getCurrentTokenStartPos() const noexcept {
+        switch (state_) {
+        case before_begin: return &path_ptr_->pn_.front();
+        case in_root_dir:
+        case in_filenames:
+        case in_trailing_sep: return &entry_.front();
+        case at_end:
+        default:              return &path_ptr_->pn_.back() + 1;
+        }
     }
 
-    void advance() {
-        const std::string& pn = path_ptr_->pn_;
-        const char* data = pn.data();
-        const char* end  = data + pn.size();
-
-        if (state_ == at_end) return;
-
-        if (state_ == in_trailing_sep) {
-            // Move to at_end
-            entry_ = std::string_view(end, 0);
-            state_ = at_end;
-            stashed_elem_ = path();
-            return;
-        }
-
-        // Current entry ends at entry_.data() + entry_.size()
-        const char* next = entry_.data() + entry_.size();
-
-        if (state_ == in_root_dir) {
-            // After root dir '/', move into filenames
-            state_ = in_filenames;
-        }
-
-        // Skip separators (shouldn't normally appear here unless in_filenames after trailing sep)
-        // Find the next component
-        // next points after current component
-        // Skip a separator if present
-        if (next < end && *next == '/') {
-            ++next;
-        }
-
-        if (next == end) {
-            // At the end
-            entry_ = std::string_view(end, 0);
-            state_ = at_end;
-            stashed_elem_ = path();
-            return;
-        }
-
-        // Find end of next component
-        const char* comp_end = next;
-        while (comp_end < end && *comp_end != '/')
-            ++comp_end;
-
-        // Check for trailing separator: component would be empty
-        if (comp_end == next) {
-            // trailing separator
-            state_ = in_trailing_sep;
-            entry_ = std::string_view(next - 1, 1); // the '/'
-            stashed_elem_ = path();
-            return;
-        }
-
-        entry_ = std::string_view(next, static_cast<std::size_t>(comp_end - next));
-        state_ = in_filenames;
-        set_stashed();
+    PosPtr consumeAllSeparators(PosPtr P, PosPtr End) const noexcept {
+        if (P == nullptr || P == End || !isSep(*P))
+            return nullptr;
+        const int Inc = P < End ? 1 : -1;
+        P += Inc;
+        while (P != End && isSep(*P))
+            P += Inc;
+        return P;
+    }
+    PosPtr consumeName(PosPtr P, PosPtr End) const noexcept {
+        if (P == nullptr || P == End || isSep(*P))
+            return nullptr;
+        const int Inc = P < End ? 1 : -1;
+        P += Inc;
+        while (P != End && !isSep(*P))
+            P += Inc;
+        return P;
     }
 
-    void decrement() {
-        const std::string& pn = path_ptr_->pn_;
-        const char* data = pn.data();
+    void makeState(parser_state s, PosPtr Start, PosPtr End) noexcept {
+        state_ = s;
+        entry_ = std::string_view(Start, static_cast<std::size_t>(End - Start));
+    }
+    void makeState(parser_state s) noexcept {
+        state_ = s;
+        // Anchor the sentinel entry one-past-the-end so an iterator that
+        // reached at_end compares equal to end().
+        entry_ = std::string_view(getAfterBack(), 0);
+    }
 
-        if (state_ == at_end || state_ == in_trailing_sep) {
-            // Go back to the last component
-            const char* end = data + pn.size();
-            // Skip trailing separator
-            const char* pos = end;
-            if (pos > data && *(pos - 1) == '/') {
-                // trailing sep
-                --pos;
+    void increment() noexcept {
+        const PosPtr End   = getAfterBack();
+        const PosPtr Start = getNextTokenStartPos();
+        if (Start == End) return makeState(at_end);
+
+        switch (state_) {
+        case before_begin: {
+            if (PosPtr TkEnd = consumeAllSeparators(Start, End))
+                return makeState(in_root_dir, Start, TkEnd);
+            return makeState(in_filenames, Start, consumeName(Start, End));
+        }
+        case in_root_dir:
+            return makeState(in_filenames, Start, consumeName(Start, End));
+        case in_filenames: {
+            PosPtr SepEnd = consumeAllSeparators(Start, End);
+            if (SepEnd != End) {
+                PosPtr TkEnd = consumeName(SepEnd, End);
+                if (TkEnd)
+                    return makeState(in_filenames, SepEnd, TkEnd);
             }
-            if (pos == data) {
-                // was just '/'
-                entry_ = std::string_view(data, 1);
-                state_ = in_root_dir;
-                stashed_elem_ = path("/");
-                return;
+            return makeState(in_trailing_sep, Start, SepEnd);
+        }
+        case in_trailing_sep:
+            return makeState(at_end);
+        default:
+            return;
+        }
+    }
+
+    void decrement() noexcept {
+        const PosPtr REnd   = getBeforeFront();
+        const PosPtr RStart = getCurrentTokenStartPos() - 1;
+        if (RStart == REnd) // decrementing begin
+            return makeState(before_begin);
+
+        switch (state_) {
+        case at_end: {
+            if (PosPtr SepEnd = consumeAllSeparators(RStart, REnd)) {
+                if (SepEnd == REnd)
+                    return makeState(in_root_dir, path_data(), RStart + 1);
+                return makeState(in_trailing_sep, SepEnd + 1, RStart + 1);
+            } else {
+                PosPtr TkStart = consumeName(RStart, REnd);
+                return makeState(in_filenames, TkStart + 1, RStart + 1);
             }
-            // Find beginning of last component
-            const char* comp_end = pos;
-            while (pos > data && *(pos - 1) != '/')
-                --pos;
-            entry_ = std::string_view(pos, static_cast<std::size_t>(comp_end - pos));
-            state_ = in_filenames;
-            set_stashed();
+        }
+        case in_trailing_sep:
+            return makeState(in_filenames, consumeName(RStart, REnd) + 1, RStart + 1);
+        case in_filenames: {
+            PosPtr SepEnd = consumeAllSeparators(RStart, REnd);
+            if (SepEnd == REnd)
+                return makeState(in_root_dir, path_data(), RStart + 1);
+            PosPtr TkStart = consumeName(SepEnd, REnd);
+            return makeState(in_filenames, TkStart + 1, SepEnd + 1);
+        }
+        case in_root_dir:
+            // No root name on POSIX: decrementing the root dir reaches begin.
+            return makeState(before_begin);
+        default:
             return;
         }
+    }
 
-        // We're in in_filenames or in_root_dir; go back one component
-        const char* cur = entry_.data();
-
-        if (cur == data) {
-            // Already at beginning, shouldn't happen
-            return;
+    // The "preferred representation": root-dir shows as "/", trailing sep and
+    // the end/before-begin sentinels show as empty.
+    std::string_view deref_view() const noexcept {
+        switch (state_) {
+        case before_begin:
+        case at_end:          return std::string_view();
+        case in_root_dir:     return std::string_view("/");
+        case in_trailing_sep: return std::string_view();
+        case in_filenames:
+        default:              return entry_;
         }
+    }
 
-        // Check if cur is right after the root '/'
-        if (cur == data + 1 && *data == '/') {
-            // Go to root dir
-            entry_ = std::string_view(data, 1);
-            state_ = in_root_dir;
-            stashed_elem_ = path("/");
-            return;
-        }
-
-        // Step back past the '/' separator before current component
-        const char* pos = cur - 1; // points at '/'
-        const char* comp_end = pos; // end of previous component
-        while (pos > data && *(pos - 1) != '/')
-            --pos;
-        // Check for root dir
-        if (pos == data + 1 && *data == '/') {
-            // previous component immediately follows root '/'
-        }
-        entry_ = std::string_view(pos, static_cast<std::size_t>(comp_end - pos));
-        state_ = in_filenames;
-        set_stashed();
+    void update_stash() {
+        stashed_elem_ = path(std::string(deref_view()));
     }
 
     path stashed_elem_;
@@ -1039,31 +1332,10 @@ private:
 inline path::iterator path::begin() const {
     iterator it;
     it.path_ptr_ = this;
-
-    if (pn_.empty()) {
-        it.entry_ = std::string_view(pn_.data(), 0);
-        it.state_ = iterator::at_end;
-        return it;
-    }
-
-    // Start: root dir (if absolute) or first filename component
-    if (pn_[0] == '/') {
-        it.entry_ = std::string_view(pn_.data(), 1);
-        it.state_ = iterator::in_root_dir;
-        it.stashed_elem_ = path("/");
-        return it;
-    }
-
-    // Relative: find first component
-    const char* data = pn_.data();
-    const char* end  = data + pn_.size();
-    const char* comp_end = data;
-    while (comp_end < end && *comp_end != '/')
-        ++comp_end;
-
-    it.entry_ = std::string_view(data, static_cast<std::size_t>(comp_end - data));
-    it.state_ = iterator::in_filenames;
-    it.stashed_elem_ = path(std::string(it.entry_));
+    it.state_ = iterator::before_begin;
+    it.entry_ = std::string_view();
+    it.increment();
+    it.update_stash();
     return it;
 }
 
@@ -1073,6 +1345,71 @@ inline path::iterator path::end() const {
     it.entry_ = std::string_view(pn_.data() + pn_.size(), 0);
     it.state_ = iterator::at_end;
     return it;
+}
+
+inline path path::lexically_normal() const {
+    if (pn_.empty())
+        return *this;
+
+    enum part_kind : unsigned char {
+        PK_None, PK_RootSep, PK_Filename, PK_Dot, PK_DotDot, PK_TrailingSep
+    };
+    auto classify = [](std::string_view part) -> part_kind {
+        if (part.empty()) return PK_TrailingSep;
+        if (part == ".") return PK_Dot;
+        if (part == "..") return PK_DotDot;
+        if (part == "/") return PK_RootSep;
+        return PK_Filename;
+    };
+
+    std::vector<std::pair<std::string, part_kind>> parts;
+    auto last_kind = [&]() -> part_kind {
+        return parts.empty() ? PK_None : parts.back().second;
+    };
+
+    bool maybe_need_trailing_sep = false;
+    for (auto it = begin(); it != end(); ++it) {
+        std::string part = it->native();
+        part_kind kind = classify(part);
+        switch (kind) {
+        case PK_Filename:
+        case PK_RootSep:
+            parts.emplace_back(std::move(part), kind);
+            maybe_need_trailing_sep = false;
+            break;
+        case PK_DotDot: {
+            part_kind lk = last_kind();
+            if (lk == PK_Filename) {
+                parts.pop_back();
+            } else if (lk != PK_RootSep) {
+                parts.emplace_back(std::string(".."), PK_DotDot);
+            }
+            maybe_need_trailing_sep = (lk == PK_Filename);
+            break;
+        }
+        case PK_Dot:
+        case PK_TrailingSep:
+            maybe_need_trailing_sep = true;
+            break;
+        default:
+            break;
+        }
+    }
+
+    // [fs.path.generic]p6.8: empty -> ".".
+    if (parts.empty())
+        return path(".");
+
+    // [fs.path.generic]p6.7: if the last filename is dot-dot, remove any
+    // trailing directory-separator.
+    bool need_trailing_sep = maybe_need_trailing_sep && last_kind() == PK_Filename;
+
+    path result;
+    for (auto& pk : parts)
+        result /= pk.first;
+    if (need_trailing_sep)
+        result /= path("");
+    return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1449,34 +1786,50 @@ inline void current_path(const path& p) {
     std::vector<std::string> tail;
     path cur = p.lexically_normal();
 
-    // Walk from the full path backward to find what exists
+    // Walk from the full path backward to find the longest existing prefix.
+    // Ported from libc++ __weakly_canonical (src/filesystem/operations.cpp).
     path existing = cur;
     std::vector<std::string> non_existing;
+    bool found_existing = false;
     while (!existing.empty()) {
         struct ::stat st;
         if (::lstat(existing.c_str(), &st) == 0) {
-            // Canonicalize the existing part
             char buf[PATH_MAX];
-            if (::realpath(existing.c_str(), buf) != nullptr) {
+            if (::realpath(existing.c_str(), buf) != nullptr)
                 result = path(buf);
-            } else {
+            else
                 result = existing;
-            }
+            found_existing = true;
             break;
         }
         // not found, strip last component
         auto fn = existing.filename().native();
-        if (fn.empty() || fn == "/") break;
-        non_existing.push_back(fn);
-        existing = existing.parent_path();
+        path parent = existing.parent_path();
+        if (parent == existing) break;  // reached root with nothing existing
+        // A trailing separator yields an empty filename; it contributes no
+        // path component, so skip it but keep walking.
+        if (!fn.empty())
+            non_existing.push_back(fn);
+        existing = parent;
     }
-    // Append non-existing parts back
+
+    if (!found_existing) {
+        // No prefix exists: canonicalize the empty path (== current_path) so
+        // the result is absolute, matching libc++'s __canonical("").
+        char buf[PATH_MAX];
+        if (::realpath(".", buf) != nullptr)
+            result = path(buf);
+        else
+            result = current_path(ec);
+    }
+
+    // Append the non-existing parts back (front-to-back) and normalize.
     for (auto it = non_existing.rbegin(); it != non_existing.rend(); ++it)
         result /= *it;
 
     if (result.empty())
         result = cur;
-    return result;
+    return result.lexically_normal();
 }
 [[nodiscard]] inline path weakly_canonical(const path& p) {
     std::error_code ec;
@@ -1655,44 +2008,65 @@ inline bool remove(const path& p) {
     return r;
 }
 
-// remove_all (recursive)
-inline uintmax_t remove_all(const path& p, std::error_code& ec) {
-    uintmax_t count = 0;
-    struct ::stat st;
-    if (::lstat(p.c_str(), &st) != 0) {
-        if (errno == ENOENT) { ec.clear(); return 0; }
-        ec = std::error_code(errno, std::generic_category());
-        return 0;
-    }
-    if (S_ISDIR(st.st_mode)) {
-        DIR* d = ::opendir(p.c_str());
-        if (!d) {
+// remove_all (recursive). Ported from libc++ remove_all_impl
+// (src/filesystem/operations.cpp), the openat()-based variant that threads
+// file descriptors through recursion to be safe against TOCTOU symlink swaps:
+// directories are opened with O_NOFOLLOW|O_DIRECTORY and entries removed via
+// unlinkat relative to the parent fd, so a path swapped for a symlink mid-walk
+// cannot redirect the deletion.
+inline uintmax_t remove_all_impl(int parent_directory, const path& p, std::error_code& ec) {
+    const int options = O_CLOEXEC | O_RDONLY | O_DIRECTORY | O_NOFOLLOW;
+    int fd = ::openat(parent_directory, p.c_str(), options);
+    if (fd != -1) {
+        DIR* stream = ::fdopendir(fd);
+        if (stream == nullptr) {
+            ::close(fd);
             ec = std::error_code(errno, std::generic_category());
             return 0;
         }
+        uintmax_t count = 0;
         struct ::dirent* de;
-        while ((de = ::readdir(d)) != nullptr) {
+        errno = 0;
+        while ((de = ::readdir(stream)) != nullptr) {
             std::string_view name(de->d_name);
-            if (name == "." || name == "..") continue;
-            path child = p / path(std::string(name));
-            count += remove_all(child, ec);
-            if (ec) { ::closedir(d); return count; }
+            if (name == "." || name == "..") { errno = 0; continue; }
+            count += remove_all_impl(fd, path(std::string(name)), ec);
+            if (ec) { ::closedir(stream); return count; }
+            errno = 0;
         }
-        ::closedir(d);
-        if (::rmdir(p.c_str()) != 0) {
+        if (errno != 0) {
+            ec = std::error_code(errno, std::generic_category());
+            ::closedir(stream);
+            return count;
+        }
+        // closedir also closes fd.
+        ::closedir(stream);
+        if (::unlinkat(parent_directory, p.c_str(), AT_REMOVEDIR) == -1) {
             ec = std::error_code(errno, std::generic_category());
             return count;
         }
-        ++count;
         ec.clear();
-        return count;
+        return count + 1;
     }
-    if (::unlink(p.c_str()) != 0) {
-        ec = std::error_code(errno, std::generic_category());
-        return 0;
+
+    int e = errno;
+    // Vanished already: not an error.
+    if (e == ENOENT) { ec.clear(); return 0; }
+    // Not a directory (or a symlink we refused to follow): remove as a file.
+    if (e == ENOTDIR || e == ELOOP || e == EMLINK) {
+        if (::unlinkat(parent_directory, p.c_str(), 0) == -1) {
+            ec = std::error_code(errno, std::generic_category());
+            return 0;
+        }
+        ec.clear();
+        return 1;
     }
-    ec.clear();
-    return 1;
+    ec = std::error_code(e, std::generic_category());
+    return 0;
+}
+
+inline uintmax_t remove_all(const path& p, std::error_code& ec) {
+    return remove_all_impl(AT_FDCWD, p, ec);
 }
 inline uintmax_t remove_all(const path& p) {
     std::error_code ec;
@@ -1730,41 +2104,12 @@ inline void resize_file(const path& p, uintmax_t size) {
 // copy_file
 inline bool copy_file(const path& from, const path& to,
                       copy_options opt, std::error_code& ec) {
-    // Determine if destination exists
-    struct ::stat st_to;
-    bool to_exists = (::stat(to.c_str(), &st_to) == 0);
-
-    if (to_exists) {
-        if ((opt & copy_options::skip_existing) != copy_options::none) {
-            ec.clear();
-            return false;
-        }
-        if ((opt & copy_options::overwrite_existing) == copy_options::none &&
-            (opt & copy_options::update_existing) == copy_options::none) {
-            ec = std::error_code(EEXIST, std::generic_category());
-            return false;
-        }
-        if ((opt & copy_options::update_existing) != copy_options::none) {
-            struct ::stat st_from;
-            if (::stat(from.c_str(), &st_from) != 0) {
-                ec = std::error_code(errno, std::generic_category());
-                return false;
-            }
-#ifdef __linux__
-            if (st_from.st_mtim.tv_sec < st_to.st_mtim.tv_sec ||
-                (st_from.st_mtim.tv_sec == st_to.st_mtim.tv_sec &&
-                 st_from.st_mtim.tv_nsec <= st_to.st_mtim.tv_nsec)) {
-#else
-            if (st_from.st_mtime <= st_to.st_mtime) {
-#endif
-                ec.clear();
-                return false;
-            }
-        }
-    }
-
-    // Open source
-    int src_fd = ::open(from.c_str(), O_RDONLY);
+    // Ported from libc++ __copy_file (src/filesystem/operations.cpp).
+    // Open + stat the source.
+    // O_NONBLOCK so that opening a FIFO/device as the source does not block
+    // (matches libc++'s FileDescriptor open flags); the source must be a
+    // regular file anyway, checked below.
+    int src_fd = ::open(from.c_str(), O_RDONLY | O_NONBLOCK);
     if (src_fd < 0) {
         ec = std::error_code(errno, std::generic_category());
         return false;
@@ -1775,12 +2120,71 @@ inline bool copy_file(const path& from, const path& to,
         ec = std::error_code(errno, std::generic_category());
         return false;
     }
+    // Source must be a regular file.
+    if (!S_ISREG(st_src.st_mode)) {
+        ::close(src_fd);
+        ec = std::error_code(static_cast<int>(std::errc::not_supported),
+                             std::generic_category());
+        return false;
+    }
+
+    // Stat the destination.
+    struct ::stat st_to;
+    bool to_exists = (::stat(to.c_str(), &st_to) == 0);
+
+    if (to_exists) {
+        // Destination must be a regular file.
+        if (!S_ISREG(st_to.st_mode)) {
+            ::close(src_fd);
+            ec = std::error_code(static_cast<int>(std::errc::not_supported),
+                                 std::generic_category());
+            return false;
+        }
+        // from == to (same device + inode): error file_exists.
+        if (st_src.st_dev == st_to.st_dev && st_src.st_ino == st_to.st_ino) {
+            ::close(src_fd);
+            ec = std::error_code(EEXIST, std::generic_category());
+            return false;
+        }
+        if ((opt & copy_options::skip_existing) != copy_options::none) {
+            ::close(src_fd);
+            ec.clear();
+            return false;
+        }
+        if ((opt & copy_options::update_existing) != copy_options::none) {
+#ifdef __linux__
+            if (st_src.st_mtim.tv_sec < st_to.st_mtim.tv_sec ||
+                (st_src.st_mtim.tv_sec == st_to.st_mtim.tv_sec &&
+                 st_src.st_mtim.tv_nsec <= st_to.st_mtim.tv_nsec)) {
+#else
+            if (st_src.st_mtime <= st_to.st_mtime) {
+#endif
+                ::close(src_fd);
+                ec.clear();
+                return false;
+            }
+        } else if ((opt & copy_options::overwrite_existing) == copy_options::none) {
+            ::close(src_fd);
+            ec = std::error_code(EEXIST, std::generic_category());
+            return false;
+        }
+    }
 
     // Open destination
     int dst_fd = ::open(to.c_str(), O_WRONLY | O_CREAT | O_TRUNC, st_src.st_mode & 07777);
     if (dst_fd < 0) {
         ::close(src_fd);
         ec = std::error_code(errno, std::generic_category());
+        return false;
+    }
+    // open() ignores the mode argument for a pre-existing file, so explicitly
+    // copy the source's permission bits to the destination (the copy_file
+    // postcondition is that 'to' gets 'from's permissions).
+    if (::fchmod(dst_fd, st_src.st_mode & 07777) != 0) {
+        int e = errno;
+        ::close(src_fd);
+        ::close(dst_fd);
+        ec = std::error_code(e, std::generic_category());
         return false;
     }
 
@@ -1973,18 +2377,37 @@ inline void permissions(const path& p, perms prms, std::error_code& ec) noexcept
 }
 
 // temp_directory_path
+// Ported from libc++ __temp_directory_path (src/filesystem/operations.cpp).
 [[nodiscard]] inline path temp_directory_path(std::error_code& ec) {
-    const char* tmp = ::getenv("TMPDIR");
-    if (!tmp) tmp = ::getenv("TMP");
-    if (!tmp) tmp = ::getenv("TEMP");
-    if (!tmp) tmp = "/tmp";
+    const char* env_paths[] = {"TMPDIR", "TMP", "TEMP", "TEMPDIR"};
+    const char* ret = nullptr;
+    for (const char* ep : env_paths)
+        if ((ret = ::getenv(ep)))
+            break;
+    if (ret == nullptr)
+        ret = "/tmp";
+    path p(ret);
     struct ::stat st;
-    if (::stat(tmp, &st) != 0 || !S_ISDIR(st.st_mode)) {
-        ec = std::error_code(ENOTDIR, std::generic_category());
+    if (::stat(p.c_str(), &st) != 0) {
+        int e = errno;
+        if (e == ENOENT || e == ENOTDIR) {
+            // Path is simply absent / not a directory component: report
+            // not_a_directory (matches libc++'s status_known + !exists path).
+            ec = std::error_code(static_cast<int>(std::errc::not_a_directory),
+                                 std::generic_category());
+        } else {
+            // e.g. EACCES -> permission_denied (status could not be obtained).
+            ec = std::error_code(e, std::generic_category());
+        }
+        return {};
+    }
+    if (!S_ISDIR(st.st_mode)) {
+        ec = std::error_code(static_cast<int>(std::errc::not_a_directory),
+                             std::generic_category());
         return {};
     }
     ec.clear();
-    return path(tmp);
+    return p;
 }
 [[nodiscard]] inline path temp_directory_path() {
     std::error_code ec;
@@ -2073,6 +2496,12 @@ public:
 
     [[nodiscard]] const Path& path() const noexcept { return p_; }
     operator const Path&() const noexcept { return p_; }
+
+    template <class CharT, class Traits>
+    friend std::basic_ostream<CharT, Traits>&
+    operator<<(std::basic_ostream<CharT, Traits>& os, const directory_entry& d) {
+        return os << d.path();
+    }
 
     [[nodiscard]] bool exists() const                              { return filesystem::exists(file_status{get_ft()}); }
     [[nodiscard]] bool exists(std::error_code& ec) const noexcept { return filesystem::exists(file_status{get_ft(&ec)}); }
