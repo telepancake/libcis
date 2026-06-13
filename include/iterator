@@ -1800,6 +1800,10 @@ public:
     [[nodiscard]] constexpr back_insert_iterator& operator*()    { return *this; }
     constexpr back_insert_iterator& operator++()   { return *this; }
     constexpr back_insert_iterator  operator++(int){ return *this; }
+
+    // libc++ internal accessor used by <format>'s mass-output fast paths
+    // (libc++ spells it __get_container()).
+    constexpr Container* get_container() const { return container; }
 };
 
 template<class Container>

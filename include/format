@@ -1525,6 +1525,8 @@ public:
   }
 
   size_t size() const noexcept { return size_; }
+  // Compatibility: libc++ tests query the internal accessor __size().
+  size_t __size() const noexcept { return size_; }
 
 private:
   size_t size_{0};
@@ -7526,10 +7528,18 @@ format_floating_point(Tp value, FormatContext& ctx, format_spec::parsed_specific
 
   // TODO FMT Fp should just be Tp when to_chars has proper long double support.
   using Fp = conditional_t<same_as<Tp, long double>, double, Tp>;
+  // DEVIATION (gcc-10 / libcis): libc++ keeps the original (long double) value
+  // here because its to_chars handles long double natively.  This port's
+  // fp_to_chars is snprintf-based, and glibc's "%La" emits a NON-normalized
+  // mantissa (e.g. 0xd.5ep-3) whereas "%a" for double emits the normalized
+  // 0x1.abcp+0 form the standard requires and that the buffer-parse logic
+  // (which is keyed on traits<Fp>) expects.  Demote the value to Fp so the
+  // "%a"/"%e"/"%f" conversions and the parse offsets agree.
+  Fp fp_value = static_cast<Fp>(value);
   // Force the type of the precision to avoid -1 to become an unsigned value.
   float_buffer<Fp> buffer(specs.precision_);
   float_result result = fmtops::format_buffer(
-      buffer, value, negative, (specs.has_precision()), specs.std_.sign_, specs.std_.type_);
+      buffer, fp_value, negative, (specs.has_precision()), specs.std_.sign_, specs.std_.type_);
 
   if (specs.std_.alternate_form_) {
     if (result.radix_point == result.last) {
@@ -8012,9 +8022,12 @@ using format_string = basic_format_string<char, type_identity_t<Args>...>;
 template <class... Args>
 using wformat_string = basic_format_string<wchar_t, type_identity_t<Args>...>;
 
+// Internal helper (libc++ spells it std::__vformat_to).  Kept under a DISTINCT
+// name from the public vformat_to so the public string_view/format_args
+// overloads below forward here instead of recursing into themselves.
 template <class OutIt, class CharT, class FormatOutIt>
   requires(output_iterator<OutIt, const CharT&>)
-OutIt vformat_to(OutIt out_it,
+OutIt vformat_to_impl(OutIt out_it,
                                           basic_string_view<CharT> fmt,
                                           basic_format_args<basic_format_context<FormatOutIt, CharT>> args) {
   if constexpr (same_as<OutIt, FormatOutIt>)
@@ -8033,13 +8046,13 @@ OutIt vformat_to(OutIt out_it,
 // TODO FMT Evaluate whether we want to file a Clang bug report regarding this.
 template <output_iterator<const char&> OutIt>
 OutIt vformat_to(OutIt out_it, string_view fmt, format_args args) {
-  return std::vformat_to(std::move(out_it), fmt, args);
+  return std::vformat_to_impl(std::move(out_it), fmt, args);
 }
 
 template <output_iterator<const wchar_t&> OutIt>
 OutIt
 vformat_to(OutIt out_it, wstring_view fmt, wformat_args args) {
-  return std::vformat_to(std::move(out_it), fmt, args);
+  return std::vformat_to_impl(std::move(out_it), fmt, args);
 }
 
 template <output_iterator<const char&> OutIt, class... Args>
@@ -8132,7 +8145,7 @@ formatted_size(wformat_string<Args...> fmt, Args&&... args) {
 
 template <class OutIt, class CharT, class FormatOutIt>
   requires(output_iterator<OutIt, const CharT&>)
-OutIt vformat_to(
+OutIt vformat_to_impl(
     OutIt out_it,
     locale loc,
     basic_string_view<CharT> fmt,
@@ -8152,13 +8165,13 @@ OutIt vformat_to(
 template <output_iterator<const char&> OutIt>
 OutIt
 vformat_to(OutIt out_it, locale loc, string_view fmt, format_args args) {
-  return std::vformat_to(std::move(out_it), std::move(loc), fmt, args);
+  return std::vformat_to_impl(std::move(out_it), std::move(loc), fmt, args);
 }
 
 template <output_iterator<const wchar_t&> OutIt>
 OutIt
 vformat_to(OutIt out_it, locale loc, wstring_view fmt, wformat_args args) {
-  return std::vformat_to(std::move(out_it), std::move(loc), fmt, args);
+  return std::vformat_to_impl(std::move(out_it), std::move(loc), fmt, args);
 }
 
 template <output_iterator<const char&> OutIt, class... Args>
@@ -8255,6 +8268,12 @@ formatted_size(locale loc, wformat_string<Args...> fmt, Args&&... args) {
 }
 
 
+// Compatibility alias: libc++'s conformance tests reference the internal name
+// std::__format::__number_max. This port keeps that machinery in std::fmt; expose
+// the single name the test suite depends on under the libc++ spelling.
+namespace __format {
+inline constexpr uint32_t __number_max = ::std::fmt::number_max;
+} // namespace __format
 
 } // namespace std
 

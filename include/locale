@@ -1959,14 +1959,21 @@ public:
 
     explicit numpunct(size_t refs = 0) : locale::facet(refs) {}
 
+    typedef string string_type;
+
     char decimal_point()  const { return do_decimal_point(); }
     char thousands_sep()  const { return do_thousands_sep(); }
-    // grouping(): empty string = no grouping
-    // truename()/falsename(): "true"/"false"
+    string grouping()     const { return do_grouping(); }
+    string truename()     const { return do_truename(); }
+    string falsename()    const { return do_falsename(); }
 
 protected:
     virtual char do_decimal_point() const { return '.'; }
     virtual char do_thousands_sep() const { return ','; }
+    // "C" locale: empty grouping = no grouping; "true"/"false".
+    virtual string do_grouping()  const { return string(); }
+    virtual string do_truename()  const { return string("true"); }
+    virtual string do_falsename() const { return string("false"); }
 };
 
 inline locale::id numpunct<char>::id;
@@ -1979,12 +1986,20 @@ public:
 
     explicit numpunct(size_t refs = 0) : locale::facet(refs) {}
 
+    typedef wstring string_type;
+
     wchar_t decimal_point() const { return do_decimal_point(); }
     wchar_t thousands_sep() const { return do_thousands_sep(); }
+    string  grouping()      const { return do_grouping(); }
+    wstring truename()      const { return do_truename(); }
+    wstring falsename()     const { return do_falsename(); }
 
 protected:
     virtual wchar_t do_decimal_point() const { return L'.'; }
     virtual wchar_t do_thousands_sep() const { return L','; }
+    virtual string  do_grouping()  const { return string(); }
+    virtual wstring do_truename()  const { return wstring(L"true"); }
+    virtual wstring do_falsename() const { return wstring(L"false"); }
 };
 
 inline locale::id numpunct<wchar_t>::id;
