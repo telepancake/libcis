@@ -38,6 +38,76 @@ for dirp, _, files in os.walk(OVR):
         if os.path.exists(dst) and open(src).read() != open(dst).read():
             open(dst, "w").write(open(src).read())
 
+# ---------------------------------------------------------------------------
+# Per-test ADDITIONAL_COMPILE_FLAGS.  Most are libc++-only -D_LIBCPP_* knobs that
+# are harmless no-ops here, but some localization tests need a real value for the
+# lit substitution %{LOCALE_CONV_<LOCALE>_<MEMBER>} (e.g. the locale's monetary
+# thousands separator).  We compute that exactly as libc++'s features.py does:
+# the localeconv member rendered as a wide-string literal L"\uXXXX".
+import locale as _locale
+
+_CONV_MEMBERS = {
+    "MON_THOUSANDS_SEP": "mon_thousands_sep",
+    "THOUSANDS_SEP": "thousands_sep",
+    "DECIMAL_POINT": "decimal_point",
+}
+# define-name (as features.py builds it) -> actual locale name
+_LOCALE_BY_DEFINE = {}
+for _loc in ("en_US.UTF-8", "fr_FR.UTF-8", "ru_RU.UTF-8", "zh_CN.UTF-8",
+             "fr_CA.ISO8859-1", "cs_CZ.ISO8859-2", "ja_JP.UTF-8"):
+    _LOCALE_BY_DEFINE[re.sub(r"[.-]", "_", _loc).upper()] = _loc
+
+
+def _locale_conv_literal(define_name, member):
+    loc = _LOCALE_BY_DEFINE.get(define_name)
+    if loc is None:
+        return None
+    try:
+        _locale.setlocale(_locale.LC_ALL, loc)
+        v = _locale.localeconv()[_CONV_MEMBERS[member]]
+    except Exception:
+        return None
+    finally:
+        try:
+            _locale.setlocale(_locale.LC_ALL, "C")
+        except Exception:
+            pass
+    esc = "".join("\\u%04x" % ord(c) if (ord(c) < 0x20 or ord(c) > 0x7e) else c
+                  for c in v)
+    return 'L"%s"' % esc
+
+
+_CONV_RE = re.compile(r"%\{LOCALE_CONV_([A-Z0-9_]+?)_(" +
+                      "|".join(_CONV_MEMBERS) + r")\}")
+
+
+def _extra_flags(src_path):
+    """Parse ADDITIONAL_COMPILE_FLAGS from a test, expanding LOCALE_CONV substitutions.
+    Returns (flags, ok); ok is False if a substitution could not be resolved."""
+    flags, ok = [], True
+    with open(src_path, errors="replace") as fh:
+        for line in fh:
+            s = line.strip()
+            if s.startswith("int main") or s.startswith("#include"):
+                break  # lit header is over once real code starts
+            if "ADDITIONAL_COMPILE_FLAGS" not in s:
+                continue
+            spec = s.split("ADDITIONAL_COMPILE_FLAGS:", 1)[1].strip()
+
+            def sub(m):
+                nonlocal ok
+                lit = _locale_conv_literal(m.group(1), m.group(2))
+                if lit is None:
+                    ok = False
+                    return m.group(0)
+                return lit
+            spec = _CONV_RE.sub(sub, spec)
+            if "%{" in spec:
+                continue  # unsupported substitution: drop this flag line
+            flags += spec.split()
+    return flags, ok
+
+
 pre = sys.argv[1]
 limit = int(sys.argv[2]) if len(sys.argv) > 2 else 10**9
 man = json.load(open("test/std/manifest.json"))
@@ -62,8 +132,9 @@ for r in tests:
     drv = f"/tmp/rf_drv_{os.getpid()}.cpp"
     open(drv, "w").write(f'#include "{src}"\nint main(){{ return {r["entry"]}; }}\n')
     exe = f"/tmp/rf_exe_{os.getpid()}"
+    xflags, _ = _extra_flags(src)
     try:
-        p = subprocess.run(CIS + [drv] + LINK + ["-o", exe],
+        p = subprocess.run(CIS + xflags + [drv] + LINK + ["-o", exe],
                            capture_output=True, text=True, timeout=180)
     except subprocess.TimeoutExpired:
         buckets["compile-fail"] += 1
