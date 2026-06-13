@@ -369,3 +369,17 @@ bad_exception::~bad_exception() noexcept {}
 const char* bad_exception::what() const noexcept { return "std::bad_exception"; }
 
 } // namespace std
+
+// ---------------------------------------------------------------------------
+// __cxa_thread_atexit: register a thread_local object's destructor.
+//
+// Emitted by the compiler for `static thread_local T x;` with a non-trivial
+// dtor (e.g. <future>'s at-thread-exit registry).  Normally provided by
+// libstdc++/libc++abi, which we do NOT link (-nodefaultlibs).  glibc 2.18+
+// ships the real machinery as __cxa_thread_atexit_impl; forward to it.
+// ---------------------------------------------------------------------------
+extern "C" int __cxa_thread_atexit_impl(void (*func)(void*), void* obj, void* dso_handle);
+
+extern "C" int __cxa_thread_atexit(void (*func)(void*), void* obj, void* dso_handle) {
+    return __cxa_thread_atexit_impl(func, obj, dso_handle);
+}

@@ -8,8 +8,9 @@
 // __builtin_trap() with a comment. future_error / future_category /
 // future_status / launch are all provided.
 //
-// set_value_at_thread_exit / make_ready_at_thread_exit are OMITTED (they
-// require pthread thread-local destructors; too complex without libcxx runtime).
+// set_value_at_thread_exit / make_ready_at_thread_exit are provided via an
+// intrusive thread-local registry (see at_thread_exit_registry below);
+// src/support.cpp supplies the __cxa_thread_atexit shim.
 #pragma once
 
 #include <type_traits>
@@ -149,12 +150,41 @@ public:
 // entangling with the memory header's shared_ptr internals).
 //===----------------------------------------------------------------------===//
 
+class assoc_sub_state;
+
+namespace detail {
+// [futures.state]/9: *_at_thread_exit stores the value now but makes the
+// shared state ready only when the current thread exits.  An intrusive,
+// thread-local list of pending states is walked by a thread_local object's
+// destructor.  (Intrusive to avoid pulling <vector> into <future>.)
+struct at_thread_exit_registry {
+    assoc_sub_state* head = nullptr;
+    ~at_thread_exit_registry();   // defined after assoc_sub_state is complete
+};
+inline at_thread_exit_registry& tl_at_thread_exit() {
+    static thread_local at_thread_exit_registry inst;
+    return inst;
+}
+} // namespace detail
+
 class assoc_sub_state {
 protected:
     mutable mutex            mut_;
     mutable condition_variable cv_;
     unsigned                 state_ = 0;
     exception_ptr            exception_;
+    assoc_sub_state*         exit_next_ = nullptr;   // intrusive at-thread-exit list
+
+public:
+    // Register this state to be made ready when the current thread exits
+    // (the value/exception must already be stored).  Keeps the state alive
+    // across the deferral with an extra shared ref.
+    void make_ready_at_thread_exit() {
+        add_shared();
+        auto& reg = detail::tl_at_thread_exit();
+        exit_next_ = reg.head;
+        reg.head = this;
+    }
 
     static constexpr unsigned constructed    = 1u;
     static constexpr unsigned future_attached = 2u;
@@ -231,6 +261,17 @@ public:
         cv_.notify_all();
     }
 
+    // void variant: store (mark constructed) but defer ready to thread exit.
+    void set_value_void_at_thread_exit() {
+        {
+            unique_lock<mutex> lk(mut_);
+            if (has_value_locked())
+                throw_future_error(future_errc::promise_already_satisfied);
+            state_ |= constructed;
+        }
+        make_ready_at_thread_exit();
+    }
+
     // set_exception: stores the exception_ptr into the error state. A later
     // get()/copy()/move() observes a non-null exception_ and traps (it would
     // rethrow under -fexceptions).
@@ -274,7 +315,19 @@ public:
     template<class> friend class shared_future;
     template<class, class> friend class deferred_assoc_state;
     template<class, class> friend class async_assoc_state;
+    friend struct detail::at_thread_exit_registry;
 };
+
+namespace detail {
+inline at_thread_exit_registry::~at_thread_exit_registry() {
+    while (head != nullptr) {
+        assoc_sub_state* s = head;
+        head = s->exit_next_;
+        s->make_ready();        // flag_ready + notify_all
+        s->release_shared();    // drop the ref taken in make_ready_at_thread_exit
+    }
+}
+} // namespace detail
 
 // --- assoc_state<R> ---
 template<class R>
@@ -307,6 +360,18 @@ public:
         cv_.notify_all();
     }
 
+    template<class Arg>
+    void set_value_at_thread_exit(Arg&& arg) {
+        {
+            unique_lock<mutex> lk(mut_);
+            if (has_value_locked())
+                throw_future_error(future_errc::promise_already_satisfied);
+            ::new (static_cast<void*>(value_)) R(forward<Arg>(arg));
+            state_ |= constructed;
+        }
+        this->make_ready_at_thread_exit();
+    }
+
     R move_value() {
         unique_lock<mutex> lk(mut_);
         sub_wait(lk);
@@ -335,6 +400,17 @@ public:
         value_ = addressof(arg);
         state_ |= constructed | flag_ready;
         cv_.notify_all();
+    }
+
+    void set_value_at_thread_exit(R& arg) {
+        {
+            unique_lock<mutex> lk(mut_);
+            if (has_value_locked())
+                throw_future_error(future_errc::promise_already_satisfied);
+            value_ = addressof(arg);
+            state_ |= constructed;
+        }
+        this->make_ready_at_thread_exit();
     }
 
     R& copy_value() {
@@ -482,6 +558,8 @@ class future {
     friend future<R2> make_deferred_assoc_state(F2&&);
     template<class R2, class F2>
     friend future<R2> make_async_assoc_state(F2&&);
+    template<class F2> friend future<void> make_deferred_assoc_state_void(F2&&);
+    template<class F2> friend future<void> make_async_assoc_state_void(F2&&);
 
 public:
     future() noexcept : state_(nullptr) {}
@@ -535,6 +613,8 @@ class future<R&> {
     friend future<R2> make_deferred_assoc_state(F2&&);
     template<class R2, class F2>
     friend future<R2> make_async_assoc_state(F2&&);
+    template<class F2> friend future<void> make_deferred_assoc_state_void(F2&&);
+    template<class F2> friend future<void> make_async_assoc_state_void(F2&&);
 
 public:
     future() noexcept : state_(nullptr) {}
@@ -586,6 +666,8 @@ class future<void> {
     friend future<R2> make_deferred_assoc_state(F2&&);
     template<class R2, class F2>
     friend future<R2> make_async_assoc_state(F2&&);
+    template<class F2> friend future<void> make_deferred_assoc_state_void(F2&&);
+    template<class F2> friend future<void> make_async_assoc_state_void(F2&&);
 
 public:
     future() noexcept : state_(nullptr) {}
@@ -672,6 +754,14 @@ public:
         if (!state_) throw_future_error(future_errc::no_state);
         state_->set_value(move(r));
     }
+    void set_value_at_thread_exit(const R& r) {
+        if (!state_) throw_future_error(future_errc::no_state);
+        state_->set_value_at_thread_exit(r);
+    }
+    void set_value_at_thread_exit(R&& r) {
+        if (!state_) throw_future_error(future_errc::no_state);
+        state_->set_value_at_thread_exit(move(r));
+    }
 
     void set_exception(exception_ptr p) {
         if (!state_) throw_future_error(future_errc::no_state);
@@ -714,6 +804,10 @@ public:
         if (!state_) throw_future_error(future_errc::no_state);
         state_->set_value(r);
     }
+    void set_value_at_thread_exit(R& r) {
+        if (!state_) throw_future_error(future_errc::no_state);
+        state_->set_value_at_thread_exit(r);
+    }
     void set_exception(exception_ptr p) {
         if (!state_) throw_future_error(future_errc::no_state);
         state_->set_exception(p);
@@ -751,6 +845,10 @@ public:
     void set_value() {
         if (!state_) throw_future_error(future_errc::no_state);
         state_->set_value_void();
+    }
+    void set_value_at_thread_exit() {
+        if (!state_) throw_future_error(future_errc::no_state);
+        state_->set_value_void_at_thread_exit();
     }
     void set_exception(exception_ptr p) {
         if (!state_) throw_future_error(future_errc::no_state);
@@ -980,6 +1078,11 @@ public:
         p_.set_value(f_->call(forward<Args>(args)...));
     }
 
+    void make_ready_at_thread_exit(Args... args) {
+        if (!f_) throw_future_error(future_errc::no_state);
+        p_.set_value_at_thread_exit(f_->call(forward<Args>(args)...));
+    }
+
     void reset() {
         if (!valid()) throw_future_error(future_errc::no_state);
         p_ = promise<R>();
@@ -1030,6 +1133,12 @@ public:
         if (!f_) throw_future_error(future_errc::no_state);
         f_->call(forward<Args>(args)...);
         p_.set_value();
+    }
+
+    void make_ready_at_thread_exit(Args... args) {
+        if (!f_) throw_future_error(future_errc::no_state);
+        f_->call(forward<Args>(args)...);
+        p_.set_value_at_thread_exit();
     }
 
     void reset() {
