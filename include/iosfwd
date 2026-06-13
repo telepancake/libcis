@@ -11,6 +11,7 @@
 #pragma once
 
 #include <cwchar>   // mbstate_t
+#include <cstddef>  // ptrdiff_t (for streamsize)
 
 namespace std {
 
@@ -29,6 +30,12 @@ template<class T> class allocator;
 // streamoff — implementation-defined signed offset type (glibc/Linux: long long)
 //===----------------------------------------------------------------------===//
 using streamoff = long long;
+
+// streamsize — defined here (the single early home) so headers that are pulled
+// in before <ios> finishes parsing (notably <locale>'s number/money/time facets,
+// reached via the <ios>->><locale> include cycle) can still name it.  <ios>
+// repeats this identical typedef, which is harmless.
+using streamsize = ptrdiff_t;
 
 //===----------------------------------------------------------------------===//
 // fpos<State>  [fpos]

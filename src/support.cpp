@@ -383,3 +383,91 @@ extern "C" int __cxa_thread_atexit_impl(void (*func)(void*), void* obj, void* ds
 extern "C" int __cxa_thread_atexit(void (*func)(void*), void* obj, void* dso_handle) {
     return __cxa_thread_atexit_impl(func, obj, dso_handle);
 }
+
+// ---------------------------------------------------------------------------
+// Classic stream-dependent locale facets (num_get/num_put/money*/time*/messages).
+//
+// These facets are defined in <locale> but reference a COMPLETE std::ios_base,
+// which <locale> itself cannot see (the <ios> -> <locale> include cycle leaves
+// ios_base incomplete while <locale> is parsed).  So their CLASSIC instances are
+// instantiated and registered HERE, in a TU that includes <sstream> first and
+// therefore has a complete ios_base.  Registration goes into the same global
+// facet registry the header uses (locale::__register_facet); the facet `id`
+// objects are shared inline statics, so lookups in any TU resolve correctly.
+//
+// Reported per the porting contract: this is the only src/support.cpp edit for
+// the localization pass.
+// ---------------------------------------------------------------------------
+#include <sstream>   // pulls <ios>/<streambuf>/<istream>/<ostream> fully, then <locale>
+#include <locale>
+
+namespace std {
+namespace detail {
+
+// Construct the classic stream facets in STATIC STORAGE (placement-new into
+// aligned buffers) rather than with ::operator new.  The libc++ test harness
+// replaces the global operator new/delete to count outstanding allocations and
+// asserts the count is 0 across locale construction, so these long-lived classic
+// facets must not go through operator new.  refs=1 => never destroyed.
+template <class Facet, class... Args>
+static Facet* make_static_facet(Args&&... args) {
+    alignas(Facet) static unsigned char buf[sizeof(Facet)];
+    return ::new (static_cast<void*>(buf)) Facet(static_cast<Args&&>(args)...);
+}
+
+struct stream_facet_init {
+    stream_facet_init() {
+        locale::__register_facet(std::num_get<char>::id.__get(),    make_static_facet<std::num_get<char>>(1));
+        locale::__register_facet(std::num_get<wchar_t>::id.__get(), make_static_facet<std::num_get<wchar_t>>(1));
+        locale::__register_facet(std::num_put<char>::id.__get(),    make_static_facet<std::num_put<char>>(1));
+        locale::__register_facet(std::num_put<wchar_t>::id.__get(), make_static_facet<std::num_put<wchar_t>>(1));
+        locale::__register_facet(std::time_get<char>::id.__get(),    make_static_facet<std::time_get<char>>(1));
+        locale::__register_facet(std::time_get<wchar_t>::id.__get(), make_static_facet<std::time_get<wchar_t>>(1));
+        locale::__register_facet(std::time_put<char>::id.__get(),    make_static_facet<std::time_put<char>>(1));
+        locale::__register_facet(std::time_put<wchar_t>::id.__get(), make_static_facet<std::time_put<wchar_t>>(1));
+        locale::__register_facet(std::money_get<char>::id.__get(),    make_static_facet<std::money_get<char>>(1));
+        locale::__register_facet(std::money_get<wchar_t>::id.__get(), make_static_facet<std::money_get<wchar_t>>(1));
+        locale::__register_facet(std::money_put<char>::id.__get(),    make_static_facet<std::money_put<char>>(1));
+        locale::__register_facet(std::money_put<wchar_t>::id.__get(), make_static_facet<std::money_put<wchar_t>>(1));
+        locale::__register_facet(std::moneypunct<char, false>::id.__get(),    make_static_facet<std::moneypunct<char, false>>(1));
+        locale::__register_facet(std::moneypunct<char, true>::id.__get(),     make_static_facet<std::moneypunct<char, true>>(1));
+        locale::__register_facet(std::moneypunct<wchar_t, false>::id.__get(), make_static_facet<std::moneypunct<wchar_t, false>>(1));
+        locale::__register_facet(std::moneypunct<wchar_t, true>::id.__get(),  make_static_facet<std::moneypunct<wchar_t, true>>(1));
+        locale::__register_facet(std::messages<char>::id.__get(),    make_static_facet<std::messages<char>>(1));
+        locale::__register_facet(std::messages<wchar_t>::id.__get(), make_static_facet<std::messages<wchar_t>>(1));
+    }
+};
+stream_facet_init stream_facet_init_instance;
+
+} // namespace detail
+} // namespace std
+
+// ---------------------------------------------------------------------------
+// locale::__install_{monetary,time,messages}: install byname facets into a
+// named locale's imp.  Defined here (not in <locale>) because constructing the
+// byname facets instantiates their ios_base-using virtual bodies, which need a
+// complete std::ios_base.
+// ---------------------------------------------------------------------------
+namespace std {
+
+void locale::__install_monetary(imp* ni, const char* name, bool isC) {
+    if (isC) return;
+    ni->install(std::moneypunct<char, false>::id.__get(),    new std::moneypunct_byname<char, false>(name));
+    ni->install(std::moneypunct<char, true>::id.__get(),     new std::moneypunct_byname<char, true>(name));
+    ni->install(std::moneypunct<wchar_t, false>::id.__get(), new std::moneypunct_byname<wchar_t, false>(name));
+    ni->install(std::moneypunct<wchar_t, true>::id.__get(),  new std::moneypunct_byname<wchar_t, true>(name));
+}
+void locale::__install_time(imp* ni, const char* name, bool isC) {
+    if (isC) return;
+    ni->install(std::time_get<char>::id.__get(),    new std::time_get_byname<char>(name));
+    ni->install(std::time_get<wchar_t>::id.__get(), new std::time_get_byname<wchar_t>(name));
+    ni->install(std::time_put<char>::id.__get(),    new std::time_put_byname<char>(name));
+    ni->install(std::time_put<wchar_t>::id.__get(), new std::time_put_byname<wchar_t>(name));
+}
+void locale::__install_messages(imp* ni, const char* name, bool isC) {
+    if (isC) return;
+    ni->install(std::messages<char>::id.__get(),    new std::messages_byname<char>(name));
+    ni->install(std::messages<wchar_t>::id.__get(), new std::messages_byname<wchar_t>(name));
+}
+
+} // namespace std
