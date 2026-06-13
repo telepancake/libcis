@@ -46,13 +46,9 @@ using ::qsort;
 using ::abs;
 using ::labs;
 using ::llabs;
-using ::div;
+using ::div;   // incl. the C++ long/long long div overloads from <stdlib.h>
 using ::ldiv;
 using ::lldiv;
-
-// [c.math]: C++ adds div overloads for long/long long (C names them ldiv/lldiv).
-inline ldiv_t  div(long x, long y)           { return ::ldiv(x, y); }
-inline lldiv_t div(long long x, long long y) { return ::lldiv(x, y); }
 using ::mblen;
 using ::mbtowc;
 using ::wctomb;
