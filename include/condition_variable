@@ -167,18 +167,25 @@ public:
 namespace detail {
 
 struct notify_at_exit_entry {
-    condition_variable* cv;
-    unique_lock<mutex>  lk;
+    condition_variable*   cv;
+    unique_lock<mutex>    lk;
+    notify_at_exit_entry* next;   // chain: a thread may register many cvs
 };
 
 inline void notify_at_exit_cleanup(void* arg) {
+    // Walk the whole chain registered by this thread; a single key holding
+    // only the last entry would notify the earlier cvs early (the defect the
+    // lwg3343 test checks).
     auto* e = static_cast<notify_at_exit_entry*>(arg);
-    // LWG3343: notify THEN unlock, so a waiter that re-acquires the mutex is
-    // guaranteed the notify already happened (no use of cv after it observes
-    // the mutex released).
-    e->cv->notify_all();
-    e->lk.unlock();
-    delete e;
+    while (e != nullptr) {
+        notify_at_exit_entry* nx = e->next;
+        // LWG3343: notify THEN unlock, so a waiter that re-acquires the mutex
+        // is guaranteed the notify already happened.
+        e->cv->notify_all();
+        e->lk.unlock();
+        delete e;
+        e = nx;
+    }
 }
 
 } // namespace detail
@@ -198,10 +205,10 @@ inline void notify_all_at_thread_exit(condition_variable& cond,
         pthread_key_create(&key, detail::notify_at_exit_cleanup);
     });
 
-    auto* e = new detail::notify_at_exit_entry{&cond, std::move(lk)};
-    // If there's already a value for this key, run the old cleanup first.
-    void* old = pthread_getspecific(key);
-    if (old) detail::notify_at_exit_cleanup(old);
+    // Prepend to this thread's chain so a later registration does NOT discard
+    // (or prematurely fire) earlier ones; the whole chain fires at thread exit.
+    auto* old = static_cast<detail::notify_at_exit_entry*>(pthread_getspecific(key));
+    auto* e = new detail::notify_at_exit_entry{&cond, std::move(lk), old};
     pthread_setspecific(key, e);
 }
 
