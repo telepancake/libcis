@@ -3,7 +3,9 @@
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 #pragma once
 
+#define LIBCIS_CHRONO_CORE_ONLY
 #include <chrono>
+#undef LIBCIS_CHRONO_CORE_ONLY
 #include <type_traits>
 #include <utility>
 #include <tuple>

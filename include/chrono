@@ -18,7 +18,8 @@
 //     system IANA database; not header-only and not portable here. The whole
 //     time/time.zone subtree depends on it.
 //   - tai_clock, gps_clock (no tests transferred), clock_cast
-#pragma once
+#ifndef LIBCIS_CHRONO_CORE_H
+#define LIBCIS_CHRONO_CORE_H
 
 #include <ratio>
 #include <type_traits>
@@ -1834,3 +1835,16 @@ using namespace literals::chrono_literals;
 } // namespace chrono
 
 } // namespace std
+
+#endif // LIBCIS_CHRONO_CORE_H
+
+// Formatting + stream inserters live OUTSIDE the core include guard. They are
+// only pulled in when <chrono> is included at the top level (__INCLUDE_LEVEL__
+// == 1). When <chrono> is reached transitively while another header is still
+// mid-parse (e.g. <sstream>/<string> -> <memory_resource> -> <mutex> ->
+// <chrono>), the standard headers the formatting layer needs are not yet
+// complete, so we defer: the user's own top-level `#include <chrono>` brings the
+// formatting layer in once those headers are fully formed.
+#if !defined(LIBCIS_CHRONO_CORE_ONLY)
+#  include <bits/chrono_format.h>
+#endif
