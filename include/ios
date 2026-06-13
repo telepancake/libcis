@@ -50,8 +50,16 @@ public:
 };
 
 [[nodiscard]] inline const error_category& iostream_category() noexcept {
-    static iostream_error_category_t inst;
-    return inst;
+    // Held in a union whose destructor does NOT destroy the category, so the
+    // object (and its vtable) survives until process teardown. This avoids the
+    // static-destruction-order hazard of D65667, where a later-destroyed static's
+    // destructor calls name() on this category after it would otherwise be gone.
+    static const union holder_t {
+        iostream_error_category_t cat;
+        constexpr holder_t() : cat() {}
+        ~holder_t() {}
+    } holder;
+    return holder.cat;
 }
 
 [[nodiscard]] inline error_code make_error_code(io_errc e) noexcept {
@@ -201,8 +209,13 @@ public:
 
     // ---- sync_with_stdio ----
     static bool sync_with_stdio(bool sync = true) {
-        (void)sync;
-        return true; // stub
+        // Returns the previous synchronization state ([ios.members.static]).
+        // (libcis streams are already independent of <cstdio>; this only tracks
+        // the flag so the observable return value is conforming.)
+        static bool synced = true;
+        bool prev = synced;
+        synced = sync;
+        return prev;
     }
 
     // ---- destructor ----
