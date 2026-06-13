@@ -1,0 +1,982 @@
+// <fstream> — basic_filebuf, basic_ifstream, basic_ofstream, basic_fstream.
+// Mechanically ported from libc++ include/fstream (release/20.x).
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Implementation over C stdio (FILE*) with codecvt-based wide conversion,
+// matching libc++. Exceptions are off: codecvt facets are always present in
+// this project (locale always has codecvt<CharT,char,state_type>), so the
+// libc++ __throw_bad_cast() paths are replaced by assuming __cv_ is non-null.
+#pragma once
+
+// NOTE: includes go BEFORE the hidden-visibility push. <filesystem> (and the
+// <cstdio>/POSIX headers) transitively declare C library symbols such as
+// close()/fdopen(); pulling them in under #pragma GCC visibility push(hidden)
+// would mark those *references* hidden and break linking against libc.
+#include <ios>          // ios_base, basic_ios
+#include <streambuf>    // basic_streambuf
+#include <istream>      // basic_istream, basic_iostream
+#include <ostream>      // basic_ostream
+#include <locale>       // codecvt, use_facet, has_facet
+#include <string>       // basic_string
+#include <filesystem>   // filesystem::path
+#include <memory>       // addressof, unique_ptr
+#include <algorithm>    // min, max
+#include <cstdio>       // FILE, fopen, fread, fwrite, fseeko, ftello, ...
+#include <cstring>      // memmove
+#include <cstddef>      // size_t, ptrdiff_t
+
+// Hide all our symbols to prevent ABI conflict with libstdc++ shared library.
+#pragma GCC visibility push(hidden)
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// basic_filebuf
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits>  // defaults: <iosfwd>
+class basic_filebuf : public basic_streambuf<CharT, Traits> {
+public:
+    using char_type   = CharT;
+    using traits_type = Traits;
+    using int_type    = typename traits_type::int_type;
+    using pos_type    = typename traits_type::pos_type;
+    using off_type    = typename traits_type::off_type;
+    using state_type  = typename traits_type::state_type;
+
+    // 27.9.1.2 Constructors/destructor:
+    basic_filebuf();
+    basic_filebuf(basic_filebuf&& rhs);
+    ~basic_filebuf() override;
+
+    // 27.9.1.3 Assign/swap:
+    basic_filebuf& operator=(basic_filebuf&& rhs);
+    void swap(basic_filebuf& rhs);
+
+    // 27.9.1.4 Members:
+    bool is_open() const;
+    basic_filebuf* open(const char* s, ios_base::openmode mode);
+    basic_filebuf* open(const string& s, ios_base::openmode mode);
+    basic_filebuf* open(const filesystem::path& p, ios_base::openmode mode) {
+        return open(p.c_str(), mode);
+    }
+    basic_filebuf* close();
+
+    // libc++ extension: open from an existing file descriptor. The double-
+    // underscore name is retained because tests use it as the public spelling.
+    basic_filebuf* __open(int fd, ios_base::openmode mode);
+
+    static const char* make_mdstring(ios_base::openmode mode) noexcept;
+
+protected:
+    // 27.9.1.5 Overridden virtual functions:
+    int_type underflow() override;
+    int_type pbackfail(int_type c = traits_type::eof()) override;
+    int_type overflow(int_type c = traits_type::eof()) override;
+    basic_streambuf<char_type, traits_type>* setbuf(char_type* s, streamsize n) override;
+    pos_type seekoff(off_type off, ios_base::seekdir way,
+                     ios_base::openmode which = ios_base::in | ios_base::out) override;
+    pos_type seekpos(pos_type sp,
+                     ios_base::openmode which = ios_base::in | ios_base::out) override;
+    int sync() override;
+    void imbue(const locale& loc) override;
+
+private:
+    char*       extbuf_;
+    const char* extbufnext_;
+    const char* extbufend_;
+    char        extbuf_min_[8];
+    size_t      ebs_;
+    char_type*  intbuf_;
+    size_t      ibs_;
+    FILE*       file_;
+    const codecvt<char_type, char, state_type>* cv_;
+    state_type  st_;
+    state_type  st_last_;
+    ios_base::openmode om_;
+    static const ios_base::openmode no_io_operations  = ios_base::trunc;
+    static const ios_base::openmode use_unbuffered_io = ios_base::ate;
+    ios_base::openmode cm_;
+    bool owns_eb_;
+    bool owns_ib_;
+    bool always_noconv_;
+
+    bool read_mode();
+    void write_mode();
+
+    static int     do_fseek(FILE* file, pos_type offset, int whence) {
+        return ::fseeko(file, offset, whence);
+    }
+    static pos_type do_ftell(FILE* file) {
+        return ::ftello(file);
+    }
+
+    // pbump that can exceed INT_MAX (project's pbump takes int).
+    void pbump_large(ptrdiff_t n) {
+        while (n > __INT_MAX__) { this->pbump(__INT_MAX__); n -= __INT_MAX__; }
+        if (n > 0) this->pbump(static_cast<int>(n));
+        while (n < -static_cast<ptrdiff_t>(__INT_MAX__)) { this->pbump(-__INT_MAX__); n += __INT_MAX__; }
+        if (n < 0) this->pbump(static_cast<int>(n));
+    }
+
+    basic_filebuf* do_open(FILE* file, ios_base::openmode mode) {
+        file_ = file;
+        if (!file_)
+            return nullptr;
+        om_ = mode;
+        if (cm_ == (no_io_operations | use_unbuffered_io)) {
+            std::setbuf(file_, nullptr);
+            cm_ = 0;
+        }
+        if (mode & ios_base::ate) {
+            cm_ = 0;
+            if (fseek(file_, 0, SEEK_END)) {
+                fclose(file_);
+                file_ = nullptr;
+                return nullptr;
+            }
+        }
+        return this;
+    }
+
+    void request_unbuffered_mode(char_type* s, streamsize n) {
+        if (cm_ == no_io_operations && s == nullptr && n == 0) {
+            if (file_) {
+                std::setbuf(file_, nullptr);
+                cm_ = 0;
+            } else {
+                cm_ = no_io_operations | use_unbuffered_io;
+            }
+        }
+    }
+};
+
+template<class CharT, class Traits>
+basic_filebuf<CharT, Traits>::basic_filebuf()
+    : extbuf_(nullptr),
+      extbufnext_(nullptr),
+      extbufend_(nullptr),
+      ebs_(0),
+      intbuf_(nullptr),
+      ibs_(0),
+      file_(nullptr),
+      cv_(nullptr),
+      st_(),
+      st_last_(),
+      om_(0),
+      cm_(no_io_operations),
+      owns_eb_(false),
+      owns_ib_(false),
+      always_noconv_(false) {
+    if (std::has_facet<codecvt<char_type, char, state_type>>(this->getloc())) {
+        cv_            = &std::use_facet<codecvt<char_type, char, state_type>>(this->getloc());
+        always_noconv_ = cv_->always_noconv();
+    }
+    setbuf(nullptr, 4096);
+}
+
+template<class CharT, class Traits>
+basic_filebuf<CharT, Traits>::basic_filebuf(basic_filebuf&& rhs)
+    : basic_streambuf<CharT, Traits>(rhs) {
+    if (rhs.extbuf_ == rhs.extbuf_min_) {
+        extbuf_     = extbuf_min_;
+        extbufnext_ = extbuf_ + (rhs.extbufnext_ - rhs.extbuf_);
+        extbufend_  = extbuf_ + (rhs.extbufend_ - rhs.extbuf_);
+    } else {
+        extbuf_     = rhs.extbuf_;
+        extbufnext_ = rhs.extbufnext_;
+        extbufend_  = rhs.extbufend_;
+    }
+    ebs_           = rhs.ebs_;
+    intbuf_        = rhs.intbuf_;
+    ibs_           = rhs.ibs_;
+    file_          = rhs.file_;
+    cv_            = rhs.cv_;
+    st_            = rhs.st_;
+    st_last_       = rhs.st_last_;
+    om_            = rhs.om_;
+    cm_            = rhs.cm_;
+    owns_eb_       = rhs.owns_eb_;
+    owns_ib_       = rhs.owns_ib_;
+    always_noconv_ = rhs.always_noconv_;
+    if (rhs.pbase()) {
+        if (rhs.pbase() == rhs.intbuf_)
+            this->setp(intbuf_, intbuf_ + (rhs.epptr() - rhs.pbase()));
+        else
+            this->setp((char_type*)extbuf_, (char_type*)extbuf_ + (rhs.epptr() - rhs.pbase()));
+        pbump_large(rhs.pptr() - rhs.pbase());
+    } else if (rhs.eback()) {
+        if (rhs.eback() == rhs.intbuf_)
+            this->setg(intbuf_, intbuf_ + (rhs.gptr() - rhs.eback()), intbuf_ + (rhs.egptr() - rhs.eback()));
+        else
+            this->setg((char_type*)extbuf_,
+                       (char_type*)extbuf_ + (rhs.gptr() - rhs.eback()),
+                       (char_type*)extbuf_ + (rhs.egptr() - rhs.eback()));
+    }
+    rhs.extbuf_     = nullptr;
+    rhs.extbufnext_ = nullptr;
+    rhs.extbufend_  = nullptr;
+    rhs.ebs_        = 0;
+    rhs.intbuf_     = nullptr;
+    rhs.ibs_        = 0;
+    rhs.file_       = nullptr;
+    rhs.st_         = state_type();
+    rhs.st_last_    = state_type();
+    rhs.om_         = 0;
+    rhs.cm_         = 0;
+    rhs.owns_eb_    = false;
+    rhs.owns_ib_    = false;
+    rhs.setg(nullptr, nullptr, nullptr);
+    rhs.setp(nullptr, nullptr);
+}
+
+template<class CharT, class Traits>
+inline basic_filebuf<CharT, Traits>&
+basic_filebuf<CharT, Traits>::operator=(basic_filebuf&& rhs) {
+    close();
+    swap(rhs);
+    return *this;
+}
+
+template<class CharT, class Traits>
+basic_filebuf<CharT, Traits>::~basic_filebuf() {
+    close();
+    if (owns_eb_)
+        delete[] extbuf_;
+    if (owns_ib_)
+        delete[] intbuf_;
+}
+
+template<class CharT, class Traits>
+void basic_filebuf<CharT, Traits>::swap(basic_filebuf& rhs) {
+    basic_streambuf<char_type, traits_type>::swap(rhs);
+    if (extbuf_ != extbuf_min_ && rhs.extbuf_ != rhs.extbuf_min_) {
+        std::swap(extbuf_, rhs.extbuf_);
+        std::swap(extbufnext_, rhs.extbufnext_);
+        std::swap(extbufend_, rhs.extbufend_);
+    } else {
+        ptrdiff_t ln = extbufnext_ ? extbufnext_ - extbuf_ : 0;
+        ptrdiff_t le = extbufend_ ? extbufend_ - extbuf_ : 0;
+        ptrdiff_t rn = rhs.extbufnext_ ? rhs.extbufnext_ - rhs.extbuf_ : 0;
+        ptrdiff_t re = rhs.extbufend_ ? rhs.extbufend_ - rhs.extbuf_ : 0;
+        if (extbuf_ == extbuf_min_ && rhs.extbuf_ != rhs.extbuf_min_) {
+            extbuf_       = rhs.extbuf_;
+            rhs.extbuf_   = rhs.extbuf_min_;
+            std::memmove(rhs.extbuf_min_, extbuf_min_, sizeof(extbuf_min_));
+        } else if (extbuf_ != extbuf_min_ && rhs.extbuf_ == rhs.extbuf_min_) {
+            rhs.extbuf_   = extbuf_;
+            extbuf_       = extbuf_min_;
+            std::memmove(extbuf_min_, rhs.extbuf_min_, sizeof(extbuf_min_));
+        } else {
+            char tmp[sizeof(extbuf_min_)];
+            std::memmove(tmp, extbuf_min_, sizeof(extbuf_min_));
+            std::memmove(extbuf_min_, rhs.extbuf_min_, sizeof(extbuf_min_));
+            std::memmove(rhs.extbuf_min_, tmp, sizeof(extbuf_min_));
+        }
+        extbufnext_       = extbuf_ + rn;
+        extbufend_        = extbuf_ + re;
+        rhs.extbufnext_   = rhs.extbuf_ + ln;
+        rhs.extbufend_    = rhs.extbuf_ + le;
+    }
+    std::swap(ebs_, rhs.ebs_);
+    std::swap(intbuf_, rhs.intbuf_);
+    std::swap(ibs_, rhs.ibs_);
+    std::swap(file_, rhs.file_);
+    std::swap(cv_, rhs.cv_);
+    std::swap(st_, rhs.st_);
+    std::swap(st_last_, rhs.st_last_);
+    std::swap(om_, rhs.om_);
+    std::swap(cm_, rhs.cm_);
+    std::swap(owns_eb_, rhs.owns_eb_);
+    std::swap(owns_ib_, rhs.owns_ib_);
+    std::swap(always_noconv_, rhs.always_noconv_);
+    if (this->eback() == (char_type*)rhs.extbuf_min_) {
+        ptrdiff_t n = this->gptr() - this->eback();
+        ptrdiff_t e = this->egptr() - this->eback();
+        this->setg((char_type*)extbuf_min_, (char_type*)extbuf_min_ + n, (char_type*)extbuf_min_ + e);
+    } else if (this->pbase() == (char_type*)rhs.extbuf_min_) {
+        ptrdiff_t n = this->pptr() - this->pbase();
+        ptrdiff_t e = this->epptr() - this->pbase();
+        this->setp((char_type*)extbuf_min_, (char_type*)extbuf_min_ + e);
+        pbump_large(n);
+    }
+    if (rhs.eback() == (char_type*)extbuf_min_) {
+        ptrdiff_t n = rhs.gptr() - rhs.eback();
+        ptrdiff_t e = rhs.egptr() - rhs.eback();
+        rhs.setg((char_type*)rhs.extbuf_min_, (char_type*)rhs.extbuf_min_ + n, (char_type*)rhs.extbuf_min_ + e);
+    } else if (rhs.pbase() == (char_type*)extbuf_min_) {
+        ptrdiff_t n = rhs.pptr() - rhs.pbase();
+        ptrdiff_t e = rhs.epptr() - rhs.pbase();
+        rhs.setp((char_type*)rhs.extbuf_min_, (char_type*)rhs.extbuf_min_ + e);
+        rhs.pbump_large(n);
+    }
+}
+
+template<class CharT, class Traits>
+inline void swap(basic_filebuf<CharT, Traits>& x, basic_filebuf<CharT, Traits>& y) {
+    x.swap(y);
+}
+
+template<class CharT, class Traits>
+inline bool basic_filebuf<CharT, Traits>::is_open() const {
+    return file_ != nullptr;
+}
+
+template<class CharT, class Traits>
+const char* basic_filebuf<CharT, Traits>::make_mdstring(ios_base::openmode mode) noexcept {
+    switch (mode & ~ios_base::ate) {
+    case ios_base::out:
+    case ios_base::out | ios_base::trunc:
+        return "w";
+    case ios_base::out | ios_base::app:
+    case ios_base::app:
+        return "a";
+    case ios_base::in:
+        return "r";
+    case ios_base::in | ios_base::out:
+        return "r+";
+    case ios_base::in | ios_base::out | ios_base::trunc:
+        return "w+";
+    case ios_base::in | ios_base::out | ios_base::app:
+    case ios_base::in | ios_base::app:
+        return "a+";
+    case ios_base::out | ios_base::binary:
+    case ios_base::out | ios_base::trunc | ios_base::binary:
+        return "wb";
+    case ios_base::out | ios_base::app | ios_base::binary:
+    case ios_base::app | ios_base::binary:
+        return "ab";
+    case ios_base::in | ios_base::binary:
+        return "rb";
+    case ios_base::in | ios_base::out | ios_base::binary:
+        return "r+b";
+    case ios_base::in | ios_base::out | ios_base::trunc | ios_base::binary:
+        return "w+b";
+    case ios_base::in | ios_base::out | ios_base::app | ios_base::binary:
+    case ios_base::in | ios_base::app | ios_base::binary:
+        return "a+b";
+    default:
+        return nullptr;
+    }
+}
+
+template<class CharT, class Traits>
+basic_filebuf<CharT, Traits>*
+basic_filebuf<CharT, Traits>::open(const char* s, ios_base::openmode mode) {
+    if (file_)
+        return nullptr;
+    const char* mdstr = make_mdstring(mode);
+    if (!mdstr)
+        return nullptr;
+    return do_open(fopen(s, mdstr), mode);
+}
+
+template<class CharT, class Traits>
+inline basic_filebuf<CharT, Traits>*
+basic_filebuf<CharT, Traits>::open(const string& s, ios_base::openmode mode) {
+    return open(s.c_str(), mode);
+}
+
+template<class CharT, class Traits>
+inline basic_filebuf<CharT, Traits>*
+basic_filebuf<CharT, Traits>::__open(int fd, ios_base::openmode mode) {
+    if (file_)
+        return nullptr;
+    const char* mdstr = make_mdstring(mode);
+    if (!mdstr)
+        return nullptr;
+    return do_open(fdopen(fd, mdstr), mode);
+}
+
+template<class CharT, class Traits>
+basic_filebuf<CharT, Traits>* basic_filebuf<CharT, Traits>::close() {
+    basic_filebuf<CharT, Traits>* rt = nullptr;
+    if (file_) {
+        rt = this;
+        unique_ptr<FILE, int (*)(FILE*)> h(file_, fclose);
+        if (sync())
+            rt = nullptr;
+        if (fclose(h.release()))
+            rt = nullptr;
+        file_ = nullptr;
+        setbuf(nullptr, 0);
+    }
+    return rt;
+}
+
+template<class CharT, class Traits>
+typename basic_filebuf<CharT, Traits>::int_type
+basic_filebuf<CharT, Traits>::underflow() {
+    if (file_ == nullptr)
+        return traits_type::eof();
+    bool initial = read_mode();
+    char_type buf1;
+    if (this->gptr() == nullptr)
+        this->setg(&buf1, &buf1 + 1, &buf1 + 1);
+    const size_t unget_sz = initial ? 0 : std::min<size_t>((this->egptr() - this->eback()) / 2, 4);
+    int_type c = traits_type::eof();
+    if (this->gptr() == this->egptr()) {
+        std::memmove(this->eback(), this->egptr() - unget_sz, unget_sz * sizeof(char_type));
+        if (always_noconv_) {
+            size_t nmemb = static_cast<size_t>(this->egptr() - this->eback() - unget_sz);
+            nmemb        = ::fread(this->eback() + unget_sz, 1, nmemb, file_);
+            if (nmemb != 0) {
+                this->setg(this->eback(), this->eback() + unget_sz, this->eback() + unget_sz + nmemb);
+                c = traits_type::to_int_type(*this->gptr());
+            }
+        } else {
+            if (extbufend_ != extbufnext_)
+                std::memmove(extbuf_, extbufnext_, extbufend_ - extbufnext_);
+            extbufnext_ = extbuf_ + (extbufend_ - extbufnext_);
+            extbufend_  = extbuf_ + (extbuf_ == extbuf_min_ ? sizeof(extbuf_min_) : ebs_);
+            size_t nmemb =
+                std::min(static_cast<size_t>(ibs_ - unget_sz), static_cast<size_t>(extbufend_ - extbufnext_));
+            codecvt_base::result r;
+            st_last_   = st_;
+            size_t nr = fread((void*)const_cast<char*>(extbufnext_), 1, nmemb, file_);
+            if (nr != 0) {
+                extbufend_ = extbufnext_ + nr;
+                char_type* inext;
+                r = cv_->in(
+                    st_, extbuf_, extbufend_, extbufnext_, this->eback() + unget_sz, this->eback() + ibs_, inext);
+                if (r == codecvt_base::noconv) {
+                    this->setg((char_type*)extbuf_, (char_type*)extbuf_, (char_type*)const_cast<char*>(extbufend_));
+                    c = traits_type::to_int_type(*this->gptr());
+                } else if (inext != this->eback() + unget_sz) {
+                    this->setg(this->eback(), this->eback() + unget_sz, inext);
+                    c = traits_type::to_int_type(*this->gptr());
+                }
+            }
+        }
+    } else
+        c = traits_type::to_int_type(*this->gptr());
+    if (this->eback() == &buf1)
+        this->setg(nullptr, nullptr, nullptr);
+    return c;
+}
+
+template<class CharT, class Traits>
+typename basic_filebuf<CharT, Traits>::int_type
+basic_filebuf<CharT, Traits>::pbackfail(int_type c) {
+    if (file_ && this->eback() < this->gptr()) {
+        if (traits_type::eq_int_type(c, traits_type::eof())) {
+            this->gbump(-1);
+            return traits_type::not_eof(c);
+        }
+        if ((om_ & ios_base::out) || traits_type::eq(traits_type::to_char_type(c), this->gptr()[-1])) {
+            this->gbump(-1);
+            *this->gptr() = traits_type::to_char_type(c);
+            return c;
+        }
+    }
+    return traits_type::eof();
+}
+
+template<class CharT, class Traits>
+typename basic_filebuf<CharT, Traits>::int_type
+basic_filebuf<CharT, Traits>::overflow(int_type c) {
+    if (file_ == nullptr)
+        return traits_type::eof();
+    write_mode();
+    char_type buf1;
+    char_type* pb_save  = this->pbase();
+    char_type* epb_save = this->epptr();
+    if (!traits_type::eq_int_type(c, traits_type::eof())) {
+        if (this->pptr() == nullptr)
+            this->setp(&buf1, &buf1 + 1);
+        *this->pptr() = traits_type::to_char_type(c);
+        this->pbump(1);
+    }
+    if (this->pptr() != this->pbase()) {
+        if (always_noconv_) {
+            size_t nmemb = static_cast<size_t>(this->pptr() - this->pbase());
+            if (std::fwrite(this->pbase(), sizeof(char_type), nmemb, file_) != nmemb)
+                return traits_type::eof();
+        } else {
+            char* extbe = extbuf_;
+            codecvt_base::result r;
+            do {
+                const char_type* e;
+                r = cv_->out(st_, this->pbase(), this->pptr(), e, extbuf_, extbuf_ + ebs_, extbe);
+                if (e == this->pbase())
+                    return traits_type::eof();
+                if (r == codecvt_base::noconv) {
+                    size_t nmemb = static_cast<size_t>(this->pptr() - this->pbase());
+                    if (std::fwrite(this->pbase(), 1, nmemb, file_) != nmemb)
+                        return traits_type::eof();
+                } else if (r == codecvt_base::ok || r == codecvt_base::partial) {
+                    size_t nmemb = static_cast<size_t>(extbe - extbuf_);
+                    if (fwrite(extbuf_, 1, nmemb, file_) != nmemb)
+                        return traits_type::eof();
+                    if (r == codecvt_base::partial) {
+                        this->setp(const_cast<char_type*>(e), this->pptr());
+                        pbump_large(this->epptr() - this->pbase());
+                    }
+                } else
+                    return traits_type::eof();
+            } while (r == codecvt_base::partial);
+        }
+        this->setp(pb_save, epb_save);
+    }
+    return traits_type::not_eof(c);
+}
+
+template<class CharT, class Traits>
+basic_streambuf<CharT, Traits>*
+basic_filebuf<CharT, Traits>::setbuf(char_type* s, streamsize n) {
+    this->setg(nullptr, nullptr, nullptr);
+    this->setp(nullptr, nullptr);
+    request_unbuffered_mode(s, n);
+    if (owns_eb_)
+        delete[] extbuf_;
+    if (owns_ib_)
+        delete[] intbuf_;
+    ebs_ = n;
+    if (ebs_ > sizeof(extbuf_min_)) {
+        if (always_noconv_ && s) {
+            extbuf_  = (char*)s;
+            owns_eb_ = false;
+        } else {
+            extbuf_  = new char[ebs_];
+            owns_eb_ = true;
+        }
+    } else {
+        extbuf_  = extbuf_min_;
+        ebs_     = sizeof(extbuf_min_);
+        owns_eb_ = false;
+    }
+    if (!always_noconv_) {
+        ibs_ = std::max<streamsize>(n, sizeof(extbuf_min_));
+        if (s && ibs_ > sizeof(extbuf_min_)) {
+            intbuf_  = s;
+            owns_ib_ = false;
+        } else {
+            intbuf_  = new char_type[ibs_];
+            owns_ib_ = true;
+        }
+    } else {
+        ibs_     = 0;
+        intbuf_  = nullptr;
+        owns_ib_ = false;
+    }
+    return this;
+}
+
+template<class CharT, class Traits>
+typename basic_filebuf<CharT, Traits>::pos_type
+basic_filebuf<CharT, Traits>::seekoff(off_type off, ios_base::seekdir way, ios_base::openmode) {
+    int width = cv_ ? cv_->encoding() : 1;
+    if (file_ == nullptr || (width <= 0 && off != 0) || sync())
+        return pos_type(off_type(-1));
+    int whence;
+    switch (way) {
+    case ios_base::beg:
+        whence = SEEK_SET;
+        break;
+    case ios_base::cur:
+        whence = SEEK_CUR;
+        break;
+    case ios_base::end:
+        whence = SEEK_END;
+        break;
+    default:
+        return pos_type(off_type(-1));
+    }
+    if (do_fseek(file_, width > 0 ? width * off : 0, whence))
+        return pos_type(off_type(-1));
+    pos_type r = do_ftell(file_);
+    r.state(st_);
+    return r;
+}
+
+template<class CharT, class Traits>
+typename basic_filebuf<CharT, Traits>::pos_type
+basic_filebuf<CharT, Traits>::seekpos(pos_type sp, ios_base::openmode) {
+    if (file_ == nullptr || sync())
+        return pos_type(off_type(-1));
+    if (do_fseek(file_, sp, SEEK_SET))
+        return pos_type(off_type(-1));
+    st_ = sp.state();
+    return sp;
+}
+
+template<class CharT, class Traits>
+int basic_filebuf<CharT, Traits>::sync() {
+    if (file_ == nullptr)
+        return 0;
+    if (cm_ & ios_base::out) {
+        if (this->pptr() != this->pbase())
+            if (overflow() == traits_type::eof())
+                return -1;
+        codecvt_base::result r;
+        do {
+            char* extbe;
+            r            = cv_->unshift(st_, extbuf_, extbuf_ + ebs_, extbe);
+            size_t nmemb = static_cast<size_t>(extbe - extbuf_);
+            if (fwrite(extbuf_, 1, nmemb, file_) != nmemb)
+                return -1;
+        } while (r == codecvt_base::partial);
+        if (r == codecvt_base::error)
+            return -1;
+        if (fflush(file_))
+            return -1;
+    } else if (cm_ & ios_base::in) {
+        off_type c;
+        state_type state = st_last_;
+        bool update_st   = false;
+        if (always_noconv_)
+            c = this->egptr() - this->gptr();
+        else {
+            int width = cv_->encoding();
+            c         = extbufend_ - extbufnext_;
+            if (width > 0)
+                c += width * (this->egptr() - this->gptr());
+            else {
+                if (this->gptr() != this->egptr()) {
+                    const int off = cv_->length(state, extbuf_, extbufnext_, this->gptr() - this->eback());
+                    c += extbufnext_ - extbuf_ - off;
+                    update_st = true;
+                }
+            }
+        }
+        if (do_fseek(file_, -c, SEEK_CUR))
+            return -1;
+        if (update_st)
+            st_ = state;
+        extbufnext_ = extbufend_ = extbuf_;
+        this->setg(nullptr, nullptr, nullptr);
+        cm_ = 0;
+    }
+    return 0;
+}
+
+template<class CharT, class Traits>
+void basic_filebuf<CharT, Traits>::imbue(const locale& loc) {
+    sync();
+    cv_              = &std::use_facet<codecvt<char_type, char, state_type>>(loc);
+    bool old_anc     = always_noconv_;
+    always_noconv_   = cv_->always_noconv();
+    if (old_anc != always_noconv_) {
+        this->setg(nullptr, nullptr, nullptr);
+        this->setp(nullptr, nullptr);
+        if (always_noconv_) {
+            if (owns_eb_)
+                delete[] extbuf_;
+            owns_eb_  = owns_ib_;
+            ebs_      = ibs_;
+            extbuf_   = (char*)intbuf_;
+            ibs_      = 0;
+            intbuf_   = nullptr;
+            owns_ib_  = false;
+        } else {
+            if (!owns_eb_ && extbuf_ != extbuf_min_) {
+                ibs_      = ebs_;
+                intbuf_   = (char_type*)extbuf_;
+                owns_ib_  = false;
+                extbuf_   = new char[ebs_];
+                owns_eb_  = true;
+            } else {
+                ibs_      = ebs_;
+                intbuf_   = new char_type[ibs_];
+                owns_ib_  = true;
+            }
+        }
+    }
+}
+
+template<class CharT, class Traits>
+bool basic_filebuf<CharT, Traits>::read_mode() {
+    if (!(cm_ & ios_base::in)) {
+        this->setp(nullptr, nullptr);
+        if (always_noconv_)
+            this->setg((char_type*)extbuf_, (char_type*)extbuf_ + ebs_, (char_type*)extbuf_ + ebs_);
+        else
+            this->setg(intbuf_, intbuf_ + ibs_, intbuf_ + ibs_);
+        cm_ = ios_base::in;
+        return true;
+    }
+    return false;
+}
+
+template<class CharT, class Traits>
+void basic_filebuf<CharT, Traits>::write_mode() {
+    if (!(cm_ & ios_base::out)) {
+        this->setg(nullptr, nullptr, nullptr);
+        if (ebs_ > sizeof(extbuf_min_)) {
+            if (always_noconv_)
+                this->setp((char_type*)extbuf_, (char_type*)extbuf_ + (ebs_ - 1));
+            else
+                this->setp(intbuf_, intbuf_ + (ibs_ - 1));
+        } else
+            this->setp(nullptr, nullptr);
+        cm_ = ios_base::out;
+    }
+}
+
+using filebuf  = basic_filebuf<char>;
+using wfilebuf = basic_filebuf<wchar_t>;
+
+//===----------------------------------------------------------------------===//
+// basic_ifstream
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits>  // defaults: <iosfwd>
+class basic_ifstream : public basic_istream<CharT, Traits> {
+public:
+    using char_type   = CharT;
+    using traits_type = Traits;
+    using int_type    = typename traits_type::int_type;
+    using pos_type    = typename traits_type::pos_type;
+    using off_type    = typename traits_type::off_type;
+
+    basic_ifstream()
+        : basic_istream<char_type, traits_type>(std::addressof(sb_)) {}
+
+    explicit basic_ifstream(const char* s, ios_base::openmode mode = ios_base::in)
+        : basic_istream<char_type, traits_type>(std::addressof(sb_)) {
+        if (sb_.open(s, mode | ios_base::in) == nullptr)
+            this->setstate(ios_base::failbit);
+    }
+
+    explicit basic_ifstream(const string& s, ios_base::openmode mode = ios_base::in)
+        : basic_istream<char_type, traits_type>(std::addressof(sb_)) {
+        if (sb_.open(s, mode | ios_base::in) == nullptr)
+            this->setstate(ios_base::failbit);
+    }
+
+    template<class Tp, class = enable_if_t<is_same_v<Tp, filesystem::path>>>
+    explicit basic_ifstream(const Tp& p, ios_base::openmode mode = ios_base::in)
+        : basic_ifstream(p.c_str(), mode) {}
+
+    basic_ifstream(const basic_ifstream&) = delete;
+    basic_ifstream(basic_ifstream&& rhs)
+        : basic_istream<char_type, traits_type>(std::move(rhs)), sb_(std::move(rhs.sb_)) {
+        this->set_rdbuf(std::addressof(sb_));
+    }
+
+    basic_ifstream& operator=(const basic_ifstream&) = delete;
+    basic_ifstream& operator=(basic_ifstream&& rhs) {
+        basic_istream<char_type, traits_type>::operator=(std::move(rhs));
+        sb_ = std::move(rhs.sb_);
+        this->set_rdbuf(std::addressof(sb_));
+        return *this;
+    }
+
+    void swap(basic_ifstream& rhs) {
+        basic_istream<char_type, traits_type>::swap(rhs);
+        sb_.swap(rhs.sb_);
+        // basic_ios::swap transfers the rdbuf pointers too; re-point each
+        // stream at its own buffer (libcis basic_ios::swap differs from libc++).
+        this->set_rdbuf(std::addressof(sb_));
+        rhs.set_rdbuf(std::addressof(rhs.sb_));
+    }
+
+    [[nodiscard]] basic_filebuf<char_type, traits_type>* rdbuf() const {
+        return const_cast<basic_filebuf<char_type, traits_type>*>(std::addressof(sb_));
+    }
+    bool is_open() const { return sb_.is_open(); }
+
+    void open(const char* s, ios_base::openmode mode = ios_base::in) {
+        if (sb_.open(s, mode | ios_base::in)) this->clear();
+        else this->setstate(ios_base::failbit);
+    }
+    void open(const string& s, ios_base::openmode mode = ios_base::in) {
+        if (sb_.open(s, mode | ios_base::in)) this->clear();
+        else this->setstate(ios_base::failbit);
+    }
+    void open(const filesystem::path& p, ios_base::openmode mode = ios_base::in) {
+        open(p.c_str(), mode);
+    }
+
+    void close() {
+        if (sb_.close() == nullptr)
+            this->setstate(ios_base::failbit);
+    }
+
+private:
+    basic_filebuf<char_type, traits_type> sb_;
+};
+
+template<class CharT, class Traits>
+inline void swap(basic_ifstream<CharT, Traits>& x, basic_ifstream<CharT, Traits>& y) {
+    x.swap(y);
+}
+
+using ifstream  = basic_ifstream<char>;
+using wifstream = basic_ifstream<wchar_t>;
+
+//===----------------------------------------------------------------------===//
+// basic_ofstream
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits>  // defaults: <iosfwd>
+class basic_ofstream : public basic_ostream<CharT, Traits> {
+public:
+    using char_type   = CharT;
+    using traits_type = Traits;
+    using int_type    = typename traits_type::int_type;
+    using pos_type    = typename traits_type::pos_type;
+    using off_type    = typename traits_type::off_type;
+
+    basic_ofstream()
+        : basic_ostream<char_type, traits_type>(std::addressof(sb_)) {}
+
+    explicit basic_ofstream(const char* s, ios_base::openmode mode = ios_base::out)
+        : basic_ostream<char_type, traits_type>(std::addressof(sb_)) {
+        if (sb_.open(s, mode | ios_base::out) == nullptr)
+            this->setstate(ios_base::failbit);
+    }
+
+    explicit basic_ofstream(const string& s, ios_base::openmode mode = ios_base::out)
+        : basic_ostream<char_type, traits_type>(std::addressof(sb_)) {
+        if (sb_.open(s, mode | ios_base::out) == nullptr)
+            this->setstate(ios_base::failbit);
+    }
+
+    template<class Tp, class = enable_if_t<is_same_v<Tp, filesystem::path>>>
+    explicit basic_ofstream(const Tp& p, ios_base::openmode mode = ios_base::out)
+        : basic_ofstream(p.c_str(), mode) {}
+
+    basic_ofstream(const basic_ofstream&) = delete;
+    basic_ofstream(basic_ofstream&& rhs)
+        : basic_ostream<char_type, traits_type>(std::move(rhs)), sb_(std::move(rhs.sb_)) {
+        this->set_rdbuf(std::addressof(sb_));
+    }
+
+    basic_ofstream& operator=(const basic_ofstream&) = delete;
+    basic_ofstream& operator=(basic_ofstream&& rhs) {
+        basic_ostream<char_type, traits_type>::operator=(std::move(rhs));
+        sb_ = std::move(rhs.sb_);
+        this->set_rdbuf(std::addressof(sb_));
+        return *this;
+    }
+
+    void swap(basic_ofstream& rhs) {
+        basic_ostream<char_type, traits_type>::swap(rhs);
+        sb_.swap(rhs.sb_);
+        this->set_rdbuf(std::addressof(sb_));
+        rhs.set_rdbuf(std::addressof(rhs.sb_));
+    }
+
+    [[nodiscard]] basic_filebuf<char_type, traits_type>* rdbuf() const {
+        return const_cast<basic_filebuf<char_type, traits_type>*>(std::addressof(sb_));
+    }
+    bool is_open() const { return sb_.is_open(); }
+
+    void open(const char* s, ios_base::openmode mode = ios_base::out) {
+        if (sb_.open(s, mode | ios_base::out)) this->clear();
+        else this->setstate(ios_base::failbit);
+    }
+    void open(const string& s, ios_base::openmode mode = ios_base::out) {
+        if (sb_.open(s, mode | ios_base::out)) this->clear();
+        else this->setstate(ios_base::failbit);
+    }
+    void open(const filesystem::path& p, ios_base::openmode mode = ios_base::out) {
+        open(p.c_str(), mode);
+    }
+
+    void close() {
+        if (sb_.close() == nullptr)
+            this->setstate(ios_base::failbit);
+    }
+
+private:
+    basic_filebuf<char_type, traits_type> sb_;
+};
+
+template<class CharT, class Traits>
+inline void swap(basic_ofstream<CharT, Traits>& x, basic_ofstream<CharT, Traits>& y) {
+    x.swap(y);
+}
+
+using ofstream  = basic_ofstream<char>;
+using wofstream = basic_ofstream<wchar_t>;
+
+//===----------------------------------------------------------------------===//
+// basic_fstream
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits>  // defaults: <iosfwd>
+class basic_fstream : public basic_iostream<CharT, Traits> {
+public:
+    using char_type   = CharT;
+    using traits_type = Traits;
+    using int_type    = typename traits_type::int_type;
+    using pos_type    = typename traits_type::pos_type;
+    using off_type    = typename traits_type::off_type;
+
+    basic_fstream()
+        : basic_iostream<char_type, traits_type>(std::addressof(sb_)) {}
+
+    explicit basic_fstream(const char* s,
+                           ios_base::openmode mode = ios_base::in | ios_base::out)
+        : basic_iostream<char_type, traits_type>(std::addressof(sb_)) {
+        if (sb_.open(s, mode) == nullptr)
+            this->setstate(ios_base::failbit);
+    }
+
+    explicit basic_fstream(const string& s,
+                           ios_base::openmode mode = ios_base::in | ios_base::out)
+        : basic_iostream<char_type, traits_type>(std::addressof(sb_)) {
+        if (sb_.open(s, mode) == nullptr)
+            this->setstate(ios_base::failbit);
+    }
+
+    template<class Tp, class = enable_if_t<is_same_v<Tp, filesystem::path>>>
+    explicit basic_fstream(const Tp& p, ios_base::openmode mode = ios_base::in | ios_base::out)
+        : basic_fstream(p.c_str(), mode) {}
+
+    basic_fstream(const basic_fstream&) = delete;
+    basic_fstream(basic_fstream&& rhs)
+        : basic_iostream<char_type, traits_type>(std::move(rhs)), sb_(std::move(rhs.sb_)) {
+        this->set_rdbuf(std::addressof(sb_));
+    }
+
+    basic_fstream& operator=(const basic_fstream&) = delete;
+    basic_fstream& operator=(basic_fstream&& rhs) {
+        basic_iostream<char_type, traits_type>::operator=(std::move(rhs));
+        sb_ = std::move(rhs.sb_);
+        this->set_rdbuf(std::addressof(sb_));
+        return *this;
+    }
+
+    void swap(basic_fstream& rhs) {
+        basic_iostream<char_type, traits_type>::swap(rhs);
+        sb_.swap(rhs.sb_);
+        this->set_rdbuf(std::addressof(sb_));
+        rhs.set_rdbuf(std::addressof(rhs.sb_));
+    }
+
+    [[nodiscard]] basic_filebuf<char_type, traits_type>* rdbuf() const {
+        return const_cast<basic_filebuf<char_type, traits_type>*>(std::addressof(sb_));
+    }
+    bool is_open() const { return sb_.is_open(); }
+
+    void open(const char* s, ios_base::openmode mode = ios_base::in | ios_base::out) {
+        if (sb_.open(s, mode)) this->clear();
+        else this->setstate(ios_base::failbit);
+    }
+    void open(const string& s, ios_base::openmode mode = ios_base::in | ios_base::out) {
+        if (sb_.open(s, mode)) this->clear();
+        else this->setstate(ios_base::failbit);
+    }
+    void open(const filesystem::path& p, ios_base::openmode mode = ios_base::in | ios_base::out) {
+        open(p.c_str(), mode);
+    }
+
+    void close() {
+        if (sb_.close() == nullptr)
+            this->setstate(ios_base::failbit);
+    }
+
+private:
+    basic_filebuf<char_type, traits_type> sb_;
+};
+
+template<class CharT, class Traits>
+inline void swap(basic_fstream<CharT, Traits>& x, basic_fstream<CharT, Traits>& y) {
+    x.swap(y);
+}
+
+using fstream  = basic_fstream<char>;
+using wfstream = basic_fstream<wchar_t>;
+
+} // namespace std
+
+#pragma GCC visibility pop
