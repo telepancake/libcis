@@ -16,6 +16,13 @@
 #include <cstdint>
 #include <cstring>
 
+// sched_yield: keep the prototype at default visibility (the io/locale headers
+// later push hidden visibility, and a libc prototype first seen there would
+// become unresolvable). Used by the spin-wait to avoid starving other threads.
+#pragma GCC visibility push(default)
+#include <sched.h>
+#pragma GCC visibility pop
+
 //===----------------------------------------------------------------------===//
 // libatomic generic runtime fallback
 //===----------------------------------------------------------------------===//
@@ -185,7 +192,8 @@ inline void atomic_spin_wait(const volatile T* ptr, T old, int gcc_order) noexce
             spin_pause();
         else if (spins < 64)
             for (int i = 0; i < 8; ++i) spin_pause();
-        // Beyond that, just keep spinning (no OS yield without syscall headers)
+        else
+            ::sched_yield(); // give other threads (e.g. the notifier) a chance
     }
 }
 
