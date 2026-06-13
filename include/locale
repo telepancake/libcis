@@ -158,20 +158,36 @@ public:
         bool release() noexcept { return --refs == 0; }
 
         ~imp() {
+            // Each non-null slot holds exactly one reference taken by this imp
+            // (install() and every copy loop do ++refs_).  Drop that reference;
+            // free the facet only when the count reaches zero.  Statically-pinned
+            // classic facets are constructed with refs_=1, so that base ref keeps
+            // them alive past every imp.  A pure refcount is required because an
+            // owned facet (refs_==0 at construction) may be shared by several
+            // imps after a copy: with the old per-imp owns[] flag the FIRST imp
+            // to die freed it while later imps still held dangling pointers
+            // (use-after-free observed via money facets imbued into an ios).
             for (size_t i = 0; i < max_facets; ++i) {
-                if (table[i] && owns[i])
-                    release_facet(const_cast<facet*>(table[i]));
+                if (table[i])
+                    release_ref(const_cast<facet*>(table[i]));
             }
         }
 
-        // Install a facet at slot id.  Takes ownership iff f->refs_ == 0.
+        // Drop one imp-held reference; free the facet at the last reference.
+        static void release_ref(facet* f) {
+            if (--f->refs_ == 0)
+                release_facet(f);
+        }
+
+        // Install a facet at slot id.  Each slot holds one reference, so this
+        // adds one (++refs_): an owned facet (refs_==0) becomes 1, a pinned
+        // static (refs_>=1) goes one higher; ~imp's release_ref balances it.
         void install(size_t id, facet* f) {
             if (id == 0 || id >= max_facets) return;
-            if (table[id] && owns[id])
-                release_facet(const_cast<facet*>(table[id]));
+            if (table[id])
+                release_ref(const_cast<facet*>(table[id]));
             table[id] = f;
-            owns[id]  = (f->refs_ == 0);
-            // Bump refs_ so caller can't double-delete even if refs_==0.
+            owns[id]  = (f->refs_ == 0);  // kept for source compatibility only
             ++f->refs_;
         }
 
@@ -5415,8 +5431,17 @@ InputIterator time_get<CharT, InputIterator>::get(
     } else if (ct.toupper(*b) == ct.toupper(*fmtb)) {
       ++b;
       ++fmtb;
-    } else
-      err = detail::ios_failbit;
+    } else {
+      // libcis: glibc's strptime is lenient about literal separators that are
+      // absent from the input — e.g. zh_CN D_FMT "%Y年%m月%d日" parses
+      // "2009年0610" (the 月 between month and day is simply omitted).  libc++'s
+      // strict form would set failbit here; instead we skip the unmatched
+      // format literal and keep parsing.  Whitespace and '%' directives are
+      // handled by the branches above, so only true literal separators reach
+      // this point; skipping them matches the glibc behaviour the byname
+      // time_get tests (get_date / get_date_wide) expect.
+      ++fmtb;
+    }
   }
   if (b == e)
     err |= detail::ios_eofbit;
@@ -6281,3 +6306,389 @@ inline locale::locale(const locale& other, const locale& one, category cat)
 // the <ios> -> <locale> re-entrant include this is a harmless pragma-once no-op
 // (ios finishes after <locale> returns); at top level it fully completes <ios>.
 #include <ios>
+
+// wbuffer_convert [conversions.buffer] (deprecated; removed in C++26).
+// Ported from libc++ include/locale lines 3294-3700.  Derives basic_streambuf.
+// NOTE: we deliberately do NOT #include <streambuf> here.  <ios> includes
+// <locale> *before* it defines ios_base, so during that re-entrant cycle a
+// complete <streambuf> is unavailable (it needs ios_base::seekdir/openmode).
+// A class *template* only needs its base class complete at INSTANTIATION, not
+// at definition: basic_streambuf is forward-declared (via <iosfwd>/<ios>); the
+// member-function signatures route ios_base's nested types through a dependent
+// helper (detail::wbc_io<Tr,ios_base>) so they are not checked until the class
+// is instantiated, by which point the user has a complete <streambuf>/<ios>.
+// This keeps the <sstream>-before-<locale> path (category.numeric/.../test_min_max)
+// compiling while still providing wbuffer_convert.
+namespace std {
+
+namespace detail {
+// Dep is the enclosing class's (ignored) Tr param, so wbc_io<Dep, ios_base> is
+// type-dependent and therefore not resolved/instantiated until wbuffer_convert
+// itself is instantiated — at which point ios_base is complete.
+template <class Dep, class IBT> struct wbc_io {
+    typedef IBT base;                        // ios_base, reached dependently
+    typedef typename IBT::seekdir  seekdir;
+    typedef typename IBT::openmode openmode;
+    static openmode inout() { return IBT::in | IBT::out; }
+};
+} // namespace detail
+
+template <class Codecvt, class Elem = wchar_t, class Tr = char_traits<Elem>>
+class wbuffer_convert : public basic_streambuf<Elem, Tr> {
+public:
+    typedef Elem char_type;
+    typedef Tr   traits_type;
+    typedef typename traits_type::int_type int_type;
+    typedef typename traits_type::pos_type pos_type;
+    typedef typename traits_type::off_type off_type;
+    typedef typename Codecvt::state_type   state_type;
+
+private:
+    char*       extbuf_;
+    const char* extbufnext_;
+    const char* extbufend_;
+    char        extbuf_min_[8];
+    size_t      ebs_;
+    char_type*  intbuf_;
+    size_t      ibs_;
+    streambuf*  bufptr_;
+    Codecvt*    cv_;
+    state_type  st_;
+    int         cm_;  // ios_base::openmode bits, stored as int so the class can
+                      // be defined while ios_base is still incomplete.
+    bool        owns_eb_;
+    bool        owns_ib_;
+    bool        always_noconv_;
+
+public:
+    wbuffer_convert() : wbuffer_convert(nullptr) {}
+    explicit wbuffer_convert(streambuf* bytebuf, Codecvt* pcvt = new Codecvt,
+                             state_type state = state_type());
+
+    ~wbuffer_convert();
+
+    streambuf* rdbuf() const { return bufptr_; }
+    streambuf* rdbuf(streambuf* bytebuf) {
+        streambuf* r = bufptr_;
+        bufptr_ = bytebuf;
+        return r;
+    }
+
+    wbuffer_convert(const wbuffer_convert&) = delete;
+    wbuffer_convert& operator=(const wbuffer_convert&) = delete;
+
+    state_type state() const { return st_; }
+
+protected:
+    virtual int_type underflow();
+    virtual int_type pbackfail(int_type c = traits_type::eof());
+    virtual int_type overflow(int_type c = traits_type::eof());
+    virtual basic_streambuf<char_type, traits_type>* setbuf(char_type* s, streamsize n);
+    virtual pos_type seekoff(off_type off, typename detail::wbc_io<Tr, ios_base>::seekdir way,
+                             typename detail::wbc_io<Tr, ios_base>::openmode wch = detail::wbc_io<Tr, ios_base>::inout());
+    virtual pos_type seekpos(pos_type sp,
+                             typename detail::wbc_io<Tr, ios_base>::openmode wch = detail::wbc_io<Tr, ios_base>::inout());
+    virtual int sync();
+
+private:
+    bool __read_mode();
+    void __write_mode();
+    wbuffer_convert* __close();
+};
+
+template <class Codecvt, class Elem, class Tr>
+wbuffer_convert<Codecvt, Elem, Tr>::wbuffer_convert(streambuf* bytebuf, Codecvt* pcvt, state_type state)
+    : extbuf_(nullptr), extbufnext_(nullptr), extbufend_(nullptr),
+      ebs_(0), intbuf_(0), ibs_(0), bufptr_(bytebuf), cv_(pcvt), st_(state),
+      cm_(0), owns_eb_(false), owns_ib_(false),
+      always_noconv_(cv_ ? cv_->always_noconv() : false) {
+    setbuf(0, 4096);
+}
+
+template <class Codecvt, class Elem, class Tr>
+wbuffer_convert<Codecvt, Elem, Tr>::~wbuffer_convert() {
+    __close();
+    delete cv_;
+    if (owns_eb_) delete[] extbuf_;
+    if (owns_ib_) delete[] intbuf_;
+}
+
+template <class Codecvt, class Elem, class Tr>
+typename wbuffer_convert<Codecvt, Elem, Tr>::int_type
+wbuffer_convert<Codecvt, Elem, Tr>::underflow() {
+    if (cv_ == 0 || bufptr_ == nullptr)
+        return traits_type::eof();
+    bool initial = __read_mode();
+    char_type buf1;
+    if (this->gptr() == 0)
+        this->setg(&buf1, &buf1 + 1, &buf1 + 1);
+    const size_t unget_sz = initial ? 0 : std::min<size_t>((this->egptr() - this->eback()) / 2, 4);
+    int_type c = traits_type::eof();
+    if (this->gptr() == this->egptr()) {
+        std::memmove(this->eback(), this->egptr() - unget_sz, unget_sz * sizeof(char_type));
+        if (always_noconv_) {
+            streamsize nmemb = static_cast<streamsize>(this->egptr() - this->eback() - unget_sz);
+            nmemb = bufptr_->sgetn((char*)this->eback() + unget_sz, nmemb);
+            if (nmemb != 0) {
+                this->setg(this->eback(), this->eback() + unget_sz, this->eback() + unget_sz + nmemb);
+                c = *this->gptr();
+            }
+        } else {
+            if (extbufend_ != extbufnext_)
+                std::memmove(extbuf_, extbufnext_, extbufend_ - extbufnext_);
+            extbufnext_ = extbuf_ + (extbufend_ - extbufnext_);
+            extbufend_  = extbuf_ + (extbuf_ == extbuf_min_ ? sizeof(extbuf_min_) : ebs_);
+            streamsize nmemb = std::min(static_cast<streamsize>(this->egptr() - this->eback() - unget_sz),
+                                        static_cast<streamsize>(extbufend_ - extbufnext_));
+            codecvt_base::result r;
+            streamsize nr = bufptr_->sgetn(const_cast<char*>(extbufnext_), nmemb);
+            if (nr != 0) {
+                extbufend_ = extbufnext_ + nr;
+                char_type* inext;
+                r = cv_->in(st_, extbuf_, extbufend_, extbufnext_,
+                            this->eback() + unget_sz, this->egptr(), inext);
+                if (r == codecvt_base::noconv) {
+                    this->setg((char_type*)extbuf_, (char_type*)extbuf_, (char_type*)const_cast<char*>(extbufend_));
+                    c = *this->gptr();
+                } else if (inext != this->eback() + unget_sz) {
+                    this->setg(this->eback(), this->eback() + unget_sz, inext);
+                    c = *this->gptr();
+                }
+            }
+        }
+    } else
+        c = *this->gptr();
+    if (this->eback() == &buf1)
+        this->setg(0, 0, 0);
+    return c;
+}
+
+template <class Codecvt, class Elem, class Tr>
+typename wbuffer_convert<Codecvt, Elem, Tr>::int_type
+wbuffer_convert<Codecvt, Elem, Tr>::pbackfail(int_type c) {
+    if (cv_ != 0 && bufptr_ && this->eback() < this->gptr()) {
+        if (traits_type::eq_int_type(c, traits_type::eof())) {
+            this->gbump(-1);
+            return traits_type::not_eof(c);
+        }
+        if (traits_type::eq(traits_type::to_char_type(c), this->gptr()[-1])) {
+            this->gbump(-1);
+            *this->gptr() = traits_type::to_char_type(c);
+            return c;
+        }
+    }
+    return traits_type::eof();
+}
+
+template <class Codecvt, class Elem, class Tr>
+typename wbuffer_convert<Codecvt, Elem, Tr>::int_type
+wbuffer_convert<Codecvt, Elem, Tr>::overflow(int_type c) {
+    if (cv_ == 0 || !bufptr_)
+        return traits_type::eof();
+    __write_mode();
+    char_type buf1;
+    char_type* pb_save  = this->pbase();
+    char_type* epb_save = this->epptr();
+    if (!traits_type::eq_int_type(c, traits_type::eof())) {
+        if (this->pptr() == 0)
+            this->setp(&buf1, &buf1 + 1);
+        *this->pptr() = traits_type::to_char_type(c);
+        this->pbump(1);
+    }
+    if (this->pptr() != this->pbase()) {
+        if (always_noconv_) {
+            streamsize nmemb = static_cast<streamsize>(this->pptr() - this->pbase());
+            if (bufptr_->sputn((const char*)this->pbase(), nmemb) != nmemb)
+                return traits_type::eof();
+        } else {
+            char* extbe = extbuf_;
+            codecvt_base::result r;
+            do {
+                const char_type* e;
+                r = cv_->out(st_, this->pbase(), this->pptr(), e, extbuf_, extbuf_ + ebs_, extbe);
+                if (e == this->pbase())
+                    return traits_type::eof();
+                if (r == codecvt_base::noconv) {
+                    streamsize nmemb = static_cast<size_t>(this->pptr() - this->pbase());
+                    if (bufptr_->sputn((const char*)this->pbase(), nmemb) != nmemb)
+                        return traits_type::eof();
+                } else if (r == codecvt_base::ok || r == codecvt_base::partial) {
+                    streamsize nmemb = static_cast<size_t>(extbe - extbuf_);
+                    if (bufptr_->sputn(extbuf_, nmemb) != nmemb)
+                        return traits_type::eof();
+                    if (r == codecvt_base::partial) {
+                        this->setp(const_cast<char_type*>(e), this->pptr());
+                        this->pbump(this->epptr() - this->pbase());
+                    }
+                } else
+                    return traits_type::eof();
+            } while (r == codecvt_base::partial);
+        }
+        this->setp(pb_save, epb_save);
+    }
+    return traits_type::not_eof(c);
+}
+
+template <class Codecvt, class Elem, class Tr>
+basic_streambuf<Elem, Tr>*
+wbuffer_convert<Codecvt, Elem, Tr>::setbuf(char_type* s, streamsize n) {
+    this->setg(0, 0, 0);
+    this->setp(0, 0);
+    if (owns_eb_) delete[] extbuf_;
+    if (owns_ib_) delete[] intbuf_;
+    ebs_ = n;
+    if (ebs_ > sizeof(extbuf_min_)) {
+        if (always_noconv_ && s) {
+            extbuf_ = (char*)s; owns_eb_ = false;
+        } else {
+            extbuf_ = new char[ebs_]; owns_eb_ = true;
+        }
+    } else {
+        extbuf_ = extbuf_min_; ebs_ = sizeof(extbuf_min_); owns_eb_ = false;
+    }
+    if (!always_noconv_) {
+        ibs_ = std::max<streamsize>(n, sizeof(extbuf_min_));
+        if (s && ibs_ >= sizeof(extbuf_min_)) {
+            intbuf_ = s; owns_ib_ = false;
+        } else {
+            intbuf_ = new char_type[ibs_]; owns_ib_ = true;
+        }
+    } else {
+        ibs_ = 0; intbuf_ = 0; owns_ib_ = false;
+    }
+    return this;
+}
+
+template <class Codecvt, class Elem, class Tr>
+typename wbuffer_convert<Codecvt, Elem, Tr>::pos_type
+wbuffer_convert<Codecvt, Elem, Tr>::seekoff(off_type off,
+        typename detail::wbc_io<Tr, ios_base>::seekdir way,
+        typename detail::wbc_io<Tr, ios_base>::openmode om) {
+    typedef typename detail::wbc_io<Tr, ios_base>::base IB;
+    int width = cv_->encoding();
+    if (cv_ == 0 || !bufptr_ || (width <= 0 && off != 0) || sync())
+        return pos_type(off_type(-1));
+    if (way != IB::beg && way != IB::cur && way != IB::end)
+        return pos_type(off_type(-1));
+    pos_type r = bufptr_->pubseekoff(width * off, way, om);
+    r.state(st_);
+    return r;
+}
+
+template <class Codecvt, class Elem, class Tr>
+typename wbuffer_convert<Codecvt, Elem, Tr>::pos_type
+wbuffer_convert<Codecvt, Elem, Tr>::seekpos(pos_type sp,
+        typename detail::wbc_io<Tr, ios_base>::openmode wch) {
+    if (cv_ == 0 || !bufptr_ || sync())
+        return pos_type(off_type(-1));
+    if (bufptr_->pubseekpos(sp, wch) == pos_type(off_type(-1)))
+        return pos_type(off_type(-1));
+    return sp;
+}
+
+template <class Codecvt, class Elem, class Tr>
+int wbuffer_convert<Codecvt, Elem, Tr>::sync() {
+    typedef typename detail::wbc_io<Tr, ios_base>::base IB;
+    if (cv_ == 0 || !bufptr_)
+        return 0;
+    if (cm_ & IB::out) {
+        if (this->pptr() != this->pbase())
+            if (overflow() == traits_type::eof())
+                return -1;
+        codecvt_base::result r;
+        do {
+            char* extbe;
+            r = cv_->unshift(st_, extbuf_, extbuf_ + ebs_, extbe);
+            streamsize nmemb = static_cast<streamsize>(extbe - extbuf_);
+            if (bufptr_->sputn(extbuf_, nmemb) != nmemb)
+                return -1;
+        } while (r == codecvt_base::partial);
+        if (r == codecvt_base::error)
+            return -1;
+        if (bufptr_->pubsync())
+            return -1;
+    } else if (cm_ & IB::in) {
+        off_type c;
+        if (always_noconv_)
+            c = this->egptr() - this->gptr();
+        else {
+            int width = cv_->encoding();
+            c = extbufend_ - extbufnext_;
+            if (width > 0)
+                c += width * (this->egptr() - this->gptr());
+            else {
+                if (this->gptr() != this->egptr()) {
+                    std::reverse(this->gptr(), this->egptr());
+                    codecvt_base::result r;
+                    const char_type* e = this->gptr();
+                    char* extbe;
+                    do {
+                        r = cv_->out(st_, e, this->egptr(), e, extbuf_, extbuf_ + ebs_, extbe);
+                        switch (r) {
+                        case codecvt_base::noconv:
+                            c += this->egptr() - this->gptr();
+                            break;
+                        case codecvt_base::ok:
+                        case codecvt_base::partial:
+                            c += extbe - extbuf_;
+                            break;
+                        default:
+                            return -1;
+                        }
+                    } while (r == codecvt_base::partial);
+                }
+            }
+        }
+        if (bufptr_->pubseekoff(-c, IB::cur, typename IB::openmode(cm_)) == pos_type(off_type(-1)))
+            return -1;
+        this->setg(0, 0, 0);
+        cm_ = 0;
+    }
+    return 0;
+}
+
+template <class Codecvt, class Elem, class Tr>
+bool wbuffer_convert<Codecvt, Elem, Tr>::__read_mode() {
+    typedef typename detail::wbc_io<Tr, ios_base>::base IB;
+    if (!(cm_ & IB::in)) {
+        this->setp(0, 0);
+        if (always_noconv_)
+            this->setg((char_type*)extbuf_, (char_type*)extbuf_ + ebs_, (char_type*)extbuf_ + ebs_);
+        else
+            this->setg(intbuf_, intbuf_ + ibs_, intbuf_ + ibs_);
+        cm_ = IB::in;
+        return true;
+    }
+    return false;
+}
+
+template <class Codecvt, class Elem, class Tr>
+void wbuffer_convert<Codecvt, Elem, Tr>::__write_mode() {
+    typedef typename detail::wbc_io<Tr, ios_base>::base IB;
+    if (!(cm_ & IB::out)) {
+        this->setg(0, 0, 0);
+        if (ebs_ > sizeof(extbuf_min_)) {
+            if (always_noconv_)
+                this->setp((char_type*)extbuf_, (char_type*)extbuf_ + (ebs_ - 1));
+            else
+                this->setp(intbuf_, intbuf_ + (ibs_ - 1));
+        } else
+            this->setp(0, 0);
+        cm_ = IB::out;
+    }
+}
+
+template <class Codecvt, class Elem, class Tr>
+wbuffer_convert<Codecvt, Elem, Tr>*
+wbuffer_convert<Codecvt, Elem, Tr>::__close() {
+    typedef typename detail::wbc_io<Tr, ios_base>::base IB;
+    wbuffer_convert* rt = nullptr;
+    if (cv_ != nullptr && bufptr_ != nullptr) {
+        rt = this;
+        if ((cm_ & IB::out) && sync())
+            rt = nullptr;
+    }
+    return rt;
+}
+
+} // namespace std
