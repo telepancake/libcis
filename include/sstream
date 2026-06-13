@@ -18,6 +18,18 @@
 
 namespace std {
 
+namespace detail {
+// libc++ __is_allocator: used to constrain the str(const SAlloc&) overloads so
+// they don't collide with the openmode/string overloads.
+template<class Alloc, class = void, class = void>
+inline constexpr bool sstream_is_allocator_v = false;
+template<class Alloc>
+inline constexpr bool sstream_is_allocator_v<
+    Alloc,
+    void_t<typename Alloc::value_type>,
+    void_t<decltype(declval<Alloc&>().allocate(size_t(0)))>> = true;
+} // namespace detail
+
 //===----------------------------------------------------------------------===//
 // basic_stringbuf
 //===----------------------------------------------------------------------===//
@@ -125,8 +137,36 @@ public:
         init_buf_ptrs();
     }
 
+    explicit basic_stringbuf(const allocator_type& a)
+        : basic_stringbuf(ios_base::in | ios_base::out, a) {}
+
+    template<class SAlloc>
+    basic_stringbuf(const basic_string<char_type, traits_type, SAlloc>& s,
+                    const allocator_type& a)
+        : basic_stringbuf(s, ios_base::in | ios_base::out, a) {}
+
+    template<class SAlloc>
+    basic_stringbuf(const basic_string<char_type, traits_type, SAlloc>& s,
+                    ios_base::openmode which, const allocator_type& a)
+        : str_(s, a), hm_(nullptr), mode_(which) {
+        init_buf_ptrs();
+    }
+
+    template<class SAlloc,
+             class = enable_if_t<!is_same_v<SAlloc, allocator_type>>>
+    explicit basic_stringbuf(const basic_string<char_type, traits_type, SAlloc>& s,
+                             ios_base::openmode which = ios_base::in | ios_base::out)
+        : str_(s), hm_(nullptr), mode_(which) {
+        init_buf_ptrs();
+    }
+
     basic_stringbuf(const basic_stringbuf&) = delete;
     basic_stringbuf(basic_stringbuf&& rhs) : mode_(rhs.mode_) {
+        move_init(std::move(rhs));
+    }
+
+    basic_stringbuf(basic_stringbuf&& rhs, const allocator_type& a)
+        : basic_stringbuf(rhs.mode_, a) {
         move_init(std::move(rhs));
     }
 
@@ -254,6 +294,11 @@ public:
         return result;
     }
 
+    template<class SAlloc, class = enable_if_t<detail::sstream_is_allocator_v<SAlloc>>>
+    [[nodiscard]] basic_string<char_type, traits_type, SAlloc> str(const SAlloc& sa) const {
+        return basic_string<char_type, traits_type, SAlloc>(view(), sa);
+    }
+
     [[nodiscard]] basic_string_view<char_type, traits_type> view() const noexcept {
         if (mode_ & ios_base::out) {
             if (hm_ < this->pptr())
@@ -266,6 +311,12 @@ public:
     }
 
     void str(const string_type& s) {
+        str_ = s;
+        init_buf_ptrs();
+    }
+
+    template<class SAlloc, class = enable_if_t<!is_same_v<SAlloc, allocator_type>>>
+    void str(const basic_string<char_type, traits_type, SAlloc>& s) {
         str_ = s;
         init_buf_ptrs();
     }
@@ -441,6 +492,30 @@ public:
         , sb_(std::move(s), which | ios_base::in)
     {}
 
+    basic_istringstream(ios_base::openmode which, const allocator_type& a)
+        : basic_istream<CharT, Traits>(std::addressof(sb_))
+        , sb_(which | ios_base::in, a)
+    {}
+
+    template<class SAlloc>
+    basic_istringstream(const basic_string<CharT, Traits, SAlloc>& s, const allocator_type& a)
+        : basic_istringstream(s, ios_base::in, a) {}
+
+    template<class SAlloc>
+    basic_istringstream(const basic_string<CharT, Traits, SAlloc>& s,
+                        ios_base::openmode which, const allocator_type& a)
+        : basic_istream<CharT, Traits>(std::addressof(sb_))
+        , sb_(s, which | ios_base::in, a)
+    {}
+
+    template<class SAlloc,
+             class = enable_if_t<!is_same_v<SAlloc, allocator_type>>>
+    explicit basic_istringstream(const basic_string<CharT, Traits, SAlloc>& s,
+                                 ios_base::openmode which = ios_base::in)
+        : basic_istream<CharT, Traits>(std::addressof(sb_))
+        , sb_(s, which | ios_base::in)
+    {}
+
     basic_istringstream(const basic_istringstream&) = delete;
     basic_istringstream(basic_istringstream&& rhs)
         : basic_istream<CharT, Traits>(std::move(rhs))
@@ -460,6 +535,11 @@ public:
     void swap(basic_istringstream& rhs) {
         basic_istream<char_type, traits_type>::swap(rhs);
         sb_.swap(rhs.sb_);
+        // basic_ios::swap in this project swaps the rdbuf pointer too; the
+        // standard excludes rdbuf from the swap. Re-point each stream at its
+        // own sb_ (same fix pattern as the move ops above).
+        basic_istream<char_type, traits_type>::set_rdbuf(std::addressof(sb_));
+        rhs.basic_istream<char_type, traits_type>::set_rdbuf(std::addressof(rhs.sb_));
     }
 
     [[nodiscard]] basic_stringbuf<char_type, traits_type, allocator_type>*
@@ -470,11 +550,17 @@ public:
 
     [[nodiscard]] string_type str() const & { return sb_.str(); }
     [[nodiscard]] string_type str() && { return std::move(sb_).str(); }
+    template<class SAlloc, class = enable_if_t<detail::sstream_is_allocator_v<SAlloc>>>
+    [[nodiscard]] basic_string<char_type, traits_type, SAlloc> str(const SAlloc& sa) const {
+        return sb_.str(sa);
+    }
     [[nodiscard]] basic_string_view<char_type, traits_type> view() const noexcept {
         return sb_.view();
     }
 
     void str(const string_type& s) { sb_.str(s); }
+    template<class SAlloc, class = enable_if_t<!is_same_v<SAlloc, allocator_type>>>
+    void str(const basic_string<char_type, traits_type, SAlloc>& s) { sb_.str(s); }
     void str(string_type&& s)      { sb_.str(std::move(s)); }
 };
 
@@ -528,6 +614,30 @@ public:
         , sb_(std::move(s), which | ios_base::out)
     {}
 
+    basic_ostringstream(ios_base::openmode which, const allocator_type& a)
+        : basic_ostream<CharT, Traits>(std::addressof(sb_))
+        , sb_(which | ios_base::out, a)
+    {}
+
+    template<class SAlloc>
+    basic_ostringstream(const basic_string<CharT, Traits, SAlloc>& s, const allocator_type& a)
+        : basic_ostringstream(s, ios_base::out, a) {}
+
+    template<class SAlloc>
+    basic_ostringstream(const basic_string<CharT, Traits, SAlloc>& s,
+                        ios_base::openmode which, const allocator_type& a)
+        : basic_ostream<CharT, Traits>(std::addressof(sb_))
+        , sb_(s, which | ios_base::out, a)
+    {}
+
+    template<class SAlloc,
+             class = enable_if_t<!is_same_v<SAlloc, allocator_type>>>
+    explicit basic_ostringstream(const basic_string<CharT, Traits, SAlloc>& s,
+                                 ios_base::openmode which = ios_base::out)
+        : basic_ostream<CharT, Traits>(std::addressof(sb_))
+        , sb_(s, which | ios_base::out)
+    {}
+
     basic_ostringstream(const basic_ostringstream&) = delete;
     basic_ostringstream(basic_ostringstream&& rhs)
         : basic_ostream<CharT, Traits>(std::move(rhs))
@@ -549,6 +659,11 @@ public:
     void swap(basic_ostringstream& rhs) {
         basic_ostream<char_type, traits_type>::swap(rhs);
         sb_.swap(rhs.sb_);
+        // basic_ios::swap in this project swaps the rdbuf pointer too; the
+        // standard excludes rdbuf from the swap. Re-point each stream at its
+        // own sb_ (same fix pattern as the move ops above).
+        basic_ostream<char_type, traits_type>::set_rdbuf(std::addressof(sb_));
+        rhs.basic_ostream<char_type, traits_type>::set_rdbuf(std::addressof(rhs.sb_));
     }
 
     [[nodiscard]] basic_stringbuf<char_type, traits_type, allocator_type>*
@@ -559,11 +674,17 @@ public:
 
     [[nodiscard]] string_type str() const & { return sb_.str(); }
     [[nodiscard]] string_type str() && { return std::move(sb_).str(); }
+    template<class SAlloc, class = enable_if_t<detail::sstream_is_allocator_v<SAlloc>>>
+    [[nodiscard]] basic_string<char_type, traits_type, SAlloc> str(const SAlloc& sa) const {
+        return sb_.str(sa);
+    }
     [[nodiscard]] basic_string_view<char_type, traits_type> view() const noexcept {
         return sb_.view();
     }
 
     void str(const string_type& s) { sb_.str(s); }
+    template<class SAlloc, class = enable_if_t<!is_same_v<SAlloc, allocator_type>>>
+    void str(const basic_string<char_type, traits_type, SAlloc>& s) { sb_.str(s); }
     void str(string_type&& s)      { sb_.str(std::move(s)); }
 };
 
@@ -619,6 +740,30 @@ public:
         , sb_(std::move(s), which)
     {}
 
+    basic_stringstream(ios_base::openmode which, const allocator_type& a)
+        : basic_iostream<CharT, Traits>(std::addressof(sb_))
+        , sb_(which, a)
+    {}
+
+    template<class SAlloc>
+    basic_stringstream(const basic_string<CharT, Traits, SAlloc>& s, const allocator_type& a)
+        : basic_stringstream(s, ios_base::out | ios_base::in, a) {}
+
+    template<class SAlloc>
+    basic_stringstream(const basic_string<CharT, Traits, SAlloc>& s,
+                       ios_base::openmode which, const allocator_type& a)
+        : basic_iostream<CharT, Traits>(std::addressof(sb_))
+        , sb_(s, which, a)
+    {}
+
+    template<class SAlloc,
+             class = enable_if_t<!is_same_v<SAlloc, allocator_type>>>
+    explicit basic_stringstream(const basic_string<CharT, Traits, SAlloc>& s,
+                                ios_base::openmode which = ios_base::out | ios_base::in)
+        : basic_iostream<CharT, Traits>(std::addressof(sb_))
+        , sb_(s, which)
+    {}
+
     basic_stringstream(const basic_stringstream&) = delete;
     basic_stringstream(basic_stringstream&& rhs)
         : basic_iostream<CharT, Traits>(std::move(rhs))
@@ -639,6 +784,11 @@ public:
     void swap(basic_stringstream& rhs) {
         basic_iostream<CharT, Traits>::swap(rhs);
         sb_.swap(rhs.sb_);
+        // basic_ios::swap in this project swaps the rdbuf pointer too; the
+        // standard excludes rdbuf from the swap. Re-point each stream at its
+        // own sb_ (same fix pattern as the move ops above).
+        basic_ios<CharT, Traits>::set_rdbuf(std::addressof(sb_));
+        rhs.basic_ios<CharT, Traits>::set_rdbuf(std::addressof(rhs.sb_));
     }
 
     [[nodiscard]] basic_stringbuf<char_type, traits_type, allocator_type>*
@@ -649,11 +799,17 @@ public:
 
     [[nodiscard]] string_type str() const & { return sb_.str(); }
     [[nodiscard]] string_type str() && { return std::move(sb_).str(); }
+    template<class SAlloc, class = enable_if_t<detail::sstream_is_allocator_v<SAlloc>>>
+    [[nodiscard]] basic_string<char_type, traits_type, SAlloc> str(const SAlloc& sa) const {
+        return sb_.str(sa);
+    }
     [[nodiscard]] basic_string_view<char_type, traits_type> view() const noexcept {
         return sb_.view();
     }
 
     void str(const string_type& s) { sb_.str(s); }
+    template<class SAlloc, class = enable_if_t<!is_same_v<SAlloc, allocator_type>>>
+    void str(const basic_string<char_type, traits_type, SAlloc>& s) { sb_.str(s); }
     void str(string_type&& s)      { sb_.str(std::move(s)); }
 };
 

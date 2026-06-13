@@ -722,7 +722,7 @@ public:
   // [mem.poly.allocator.mem]
 
   [[nodiscard]] T* allocate(size_t n) {
-    if (n > max_size())
+    if (n > priv_max_size())
       __builtin_trap(); // would throw bad_array_new_length, but -fno-exceptions
     return static_cast<T*>(res->allocate(n * sizeof(T), alignof(T)));
   }
@@ -848,7 +848,11 @@ private:
     return Tup(std::get<Is>(std::move(t))..., *this);
   }
 
-  size_t max_size() const noexcept {
+  // Named priv_max_size (not max_size) so allocator_traits' has_max_size probe
+  // does not detect a member here: polymorphic_allocator has no public max_size,
+  // and an accessible-but-private member named max_size would otherwise turn the
+  // detector into a hard access error under gcc-10.
+  size_t priv_max_size() const noexcept {
     return numeric_limits<size_t>::max() / sizeof(value_type);
   }
 
