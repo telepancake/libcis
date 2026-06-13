@@ -21,6 +21,9 @@
 #include <tuple>
 #include <chrono>
 #include <exception>
+#include <stdexcept>
+#include <system_error>
+#include <string>
 
 namespace std {
 
@@ -41,74 +44,99 @@ enum class launch : int {
     any      = async | deferred
 };
 
-constexpr launch operator|(launch x, launch y) noexcept {
-    return static_cast<launch>(static_cast<int>(x) | static_cast<int>(y));
-}
 constexpr launch operator&(launch x, launch y) noexcept {
     return static_cast<launch>(static_cast<int>(x) & static_cast<int>(y));
 }
+constexpr launch operator|(launch x, launch y) noexcept {
+    return static_cast<launch>(static_cast<int>(x) | static_cast<int>(y));
+}
+constexpr launch operator^(launch x, launch y) noexcept {
+    return static_cast<launch>(static_cast<int>(x) ^ static_cast<int>(y));
+}
+constexpr launch operator~(launch x) noexcept {
+    return static_cast<launch>(~static_cast<int>(x) & 3);
+}
+inline launch& operator&=(launch& x, launch y) noexcept { x = x & y; return x; }
+inline launch& operator|=(launch& x, launch y) noexcept { x = x | y; return x; }
+inline launch& operator^=(launch& x, launch y) noexcept { x = x ^ y; return x; }
 
 enum class future_status { ready, timeout, deferred };
+
+template <>
+struct is_error_code_enum<future_errc> : public true_type {};
+
+error_code make_error_code(future_errc e) noexcept;
+error_condition make_error_condition(future_errc e) noexcept;
+const error_category& future_category() noexcept;
 
 //===----------------------------------------------------------------------===//
 // future_category / future_error
 //
-// Minimal self-contained implementation to avoid pulling <system_error>
-// (which transitively pulls <string>/<algorithm> — headers with pre-existing
-// issues in this port). error_code/error_condition/error_category are
-// forward-declared so that future_error can inherit from std::exception
-// without needing the full system_error machinery.
-//
-// If the caller has already included <system_error>, future_category() will
-// return a matching category; otherwise it provides a standalone version.
+// Faithful port of libc++'s src/future.cpp future error machinery, integrated
+// with <system_error>'s error_category / error_code.
 //===----------------------------------------------------------------------===//
 
-namespace future_detail {
-
-static const char* errc_msg(future_errc e) noexcept {
-    switch (e) {
-    case future_errc::future_already_retrieved:  return "future already retrieved";
-    case future_errc::promise_already_satisfied: return "promise already satisfied";
-    case future_errc::no_state:                  return "no state";
-    case future_errc::broken_promise:            return "broken promise";
+class future_error_category : public error_category {
+public:
+    const char* name() const noexcept override { return "future"; }
+    string message(int ev) const override {
+        switch (static_cast<future_errc>(ev)) {
+        case future_errc(0): // LWG 2056 back-compat
+        case future_errc::broken_promise:
+            return string("The associated promise has been destructed prior "
+                          "to the associated state becoming ready.");
+        case future_errc::future_already_retrieved:
+            return string("The future has already been retrieved from "
+                          "the promise or packaged_task.");
+        case future_errc::promise_already_satisfied:
+            return string("The state of the promise has already been set.");
+        case future_errc::no_state:
+            return string("Operation not permitted on an object without "
+                          "an associated state.");
+        }
+        return string("unspecified future_errc value\n");
     }
-    return "unknown future error";
+};
+
+inline const error_category& future_category() noexcept {
+    // Never destroy the category: libc++ uses a constinit union whose dtor is
+    // a no-op so the category outlives static destructors that still query it.
+    union holder {
+        future_error_category cat;
+        constexpr holder() : cat() {}
+        ~holder() {}
+    };
+    static holder h;
+    return h.cat;
 }
 
-} // namespace future_detail
+inline error_code make_error_code(future_errc e) noexcept {
+    return error_code(static_cast<int>(e), future_category());
+}
+inline error_condition make_error_condition(future_errc e) noexcept {
+    return error_condition(static_cast<int>(e), future_category());
+}
 
-// future_error: derives from exception to avoid depending on logic_error
-// (which needs <stdexcept> → <string> → <algorithm>).
-class future_error : public exception {
-    future_errc errc_;
+[[noreturn]] void throw_future_error(future_errc) noexcept;
+
+// future_error: derives from logic_error, carries an error_code, as in libc++.
+class future_error : public logic_error {
+    error_code ec_;
+    future_error(error_code ec) : logic_error(ec.message()), ec_(ec) {}
+    friend void throw_future_error(future_errc) noexcept;
 public:
-    explicit future_error(future_errc e) noexcept : errc_(e) {}
-    [[nodiscard]] future_errc errc() const noexcept { return errc_; }
-    [[nodiscard]] const char* what() const noexcept override {
-        return future_detail::errc_msg(errc_);
-    }
+    explicit future_error(future_errc e) : future_error(std::make_error_code(e)) {}
+    [[nodiscard]] const error_code& code() const noexcept { return ec_; }
+    future_error(const future_error&) noexcept = default;
     ~future_error() noexcept override = default;
 };
 
 // Under -fno-exceptions: trap instead of throwing future_error.
 [[noreturn]] inline void throw_future_error(future_errc e) noexcept {
-    // Would throw future_error(e) under -fexceptions.
+    // Would throw future_error(make_error_code(e)) under -fexceptions.
     (void)e;
     __builtin_trap();
 }
-
-// future_category / make_error_code / make_error_condition:
-// These are part of the standard API but require <system_error> to be useful.
-// We provide stub declarations so code that includes <system_error> before or
-// after <future> can still call them; the definitions are inline and depend on
-// error_category / error_code being available from <system_error>.
-// If <system_error> is NOT included, these are simply not callable.
-// (Guarded with a forward-declaration approach — if error_category is defined
-// (i.e. <system_error> was included), these are usable.)
-//
-// NOTE: <future> intentionally does not include <system_error> itself to avoid
-// the transitive <string>/<algorithm> dependency chain that currently has
-// pre-existing issues in this port.
 
 //===----------------------------------------------------------------------===//
 // Internal shared state
@@ -126,6 +154,7 @@ protected:
     mutable mutex            mut_;
     mutable condition_variable cv_;
     unsigned                 state_ = 0;
+    exception_ptr            exception_;
 
     static constexpr unsigned constructed    = 1u;
     static constexpr unsigned future_attached = 2u;
@@ -167,9 +196,13 @@ protected:
 public:
     virtual ~assoc_sub_state() = default;
 
+    bool has_value_locked() const {
+        return (state_ & constructed) != 0 || exception_ != nullptr;
+    }
+
     bool has_value() const {
         lock_guard<mutex> lk(mut_);
-        return (state_ & constructed) != 0;
+        return has_value_locked();
     }
 
     void attach_future() {
@@ -192,18 +225,28 @@ public:
     // set_value (void specialisation)
     void set_value_void() {
         unique_lock<mutex> lk(mut_);
-        if (state_ & constructed)
+        if (has_value_locked())
             throw_future_error(future_errc::promise_already_satisfied);
         state_ |= constructed | flag_ready;
         cv_.notify_all();
     }
 
-    // set_exception: UNUSABLE under -fno-exceptions — traps.
-    // (exception_ptr / current_exception() are unavailable.)
-    void set_exception(/*exception_ptr*/ void*) {
-        // set_exception requires exception_ptr which is unavailable under
-        // -fno-exceptions. Calling this always traps.
-        __builtin_trap();
+    // set_exception: stores the exception_ptr into the error state. A later
+    // get()/copy()/move() observes a non-null exception_ and traps (it would
+    // rethrow under -fexceptions).
+    void set_exception(exception_ptr p) {
+        unique_lock<mutex> lk(mut_);
+        if (has_value_locked())
+            throw_future_error(future_errc::promise_already_satisfied);
+        exception_ = p;
+        state_ |= flag_ready;
+        cv_.notify_all();
+    }
+
+    // Observe the error state: if an exception was stored, trap (would rethrow).
+    void rethrow_if_exception() const {
+        if (exception_ != nullptr)
+            __builtin_trap(); // would std::rethrow_exception(exception_)
     }
 
     void wait() const {
@@ -236,9 +279,11 @@ public:
 // --- assoc_state<R> ---
 template<class R>
 class assoc_state : public assoc_sub_state {
+protected:
     alignas(R) unsigned char value_[sizeof(R)];
 
-protected:
+    void* value_ptr() noexcept { return value_; }
+
     void on_zero() noexcept override {
         if (state_ & constructed)
             reinterpret_cast<R*>(value_)->~R();
@@ -255,7 +300,7 @@ public:
     template<class Arg>
     void set_value(Arg&& arg) {
         unique_lock<mutex> lk(mut_);
-        if (state_ & constructed)
+        if (has_value_locked())
             throw_future_error(future_errc::promise_already_satisfied);
         ::new (static_cast<void*>(value_)) R(forward<Arg>(arg));
         state_ |= constructed | flag_ready;
@@ -265,12 +310,14 @@ public:
     R move_value() {
         unique_lock<mutex> lk(mut_);
         sub_wait(lk);
+        rethrow_if_exception();
         return move(*reinterpret_cast<R*>(value_));
     }
 
     R& copy_value() {
         unique_lock<mutex> lk(mut_);
         sub_wait(lk);
+        rethrow_if_exception();
         return *reinterpret_cast<R*>(value_);
     }
 };
@@ -283,7 +330,7 @@ class assoc_state<R&> : public assoc_sub_state {
 public:
     void set_value(R& arg) {
         unique_lock<mutex> lk(mut_);
-        if (state_ & constructed)
+        if (has_value_locked())
             throw_future_error(future_errc::promise_already_satisfied);
         value_ = addressof(arg);
         state_ |= constructed | flag_ready;
@@ -293,9 +340,64 @@ public:
     R& copy_value() {
         unique_lock<mutex> lk(mut_);
         sub_wait(lk);
+        rethrow_if_exception();
         return *value_;
     }
 };
+
+// --- assoc_state_alloc<R, Alloc>: state allocated through a user allocator ---
+template<class R, class Alloc>
+class assoc_state_alloc : public assoc_state<R> {
+    Alloc alloc_;
+    void on_zero() noexcept override {
+        if (this->state_ & assoc_sub_state::constructed)
+            reinterpret_cast<R*>(this->value_ptr())->~R();
+        using Al = typename allocator_traits<Alloc>::template rebind_alloc<assoc_state_alloc>;
+        Al a(alloc_);
+        this->~assoc_state_alloc();
+        a.deallocate(pointer_traits<typename allocator_traits<Al>::pointer>::pointer_to(*this), 1);
+    }
+public:
+    explicit assoc_state_alloc(const Alloc& a) : alloc_(a) {}
+};
+
+template<class R, class Alloc>
+class assoc_state_alloc<R&, Alloc> : public assoc_state<R&> {
+    Alloc alloc_;
+    void on_zero() noexcept override {
+        using Al = typename allocator_traits<Alloc>::template rebind_alloc<assoc_state_alloc>;
+        Al a(alloc_);
+        this->~assoc_state_alloc();
+        a.deallocate(pointer_traits<typename allocator_traits<Al>::pointer>::pointer_to(*this), 1);
+    }
+public:
+    explicit assoc_state_alloc(const Alloc& a) : alloc_(a) {}
+};
+
+template<class Alloc>
+class assoc_sub_state_alloc : public assoc_sub_state {
+    Alloc alloc_;
+    void on_zero() noexcept override {
+        using Al = typename allocator_traits<Alloc>::template rebind_alloc<assoc_sub_state_alloc>;
+        Al a(alloc_);
+        this->~assoc_sub_state_alloc();
+        a.deallocate(pointer_traits<typename allocator_traits<Al>::pointer>::pointer_to(*this), 1);
+    }
+public:
+    explicit assoc_sub_state_alloc(const Alloc& a) : alloc_(a) {}
+};
+
+// Helper: allocate+construct an assoc_state_alloc through a user allocator.
+template<class State, class Alloc>
+State* make_assoc_state_alloc(const Alloc& a0) {
+    using Al = typename allocator_traits<Alloc>::template rebind_alloc<State>;
+    Al a(a0);
+    using PT = pointer_traits<typename allocator_traits<Al>::pointer>;
+    typename allocator_traits<Al>::pointer hold = a.allocate(1);
+    State* p = std::addressof(*hold);
+    ::new (static_cast<void*>(p)) State(a0);
+    return p;
+}
 
 // --- deferred_assoc_state<R, F> : deferred callable ---
 template<class R, class F>
@@ -429,6 +531,10 @@ class future<R&> {
 
     template<class> friend class promise;
     template<class> friend class shared_future;
+    template<class R2, class F2>
+    friend future<R2> make_deferred_assoc_state(F2&&);
+    template<class R2, class F2>
+    friend future<R2> make_async_assoc_state(F2&&);
 
 public:
     future() noexcept : state_(nullptr) {}
@@ -500,6 +606,7 @@ public:
         auto guard = [s]() noexcept { s->release_shared(); };
         struct Guard { decltype(guard) g; ~Guard(){ g(); } } g{guard};
         s->wait();
+        s->rethrow_if_exception();
     }
 
     void swap(future& rhs) noexcept { std::swap(state_, rhs.state_); }
@@ -532,6 +639,9 @@ class promise {
 
 public:
     promise() : state_(new assoc_state<R>) {}
+    template<class Alloc>
+    promise(allocator_arg_t, const Alloc& a)
+        : state_(make_assoc_state_alloc<assoc_state_alloc<R, Alloc>>(a)) {}
     promise(promise&& rhs) noexcept : state_(rhs.state_) { rhs.state_ = nullptr; }
     promise(const promise&)            = delete;
     promise& operator=(const promise&) = delete;
@@ -563,10 +673,9 @@ public:
         state_->set_value(move(r));
     }
 
-    // set_exception: UNUSABLE — exception_ptr unavailable under -fno-exceptions.
-    void set_exception(void* /*exception_ptr*/) {
-        // Traps: exception_ptr requires -fexceptions.
-        __builtin_trap();
+    void set_exception(exception_ptr p) {
+        if (!state_) throw_future_error(future_errc::no_state);
+        state_->set_exception(p);
     }
 };
 
@@ -583,6 +692,9 @@ class promise<R&> {
 
 public:
     promise() : state_(new assoc_state<R&>) {}
+    template<class Alloc>
+    promise(allocator_arg_t, const Alloc& a)
+        : state_(make_assoc_state_alloc<assoc_state_alloc<R&, Alloc>>(a)) {}
     promise(promise&& rhs) noexcept : state_(rhs.state_) { rhs.state_ = nullptr; }
     promise(const promise&)            = delete;
     promise& operator=(const promise&) = delete;
@@ -602,7 +714,10 @@ public:
         if (!state_) throw_future_error(future_errc::no_state);
         state_->set_value(r);
     }
-    void set_exception(void*) { __builtin_trap(); }
+    void set_exception(exception_ptr p) {
+        if (!state_) throw_future_error(future_errc::no_state);
+        state_->set_exception(p);
+    }
 };
 
 // promise<void>
@@ -615,6 +730,9 @@ class promise<void> {
 
 public:
     promise() : state_(new assoc_sub_state) {}
+    template<class Alloc>
+    promise(allocator_arg_t, const Alloc& a)
+        : state_(make_assoc_state_alloc<assoc_sub_state_alloc<Alloc>>(a)) {}
     promise(promise&& rhs) noexcept : state_(rhs.state_) { rhs.state_ = nullptr; }
     promise(const promise&)            = delete;
     promise& operator=(const promise&) = delete;
@@ -634,8 +752,14 @@ public:
         if (!state_) throw_future_error(future_errc::no_state);
         state_->set_value_void();
     }
-    void set_exception(void*) { __builtin_trap(); }
+    void set_exception(exception_ptr p) {
+        if (!state_) throw_future_error(future_errc::no_state);
+        state_->set_exception(p);
+    }
 };
+
+template<class R, class Alloc>
+struct uses_allocator<promise<R>, Alloc> : true_type {};
 
 //===----------------------------------------------------------------------===//
 // shared_future<R>
@@ -739,7 +863,7 @@ public:
         return *this;
     }
 
-    void get() const { state_->wait(); }
+    void get() const { state_->wait(); state_->rethrow_if_exception(); }
     void swap(shared_future& rhs) noexcept { std::swap(state_, rhs.state_); }
     [[nodiscard]] bool valid() const noexcept { return state_ != nullptr; }
 

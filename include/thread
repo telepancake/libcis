@@ -7,17 +7,37 @@
 // sleep_for: uses nanosleep() from <time.h>.
 #pragma once
 
-#include <type_traits>
-#include <utility>
-#include <tuple>
-#include <functional>   // invoke, is_invocable_v
-#include <compare>
-#include <chrono>
-#include <stop_token>
+// This library always provides hosted threading (pthread underneath).  The
+// compiler only predefines __STDCPP_THREADS__ when invoked with -pthread; our
+// build links -lpthread without it, so define the macro here (as libstdc++'s
+// threading headers do) so [thread.req]/macro and user code observe it.
+#ifndef __STDCPP_THREADS__
+#  define __STDCPP_THREADS__ 1
+#endif
+
+// glibc declarations must keep DEFAULT visibility and be seen FIRST: io headers
+// (pulled in via <sstream> below) wrap their bodies in
+// `#pragma GCC visibility push(hidden)`, and a libc prototype first seen inside
+// such a region becomes a hidden symbol the linker cannot resolve against libc
+// (e.g. pthread_self via <thread>).  Including these C headers up front, at
+// default visibility, pins the prototypes before any hidden region appears.
+#pragma GCC visibility push(default)
 #include <pthread.h>
 #include <sched.h>      // sched_yield
 #include <time.h>       // nanosleep, struct timespec
 #include <unistd.h>     // sysconf, _SC_NPROCESSORS_ONLN
+#pragma GCC visibility pop
+
+#include <type_traits>
+#include <utility>
+#include <tuple>
+#include <iosfwd>       // basic_ostream / basic_ostringstream forward decls
+#include <sstream>      // basic_ostringstream + locale for operator<<(id)
+#include <functional>   // invoke, is_invocable_v
+#include <compare>
+#include <chrono>
+#include <stop_token>
+#include <exception>   // std::terminate
 
 namespace std {
 
@@ -28,6 +48,52 @@ namespace this_thread {
     class thread_id_access; // private helper to construct thread::id
 }
 
+namespace thread_detail {
+
+// Recursive storage for the decayed callable + bound arguments.  Each member
+// is DIRECT-INITIALIZED through a forwarding constructor (mem-initializer):
+// crucially, a function reference is converted to a function pointer here in a
+// non-functional-cast context, which on gcc-10 does NOT complete an incomplete
+// parameter type — whereas `decay_t<F>(f)` / copy-init / tuple-ctor SFINAE all
+// would.  This is what makes [thread.thread.constr] robust against ADL with
+// incomplete types.  No std::tuple, no is_constructible/is_invocable traits.
+template<class... Vs>
+struct bound_args;
+template<>
+struct bound_args<> {
+    bound_args() = default;
+};
+template<class Head, class... Tail>
+struct bound_args<Head, Tail...> {
+    Head                head;
+    bound_args<Tail...> tail;
+
+    template<class UHead, class... UTail>
+    explicit bound_args(UHead&& uhead, UTail&&... utail)
+        : head(std::forward<UHead>(uhead)),
+          tail(std::forward<UTail>(utail)...) {}
+};
+
+template<class Fn, class Node, class... Rest, class... Collected>
+void invoke_node(Fn&& fn, bound_args<Node, Rest...>& node, Collected&&... acc) {
+    invoke_node(std::forward<Fn>(fn), node.tail,
+                std::forward<Collected>(acc)..., std::move(node.head));
+}
+template<class Fn, class... Collected>
+void invoke_node(Fn&& fn, bound_args<>&, Collected&&... acc) {
+    detail::invoke_impl(std::forward<Fn>(fn), std::forward<Collected>(acc)...);
+}
+
+template<class Storage>
+void* thread_proxy(void* vp) {
+    Storage* p = static_cast<Storage*>(vp);
+    struct Guard { Storage* ptr; ~Guard() { delete ptr; } } guard{p};
+    invoke_node(std::move(p->head), p->tail);
+    return nullptr;
+}
+
+} // namespace thread_detail
+
 class thread {
 public:
     // ---- nested id type ----
@@ -36,22 +102,18 @@ public:
     public:
         id() noexcept = default;
 
-        friend bool operator==(id x, id y) noexcept {
-            if (x.id_ == 0) return y.id_ == 0;
-            if (y.id_ == 0) return false;
-            return pthread_equal(x.id_, y.id_) != 0;
-        }
-
-        friend strong_ordering operator<=>(id x, id y) noexcept {
-            if (x == y) return strong_ordering::equal;
-            return (x.id_ < y.id_) ? strong_ordering::less
-                                    : strong_ordering::greater;
-        }
-
     private:
         explicit id(pthread_t v) noexcept : id_(v) {}
         friend class thread;
         friend class this_thread::thread_id_access;
+        friend struct hash<id>;
+        // Namespace-scope comparison operators (NOT hidden friends, so
+        // qualified std::operator==(a,b) finds them — see [thread.thread.id]).
+        friend bool operator==(thread::id x, thread::id y) noexcept;
+        friend strong_ordering operator<=>(thread::id x, thread::id y) noexcept;
+        template<class CharT, class Traits>
+        friend basic_ostream<CharT, Traits>&
+        operator<<(basic_ostream<CharT, Traits>& os, id v);
     };
 
     using native_handle_type = pthread_t;
@@ -62,14 +124,16 @@ public:
     template<class F, class... Args>
         requires (!is_same_v<remove_cvref_t<F>, thread>)
     explicit thread(F&& f, Args&&... args) {
-        static_assert(is_constructible_v<decay_t<F>, F>);
-        static_assert((is_constructible_v<decay_t<Args>, Args> && ...));
-        static_assert(is_invocable_v<decay_t<F>, decay_t<Args>...>);
+        // NOTE: we deliberately do NOT static_assert is_constructible /
+        // is_invocable here, nor store the bound arguments in a std::tuple:
+        // both would instantiate traits / tuple-ctor SFINAE that complete
+        // argument types, breaking [thread.thread.constr]'s robustness against
+        // ADL with incomplete types.  bound_args aggregate-stores the decayed
+        // arguments without any such trait instantiation.
+        using Storage = thread_detail::bound_args<decay_t<F>, decay_t<Args>...>;
+        auto* p = new Storage(std::forward<F>(f), std::forward<Args>(args)...);
 
-        using Tuple = tuple<decay_t<F>, decay_t<Args>...>;
-        auto* p = new Tuple(std::forward<F>(f), std::forward<Args>(args)...);
-
-        int ec = pthread_create(&t_, nullptr, &thread_proxy<Tuple>, p);
+        int ec = pthread_create(&t_, nullptr, &thread_detail::thread_proxy<Storage>, p);
         if (ec == 0) {
             // p ownership transferred to the new thread
         } else {
@@ -85,7 +149,7 @@ public:
 
     thread& operator=(thread&& other) noexcept {
         if (joinable())
-            __builtin_trap(); // libc++ calls terminate() here
+            std::terminate(); // [thread.thread.assign] (respects set_terminate)
         t_ = other.t_;
         other.t_ = 0;
         return *this;
@@ -93,7 +157,7 @@ public:
 
     ~thread() {
         if (joinable())
-            __builtin_trap(); // libc++ calls terminate()
+            std::terminate(); // [thread.thread.destr] (respects set_terminate)
     }
 
     // ---- observers ----
@@ -123,20 +187,40 @@ public:
 
 private:
     pthread_t t_;
+};
 
-    template<class Tuple, size_t... I>
-    static void invoke_tuple(Tuple& tup, index_sequence<I...>) {
-        std::invoke(std::move(get<I>(tup))...);
-    }
+// ---- namespace-scope comparison operators for thread::id ----
+inline bool operator==(thread::id x, thread::id y) noexcept {
+    // pthread_t is an integer handle on this target; compare directly.
+    // (pthread_equal is not reliably linkable as a non-inline symbol here.)
+    return x.id_ == y.id_;
+}
+inline strong_ordering operator<=>(thread::id x, thread::id y) noexcept {
+    if (x == y) return strong_ordering::equal;
+    return (x.id_ < y.id_) ? strong_ordering::less : strong_ordering::greater;
+}
 
-    template<class Tuple>
-    static void* thread_proxy(void* vp) {
-        Tuple* p = static_cast<Tuple*>(vp);
-        struct Guard { Tuple* ptr; ~Guard() { delete ptr; } } guard{p};
-        invoke_tuple(*p, make_index_sequence<tuple_size_v<Tuple>>{});
-        return nullptr;
+// ---- hash<thread::id> ----
+template<>
+struct hash<thread::id> {
+    size_t operator()(thread::id v) const noexcept {
+        return hash<unsigned long long>()(
+            static_cast<unsigned long long>(v.id_));
     }
 };
+
+// ---- operator<< for thread::id ----
+template<class CharT, class Traits>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, thread::id v) {
+    // [thread.thread.id]/2: the representation must be unaffected by stream
+    // flags (oct/hex/showbase/width/...).  Render in a classic-imbued temp
+    // stream and insert the resulting string (mirrors libc++).
+    basic_ostringstream<CharT, Traits> sstr;
+    sstr.imbue(locale::classic());
+    sstr << static_cast<unsigned long long>(v.id_);
+    return os << sstr.str();
+}
 
 // ---- out-of-line hardware_concurrency ----
 inline unsigned thread::hardware_concurrency() noexcept {

@@ -563,7 +563,7 @@ struct once_flag {
     static constexpr state_type complete = ~state_type(0);
 
 private:
-    volatile state_type state_;
+    state_type state_;
 
     template <class Callable, class... Args>
     friend void call_once(once_flag&, Callable&&, Args&&...);
@@ -589,7 +589,7 @@ inline pthread_cond_t& once_cond() {
     return c;
 }
 
-inline void call_once_impl(volatile once_flag::state_type& state, void* fp, void (*proxy)(void*)) {
+inline void call_once_impl(once_flag::state_type& state, void* fp, void (*proxy)(void*)) {
     pthread_mutex_lock(&once_mutex());
     while (true) {
         // reload under lock

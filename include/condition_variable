@@ -6,6 +6,7 @@
 
 #include <mutex>
 #include <chrono>
+#include <stop_token>   // stop_token, stop_callback (condition_variable_any)
 #include <memory>       // shared_ptr, make_shared
 #include <utility>      // move, forward
 #include <limits>
@@ -172,8 +173,11 @@ struct notify_at_exit_entry {
 
 inline void notify_at_exit_cleanup(void* arg) {
     auto* e = static_cast<notify_at_exit_entry*>(arg);
-    e->lk.unlock();
+    // LWG3343: notify THEN unlock, so a waiter that re-acquires the mutex is
+    // guaranteed the notify already happened (no use of cv after it observes
+    // the mutex released).
     e->cv->notify_all();
+    e->lk.unlock();
     delete e;
 }
 
@@ -280,6 +284,55 @@ public:
                   const chrono::duration<Rep, Period>& rel,
                   Predicate pred) {
         return wait_until(lock, chrono::steady_clock::now() + rel, std::move(pred));
+    }
+
+    // ---- interruptible (stop_token) overloads (C++20) ----
+    template <class Lock, class Predicate>
+    bool wait(Lock& user_lock, stop_token stoken, Predicate pred) {
+        if (stoken.stop_requested())
+            return pred();
+        shared_ptr<mutex> m = mut_;
+        stop_callback cb(stoken, [this] { notify_all(); });
+        while (true) {
+            if (pred())
+                return true;
+            unique_lock<mutex> internal_lock(*m);
+            if (stoken.stop_requested())
+                break;
+            unlock_guard<Lock> unlock(user_lock);
+            unique_lock<mutex> internal_lock2(std::move(internal_lock));
+            cv_.wait(internal_lock2);
+        }
+        return pred();
+    }
+
+    template <class Lock, class Clock, class Duration, class Predicate>
+    bool wait_until(Lock& user_lock, stop_token stoken,
+                    const chrono::time_point<Clock, Duration>& abs_time,
+                    Predicate pred) {
+        if (stoken.stop_requested())
+            return pred();
+        shared_ptr<mutex> m = mut_;
+        stop_callback cb(stoken, [this] { notify_all(); });
+        while (true) {
+            if (pred())
+                return true;
+            unique_lock<mutex> internal_lock(*m);
+            if (stoken.stop_requested())
+                break;
+            unlock_guard<Lock> unlock(user_lock);
+            unique_lock<mutex> internal_lock2(std::move(internal_lock));
+            if (cv_.wait_until(internal_lock2, abs_time) == cv_status::timeout)
+                break;
+        }
+        return pred();
+    }
+
+    template <class Lock, class Rep, class Period, class Predicate>
+    bool wait_for(Lock& lock, stop_token stoken,
+                  const chrono::duration<Rep, Period>& rel, Predicate pred) {
+        return wait_until(lock, std::move(stoken),
+                          chrono::steady_clock::now() + rel, std::move(pred));
     }
 };
 

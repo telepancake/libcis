@@ -525,7 +525,12 @@ private:
     [[no_unique_address]] Callback callback_;
     detail::intrusive_shared_ptr   state_;
 
+    // Constrained to intrusive_shared_ptr so this private ctor does NOT
+    // participate in CTAD / overload resolution for the public
+    // (stop_token, Callback) form on gcc-10 (a bare forwarding-ref first
+    // parameter would otherwise out-compete the public const-ref ctor).
     template<class StatePtr, class Cb>
+        requires is_same_v<remove_cvref_t<StatePtr>, detail::intrusive_shared_ptr>
     explicit stop_callback(StatePtr&& sptr, Cb&& cb)
         noexcept(is_nothrow_constructible_v<Callback, Cb>)
         : stop_callback_base([](stop_callback_base* base) noexcept {
