@@ -438,8 +438,10 @@ public:
     }
 
     basic_ostream& seekp(pos_type pos) {
+        // [ostream.seeks]: gated on !fail(), not the sentry — a seek must work
+        // with eofbit set (LLVM PR21361). The sentry is built only for tie flush.
         sentry s(*this);
-        if (s) {
+        if (!this->fail()) {
             if (this->rdbuf()->pubseekpos(pos, ios_base::out) == pos_type(off_type(-1)))
                 this->setstate(ios_base::failbit);
         }
@@ -448,7 +450,7 @@ public:
 
     basic_ostream& seekp(off_type off, ios_base::seekdir dir) {
         sentry s(*this);
-        if (s) {
+        if (!this->fail()) {
             if (this->rdbuf()->pubseekoff(off, dir, ios_base::out) == pos_type(off_type(-1)))
                 this->setstate(ios_base::failbit);
         }

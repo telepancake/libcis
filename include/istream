@@ -263,22 +263,31 @@ public:
     }
 
     // char_type* (reads word, null-terminates)
-    basic_istream& operator>>(char_type* s) {
+    // C++20 removed the unbounded operator>>(charT*) extractor (P0487R1); this is
+    // the shared implementation the bounded array overloads delegate to.
+    basic_istream& extract_chars(char_type* s) {
+        ios_base::iostate state = ios_base::goodbit;
         sentry sn(*this);
-        if (!sn) return *this;
-        const auto& ct = use_facet<ctype<char_type>>(this->getloc());
-        auto sb = this->rdbuf();
-        size_t n = 0;
-        while (true) {
-            int_type c = sb->sgetc();
-            if (c == traits_type::eof()) { this->setstate(ios_base::eofbit); break; }
-            char_type ch = traits_type::to_char_type(c);
-            if (ct.is(ctype_base::space, ch)) break;
-            s[n++] = ch;
-            sb->sbumpc();
+        if (sn) {
+            const auto& ct = use_facet<ctype<char_type>>(this->getloc());
+            auto sb = this->rdbuf();
+            // [istream.extractors]: read at most width()-1 chars when width>0.
+            streamsize lim = this->width();
+            if (lim <= 0) lim = numeric_limits<streamsize>::max();
+            streamsize n = 0;
+            while (n < lim - 1) {
+                int_type c = sb->sgetc();
+                if (c == traits_type::eof()) { state |= ios_base::eofbit; break; }
+                char_type ch = traits_type::to_char_type(c);
+                if (ct.is(ctype_base::space, ch)) break;
+                s[n++] = ch;
+                sb->sbumpc();
+            }
+            s[n] = char_type();
+            if (n == 0) state |= ios_base::failbit;
         }
-        s[n] = char_type();
-        if (n == 0) this->setstate(ios_base::failbit);
+        this->width(0);
+        this->setstate(state);
         return *this;
     }
 
@@ -314,15 +323,18 @@ public:
     basic_istream& get(char_type* s, streamsize n, char_type delim) {
         gcount_ = 0;
         sentry sn(*this, true);
-        if (!sn) return *this;
-        auto sb = this->rdbuf();
-        while (gcount_ < n - 1) {
-            int_type c = sb->sgetc();
-            if (c == traits_type::eof()) { this->setstate(ios_base::eofbit); break; }
-            if (traits_type::eq(traits_type::to_char_type(c), delim)) break;
-            s[gcount_++] = traits_type::to_char_type(c);
-            sb->sbumpc();
+        if (sn && n > 0) {
+            auto sb = this->rdbuf();
+            while (gcount_ < n - 1) {
+                int_type c = sb->sgetc();
+                if (c == traits_type::eof()) { this->setstate(ios_base::eofbit); break; }
+                if (traits_type::eq(traits_type::to_char_type(c), delim)) break;
+                s[gcount_++] = traits_type::to_char_type(c);
+                sb->sbumpc();
+            }
         }
+        // [istream.unformatted]: null-terminate (when n>0) and flag an empty read
+        // even when the sentry failed, so an at-EOF get still 0-terminates s.
         if (n > 0) s[gcount_] = char_type();
         if (gcount_ == 0) this->setstate(ios_base::failbit);
         return *this;
@@ -354,28 +366,26 @@ public:
     }
 
     basic_istream& getline(char_type* s, streamsize n, char_type delim) {
+        // Faithful port of libc++ getline: accumulate the state and apply it once.
+        ios_base::iostate state = ios_base::goodbit;
         gcount_ = 0;
         sentry sn(*this, true);
-        if (!sn) { if (n > 0) s[0] = char_type(); return *this; }
-        auto sb = this->rdbuf();
-        bool found_delim = false;
-        while (gcount_ < n - 1) {
-            int_type c = sb->sbumpc();
-            if (c == traits_type::eof()) { this->setstate(ios_base::eofbit); break; }
-            ++gcount_;
-            if (traits_type::eq(traits_type::to_char_type(c), delim)) { found_delim = true; break; }
-            s[gcount_ - 1] = traits_type::to_char_type(c);
+        if (sn) {
+            auto sb = this->rdbuf();
+            while (true) {
+                int_type i = sb->sgetc();
+                if (traits_type::eq_int_type(i, traits_type::eof())) { state |= ios_base::eofbit; break; }
+                char_type ch = traits_type::to_char_type(i);
+                if (traits_type::eq(ch, delim)) { sb->sbumpc(); ++gcount_; break; }
+                if (gcount_ >= n - 1) { state |= ios_base::failbit; break; }
+                *s++ = ch;
+                sb->sbumpc();
+                ++gcount_;
+            }
         }
-        // If we stopped because buffer was full and no delim found, failbit
-        if (!found_delim && gcount_ == n - 1) {
-            // Peek to see if there's more data (and no eof)
-            int_type c = sb->sgetc();
-            if (c != traits_type::eof()) this->setstate(ios_base::failbit);
-            else this->setstate(ios_base::eofbit);
-        }
-        if (found_delim) s[gcount_ - 1] = char_type(); // overwrite delim position
-        else if (n > 0) s[gcount_] = char_type();
-        if (gcount_ == 0 && !found_delim) this->setstate(ios_base::failbit);
+        if (n > 0) *s = char_type();
+        if (gcount_ == 0) state |= ios_base::failbit;
+        this->setstate(state);
         return *this;
     }
 
@@ -395,6 +405,7 @@ public:
     }
 
     int_type peek() {
+        gcount_ = 0;   // unformatted input function: resets gcount
         sentry s(*this, true);
         if (!s) return traits_type::eof();
         int_type c = this->rdbuf()->sgetc();
@@ -443,10 +454,16 @@ public:
     }
 
     int sync() {
+        if (this->rdbuf() == nullptr) return -1;
+        int r = 0;
         sentry s(*this, true);
-        if (!s) return -1;
-        if (!this->rdbuf()) return -1;
-        return this->rdbuf()->pubsync();
+        if (s) {
+            if (this->rdbuf()->pubsync() == -1) {
+                this->setstate(ios_base::badbit);
+                r = -1;
+            }
+        }
+        return r;
     }
 
     //===------------------------------------------------------------------===//
@@ -459,9 +476,11 @@ public:
     }
 
     basic_istream& seekg(pos_type pos) {
+        // [istream.unformatted]: clear eofbit before constructing the sentry, so
+        // a seek on an at-EOF stream re-enables it instead of being skipped.
+        this->clear(this->rdstate() & ~ios_base::eofbit);
         sentry s(*this, true);
         if (s) {
-            this->clear(this->rdstate() & ~ios_base::eofbit);
             if (this->rdbuf()->pubseekpos(pos, ios_base::in) == pos_type(off_type(-1)))
                 this->setstate(ios_base::failbit);
         }
@@ -469,9 +488,9 @@ public:
     }
 
     basic_istream& seekg(off_type off, ios_base::seekdir dir) {
+        this->clear(this->rdstate() & ~ios_base::eofbit);
         sentry s(*this, true);
         if (s) {
-            this->clear(this->rdstate() & ~ios_base::eofbit);
             if (this->rdbuf()->pubseekoff(off, dir, ios_base::in) == pos_type(off_type(-1)))
                 this->setstate(ios_base::failbit);
         }
@@ -543,14 +562,19 @@ private:
 
         const char* start = buf;
         const char* end   = buf + n;
+        bool neg = (n > 0 && buf[0] == '-');
         // Skip 0x/0X prefix for hex
-        if (base == 16 && n >= 2 && start[0] == '0' && (start[1] == 'x' || start[1] == 'X'))
+        if (base == 16 && n >= 2 && (start[0] == '0') && (start[1] == 'x' || start[1] == 'X'))
             start += 2;
-        // Skip leading '0' for oct detection in basefield==0 (default)
         auto r = from_chars(start, end, v, base);
-        if (r.ec != errc{})
+        if (r.ec == errc::result_out_of_range) {
+            // [facet.num.get.virtuals]: on overflow store the limit for the sign
+            // and set failbit (num_get leaves the value clamped, not unchanged).
+            v = neg ? numeric_limits<T>::min() : numeric_limits<T>::max();
             this->setstate(ios_base::failbit);
-        if (r.ptr == end && this->eof()) {} // fine
+        } else if (r.ec != errc{}) {
+            this->setstate(ios_base::failbit);
+        }
         return *this;
     }
 
@@ -590,16 +614,69 @@ basic_istream<char, Traits>& operator>>(basic_istream<char, Traits>& is, char& c
     return is >> c;  // use member operator>>(char_type&)
 }
 
+// signed char / unsigned char alias char ([istream.extractors]).
+template<class Traits>
+basic_istream<char, Traits>& operator>>(basic_istream<char, Traits>& is, signed char& c) {
+    return is >> reinterpret_cast<char&>(c);
+}
+template<class Traits>
+basic_istream<char, Traits>& operator>>(basic_istream<char, Traits>& is, unsigned char& c) {
+    return is >> reinterpret_cast<char&>(c);
+}
+// (P0487R1 removed the unbounded signed/unsigned char* extractors in C++20; only
+// the array overloads below remain.)
+
+// C++20 array extractors: cap the field to the array extent ([istream.extractors]).
+template<class CharT, class Traits, size_t N>
+basic_istream<CharT, Traits>& operator>>(basic_istream<CharT, Traits>& is, CharT (&buf)[N]) {
+    streamsize n = (is.width() > 0 && static_cast<size_t>(is.width()) < N)
+                       ? is.width() : static_cast<streamsize>(N);
+    is.width(n);
+    return is.extract_chars(buf);
+}
+template<class Traits, size_t N>
+basic_istream<char, Traits>& operator>>(basic_istream<char, Traits>& is, signed char (&buf)[N]) {
+    return is >> reinterpret_cast<char(&)[N]>(buf);
+}
+template<class Traits, size_t N>
+basic_istream<char, Traits>& operator>>(basic_istream<char, Traits>& is, unsigned char (&buf)[N]) {
+    return is >> reinterpret_cast<char(&)[N]>(buf);
+}
+
+// Rvalue stream extractor ([istream.rvalue]). Templated on the stream type and
+// constrained by is_base_of<ios_base, Stream>; for an lvalue call Stream deduces
+// to an lvalue reference (not derived from ios_base), so this only binds rvalue
+// streams and forwards to the lvalue overload, returning the stream as an xvalue.
+namespace detail {
+template<class Stream, class T, class = void>
+struct is_istreamable : false_type {};
+template<class Stream, class T>
+struct is_istreamable<Stream, T, decltype(std::declval<Stream>() >> std::declval<T>(), void())>
+    : true_type {};
+}
+template<class Stream, class T,
+         enable_if_t<conjunction_v<is_base_of<ios_base, Stream>,
+                                   detail::is_istreamable<Stream&, T&&>>, int> = 0>
+Stream&& operator>>(Stream&& is, T&& x) {
+    is >> std::forward<T>(x);
+    return std::move(is);
+}
+
 // ws manipulator
 template<class CharT, class Traits>
 basic_istream<CharT, Traits>& ws(basic_istream<CharT, Traits>& is) {
-    const auto& ct = use_facet<ctype<CharT>>(is.getloc());
-    auto sb = is.rdbuf();
-    while (true) {
-        typename basic_istream<CharT, Traits>::int_type c = sb->sgetc();
-        if (c == Traits::eof()) { is.setstate(ios_base::eofbit); break; }
-        if (!ct.is(ctype_base::space, Traits::to_char_type(c))) break;
-        sb->sbumpc();
+    // Behaves as an unformatted input function: a sentry on a not-good stream
+    // (e.g. already at EOF) sets failbit.
+    typename basic_istream<CharT, Traits>::sentry s(is, true);
+    if (s) {
+        const auto& ct = use_facet<ctype<CharT>>(is.getloc());
+        auto sb = is.rdbuf();
+        while (true) {
+            typename basic_istream<CharT, Traits>::int_type c = sb->sgetc();
+            if (c == Traits::eof()) { is.setstate(ios_base::eofbit); break; }
+            if (!ct.is(ctype_base::space, Traits::to_char_type(c))) break;
+            sb->sbumpc();
+        }
     }
     return is;
 }
