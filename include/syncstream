@@ -244,7 +244,17 @@ public:
         this->set_rdbuf(std::addressof(sb_));
     }
 
-    basic_osyncstream& operator=(basic_osyncstream&& other) = default;
+    // libc++ defaults this, relying on basic_ios::move leaving rdbuf to the
+    // derived class.  libcis's basic_ios move transfers the rdbuf pointer, so
+    // a defaulted move-assign would leave this stream pointing at other.sb_.
+    // Move the syncbuf explicitly (basic_syncbuf::operator= emits the old
+    // associated output first, per [syncstream.osyncstream.assign]) and
+    // re-point rdbuf at our own sb_.
+    basic_osyncstream& operator=(basic_osyncstream&& other) {
+        sb_ = std::move(other.sb_);
+        this->set_rdbuf(std::addressof(sb_));
+        return *this;
+    }
 
     void emit() {
         typename basic_ostream<char_type, traits_type>::sentry s(*this);
