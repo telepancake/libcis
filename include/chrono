@@ -2,12 +2,22 @@
 // Mechanically ported from libc++ include/chrono + include/__chrono/*.h
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //
+// IMPLEMENTED here: durations, time_points, the calendar types, hh_mm_ss,
+//   system_clock, steady_clock, file_clock, and utc_clock (with an embedded
+//   immutable historical leap-second table; see utc_leap_table below).
+//
 // DEFERRED (requires additional facilities not yet ported):
-//   - operator<<, from_stream, parse (need <ostream>/<istream>)
-//   - format support
-//   - time zones: tzdb, zoned_time, current_zone (need tz database)
-//   - utc_clock, tai_clock, gps_clock, file_clock (leap-second machinery)
-//   - clock_cast
+//   - operator<<, from_stream, parse, and the chrono formatters: these route
+//     through std::format in libc++ (<format> is owned by another agent and
+//     its runtime engine is not yet functional — even std::format("{}",7)
+//     currently traps). All time .../ostream.pass.cpp and time.syn/formatter.*
+//     tests are blocked on that, NOT on chrono.
+//   - time zones: tzdb, zoned_time, time_zone, locate_zone/get_tzdb,
+//     leap_second, time_zone_link, the local-time exceptions — libc++ ships
+//     these as a separately-compiled experimental feature that parses the
+//     system IANA database; not header-only and not portable here. The whole
+//     time/time.zone subtree depends on it.
+//   - tai_clock, gps_clock (no tests transferred), clock_cast
 #pragma once
 
 #include <ratio>
@@ -583,6 +593,39 @@ using local_days    = local_time<days>;
 
 struct last_spec { explicit last_spec() = default; };
 inline constexpr last_spec last{};
+
+//===----------------------------------------------------------------------===//
+// file_clock — [time.clock.file]
+// libc++ defines this as filesystem::_FilesystemClock with the same epoch as
+// system_clock; its now() is out-of-line. Here it is header-only and forwards
+// to system_clock for now(). rep is signed (nanoseconds).
+//===----------------------------------------------------------------------===//
+class file_clock {
+public:
+    using rep        = long long;
+    using period     = nano;
+    using duration   = chrono::duration<rep, period>;
+    using time_point = chrono::time_point<file_clock>;
+    static constexpr bool is_steady = false;
+
+    [[nodiscard]] static time_point now() noexcept {
+        // Same epoch as system_clock; convert system_clock::now() to nanoseconds.
+        return time_point(duration_cast<duration>(system_clock::now().time_since_epoch()));
+    }
+
+    template <class Duration>
+    static sys_time<Duration> to_sys(const chrono::time_point<file_clock, Duration>& t) {
+        return sys_time<Duration>(t.time_since_epoch());
+    }
+
+    template <class Duration>
+    static chrono::time_point<file_clock, Duration> from_sys(const sys_time<Duration>& t) {
+        return chrono::time_point<file_clock, Duration>(t.time_since_epoch());
+    }
+};
+
+template <class Duration>
+using file_time = time_point<file_clock, Duration>;
 
 //===----------------------------------------------------------------------===//
 // day
@@ -1592,6 +1635,123 @@ private:
         return h == hours(12) ? h : h + hours(12);
     else
         return h == hours(12) ? hours(0) : h;
+}
+
+//===----------------------------------------------------------------------===//
+// utc_clock — [time.clock.utc]
+//
+// libc++ derives the leap-second list from the tzdb (parsed from the system
+// IANA database). The historical leap seconds (1972..) are immutable data, so
+// we embed that fixed table directly: this keeps utc_clock header-only and
+// independent of any runtime time-zone database. Each entry is the sys_seconds
+// instant at which one positive leap second was inserted.
+//===----------------------------------------------------------------------===//
+class utc_clock;
+
+template <class Duration>
+using utc_time    = time_point<utc_clock, Duration>;
+using utc_seconds = utc_time<seconds>;
+
+// Embedded historical leap-second insertion dates (all +1s). Mirrors the IANA
+// leap-seconds.list entries libc++ would load from the tzdb.
+inline const sys_seconds* utc_leap_table(size_t& count) {
+    static const sys_seconds table[] = {
+        sys_seconds{sys_days{July      / 1 / 1972}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 1973}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 1974}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 1975}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 1976}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 1977}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 1978}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 1979}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 1980}.time_since_epoch()},
+        sys_seconds{sys_days{July      / 1 / 1981}.time_since_epoch()},
+        sys_seconds{sys_days{July      / 1 / 1982}.time_since_epoch()},
+        sys_seconds{sys_days{July      / 1 / 1983}.time_since_epoch()},
+        sys_seconds{sys_days{July      / 1 / 1985}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 1988}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 1990}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 1991}.time_since_epoch()},
+        sys_seconds{sys_days{July      / 1 / 1992}.time_since_epoch()},
+        sys_seconds{sys_days{July      / 1 / 1993}.time_since_epoch()},
+        sys_seconds{sys_days{July      / 1 / 1994}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 1996}.time_since_epoch()},
+        sys_seconds{sys_days{July      / 1 / 1997}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 1999}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 2006}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 2009}.time_since_epoch()},
+        sys_seconds{sys_days{July      / 1 / 2012}.time_since_epoch()},
+        sys_seconds{sys_days{July      / 1 / 2015}.time_since_epoch()},
+        sys_seconds{sys_days{January   / 1 / 2017}.time_since_epoch()},
+    };
+    count = sizeof(table) / sizeof(table[0]);
+    return table;
+}
+
+struct leap_second_info {
+    bool is_leap_second;
+    seconds elapsed;
+};
+
+template <class Duration>
+[[nodiscard]] leap_second_info get_leap_second_info(const utc_time<Duration>& time) {
+    size_t n = 0;
+    const sys_seconds* leaps = utc_leap_table(n);
+    sys_seconds sys{chrono::floor<seconds>(time).time_since_epoch()};
+    seconds elapsed{0};
+    for (size_t i = 0; i < n; ++i) {
+        // Each historical leap second has value +1s.
+        if (sys == leaps[i] + elapsed)
+            return {true, elapsed + seconds{1}};
+        if (sys < leaps[i] + elapsed)
+            return {false, elapsed};
+        elapsed += seconds{1};
+    }
+    return {false, elapsed};
+}
+
+class utc_clock {
+public:
+    using rep        = system_clock::rep;
+    using period     = system_clock::period;
+    using duration   = chrono::duration<rep, period>;
+    using time_point = chrono::time_point<utc_clock>;
+    static constexpr bool is_steady = false;
+
+    [[nodiscard]] static time_point now() { return from_sys(system_clock::now()); }
+
+    template <class Duration>
+    [[nodiscard]] static sys_time<common_type_t<Duration, seconds>>
+    to_sys(const utc_time<Duration>& time);
+
+    template <class Duration>
+    [[nodiscard]] static utc_time<common_type_t<Duration, seconds>>
+    from_sys(const sys_time<Duration>& time) {
+        using R = utc_time<common_type_t<Duration, seconds>>;
+        size_t n = 0;
+        const sys_seconds* leaps = utc_leap_table(n);
+        R result{time.time_since_epoch()};
+        for (size_t i = 0; i < n; ++i) {
+            if (sys_time<common_type_t<Duration, seconds>>{leaps[i].time_since_epoch()} > time)
+                return result;
+            result += seconds{1};
+        }
+        return result;
+    }
+};
+
+template <class Duration>
+[[nodiscard]] sys_time<common_type_t<Duration, seconds>>
+utc_clock::to_sys(const utc_time<Duration>& time) {
+    using D = common_type_t<Duration, seconds>;
+    leap_second_info info = chrono::get_leap_second_info(time);
+    // [time.clock.utc.members]/2: during a positive leap-second insertion the
+    // conversion counts the leap second as not inserted and returns the last
+    // representable sys_time prior to the insertion.
+    sys_time<D> result{time.time_since_epoch() - info.elapsed};
+    if (info.is_leap_second)
+        return chrono::floor<seconds>(result) + chrono::seconds{1} - D{1};
+    return result;
 }
 
 } // namespace chrono
