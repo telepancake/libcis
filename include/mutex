@@ -10,6 +10,13 @@
 #include <limits>
 #include <bits/pointer.h>   // addressof
 #include <cerrno>
+
+// Pin <pthread.h> and the mutex definitions to DEFAULT visibility: if an earlier
+// header left a `#pragma GCC visibility push(hidden)` active, the pthread_mutex_*
+// declarations (and the inline mutex methods referencing them) would otherwise be
+// emitted with hidden visibility, so their undefined references could not bind to
+// libc's pthread_mutex_* and the link would fail (e.g. syncstream cons.move).
+#pragma GCC visibility push(default)
 #include <pthread.h>
 
 namespace std {
@@ -636,3 +643,5 @@ inline void call_once(once_flag& flag, Callable&& func, Args&&... args) {
 }
 
 } // namespace std
+
+#pragma GCC visibility pop
