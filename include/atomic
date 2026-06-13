@@ -14,6 +14,73 @@
 #include <type_traits>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+
+//===----------------------------------------------------------------------===//
+// libatomic generic runtime fallback
+//===----------------------------------------------------------------------===//
+// For objects that are not lock-free (oversized / oddly-sized user types), GCC's
+// typed __atomic_load/store/exchange/compare_exchange builtins lower to calls
+// into libatomic's generic, size-taking entry points
+// (__atomic_load(size_t,const volatile void*,void*,int), etc.). The libcis test
+// harness links -nodefaultlibs without -latomic, so we provide those generic
+// symbols ourselves with a striped spin-lock table (libatomic's own strategy).
+//
+// They are declared with asm() labels so the C++ identifiers do NOT shadow the
+// typed __atomic_* builtins used throughout this header, and marked weak so a
+// real libatomic (if ever linked) takes precedence. Definitions in a header
+// included by many TUs are fine: weak definitions merge at link time.
+namespace libcis_atomic_detail {
+struct atomic_spinlock {
+    volatile int flag = 0;
+    void lock() noexcept {
+        while (__atomic_exchange_n(&flag, 1, __ATOMIC_ACQUIRE))
+            while (__atomic_load_n(&flag, __ATOMIC_RELAXED)) { }
+    }
+    void unlock() noexcept { __atomic_store_n(&flag, 0, __ATOMIC_RELEASE); }
+};
+inline atomic_spinlock& lock_for(const volatile void* p) noexcept {
+    static atomic_spinlock table[64];
+    return table[(reinterpret_cast<unsigned long>(p) >> 3) & 63u];
+}
+extern "C" {
+void libcis_generic_atomic_load(std::size_t n, const volatile void* src, void* dst, int) asm("__atomic_load");
+void libcis_generic_atomic_store(std::size_t n, volatile void* dst, void* src, int) asm("__atomic_store");
+void libcis_generic_atomic_exchange(std::size_t n, volatile void* p, void* val, void* ret, int) asm("__atomic_exchange");
+bool libcis_generic_atomic_cas(std::size_t n, volatile void* p, void* expected, void* desired, int, int) asm("__atomic_compare_exchange");
+bool libcis_generic_atomic_is_lock_free(std::size_t n, const volatile void* p) asm("__atomic_is_lock_free");
+
+__attribute__((weak)) void libcis_generic_atomic_load(std::size_t n, const volatile void* src, void* dst, int) {
+    auto& l = lock_for(src); l.lock();
+    std::memcpy(dst, const_cast<const void*>(src), n);
+    l.unlock();
+}
+__attribute__((weak)) void libcis_generic_atomic_store(std::size_t n, volatile void* dst, void* src, int) {
+    auto& l = lock_for(dst); l.lock();
+    std::memcpy(const_cast<void*>(dst), src, n);
+    l.unlock();
+}
+__attribute__((weak)) void libcis_generic_atomic_exchange(std::size_t n, volatile void* p, void* val, void* ret, int) {
+    auto& l = lock_for(p); l.lock();
+    std::memcpy(ret, const_cast<void*>(p), n);
+    std::memcpy(const_cast<void*>(p), val, n);
+    l.unlock();
+}
+__attribute__((weak)) bool libcis_generic_atomic_cas(std::size_t n, volatile void* p, void* expected, void* desired, int, int) {
+    auto& l = lock_for(p); l.lock();
+    bool ok = std::memcmp(const_cast<void*>(p), expected, n) == 0;
+    if (ok) std::memcpy(const_cast<void*>(p), desired, n);
+    else    std::memcpy(expected, const_cast<void*>(p), n);
+    l.unlock();
+    return ok;
+}
+// A generic object reaching this runtime entry is, by definition, not handled by
+// an inline lock-free instruction, so it is never lock-free.
+__attribute__((weak)) bool libcis_generic_atomic_is_lock_free(std::size_t, const volatile void*) {
+    return false;
+}
+} // extern "C"
+} // namespace libcis_atomic_detail
 
 namespace std {
 
@@ -128,6 +195,29 @@ inline void atomic_spin_wait(const T* ptr, T old, int gcc_order) noexcept {
 }
 
 //===----------------------------------------------------------------------===//
+// atomic storage alignment
+//===----------------------------------------------------------------------===//
+// Like libc++'s _Atomic(T)/__cxx_atomic_base_impl, atomic storage is over-aligned
+// to its lock-free size so the hardware instruction can be used. A struct such as
+// {int,int} has alignof 4 but sizeof 8; __atomic_always_lock_free(8,0) reports
+// lock-free, so the storage must be 8-aligned for __atomic_is_lock_free(8,&s) to
+// agree. We round sizeof(T) up to the next power of two (capped at 16) and take
+// the max with alignof(T), but only when that size is itself always lock-free.
+template<class T>
+inline constexpr size_t atomic_required_alignment() {
+    size_t a = alignof(T);
+    size_t s = sizeof(T);
+    for (size_t cand = 1; cand <= 16; cand <<= 1) {
+        if (cand >= s) {
+            if (cand > a && __atomic_always_lock_free(cand, static_cast<T*>(nullptr)))
+                a = cand;
+            break;
+        }
+    }
+    return a;
+}
+
+//===----------------------------------------------------------------------===//
 // atomic_base -- primary (non-integral, non-pointer) template
 //===----------------------------------------------------------------------===//
 
@@ -138,17 +228,19 @@ struct atomic_base {
 
     using value_type = T;
 
-    // The storage: aligned to alignof(T) so GCC can do lock-free ops.
-    alignas(T) T storage;
+    // The storage: over-aligned to its lock-free size so GCC can do lock-free ops.
+    alignas(atomic_required_alignment<T>()) T storage;
 
     static constexpr bool is_always_lock_free =
         __atomic_always_lock_free(sizeof(T), static_cast<T*>(nullptr));
 
     [[nodiscard]] bool is_lock_free() const volatile noexcept {
-        return __atomic_is_lock_free(sizeof(T), static_cast<const void*>(&storage));
+        return is_always_lock_free
+            || __atomic_is_lock_free(sizeof(T), const_cast<const T*>(&storage));
     }
     [[nodiscard]] bool is_lock_free() const noexcept {
-        return __atomic_is_lock_free(sizeof(T), static_cast<const void*>(&storage));
+        return is_always_lock_free
+            || __atomic_is_lock_free(sizeof(T), &storage);
     }
 
     void store(T desired, memory_order order = memory_order_seq_cst) volatile noexcept {
@@ -493,6 +585,7 @@ struct atomic_flag {
 };
 
 #define ATOMIC_FLAG_INIT { false }
+#define ATOMIC_VAR_INIT(value) { value }
 
 //===----------------------------------------------------------------------===//
 // atomic_flag free functions
@@ -540,7 +633,7 @@ struct atomic_ref_base {
         __atomic_always_lock_free(sizeof(T), static_cast<T*>(nullptr));
 
     [[nodiscard]] bool is_lock_free() const noexcept {
-        return __atomic_is_lock_free(sizeof(T), ptr);
+        return is_always_lock_free || __atomic_is_lock_free(sizeof(T), ptr);
     }
 
     void store(T desired, memory_order order = memory_order::seq_cst) const noexcept {
