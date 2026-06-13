@@ -247,64 +247,9 @@ template<regex_constants::error_type Ev>
 // ============================================================================
 namespace std {
 
-// ---------------------------------------------------------------------------
-// collate<CharT> — ported from libc++ include/__locale lines 185–252.
-//
-// libcis's <locale> intentionally omits collate; regex_traits needs it for
-// transform() and transform_primary(), so we provide it here.
-// ---------------------------------------------------------------------------
-template<class CharT>
-class collate : public locale::facet {
-public:
-    typedef CharT char_type;
-    typedef basic_string<char_type> string_type;
-
-    explicit collate(size_t refs = 0) : locale::facet(refs) {}
-
-    [[nodiscard]] int compare(const char_type* lo1, const char_type* hi1,
-                              const char_type* lo2, const char_type* hi2) const {
-        return do_compare(lo1, hi1, lo2, hi2);
-    }
-    [[nodiscard]] string_type transform(const char_type* lo,
-                                        const char_type* hi) const {
-        return do_transform(lo, hi);
-    }
-    [[nodiscard]] long hash(const char_type* lo, const char_type* hi) const {
-        return do_hash(lo, hi);
-    }
-
-    static locale::id id;
-
-protected:
-    ~collate() override {}
-
-    virtual int do_compare(const char_type* lo1, const char_type* hi1,
-                           const char_type* lo2, const char_type* hi2) const {
-        for (; lo2 != hi2; ++lo1, ++lo2) {
-            if (lo1 == hi1 || *lo1 < *lo2) return -1;
-            if (*lo2 < *lo1) return 1;
-        }
-        return lo1 != hi1;
-    }
-    virtual string_type do_transform(const char_type* lo,
-                                     const char_type* hi) const {
-        return string_type(lo, hi);
-    }
-    virtual long do_hash(const char_type* lo, const char_type* hi) const {
-        size_t h         = 0;
-        const size_t sr  = __CHAR_BIT__ * sizeof(size_t) - 8;
-        const size_t msk = size_t(0xF) << (sr + 4);
-        for (const char_type* p = lo; p != hi; ++p) {
-            h        = (h << 4) + static_cast<size_t>(*p);
-            size_t g = h & msk;
-            h ^= g | (g >> sr);
-        }
-        return static_cast<long>(h);
-    }
-};
-
-template<class CharT>
-locale::id collate<CharT>::id;
+// collate<CharT> / collate<CharT>::id now come from <locale> (included above).
+// (Earlier libcis <locale> omitted collate, so regex defined its own; that
+// duplicate has been removed to avoid an ODR clash now that <locale> provides it.)
 
 // ---------------------------------------------------------------------------
 // Internal helpers shared by regex_traits specialisations.
