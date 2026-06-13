@@ -469,6 +469,33 @@ struct scoped_uselocale {
     ~scoped_uselocale() { ::uselocale(old); }
 };
 
+// Decode a (possibly multibyte) C string to a single wchar_t using the CURRENTLY
+// imbued locale's encoding. Used for separators like fr_FR.UTF-8's U+202F, whose
+// UTF-8 form is multiple bytes; a plain first-byte cast would yield 0xE2. Falls
+// back to the first byte on a decode failure. Call under a scoped_uselocale.
+inline wchar_t mb_to_wc(const char* s) {
+    if (!s || !s[0]) return wchar_t();
+    wchar_t wc; ::mbstate_t st{};
+    size_t n = ::mbrtowc(&wc, s, __builtin_strlen(s), &st);
+    return (n == (size_t)-1 || n == (size_t)-2 || n == 0)
+               ? (wchar_t)(unsigned char)s[0] : wc;
+}
+
+// Narrow a (possibly multibyte) separator to a single char, mirroring libc++'s
+// checked_string_to_char_convert: single byte -> that byte; else widen + wctob;
+// else map U+202F/U+00A0 (narrow/regular no-break space) to ' '. Returns false
+// (so the caller keeps its default) when no single-char representation exists.
+// Call under a scoped_uselocale.
+inline bool mb_to_char(char& dest, const char* s) {
+    if (!s || !s[0]) return false;
+    if (!s[1]) { dest = *s; return true; }
+    wchar_t wc = mb_to_wc(s);
+    int r = ::wctob(wc);
+    if (r != EOF) { dest = (char)r; return true; }
+    if (wc == (wchar_t)0x202F || wc == (wchar_t)0x00A0) { dest = (char)' '; return true; }
+    return false;
+}
+
 } // namespace detail
 
 //===----------------------------------------------------------------------===//
@@ -2567,8 +2594,10 @@ private:
         ::locale_t l = detail::make_locale(nm);
         detail::scoped_uselocale guard(l);
         struct lconv* lc = ::localeconv();
-        if (lc->decimal_point && lc->decimal_point[0]) dp_ = lc->decimal_point[0];
-        if (lc->thousands_sep && lc->thousands_sep[0]) ts_ = lc->thousands_sep[0];
+        // Narrow a possibly-multibyte separator to one char (U+202F -> ' '),
+        // keeping the default when no single-char form exists (libc++ parity).
+        detail::mb_to_char(dp_, lc->decimal_point);
+        detail::mb_to_char(ts_, lc->thousands_sep);
         grp_ = lc->grouping;
         ::freelocale(l);
     }
@@ -2594,8 +2623,16 @@ private:
         ::locale_t l = detail::make_locale(nm);
         detail::scoped_uselocale guard(l);
         struct lconv* lc = ::localeconv();
-        if (lc->decimal_point && lc->decimal_point[0]) dp_ = (wchar_t)(unsigned char)lc->decimal_point[0];
-        if (lc->thousands_sep && lc->thousands_sep[0]) ts_ = (wchar_t)(unsigned char)lc->thousands_sep[0];
+        // Decode the full multibyte sequence (the separator may be e.g. U+202F in
+        // fr_FR.UTF-8), not just the first byte, using the imbued locale's encoding.
+        auto decode = [](const char* s, wchar_t dflt) -> wchar_t {
+            if (!s || !s[0]) return dflt;
+            wchar_t wc; mbstate_t st{};
+            size_t n = ::mbrtowc(&wc, s, __builtin_strlen(s), &st);
+            return (n == (size_t)-1 || n == (size_t)-2 || n == 0) ? (wchar_t)(unsigned char)s[0] : wc;
+        };
+        dp_ = decode(lc->decimal_point, dp_);
+        ts_ = decode(lc->thousands_sep, ts_);
         grp_ = lc->grouping;
         ::freelocale(l);
     }
@@ -4247,14 +4284,12 @@ inline void moneypunct_byname<char, false>::init(const char* nm) {
   detail::scoped_uselocale guard(loc);
   lconv* lc = ::localeconv();
 
-  if (lc->mon_decimal_point && lc->mon_decimal_point[0])
-    decimal_point_ = lc->mon_decimal_point[0];
-  else
-    decimal_point_ = base::do_decimal_point();
-  if (lc->mon_thousands_sep && lc->mon_thousands_sep[0])
-    thousands_sep_ = lc->mon_thousands_sep[0];
-  else
-    thousands_sep_ = base::do_thousands_sep();
+  // Narrow possibly-multibyte separators to one char (U+202F -> ' '), keeping
+  // the base default when no single-char representation exists (libc++ parity).
+  decimal_point_ = base::do_decimal_point();
+  detail::mb_to_char(decimal_point_, lc->mon_decimal_point);
+  thousands_sep_ = base::do_thousands_sep();
+  detail::mb_to_char(thousands_sep_, lc->mon_thousands_sep);
 
   grouping_    = lc->mon_grouping;
   curr_symbol_ = lc->currency_symbol;
@@ -4282,14 +4317,12 @@ inline void moneypunct_byname<char, true>::init(const char* nm) {
   detail::scoped_uselocale guard(loc);
   lconv* lc = ::localeconv();
 
-  if (lc->mon_decimal_point && lc->mon_decimal_point[0])
-    decimal_point_ = lc->mon_decimal_point[0];
-  else
-    decimal_point_ = base::do_decimal_point();
-  if (lc->mon_thousands_sep && lc->mon_thousands_sep[0])
-    thousands_sep_ = lc->mon_thousands_sep[0];
-  else
-    thousands_sep_ = base::do_thousands_sep();
+  // Narrow possibly-multibyte separators to one char (U+202F -> ' '), keeping
+  // the base default when no single-char representation exists (libc++ parity).
+  decimal_point_ = base::do_decimal_point();
+  detail::mb_to_char(decimal_point_, lc->mon_decimal_point);
+  thousands_sep_ = base::do_thousands_sep();
+  detail::mb_to_char(thousands_sep_, lc->mon_thousands_sep);
   grouping_    = lc->mon_grouping;
   curr_symbol_ = lc->int_curr_symbol;
   if (lc->int_frac_digits != CHAR_MAX)
@@ -4319,11 +4352,11 @@ inline void moneypunct_byname<wchar_t, false>::init(const char* nm) {
   lconv* lc = ::localeconv();
 
   if (lc->mon_decimal_point && lc->mon_decimal_point[0])
-    decimal_point_ = (wchar_t)(unsigned char)lc->mon_decimal_point[0];
+    decimal_point_ = detail::mb_to_wc(lc->mon_decimal_point);
   else
     decimal_point_ = base::do_decimal_point();
   if (lc->mon_thousands_sep && lc->mon_thousands_sep[0])
-    thousands_sep_ = (wchar_t)(unsigned char)lc->mon_thousands_sep[0];
+    thousands_sep_ = detail::mb_to_wc(lc->mon_thousands_sep);
   else
     thousands_sep_ = base::do_thousands_sep();
   grouping_ = lc->mon_grouping;
@@ -4375,11 +4408,11 @@ inline void moneypunct_byname<wchar_t, true>::init(const char* nm) {
   lconv* lc = ::localeconv();
 
   if (lc->mon_decimal_point && lc->mon_decimal_point[0])
-    decimal_point_ = (wchar_t)(unsigned char)lc->mon_decimal_point[0];
+    decimal_point_ = detail::mb_to_wc(lc->mon_decimal_point);
   else
     decimal_point_ = base::do_decimal_point();
   if (lc->mon_thousands_sep && lc->mon_thousands_sep[0])
-    thousands_sep_ = (wchar_t)(unsigned char)lc->mon_thousands_sep[0];
+    thousands_sep_ = detail::mb_to_wc(lc->mon_thousands_sep);
   else
     thousands_sep_ = base::do_thousands_sep();
   grouping_ = lc->mon_grouping;
