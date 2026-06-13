@@ -5757,7 +5757,15 @@ protected:
     do_put(nar, ne, t, fmt, mod);
     mbstate_t mb     = mbstate_t();
     const char* nb   = nar;
-    size_t j         = ::mbsrtowcs(wb, &nb, static_cast<size_t>(we - wb), &mb);
+    // Decode under loc_'s encoding (strftime_l produced bytes in that codeset,
+    // e.g. UTF-8 month names); the C global locale may be "C" and would fail.
+    size_t j;
+    if (loc_ != (::locale_t)0) {
+      detail::scoped_uselocale g(loc_);
+      j = ::mbsrtowcs(wb, &nb, static_cast<size_t>(we - wb), &mb);
+    } else {
+      j = ::mbsrtowcs(wb, &nb, static_cast<size_t>(we - wb), &mb);
+    }
     if (j == size_t(-1))
       __builtin_trap();
     we = wb + j;
