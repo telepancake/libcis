@@ -295,7 +295,9 @@ protected:
         parray_    = rhs.parray_;    rhs.parray_    = nullptr;
         parray_size_= rhs.parray_size_; rhs.parray_size_= 0;
         parray_cap_ = rhs.parray_cap_;  rhs.parray_cap_ = 0;
-        rdbuf_     = rhs.rdbuf_;     rhs.rdbuf_     = nullptr;
+        // rdbuf_ is intentionally NOT moved: [basic.ios.members] specifies that
+        // basic_ios::move leaves rdbuf() unchanged on both *this and rhs (the
+        // derived class transfers any owned buffer via set_rdbuf).
     }
 
     void swap_base(ios_base& rhs) noexcept {
@@ -316,7 +318,8 @@ protected:
         swap(parray_,     rhs.parray_);
         swap(parray_size_,rhs.parray_size_);
         swap(parray_cap_, rhs.parray_cap_);
-        swap(rdbuf_,      rhs.rdbuf_);
+        // rdbuf_ is intentionally NOT swapped: [basic.ios.members] excludes
+        // rdbuf() from basic_ios::swap (owners swap their own buffer separately).
     }
 
 private:
@@ -436,7 +439,7 @@ public:
 
     // copyfmt
     basic_ios& copyfmt(const basic_ios& rhs) {
-        if (this != &rhs) {
+        if (this != std::addressof(rhs)) {
             copyfmt_base(rhs);
             tie_   = rhs.tie_;
             fill_  = rhs.fill_;
