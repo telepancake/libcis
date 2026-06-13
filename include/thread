@@ -32,7 +32,6 @@
 #include <utility>
 #include <tuple>
 #include <iosfwd>       // basic_ostream / basic_ostringstream forward decls
-#include <sstream>      // basic_ostringstream + locale for operator<<(id)
 #include <functional>   // invoke, is_invocable_v
 #include <compare>
 #include <chrono>
@@ -213,11 +212,12 @@ struct hash<thread::id> {
 template<class CharT, class Traits>
 basic_ostream<CharT, Traits>&
 operator<<(basic_ostream<CharT, Traits>& os, thread::id v) {
-    // [thread.thread.id]/2: the representation must be unaffected by stream
-    // flags (oct/hex/showbase/width/...).  Render in a classic-imbued temp
-    // stream and insert the resulting string (mirrors libc++).
+    // [thread.thread.id]/2: the representation must be unaffected by the target
+    // stream's flags (oct/hex/showbase/width/...).  Render the id in a fresh
+    // temporary stream (default classic locale) and insert the resulting string
+    // (mirrors libc++).  Defined as a template so <sstream> is only required at
+    // the point of use, not when <thread> is merely included.
     basic_ostringstream<CharT, Traits> sstr;
-    sstr.imbue(locale::classic());
     sstr << static_cast<unsigned long long>(v.id_);
     return os << sstr.str();
 }
