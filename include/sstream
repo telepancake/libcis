@@ -453,6 +453,7 @@ public:
     basic_istringstream& operator=(basic_istringstream&& rhs) {
         basic_istream<char_type, traits_type>::operator=(std::move(rhs));
         sb_ = std::move(rhs.sb_);
+        basic_istream<char_type, traits_type>::set_rdbuf(std::addressof(sb_));
         return *this;
     }
 
@@ -539,6 +540,9 @@ public:
     basic_ostringstream& operator=(basic_ostringstream&& rhs) {
         basic_ostream<char_type, traits_type>::operator=(std::move(rhs));
         sb_ = std::move(rhs.sb_);
+        // re-point this stream's rdbuf at OUR buffer: basic_ios::move
+        // transferred rhs's rdbuf pointer (the ctor likewise set_rdbuf's).
+        basic_ostream<char_type, traits_type>::set_rdbuf(std::addressof(sb_));
         return *this;
     }
 
@@ -628,6 +632,7 @@ public:
     basic_stringstream& operator=(basic_stringstream&& rhs) {
         basic_iostream<CharT, Traits>::operator=(std::move(rhs));
         sb_ = std::move(rhs.sb_);
+        basic_ios<CharT, Traits>::set_rdbuf(std::addressof(sb_));
         return *this;
     }
 
