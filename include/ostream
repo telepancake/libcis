@@ -29,6 +29,7 @@
 #include <charconv>  // to_chars, chars_format
 #include <cstring>   // strlen
 #include <string_view> // char_traits
+#include <string>      // basic_string (operator<< below — libc++ defines it in <ostream>)
 #include <system_error> // error_code (inserter below)
 
 namespace std {
@@ -742,6 +743,16 @@ Stream&& operator<<(Stream&& os, const T& x) {
 template<class CharT, class Traits>
 void swap(basic_ostream<CharT, Traits>& x, basic_ostream<CharT, Traits>& y) {
     x.swap(y);
+}
+
+// operator<< for basic_string (libc++ defines this in <ostream>; <string> defers
+// it due to the circular dependency on the stream types).
+template<class CharT, class Traits, class Allocator>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os,
+           const basic_string<CharT, Traits, Allocator>& s)
+{
+    return detail::put_character_sequence(os, s.data(), s.size());
 }
 
 } // namespace std

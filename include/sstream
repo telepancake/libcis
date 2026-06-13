@@ -662,94 +662,9 @@ inline void swap(basic_stringstream<CharT, Traits, Allocator>& x,
 using stringstream  = basic_stringstream<char>;
 using wstringstream = basic_stringstream<wchar_t>;
 
-//===----------------------------------------------------------------------===//
-// operator<< and operator>> for basic_string
-// (Deferred in <string> because of the circular dependency on <istream>/<ostream>)
-//===----------------------------------------------------------------------===//
-
-template<class CharT, class Traits, class Allocator>
-basic_ostream<CharT, Traits>&
-operator<<(basic_ostream<CharT, Traits>& os,
-           const basic_string<CharT, Traits, Allocator>& s)
-{
-    return detail::put_character_sequence(os, s.data(), s.size());
-}
-
-template<class CharT, class Traits, class Allocator>
-basic_istream<CharT, Traits>&
-operator>>(basic_istream<CharT, Traits>& is,
-           basic_string<CharT, Traits, Allocator>& s)
-{
-    typename basic_istream<CharT, Traits>::sentry sentry(is);
-    if (!sentry) return is;
-    s.clear();
-    streamsize width = is.width();
-    is.width(0);
-    const auto& ct = use_facet<ctype<CharT>>(is.getloc());
-    auto sb = is.rdbuf();
-    streamsize n = 0;
-    while (true) {
-        typename Traits::int_type ic = sb->sgetc();
-        if (ic == Traits::eof()) { is.setstate(ios_base::eofbit); break; }
-        CharT c = Traits::to_char_type(ic);
-        if (ct.is(ctype_base::space, c)) break;
-        s.push_back(c);
-        sb->sbumpc();
-        ++n;
-        if (width > 0 && n >= width) break;
-    }
-    if (n == 0) is.setstate(ios_base::failbit);
-    return is;
-}
-
-template<class CharT, class Traits, class Allocator>
-basic_istream<CharT, Traits>&
-getline(basic_istream<CharT, Traits>& is,
-        basic_string<CharT, Traits, Allocator>& s,
-        CharT delim)
-{
-    typename basic_istream<CharT, Traits>::sentry sentry(is, true);
-    s.clear();
-    if (!sentry) { is.setstate(ios_base::failbit); return is; }
-    auto sb = is.rdbuf();
-    streamsize n = 0;
-    bool found = false;
-    while (true) {
-        typename Traits::int_type ic = sb->sbumpc();
-        if (ic == Traits::eof()) { is.setstate(ios_base::eofbit); break; }
-        ++n;
-        CharT c = Traits::to_char_type(ic);
-        if (Traits::eq(c, delim)) { found = true; break; }
-        s.push_back(c);
-    }
-    if (n == 0 && !found) is.setstate(ios_base::failbit);
-    return is;
-}
-
-template<class CharT, class Traits, class Allocator>
-basic_istream<CharT, Traits>&
-getline(basic_istream<CharT, Traits>& is,
-        basic_string<CharT, Traits, Allocator>& s)
-{
-    return getline(is, s, is.widen('\n'));
-}
-
-template<class CharT, class Traits, class Allocator>
-basic_istream<CharT, Traits>&
-getline(basic_istream<CharT, Traits>&& is,
-        basic_string<CharT, Traits, Allocator>& s,
-        CharT delim)
-{
-    return getline(is, s, delim);
-}
-
-template<class CharT, class Traits, class Allocator>
-basic_istream<CharT, Traits>&
-getline(basic_istream<CharT, Traits>&& is,
-        basic_string<CharT, Traits, Allocator>& s)
-{
-    return getline(is, s, is.widen('\n'));
-}
+// operator<<, operator>> and getline for basic_string now live in their libc++
+// homes <ostream>/<istream> (included above), so they are available to any TU
+// that includes <string> together with a stream header, not only <sstream>.
 
 } // namespace std
 
