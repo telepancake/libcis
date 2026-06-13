@@ -1,10 +1,11 @@
 // <iomanip> — I/O manipulators: setw, setprecision, setfill, setbase,
-//             setiosflags, resetiosflags, quoted.
+//             setiosflags, resetiosflags, quoted,
+//             get_money, put_money, get_time, put_time.
 // Mechanically ported from libc++ include/iomanip.
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //
-// DEFERRED (require money/time locale facets intentionally omitted):
-//   get_money, put_money, get_time, put_time
+// get_money/put_money use the money_get/money_put facets and
+// get_time/put_time use the time_get/time_put facets from <locale>.
 #pragma once
 
 // Hide all our symbols to prevent ABI conflict with libstdc++ shared library.
@@ -13,6 +14,7 @@
 #include <ios>       // ios_base, basic_ios, noskipws
 #include <istream>   // basic_istream
 #include <ostream>   // basic_ostream
+#include <locale>    // money_get/put, time_get/put, use_facet
 #include <string>    // basic_string
 #include <string_view> // basic_string_view
 
@@ -165,6 +167,173 @@ public:
 
 inline iom_setw setw(int n) {
     return iom_setw(n);
+}
+
+//===----------------------------------------------------------------------===//
+// get_money
+//===----------------------------------------------------------------------===//
+template <class MoneyT>
+class iom_get_money;
+
+template <class CharT, class Traits, class MoneyT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, const iom_get_money<MoneyT>& x);
+
+template <class MoneyT>
+class iom_get_money {
+    MoneyT& mon_;
+    bool intl_;
+public:
+    iom_get_money(MoneyT& mon, bool intl) : mon_(mon), intl_(intl) {}
+
+    template <class CharT, class Traits, class Mp>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is, const iom_get_money<Mp>& x);
+};
+
+template <class CharT, class Traits, class MoneyT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, const iom_get_money<MoneyT>& x) {
+    typename basic_istream<CharT, Traits>::sentry s(is);
+    if (s) {
+        typedef istreambuf_iterator<CharT, Traits> Ip;
+        typedef money_get<CharT, Ip> Fp;
+        ios_base::iostate err = ios_base::goodbit;
+        const Fp& mf = std::use_facet<Fp>(is.getloc());
+        mf.get(Ip(is), Ip(), x.intl_, is, err, x.mon_);
+        is.setstate(err);
+    }
+    return is;
+}
+
+template <class MoneyT>
+inline iom_get_money<MoneyT> get_money(MoneyT& mon, bool intl = false) {
+    return iom_get_money<MoneyT>(mon, intl);
+}
+
+//===----------------------------------------------------------------------===//
+// put_money
+//===----------------------------------------------------------------------===//
+template <class MoneyT>
+class iom_put_money;
+
+template <class CharT, class Traits, class MoneyT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const iom_put_money<MoneyT>& x);
+
+template <class MoneyT>
+class iom_put_money {
+    const MoneyT& mon_;
+    bool intl_;
+public:
+    iom_put_money(const MoneyT& mon, bool intl) : mon_(mon), intl_(intl) {}
+
+    template <class CharT, class Traits, class Mp>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os, const iom_put_money<Mp>& x);
+};
+
+template <class CharT, class Traits, class MoneyT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const iom_put_money<MoneyT>& x) {
+    typename basic_ostream<CharT, Traits>::sentry s(os);
+    if (s) {
+        typedef ostreambuf_iterator<CharT, Traits> Op;
+        typedef money_put<CharT, Op> Fp;
+        const Fp& mf = std::use_facet<Fp>(os.getloc());
+        if (mf.put(Op(os), x.intl_, os, os.fill(), x.mon_).failed())
+            os.setstate(ios_base::badbit);
+    }
+    return os;
+}
+
+template <class MoneyT>
+inline iom_put_money<MoneyT> put_money(const MoneyT& mon, bool intl = false) {
+    return iom_put_money<MoneyT>(mon, intl);
+}
+
+//===----------------------------------------------------------------------===//
+// get_time
+//===----------------------------------------------------------------------===//
+template <class CharT>
+class iom_get_time;
+
+template <class CharT, class Traits>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, const iom_get_time<CharT>& x);
+
+template <class CharT>
+class iom_get_time {
+    tm* tm_;
+    const CharT* fmt_;
+public:
+    iom_get_time(tm* t, const CharT* fmt) : tm_(t), fmt_(fmt) {}
+
+    template <class Cp, class Traits>
+    friend basic_istream<Cp, Traits>&
+    operator>>(basic_istream<Cp, Traits>& is, const iom_get_time<Cp>& x);
+};
+
+template <class CharT, class Traits>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, const iom_get_time<CharT>& x) {
+    typename basic_istream<CharT, Traits>::sentry s(is);
+    if (s) {
+        typedef istreambuf_iterator<CharT, Traits> Ip;
+        typedef time_get<CharT, Ip> Fp;
+        ios_base::iostate err = ios_base::goodbit;
+        const Fp& tf = std::use_facet<Fp>(is.getloc());
+        tf.get(Ip(is), Ip(), is, err, x.tm_, x.fmt_, x.fmt_ + Traits::length(x.fmt_));
+        is.setstate(err);
+    }
+    return is;
+}
+
+template <class CharT>
+inline iom_get_time<CharT> get_time(tm* t, const CharT* fmt) {
+    return iom_get_time<CharT>(t, fmt);
+}
+
+//===----------------------------------------------------------------------===//
+// put_time
+//===----------------------------------------------------------------------===//
+template <class CharT>
+class iom_put_time;
+
+template <class CharT, class Traits>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const iom_put_time<CharT>& x);
+
+template <class CharT>
+class iom_put_time {
+    const tm* tm_;
+    const CharT* fmt_;
+public:
+    iom_put_time(const tm* t, const CharT* fmt) : tm_(t), fmt_(fmt) {}
+
+    template <class Cp, class Traits>
+    friend basic_ostream<Cp, Traits>&
+    operator<<(basic_ostream<Cp, Traits>& os, const iom_put_time<Cp>& x);
+};
+
+template <class CharT, class Traits>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const iom_put_time<CharT>& x) {
+    typename basic_ostream<CharT, Traits>::sentry s(os);
+    if (s) {
+        typedef ostreambuf_iterator<CharT, Traits> Op;
+        typedef time_put<CharT, Op> Fp;
+        const Fp& tf = std::use_facet<Fp>(os.getloc());
+        if (tf.put(Op(os), os, os.fill(), x.tm_, x.fmt_,
+                   x.fmt_ + Traits::length(x.fmt_)).failed())
+            os.setstate(ios_base::badbit);
+    }
+    return os;
+}
+
+template <class CharT>
+inline iom_put_time<CharT> put_time(const tm* t, const CharT* fmt) {
+    return iom_put_time<CharT>(t, fmt);
 }
 
 //===----------------------------------------------------------------------===//
