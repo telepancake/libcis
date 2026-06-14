@@ -112,8 +112,10 @@ public:
 };
 
 
-[[noreturn]] inline void throw_format_error(const char* s) {
-  // -fno-exceptions: report and trap.
+[[noreturn]] constexpr void throw_format_error(const char* s) {
+  // -fno-exceptions: report and trap. constexpr so it may appear in constant-
+  // evaluated format validation; reaching it in a constant context is a hard
+  // error (the intended behaviour for an ill-formed format string).
   __builtin_printf("format_error: %s\n", s);
   __builtin_trap();
 }

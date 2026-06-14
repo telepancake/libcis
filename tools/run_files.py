@@ -90,7 +90,7 @@ def _extra_flags(src_path):
             s = line.strip()
             if s.startswith("int main") or s.startswith("#include"):
                 break  # lit header is over once real code starts
-            if "ADDITIONAL_COMPILE_FLAGS" not in s:
+            if "ADDITIONAL_COMPILE_FLAGS:" not in s:
                 continue
             spec = s.split("ADDITIONAL_COMPILE_FLAGS:", 1)[1].strip()
 

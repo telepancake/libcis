@@ -50,6 +50,9 @@ struct local_info {
   sys_info first;
   sys_info second;
 };
+
+class time_zone;  // defined in <bits/chrono_tzdb.h>
+template <class Duration, class TimeZonePtr> class zoned_time;
 } // namespace chrono
 
 // ---------------------------------------------------------------------------
@@ -61,6 +64,15 @@ template <class Tp>
 inline constexpr bool chrono_is_time_point_v = false;
 template <class Clock, class Duration>
 inline constexpr bool chrono_is_time_point_v<chrono::time_point<Clock, Duration>> = true;
+
+// zoned_time is defined later (in <bits/chrono_tzdb.h>); forward-declare it so the
+// convert_to_tm / convert_to_time_zone / formatter machinery can special-case it.
+// The branches that touch its members are only instantiated from the
+// formatter<zoned_time>, by which point the type is complete.
+template <class Tp>
+inline constexpr bool chrono_is_zoned_time_v = false;
+template <class Duration, class TimeZonePtr>
+inline constexpr bool chrono_is_zoned_time_v<chrono::zoned_time<Duration, TimeZonePtr>> = true;
 
 template <class Tp>
 inline constexpr bool chrono_is_hh_mm_ss_v = false;
@@ -122,7 +134,14 @@ Tm convert_to_tm(const ChronoT& value) {
   result.tm_zone = "UTC";
 #endif
 
-  if constexpr (chrono_is_time_point_v<ChronoT>) {
+  if constexpr (chrono_is_zoned_time_v<ChronoT>) {
+    // Break the local wall-clock instant (sys + offset) into calendar fields:
+    // feed it through the sys_time path, which decomposes a count of seconds.
+    chrono::sys_info info = value.get_time_zone()->get_info(value.get_sys_time());
+    auto local = value.get_sys_time() + info.offset;
+    return detail::convert_to_tm<Tm>(
+        chrono::sys_time<typename decltype(local)::duration>{local.time_since_epoch()});
+  } else if constexpr (chrono_is_time_point_v<ChronoT>) {
     if constexpr (is_same_v<typename ChronoT::clock, chrono::system_clock>)
       return detail::convert_to_tm<Tm>(value);
     else if constexpr (is_same_v<typename ChronoT::clock, chrono::utc_clock>)
@@ -581,6 +600,13 @@ void format_sub_seconds(basic_stringstream<CharT>& sstr, const Tp& value) {
   detail::format_sub_seconds(sstr, value.time_since_epoch());
 }
 
+template <class CharT, class Tp>
+  requires chrono_is_zoned_time_v<Tp>
+void format_sub_seconds(basic_stringstream<CharT>& sstr, const Tp& value) {
+  // The sub-second part is unaffected by the (whole-second) zone offset.
+  detail::format_sub_seconds(sstr, value.get_sys_time().time_since_epoch());
+}
+
 template <class CharT, class Duration>
 void format_sub_seconds(basic_stringstream<CharT>& sstr, const chrono::hh_mm_ss<Duration>& value) {
   sstr << std::use_facet<numpunct<CharT>>(sstr.getloc()).decimal_point();
@@ -595,6 +621,8 @@ void format_sub_seconds(basic_stringstream<CharT>& sstr, const chrono::hh_mm_ss<
 template <class Tp>
 consteval bool use_fraction() {
   if constexpr (chrono_is_time_point_v<Tp>)
+    return chrono::hh_mm_ss<typename Tp::duration>::fractional_width;
+  else if constexpr (chrono_is_zoned_time_v<Tp>)
     return chrono::hh_mm_ss<typename Tp::duration>::fractional_width;
   else if constexpr (chrono::is_duration_v<Tp>)
     return chrono::hh_mm_ss<Tp>::fractional_width;
@@ -645,7 +673,10 @@ template <class Tp>
 chrono_time_zone convert_to_time_zone(const Tp& value) {
   if constexpr (is_same_v<Tp, chrono::sys_info>)
     return {value.abbrev, value.offset};
-  else
+  else if constexpr (chrono_is_zoned_time_v<Tp>) {
+    chrono::sys_info info = value.get_time_zone()->get_info(value.get_sys_time());
+    return {info.abbrev, info.offset};
+  } else
     return {"UTC", chrono::seconds{0}};
 }
 
@@ -766,6 +797,7 @@ constexpr bool weekday_ok(const Tp& value) {
   else if constexpr (chrono_is_hh_mm_ss_v<Tp>) return true;
   else if constexpr (is_same_v<Tp, chrono::sys_info>) return true;
   else if constexpr (is_same_v<Tp, chrono::local_info>) return true;
+  else if constexpr (chrono_is_zoned_time_v<Tp>) return true;
   else static_assert(sizeof(Tp) == 0, "Add the missing type specialization");
 }
 
@@ -790,6 +822,7 @@ constexpr bool weekday_name_ok(const Tp& value) {
   else if constexpr (chrono_is_hh_mm_ss_v<Tp>) return true;
   else if constexpr (is_same_v<Tp, chrono::sys_info>) return true;
   else if constexpr (is_same_v<Tp, chrono::local_info>) return true;
+  else if constexpr (chrono_is_zoned_time_v<Tp>) return true;
   else static_assert(sizeof(Tp) == 0, "Add the missing type specialization");
 }
 
@@ -814,6 +847,7 @@ constexpr bool date_ok(const Tp& value) {
   else if constexpr (chrono_is_hh_mm_ss_v<Tp>) return true;
   else if constexpr (is_same_v<Tp, chrono::sys_info>) return true;
   else if constexpr (is_same_v<Tp, chrono::local_info>) return true;
+  else if constexpr (chrono_is_zoned_time_v<Tp>) return true;
   else static_assert(sizeof(Tp) == 0, "Add the missing type specialization");
 }
 
@@ -838,6 +872,7 @@ constexpr bool month_name_ok(const Tp& value) {
   else if constexpr (chrono_is_hh_mm_ss_v<Tp>) return true;
   else if constexpr (is_same_v<Tp, chrono::sys_info>) return true;
   else if constexpr (is_same_v<Tp, chrono::local_info>) return true;
+  else if constexpr (chrono_is_zoned_time_v<Tp>) return true;
   else static_assert(sizeof(Tp) == 0, "Add the missing type specialization");
 }
 
@@ -1337,3 +1372,5 @@ private:
 } // namespace chrono
 
 } // namespace std
+
+#include <bits/chrono_tzdb.h>
