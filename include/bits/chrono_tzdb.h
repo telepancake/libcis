@@ -350,7 +350,7 @@ private:
 // ===========================================================================
 // Singleton construction + free functions ([time.zone.db.access])
 // ===========================================================================
-namespace detail {
+namespace tzdb_detail {
 [[nodiscard]] inline tzdb make_tzdb() {
   using namespace tzdb_data;
   tzdb db;
@@ -378,9 +378,9 @@ namespace detail {
   static tzdb_list list{make_tzdb()};
   return list;
 }
-} // namespace detail
+} // namespace tzdb_detail
 
-[[nodiscard]] inline tzdb_list& get_tzdb_list() { return detail::tzdb_list_singleton(); }
+[[nodiscard]] inline tzdb_list& get_tzdb_list() { return tzdb_detail::tzdb_list_singleton(); }
 
 [[nodiscard]] inline const tzdb& get_tzdb() { return get_tzdb_list().front(); }
 
@@ -450,7 +450,7 @@ struct zoned_traits<const time_zone*> {
   }
 };
 
-namespace detail {
+namespace tzdb_detail {
 // Detect zoned_traits<T> capabilities.
 template <class T, class = void>
 inline constexpr bool zoned_has_default_zone = false;
@@ -465,7 +465,7 @@ inline constexpr bool zoned_has_locate_zone<
 
 template <class>
 inline constexpr bool is_zoned_time_v = false;
-} // namespace detail
+} // namespace tzdb_detail
 
 template <class Duration, class TimeZonePtr = const time_zone*>
 class zoned_time {
@@ -478,7 +478,7 @@ private:
 public:
   // default
   zoned_time()
-    requires detail::zoned_has_default_zone<TimeZonePtr>
+    requires tzdb_detail::zoned_has_default_zone<TimeZonePtr>
       : zone_(traits::default_zone()) {}
 
   zoned_time(const zoned_time&)            = default;
@@ -486,7 +486,7 @@ public:
 
   // from sys_time
   zoned_time(const sys_time<Duration>& st)
-    requires detail::zoned_has_default_zone<TimeZonePtr>
+    requires tzdb_detail::zoned_has_default_zone<TimeZonePtr>
       : zone_(traits::default_zone()), tp_(st) {}
 
   // from TimeZonePtr
@@ -494,7 +494,7 @@ public:
 
   // from name
   explicit zoned_time(string_view name)
-    requires detail::zoned_has_locate_zone<TimeZonePtr>
+    requires tzdb_detail::zoned_has_locate_zone<TimeZonePtr>
       : zone_(traits::locate_zone(name)) {}
 
   // from another zoned_time (same TimeZonePtr, convertible duration)
@@ -508,7 +508,7 @@ public:
 
   // name + sys_time
   zoned_time(string_view name, const sys_time<Duration>& st)
-    requires detail::zoned_has_locate_zone<TimeZonePtr>
+    requires tzdb_detail::zoned_has_locate_zone<TimeZonePtr>
       : zone_(traits::locate_zone(name)), tp_(st) {}
 
   // TimeZonePtr + local_time
@@ -518,7 +518,7 @@ public:
 
   // name + local_time
   zoned_time(string_view name, const local_time<Duration>& lt)
-    requires(detail::zoned_has_locate_zone<TimeZonePtr> &&
+    requires(tzdb_detail::zoned_has_locate_zone<TimeZonePtr> &&
              requires(TimeZonePtr p, local_time<Duration> l) { p->to_sys(l); })
       : zoned_time(traits::locate_zone(name), lt) {}
 
@@ -529,7 +529,7 @@ public:
 
   // name + local_time + choose
   zoned_time(string_view name, const local_time<Duration>& lt, choose c)
-    requires(detail::zoned_has_locate_zone<TimeZonePtr> &&
+    requires(tzdb_detail::zoned_has_locate_zone<TimeZonePtr> &&
              requires(TimeZonePtr p, local_time<Duration> l, choose ch) { p->to_sys(l, ch); })
       : zoned_time(traits::locate_zone(name), lt, c) {}
 
@@ -548,14 +548,14 @@ public:
   // name + zoned_time<Duration2, TimeZonePtr2>
   template <class Duration2, class TimeZonePtr2>
   zoned_time(string_view name, const zoned_time<Duration2, TimeZonePtr2>& zt)
-    requires(detail::zoned_has_locate_zone<TimeZonePtr> &&
+    requires(tzdb_detail::zoned_has_locate_zone<TimeZonePtr> &&
              is_convertible_v<sys_time<Duration2>, sys_time<Duration>>)
       : zoned_time(traits::locate_zone(name), zt) {}
 
   // name + zoned_time + choose
   template <class Duration2, class TimeZonePtr2>
   zoned_time(string_view name, const zoned_time<Duration2, TimeZonePtr2>& zt, choose c)
-    requires(detail::zoned_has_locate_zone<TimeZonePtr> &&
+    requires(tzdb_detail::zoned_has_locate_zone<TimeZonePtr> &&
              is_convertible_v<sys_time<Duration2>, sys_time<Duration>>)
       : zoned_time(traits::locate_zone(name), zt, c) {}
 
@@ -587,32 +587,32 @@ zoned_time() -> zoned_time<seconds>;
 template <class Duration>
 zoned_time(sys_time<Duration>) -> zoned_time<common_type_t<Duration, seconds>>;
 
-namespace detail {
+namespace tzdb_detail {
 template <class TimeZonePtrOrName>
 using time_zone_representation =
     conditional_t<is_convertible_v<TimeZonePtrOrName, string_view>,
                   const time_zone*,
                   remove_cvref_t<TimeZonePtrOrName>>;
-} // namespace detail
+} // namespace tzdb_detail
 
 template <class TimeZonePtrOrName>
 zoned_time(TimeZonePtrOrName&&)
-    -> zoned_time<seconds, detail::time_zone_representation<TimeZonePtrOrName>>;
+    -> zoned_time<seconds, tzdb_detail::time_zone_representation<TimeZonePtrOrName>>;
 
 template <class TimeZonePtrOrName, class Duration>
 zoned_time(TimeZonePtrOrName&&, sys_time<Duration>)
     -> zoned_time<common_type_t<Duration, seconds>,
-                  detail::time_zone_representation<TimeZonePtrOrName>>;
+                  tzdb_detail::time_zone_representation<TimeZonePtrOrName>>;
 
 template <class TimeZonePtrOrName, class Duration>
 zoned_time(TimeZonePtrOrName&&, local_time<Duration>, choose = choose::earliest)
     -> zoned_time<common_type_t<Duration, seconds>,
-                  detail::time_zone_representation<TimeZonePtrOrName>>;
+                  tzdb_detail::time_zone_representation<TimeZonePtrOrName>>;
 
 template <class Duration, class TimeZonePtrOrName, class TimeZonePtr2>
 zoned_time(TimeZonePtrOrName&&, zoned_time<Duration, TimeZonePtr2>, choose = choose::earliest)
     -> zoned_time<common_type_t<Duration, seconds>,
-                  detail::time_zone_representation<TimeZonePtrOrName>>;
+                  tzdb_detail::time_zone_representation<TimeZonePtrOrName>>;
 
 using zoned_seconds = zoned_time<seconds>;
 
