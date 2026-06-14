@@ -56,11 +56,25 @@ SUPPORT_COMPAT = """
 """
 
 
+# gcc-10 miscompiles DoNotOptimize's in-out barrier when `value` is an array:
+# the `"+m,r"` operand decays the array to a pointer for the `r` alternative
+# and the write-back clobbers the array's bytes (proven single-threaded: a
+# 0xcd-filled stack array reads back as garbage after DoNotOptimize(arr)).  An
+# input-only memory-clobber fence over the object's address is an equally strong
+# barrier against dead-store elimination and is array-safe for every type.
+DNO_BAD = '  asm volatile("" : "+m,r"(value) : : "memory");'
+DNO_FIX = ('  { const volatile void* __cis_p = __builtin_addressof(value);\n'
+           '    asm volatile("" : : "r"(__cis_p) : "memory"); }')
+
+
 def patch_support():
-    """Idempotently append the compat block to the copied test_macros.h."""
+    """Idempotently append the compat block + array-safe DoNotOptimize fix."""
     tm = os.path.join(T.DST_SUPPORT, "test_macros.h")
     if os.path.exists(tm):
         cur = open(tm).read()
+        if DNO_BAD in cur:
+            cur = cur.replace(DNO_BAD, DNO_FIX)
+            open(tm, "w").write(cur)
         if "libcis compatibility" not in cur:
             open(tm, "a").write(SUPPORT_COMPAT)
 
