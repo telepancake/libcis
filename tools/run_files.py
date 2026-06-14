@@ -130,7 +130,14 @@ for r in tests:
     # PID-unique temp paths: concurrent run_files invocations (parallel
     # subtree gates) must not clobber each other's driver/executable.
     drv = f"/tmp/rf_drv_{os.getpid()}.cpp"
-    open(drv, "w").write(f'#include "{src}"\nint main(){{ return {r["entry"]}; }}\n')
+    # Forward the process's real argc/argv to the test's main: lit runs tests as
+    # real executables, so tests may legitimately read argv[0] (e.g. the procfs
+    # copy_file test compares against argv[0]'s basename).  The manifest entry
+    # bakes in "(0, nullptr)"; rewriting it to "(argc, argv)" gives the faithful
+    # invocation without a per-test hack.
+    entry = r["entry"].replace("(0, nullptr)", "(argc, argv)")
+    open(drv, "w").write(
+        f'#include "{src}"\nint main(int argc, char** argv){{ return {entry}; }}\n')
     exe = f"/tmp/rf_exe_{os.getpid()}"
     xflags, _ = _extra_flags(src)
     try:

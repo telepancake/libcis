@@ -1854,6 +1854,91 @@ protected:
 inline locale::id codecvt<wchar_t, char, mbstate_t>::id;
 
 //===----------------------------------------------------------------------===//
+// UTF-8 codecvt<wchar_t,char> for named UTF-8 locales.
+// wchar_t is 32-bit UCS-4 on this target, so external UTF-8 <-> internal UCS-4
+// is a direct transform with no locale state needed.  The classic facet above
+// is single-byte identity (correct for the "C" locale and Latin-1-ish bytes);
+// a filebuf imbued with e.g. "en_US.UTF-8" needs this to write code points
+// above U+00FF as multibyte sequences.
+//===----------------------------------------------------------------------===//
+namespace detail {
+struct utf8_wchar_codecvt : codecvt<wchar_t, char, mbstate_t> {
+    explicit utf8_wchar_codecvt(size_t refs = 0)
+        : codecvt<wchar_t, char, mbstate_t>(refs) {}
+protected:
+    static int u8len(unsigned long w) {
+        if (w < 0x80)     return 1;
+        if (w < 0x800)    return 2;
+        if (w < 0x10000)  return 3;
+        if (w < 0x110000) return 4;
+        return -1;
+    }
+    result do_out(state_type&, const intern_type* frm, const intern_type* frm_end,
+                  const intern_type*& frm_nxt, extern_type* to, extern_type* to_end,
+                  extern_type*& to_nxt) const override {
+        frm_nxt = frm; to_nxt = to;
+        for (; frm_nxt != frm_end; ++frm_nxt) {
+            unsigned long w = static_cast<unsigned long>(
+                static_cast<make_unsigned_t<intern_type>>(*frm_nxt));
+            int n = u8len(w);
+            if (n < 0) return error;
+            if (to_end - to_nxt < n) return partial;
+            unsigned char* o = reinterpret_cast<unsigned char*>(to_nxt);
+            switch (n) {
+            case 1: o[0] = static_cast<unsigned char>(w); break;
+            case 2: o[0] = 0xC0 | (w >> 6);  o[1] = 0x80 | (w & 0x3F); break;
+            case 3: o[0] = 0xE0 | (w >> 12); o[1] = 0x80 | ((w >> 6) & 0x3F);
+                    o[2] = 0x80 | (w & 0x3F); break;
+            default: o[0] = 0xF0 | (w >> 18); o[1] = 0x80 | ((w >> 12) & 0x3F);
+                     o[2] = 0x80 | ((w >> 6) & 0x3F); o[3] = 0x80 | (w & 0x3F); break;
+            }
+            to_nxt += n;
+        }
+        return ok;
+    }
+    result do_in(state_type&, const extern_type* frm, const extern_type* frm_end,
+                 const extern_type*& frm_nxt, intern_type* to, intern_type* to_end,
+                 intern_type*& to_nxt) const override {
+        frm_nxt = frm; to_nxt = to;
+        while (frm_nxt != frm_end) {
+            if (to_nxt == to_end) return partial;
+            unsigned char c0 = static_cast<unsigned char>(*frm_nxt);
+            int n; unsigned long w;
+            if (c0 < 0x80)       { n = 1; w = c0; }
+            else if (c0 < 0xC0)  return error;            // stray continuation
+            else if (c0 < 0xE0)  { n = 2; w = c0 & 0x1F; }
+            else if (c0 < 0xF0)  { n = 3; w = c0 & 0x0F; }
+            else if (c0 < 0xF8)  { n = 4; w = c0 & 0x07; }
+            else                 return error;
+            if (frm_end - frm_nxt < n) return partial;
+            for (int i = 1; i < n; ++i) {
+                unsigned char ci = static_cast<unsigned char>(frm_nxt[i]);
+                if ((ci & 0xC0) != 0x80) return error;
+                w = (w << 6) | (ci & 0x3F);
+            }
+            *to_nxt++ = static_cast<intern_type>(w);
+            frm_nxt += n;
+        }
+        return ok;
+    }
+    int do_encoding() const noexcept override { return 0; }   // variable width
+    bool do_always_noconv() const noexcept override { return false; }
+    int do_length(state_type&, const extern_type* frm, const extern_type* frm_end,
+                  size_t mx) const override {
+        size_t cnt = 0; const extern_type* p = frm;
+        while (p != frm_end && cnt < mx) {
+            unsigned char c0 = static_cast<unsigned char>(*p);
+            int n = c0 < 0x80 ? 1 : c0 < 0xC0 ? 1 : c0 < 0xE0 ? 2 : c0 < 0xF0 ? 3 : 4;
+            if (frm_end - p < n) break;
+            p += n; ++cnt;
+        }
+        return static_cast<int>(p - frm);
+    }
+    int do_max_length() const noexcept override { return 4; }
+};
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
 // ctype_base — character classification masks
 //===----------------------------------------------------------------------===//
 //===----------------------------------------------------------------------===//
@@ -6216,6 +6301,16 @@ inline void locale::__build_named(const char* name, category cat, const locale* 
         if (!isC) {
             inst(std::ctype<char>::id.__get(),    new ctype_byname<char>(nm));
             inst(std::ctype<wchar_t>::id.__get(), new ctype_byname<wchar_t>(nm));
+            // The wide codecvt is part of the ctype category.  For UTF-8 locales
+            // install the multibyte UTF-8 facet so a wide filebuf encodes code
+            // points above U+00FF correctly; other encodings keep the inherited
+            // single-byte facet (Latin-1-ish identity).
+            bool is_utf8 = nm.find("UTF-8") != string::npos ||
+                           nm.find("utf8")  != string::npos ||
+                           nm.find("UTF8")  != string::npos;
+            if (is_utf8)
+                inst(std::codecvt<wchar_t, char, mbstate_t>::id.__get(),
+                     new detail::utf8_wchar_codecvt());
         }
     }
     if (cat & monetary) {
