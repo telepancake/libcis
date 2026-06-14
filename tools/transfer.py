@@ -112,6 +112,9 @@ TRUE_FEATURES = {
     "locale.en_US.UTF-8", "locale.fr_FR.UTF-8", "locale.ru_RU.UTF-8",
     "locale.zh_CN.UTF-8", "locale.ja_JP.UTF-8", "locale.cs_CZ.ISO8859-2",
     "has-1024-bit-extended-precision", "linux", "x86_64",
+    # our backend IS gcc: tests marked `UNSUPPORTED: gcc` (e.g. the `import
+    # std;` module tests) genuinely cannot run here and must be lit-skipped.
+    "gcc",
     # libcis has no libc++-hardening: _LIBCPP_ASSERT death-tests
     # (UNSUPPORTED: libcpp-hardening-mode=none) must be lit-skipped.
     "libcpp-hardening-mode=none",
