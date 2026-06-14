@@ -1,0 +1,40 @@
+// <cstring> -- C string functions in namespace std.
+// Mechanically ported from libc++ include/cstring.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+#pragma once
+
+// glibc declarations must keep DEFAULT visibility no matter where this
+// wrapper is first included from: io headers wrap their bodies in
+// `#pragma GCC visibility push(hidden)` (libstdc++-ABI isolation), and a
+// libc prototype first seen inside such a region becomes a hidden symbol
+// the linker then cannot resolve against libc (e.g. strtod via <sstream>).
+#pragma GCC visibility push(default)
+#include <string.h>
+#pragma GCC visibility pop
+
+namespace std {
+
+using ::memcpy;
+using ::memmove;
+using ::strcpy;
+using ::strncpy;
+using ::strcat;
+using ::strncat;
+using ::memcmp;
+using ::strcmp;
+using ::strncmp;
+using ::strcoll;
+using ::strxfrm;
+using ::memchr;
+using ::strchr;
+using ::strcspn;
+using ::strpbrk;
+using ::strrchr;
+using ::strspn;
+using ::strstr;
+using ::strtok;
+using ::memset;
+using ::strerror;
+using ::strlen;
+
+} // namespace std

@@ -1,0 +1,8 @@
+// <cstdbool> -- deprecated C compatibility header ([depr.cstdbool.syn]):
+// defines only __bool_true_false_are_defined.
+// Mechanically ported from libc++ include/cstdbool.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+#pragma once
+
+#undef __bool_true_false_are_defined
+#define __bool_true_false_are_defined 1

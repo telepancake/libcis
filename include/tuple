@@ -1,0 +1,1349 @@
+// <tuple> — std::tuple and related utilities.
+// Mechanically ported from libc++ (release/20.x) include/tuple +
+// include/__tuple/{find_index,make_tuple_types,sfinae_helpers,tuple_indices,
+// tuple_like_ext,tuple_size,tuple_types}.h + __memory/allocator_arg_t.h
+// (the uses-allocator construction dispatch) + __type_traits/lazy.h.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// __type_pack_element decision: NOT available in gcc-10.2.
+// We implement tuple_element<I, tuple<Ts...>> using a recursive C++ template
+// (detail::tuple_element_impl). No builtins needed.
+//
+// allocator_arg_t / allocator support: allocator_arg_t is DEFINED in <memory>,
+// which (indirectly, via <functional>) includes this header, so <tuple> can
+// only forward-declare it. Constructor parameters therefore take
+// `const allocator_arg_t&` (binding a reference to a forward-declared class is
+// valid; libc++ takes it by value, which would require a complete type at the
+// point of definition). Observable behaviour at call sites is identical.
+//
+// pair piecewise construction: The pair piecewise constructor in <utility>
+// already has the right signature and delegates to get<I>(tuple). It compiles
+// correctly once <tuple> is included. No changes to <utility> needed.
+#pragma once
+
+#include <type_traits>
+#include <utility>
+#include <compare>
+
+namespace std {
+
+// Forward declarations of things defined elsewhere that <tuple> cannot
+// include without creating a cycle (<memory> -> <functional> -> <tuple>).
+struct allocator_arg_t;             // defined in <memory>
+template<class T, size_t N> struct array;  // defined in <array>
+template<class T, class Alloc> struct uses_allocator;  // defined below
+
+// get(array) forward declarations (equivalent of libc++ __fwd/array.h):
+// needed so that qualified std::get calls inside the templates below resolve
+// for std::array arguments even when <array> is included after <tuple>.
+template<size_t I, class T, size_t N>
+[[nodiscard]] constexpr T& get(array<T, N>&) noexcept;
+template<size_t I, class T, size_t N>
+[[nodiscard]] constexpr const T& get(const array<T, N>&) noexcept;
+template<size_t I, class T, size_t N>
+[[nodiscard]] constexpr T&& get(array<T, N>&&) noexcept;
+template<size_t I, class T, size_t N>
+[[nodiscard]] constexpr const T&& get(const array<T, N>&&) noexcept;
+
+//===----------------------------------------------------------------------===//
+// tuple_element recursive implementation
+// (defined early because tuple_impl's from_tuple ctor needs it)
+//===----------------------------------------------------------------------===//
+
+// Primary templates (incomplete) for tuple_size / tuple_element declared in
+// <utility> as:
+//   template<class T> struct tuple_size;
+//   template<size_t I, class T> struct tuple_element;
+
+// tuple_element for tuple<Ts...> — recursive, no __type_pack_element.
+namespace detail {
+    template<size_t I, class... Ts>
+    struct tuple_element_impl;
+
+    template<class H, class... Tail>
+    struct tuple_element_impl<0, H, Tail...> { using type = H; };
+
+    template<size_t I, class H, class... Tail>
+    struct tuple_element_impl<I, H, Tail...>
+        : tuple_element_impl<I-1, Tail...> {};
+} // namespace detail
+
+// Forward declare tuple so tuple_element can be specialised
+template<class... Ts>
+class tuple;
+
+template<size_t I, class... Ts>
+struct tuple_element<I, tuple<Ts...>> {
+    static_assert(I < sizeof...(Ts), "tuple_element index out of bounds");
+    using type = typename detail::tuple_element_impl<I, Ts...>::type;
+};
+
+// get(tuple) forward declarations (equivalent of libc++ __fwd/tuple.h):
+// the internal helpers below call std::get qualified, so the overloads must
+// be declared before them.
+template<size_t I, class... Ts>
+[[nodiscard]] constexpr typename tuple_element<I, tuple<Ts...>>::type&
+get(tuple<Ts...>&) noexcept;
+template<size_t I, class... Ts>
+[[nodiscard]] constexpr const typename tuple_element<I, tuple<Ts...>>::type&
+get(const tuple<Ts...>&) noexcept;
+template<size_t I, class... Ts>
+[[nodiscard]] constexpr typename tuple_element<I, tuple<Ts...>>::type&&
+get(tuple<Ts...>&&) noexcept;
+template<size_t I, class... Ts>
+[[nodiscard]] constexpr const typename tuple_element<I, tuple<Ts...>>::type&&
+get(const tuple<Ts...>&&) noexcept;
+
+// cv-qualified tuple_element specialisations now live in <utility> (included
+// above), so the tuple protocol works without <tuple>.
+
+template<size_t I, class T>
+using tuple_element_t = typename tuple_element<I, T>::type;
+
+//===----------------------------------------------------------------------===//
+// tuple_size specialisations
+//===----------------------------------------------------------------------===//
+
+template<class... Ts>
+struct tuple_size<tuple<Ts...>> : integral_constant<size_t, sizeof...(Ts)> {};
+
+// cv-qualified tuple_size specialisations live in <utility> (included above)
+// as plain partial specialisations:
+//     template<class T> struct tuple_size<const T> : tuple_size<T> {};
+// Those are NOT SFINAE-friendly: instantiating tuple_size<const int> requires
+// the (incomplete) base tuple_size<int> and hard-errors. libc++ solves this in
+// __tuple/tuple_size.h with the alias-deduction trick, but that specialisation
+// is ambiguous with the plain ones already in <utility> (verified on
+// gcc-10.2), and <utility> owns those. DEVIATION: instead, make tuple_size<T>
+// a complete *empty* class for every scalar/void type T. Then tuple_size<cv T>
+// for such T is complete but has no ::value, which gives exactly the C++20
+// SFINAE-friendly behaviour ([tuple.helper]/4: cv specialisations only have
+// ::value when tuple_size<T>::value is well-formed). Class/union/array types
+// keep the incomplete primary so that structured bindings (which on gcc-10
+// treat any *complete* tuple_size<E> as opting into the tuple protocol) are
+// unaffected.
+template<class T>
+    requires (is_scalar_v<T> || is_void_v<T>)
+struct tuple_size<T> {};
+
+template<class T>
+inline constexpr size_t tuple_size_v = tuple_size<T>::value;
+
+//===----------------------------------------------------------------------===//
+// Internal helpers
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+// all_v<Bs...>: true iff every B is true (empty pack = true)
+template<bool... Bs>
+inline constexpr bool all_v = (Bs && ...);
+
+// Lazy (from __type_traits/lazy.h): defer instantiation of F<Args...> until
+// ::value (or another member) is actually requested.
+template<template<class...> class F, class... Args>
+struct Lazy : F<Args...> {};
+
+// dependent_v<Pred, Dep...>: Pred::value, made artificially dependent on the
+// Dep types. Used in constructor enable_if non-type-template-parameter types
+// whose condition would otherwise depend only on the *class* template
+// parameters and hence be instantiated eagerly (and hard-error) when the
+// class is instantiated. libc++ achieves the same with defaulted
+// template-template parameters (`template<class...> class _And = _And`), but
+// gcc-10.2 crashes with infinite comp_template_parms recursion during CTAD
+// when several constructors carry such template-template parameters.
+template<class Pred, class... Dep>
+inline constexpr bool dependent_v = Pred::value;
+
+// tuple_types (from __tuple/tuple_types.h)
+template<class... Ts>
+struct tuple_types {};
+
+} // namespace detail
+
+// tuple_element for detail::tuple_types (from __tuple/tuple_element.h)
+template<size_t I, class... Ts>
+struct tuple_element<I, detail::tuple_types<Ts...>> {
+    static_assert(I < sizeof...(Ts), "tuple_element index out of bounds");
+    using type = typename detail::tuple_element_impl<I, Ts...>::type;
+};
+
+// tuple_size for detail::tuple_types (from __tuple/tuple_size.h)
+template<class... Ts>
+struct tuple_size<detail::tuple_types<Ts...>> : integral_constant<size_t, sizeof...(Ts)> {};
+
+namespace detail {
+
+// make_index_range<Ep, Sp> == libc++ __make_tuple_indices<Ep, Sp>::type:
+// index_sequence<Sp, Sp+1, ..., Ep-1>.
+template<size_t Sp, class Seq>
+struct offset_index_sequence;
+
+template<size_t Sp, size_t... Is>
+struct offset_index_sequence<Sp, index_sequence<Is...>> {
+    using type = index_sequence<(Is + Sp)...>;
+};
+
+template<size_t Ep, size_t Sp = 0>
+using make_index_range = typename offset_index_sequence<Sp, make_index_sequence<Ep - Sp>>::type;
+
+//===----------------------------------------------------------------------===//
+// tuple_like_ext (from __tuple/tuple_like_ext.h)
+//===----------------------------------------------------------------------===//
+
+template<class T>
+struct tuple_like_ext : false_type {};
+
+template<class T> struct tuple_like_ext<const T>          : tuple_like_ext<T> {};
+template<class T> struct tuple_like_ext<volatile T>       : tuple_like_ext<T> {};
+template<class T> struct tuple_like_ext<const volatile T> : tuple_like_ext<T> {};
+
+template<class... Ts> struct tuple_like_ext<tuple<Ts...>>  : true_type {};
+template<class T1, class T2> struct tuple_like_ext<pair<T1, T2>> : true_type {};
+template<class T, size_t N>  struct tuple_like_ext<array<T, N>>  : true_type {};
+template<class... Ts> struct tuple_like_ext<tuple_types<Ts...>>  : true_type {};
+
+//===----------------------------------------------------------------------===//
+// make_tuple_types (from __tuple/make_tuple_types.h)
+// make_tuple_types<Tuple, Ep, Sp>::type is a tuple_types<Types...> using only
+// the element types in [Sp, Ep). If Tuple is a reference type, the element
+// types are reference-qualified accordingly (copy_cvref).
+//===----------------------------------------------------------------------===//
+
+template<class TupleTypes, class TupleIndices>
+struct make_tuple_types_flat;
+
+template<template<class...> class Tpl, class... Types, size_t... Idx>
+struct make_tuple_types_flat<Tpl<Types...>, index_sequence<Idx...>> {
+    // Specialisation for pair, tuple, and tuple_types.
+    // (libc++ uses __type_pack_element; gcc-10.2 lacks it -> recursion.)
+    template<class T>
+    using apply_quals =
+        tuple_types<copy_cvref_t<T, typename tuple_element_impl<Idx, Types...>::type>...>;
+};
+
+template<class Vt, size_t N, size_t... Idx>
+struct make_tuple_types_flat<array<Vt, N>, index_sequence<Idx...>> {
+    template<size_t>
+    using value_type = Vt;
+    template<class T>
+    using apply_quals = tuple_types<copy_cvref_t<T, value_type<Idx>>...>;
+};
+
+template<class T,
+         size_t Ep      = tuple_size<remove_reference_t<T>>::value,
+         size_t Sp      = 0,
+         bool  SameSize = (Ep == tuple_size<remove_reference_t<T>>::value)>
+struct make_tuple_types {
+    static_assert(Sp <= Ep, "make_tuple_types input error");
+    using RawT  = remove_cvref_t<T>;
+    using Maker = make_tuple_types_flat<RawT, make_index_range<Ep, Sp>>;
+    using type  = typename Maker::template apply_quals<T>;
+};
+
+template<class... Types, size_t Ep>
+struct make_tuple_types<tuple<Types...>, Ep, 0, true> {
+    using type = tuple_types<Types...>;
+};
+
+template<class... Types, size_t Ep>
+struct make_tuple_types<tuple_types<Types...>, Ep, 0, true> {
+    using type = tuple_types<Types...>;
+};
+
+//===----------------------------------------------------------------------===//
+// tuple_constructible (from __tuple/sfinae_helpers.h)
+//===----------------------------------------------------------------------===//
+
+struct tuple_sfinae_base {
+    // SFINAE-friendly: deduction fails (-> false_type) when the two packs have
+    // different lengths; otherwise evaluates the trait element-wise.
+    template<template<class, class...> class Trait, class... LArgs, class... RArgs>
+    static auto do_test(tuple_types<LArgs...>, tuple_types<RArgs...>)
+        -> bool_constant<all_v<Trait<LArgs, RArgs>::value...>>;
+    template<template<class...> class>
+    static auto do_test(...) -> false_type;
+
+    template<class FromArgs, class ToArgs>
+    using constructible = decltype(do_test<is_constructible>(ToArgs{}, FromArgs{}));
+};
+
+template<class T,
+         class U,
+         bool = tuple_like_ext<remove_reference_t<T>>::value,
+         bool = tuple_like_ext<U>::value>
+struct tuple_constructible : false_type {};
+
+template<class T, class U>
+struct tuple_constructible<T, U, true, true>
+    : tuple_sfinae_base::constructible<typename make_tuple_types<T>::type,
+                                       typename make_tuple_types<U>::type> {};
+
+//===----------------------------------------------------------------------===//
+// uses-allocator construction dispatch (from __memory/allocator_arg_t.h)
+//   0: T does not use allocators
+//   1: leading-allocator convention: T(allocator_arg, a, args...)
+//   2: trailing-allocator convention: T(args..., a)
+//===----------------------------------------------------------------------===//
+
+template<class T, class Alloc, class... Args>
+struct uses_alloc_ctor_imp {
+    using RawAlloc = remove_cvref_t<Alloc>;
+    static const bool ua = uses_allocator<T, RawAlloc>::value;
+    static const bool ic = is_constructible<T, allocator_arg_t, Alloc, Args...>::value;
+    static const int value = ua ? 2 - ic : 0;
+};
+
+template<class T, class Alloc, class... Args>
+struct uses_alloc_ctor
+    : integral_constant<int, uses_alloc_ctor_imp<T, Alloc, Args...>::value> {};
+
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
+// find_exactly_one: find the unique index of T in Args...
+// Used by get<T>(tuple).
+// Ported from libc++ __tuple/find_index.h.
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+namespace find_detail {
+    inline constexpr size_t not_found = static_cast<size_t>(-1);
+    inline constexpr size_t ambiguous = not_found - 1;
+
+    constexpr size_t find_idx_return(size_t curr, size_t res, bool matches) noexcept {
+        return !matches ? res : (res == not_found ? curr : ambiguous);
+    }
+
+    template<size_t N>
+    constexpr size_t find_idx(size_t i, const bool (&matches)[N]) noexcept {
+        return i == N ? not_found
+                      : find_idx_return(i, find_idx(i + 1, matches), matches[i]);
+    }
+
+    template<class T, class... Args>
+    struct find_exactly_one_checked {
+        static constexpr bool matches[sizeof...(Args)] = { is_same_v<T, Args>... };
+        static constexpr size_t value = find_idx(0, matches);
+        static_assert(value != not_found, "type not found in type list");
+        static_assert(value != ambiguous, "type occurs more than once in type list");
+    };
+
+    template<class T>
+    struct find_exactly_one_checked<T> {
+        static_assert(!is_same_v<T, T>, "type not in empty type list");
+    };
+} // namespace find_detail
+
+template<class T, class... Args>
+struct find_exactly_one : find_detail::find_exactly_one_checked<T, Args...> {};
+
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
+// tuple_leaf — the EBO-enabled storage for one tuple element.
+// Two specialisations:
+//   Ep = false (normal): stores a data member
+//   Ep = true  (EBO):    inherits from remove_cv_t<H> when H is empty+non-final
+// The integral_constant<int, 0|1|2> constructors implement uses-allocator
+// construction (see detail::uses_alloc_ctor above).
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+template<size_t I, class H, bool Ep = is_empty_v<H> && !is_final_v<H>>
+class tuple_leaf;
+
+// Non-EBO
+template<size_t I, class H, bool Ep>
+class tuple_leaf {
+    H value_;
+public:
+    tuple_leaf& operator=(const tuple_leaf&) = delete;
+
+    constexpr tuple_leaf()
+        noexcept(is_nothrow_default_constructible_v<H>)
+        : value_()
+    {
+        static_assert(!is_reference_v<H>,
+            "Attempted to default construct a reference element in a tuple");
+    }
+
+    template<class Alloc>
+    constexpr tuple_leaf(integral_constant<int, 0>, const Alloc&) : value_() {
+        static_assert(!is_reference_v<H>,
+            "Attempted to default construct a reference element in a tuple");
+    }
+
+    template<class Alloc>
+    constexpr tuple_leaf(integral_constant<int, 1>, const Alloc& a)
+        : value_(allocator_arg_t(), a)
+    {
+        static_assert(!is_reference_v<H>,
+            "Attempted to default construct a reference element in a tuple");
+    }
+
+    template<class Alloc>
+    constexpr tuple_leaf(integral_constant<int, 2>, const Alloc& a) : value_(a) {
+        static_assert(!is_reference_v<H>,
+            "Attempted to default construct a reference element in a tuple");
+    }
+
+    template<class T>
+        requires (!is_same_v<remove_cvref_t<T>, tuple_leaf> && is_constructible_v<H, T>)
+    constexpr explicit tuple_leaf(T&& t)
+        noexcept(is_nothrow_constructible_v<H, T>)
+        : value_(forward<T>(t)) {}
+
+    template<class T, class Alloc>
+    constexpr explicit tuple_leaf(integral_constant<int, 0>, const Alloc&, T&& t)
+        : value_(forward<T>(t)) {}
+
+    template<class T, class Alloc>
+    constexpr explicit tuple_leaf(integral_constant<int, 1>, const Alloc& a, T&& t)
+        : value_(allocator_arg_t(), a, forward<T>(t))
+    {
+        static_assert(!is_reference_v<H>,
+            "Attempted to uses-allocator construct a reference element in a tuple");
+    }
+
+    template<class T, class Alloc>
+    constexpr explicit tuple_leaf(integral_constant<int, 2>, const Alloc& a, T&& t)
+        : value_(forward<T>(t), a)
+    {
+        static_assert(!is_reference_v<H>,
+            "Attempted to uses-allocator construct a reference element in a tuple");
+    }
+
+    tuple_leaf(const tuple_leaf&) = default;
+    tuple_leaf(tuple_leaf&&)      = default;
+
+    constexpr H&       get()       noexcept { return value_; }
+    constexpr const H& get() const noexcept { return value_; }
+};
+
+// EBO: inherit from remove_cv_t<H>
+template<size_t I, class H>
+class tuple_leaf<I, H, true> : private remove_cv_t<H> {
+public:
+    tuple_leaf& operator=(const tuple_leaf&) = delete;
+
+    constexpr tuple_leaf()
+        noexcept(is_nothrow_default_constructible_v<H>) {}
+
+    template<class Alloc>
+    constexpr tuple_leaf(integral_constant<int, 0>, const Alloc&) {}
+
+    template<class Alloc>
+    constexpr tuple_leaf(integral_constant<int, 1>, const Alloc& a)
+        : remove_cv_t<H>(allocator_arg_t(), a) {}
+
+    template<class Alloc>
+    constexpr tuple_leaf(integral_constant<int, 2>, const Alloc& a)
+        : remove_cv_t<H>(a) {}
+
+    template<class T>
+        requires (!is_same_v<remove_cvref_t<T>, tuple_leaf> && is_constructible_v<H, T>)
+    constexpr explicit tuple_leaf(T&& t)
+        noexcept(is_nothrow_constructible_v<H, T>)
+        : remove_cv_t<H>(forward<T>(t)) {}
+
+    template<class T, class Alloc>
+    constexpr explicit tuple_leaf(integral_constant<int, 0>, const Alloc&, T&& t)
+        : remove_cv_t<H>(forward<T>(t)) {}
+
+    template<class T, class Alloc>
+    constexpr explicit tuple_leaf(integral_constant<int, 1>, const Alloc& a, T&& t)
+        : remove_cv_t<H>(allocator_arg_t(), a, forward<T>(t)) {}
+
+    template<class T, class Alloc>
+    constexpr explicit tuple_leaf(integral_constant<int, 2>, const Alloc& a, T&& t)
+        : remove_cv_t<H>(forward<T>(t), a) {}
+
+    tuple_leaf(const tuple_leaf&) = default;
+    tuple_leaf(tuple_leaf&&)      = default;
+
+    constexpr H&       get()       noexcept { return static_cast<H&>(*this); }
+    constexpr const H& get() const noexcept { return static_cast<const H&>(*this); }
+};
+
+//===----------------------------------------------------------------------===//
+// tuple_impl — multiply-inherits from tuple_leaf<I, Ti> for each I.
+//===----------------------------------------------------------------------===//
+
+template<class Indices, class... Ts>
+struct tuple_impl;
+
+template<size_t... Is, class... Ts>
+struct tuple_impl<index_sequence<Is...>, Ts...>
+    : tuple_leaf<Is, Ts>...
+{
+    // Default-construct all leaves
+    constexpr tuple_impl()
+        noexcept(all_v<is_nothrow_default_constructible_v<Ts>...>) {}
+
+    // Construct the [Uf] leaves from the given arguments and
+    // default-construct the trailing [Ul] leaves.
+    template<size_t... Uf, class... Tf, size_t... Ul, class... Tl, class... Up>
+    constexpr explicit tuple_impl(
+        index_sequence<Uf...>, tuple_types<Tf...>,
+        index_sequence<Ul...>, tuple_types<Tl...>,
+        Up&&... u)
+        noexcept(all_v<is_nothrow_constructible_v<Tf, Up>...> &&
+                 all_v<is_nothrow_default_constructible_v<Tl>...>)
+        : tuple_leaf<Uf, Tf>(forward<Up>(u))..., tuple_leaf<Ul, Tl>()... {}
+
+    // Allocator-extended variant of the above (uses-allocator construction).
+    template<class Alloc, size_t... Uf, class... Tf, size_t... Ul, class... Tl, class... Up>
+    constexpr explicit tuple_impl(
+        const allocator_arg_t&, const Alloc& a,
+        index_sequence<Uf...>, tuple_types<Tf...>,
+        index_sequence<Ul...>, tuple_types<Tl...>,
+        Up&&... u)
+        : tuple_leaf<Uf, Tf>(uses_alloc_ctor<Tf, Alloc, Up>(), a, forward<Up>(u))...,
+          tuple_leaf<Ul, Tl>(uses_alloc_ctor<Tl, Alloc>(), a)... {}
+
+    // From-tuple constructor: copy/move from another tuple-like.
+    template<class Tuple,
+             enable_if_t<tuple_constructible<Tuple, tuple<Ts...>>::value, int> = 0>
+    constexpr tuple_impl(Tuple&& t)
+        noexcept(all_v<is_nothrow_constructible_v<
+            Ts, typename tuple_element<Is, typename make_tuple_types<Tuple>::type>::type>...>)
+        : tuple_leaf<Is, Ts>(
+              forward<typename tuple_element<Is, typename make_tuple_types<Tuple>::type>::type>(
+                  std::get<Is>(t)))... {}
+
+    // Allocator-extended from-tuple constructor.
+    template<class Alloc, class Tuple,
+             enable_if_t<tuple_constructible<Tuple, tuple<Ts...>>::value, int> = 0>
+    constexpr tuple_impl(const allocator_arg_t&, const Alloc& a, Tuple&& t)
+        : tuple_leaf<Is, Ts>(
+              uses_alloc_ctor<Ts, Alloc,
+                  typename tuple_element<Is, typename make_tuple_types<Tuple>::type>::type>(),
+              a,
+              forward<typename tuple_element<Is, typename make_tuple_types<Tuple>::type>::type>(
+                  std::get<Is>(t)))... {}
+
+    tuple_impl(const tuple_impl&) = default;
+    tuple_impl(tuple_impl&&)      = default;
+
+    constexpr void swap(tuple_impl& other)
+        noexcept(all_v<is_nothrow_swappable_v<Ts>...>)
+    {
+        // Use a fold over a lambda to swap each leaf
+        int dummy[] = {(void(
+            [&]() {
+                using std::swap;
+                swap(static_cast<tuple_leaf<Is,Ts>&>(*this).get(),
+                     static_cast<tuple_leaf<Is,Ts>&>(other).get());
+            }()), 0)..., 0};
+        (void)dummy;
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// memberwise copy / forward assign
+//===----------------------------------------------------------------------===//
+
+template<class Dst, class Src, size_t... Ns>
+constexpr void memberwise_copy_assign(Dst& dst, const Src& src, index_sequence<Ns...>) {
+    int dummy[] = {(void(std::get<Ns>(dst) = std::get<Ns>(src)), 0)..., 0};
+    (void)dummy;
+}
+
+template<class Dst, class Src, size_t... Ns>
+constexpr void memberwise_forward_assign(Dst& dst, Src&& src, index_sequence<Ns...>) {
+    int dummy[] = {(void(
+        std::get<Ns>(dst) =
+            forward<typename tuple_element<Ns, remove_cvref_t<Src>>::type>(std::get<Ns>(src))
+    ), 0)..., 0};
+    (void)dummy;
+}
+
+//===----------------------------------------------------------------------===//
+// tuple comparison helpers
+//===----------------------------------------------------------------------===//
+
+template<size_t I, class T, class U>
+constexpr bool tuple_compare_equal(const T& x, const U& y) {
+    if constexpr (I == 0) return true;
+    else return tuple_compare_equal<I-1>(x, y) && std::get<I-1>(x) == std::get<I-1>(y);
+}
+
+template<class Ret, class T, class U, size_t... Is>
+constexpr Ret tuple_compare_three_way(const T& x, const U& y, index_sequence<Is...>) {
+    Ret result = strong_ordering::equal;
+    (void)((result = synth_three_way(std::get<Is>(x), std::get<Is>(y)), result != 0) || ...);
+    return result;
+}
+
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
+// class tuple
+//===----------------------------------------------------------------------===//
+
+template<class... Ts>
+class tuple {
+    using base_t = detail::tuple_impl<index_sequence_for<Ts...>, Ts...>;
+    base_t base_;
+
+    // grant get<I> friend access to base_
+    template<size_t J, class... Us>
+    friend constexpr typename tuple_element<J, tuple<Us...>>::type&
+    get(tuple<Us...>&) noexcept;
+    template<size_t J, class... Us>
+    friend constexpr const typename tuple_element<J, tuple<Us...>>::type&
+    get(const tuple<Us...>&) noexcept;
+    template<size_t J, class... Us>
+    friend constexpr typename tuple_element<J, tuple<Us...>>::type&&
+    get(tuple<Us...>&&) noexcept;
+    template<size_t J, class... Us>
+    friend constexpr const typename tuple_element<J, tuple<Us...>>::type&&
+    get(const tuple<Us...>&&) noexcept;
+
+public:
+    // [tuple.cnstr]
+
+    // tuple() constructors (including allocator_arg_t variants).
+    // The template-template default parameters keep the constraint and the
+    // explicit-specifier lazy: nothing involving Ts is instantiated until the
+    // constructor is actually considered (libc++'s _IsImpDefault trick; it
+    // breaks the is_default_constructible<tuple<...>> recursion).
+    template<template<class...> class IsImpDefault = detail::is_implicitly_default_constructible,
+             template<class...> class IsDefault    = is_default_constructible,
+             enable_if_t<conjunction<IsDefault<Ts>...>::value, int> = 0>
+    constexpr explicit(negation<detail::Lazy<conjunction, IsImpDefault<Ts>...>>::value)
+    tuple()
+        noexcept(conjunction<is_nothrow_default_constructible<Ts>...>::value)
+    {}
+
+    template<class Alloc,
+             enable_if_t<detail::dependent_v<
+                 detail::Lazy<conjunction, is_default_constructible<Ts>...>, Alloc>, int> = 0>
+    constexpr explicit(negation<detail::Lazy<conjunction,
+                 detail::is_implicitly_default_constructible<Ts>...>>::value)
+    tuple(const allocator_arg_t& tag, const Alloc& a)
+        : base_(tag, a,
+                index_sequence<>(), detail::tuple_types<>(),
+                detail::make_index_range<sizeof...(Ts), 0>(),
+                detail::tuple_types<Ts...>())
+    {}
+
+    // tuple(const T&...) constructors (including allocator_arg_t variants)
+    template<class Dummy = void,
+             enable_if_t<detail::dependent_v<
+                 detail::Lazy<conjunction, bool_constant<(sizeof...(Ts) >= 1)>,
+                              is_copy_constructible<Ts>...>, Dummy>, int> = 0>
+    constexpr explicit(negation<detail::Lazy<conjunction, is_convertible<const Ts&, Ts>...>>::value)
+    tuple(const Ts&... ts)
+        noexcept(conjunction<is_nothrow_copy_constructible<Ts>...>::value)
+        : base_(detail::make_index_range<sizeof...(Ts)>(),
+                typename detail::make_tuple_types<tuple, sizeof...(Ts)>::type(),
+                detail::make_index_range<0>(),
+                typename detail::make_tuple_types<tuple, 0>::type(),
+                ts...)
+    {}
+
+    template<class Alloc,
+             enable_if_t<detail::dependent_v<
+                 detail::Lazy<conjunction, bool_constant<(sizeof...(Ts) >= 1)>,
+                              is_copy_constructible<Ts>...>, Alloc>, int> = 0>
+    constexpr explicit(negation<detail::Lazy<conjunction, is_convertible<const Ts&, Ts>...>>::value)
+    tuple(const allocator_arg_t& tag, const Alloc& a, const Ts&... ts)
+        : base_(tag, a,
+                detail::make_index_range<sizeof...(Ts)>(),
+                typename detail::make_tuple_types<tuple, sizeof...(Ts)>::type(),
+                detail::make_index_range<0>(),
+                typename detail::make_tuple_types<tuple, 0>::type(),
+                ts...)
+    {}
+
+    // tuple(U&&...) constructors (including allocator_arg_t variants)
+    template<class... Us>
+    struct IsThisTuple : false_type {};
+    template<class U>
+    struct IsThisTuple<U> : is_same<remove_cvref_t<U>, tuple> {};
+
+    template<class... Us>
+    struct EnableUTypesCtor
+        : conjunction<bool_constant<(sizeof...(Ts) >= 1)>,
+                      negation<IsThisTuple<Us...>>, // extension to allow mis-behaved user constructors
+                      is_constructible<Ts, Us>...> {};
+
+    template<class... Us,
+             enable_if_t<conjunction<bool_constant<sizeof...(Us) == sizeof...(Ts)>,
+                                     EnableUTypesCtor<Us...>>::value, int> = 0>
+    constexpr explicit(negation<detail::Lazy<conjunction, is_convertible<Us, Ts>...>>::value)
+    tuple(Us&&... us)
+        noexcept(conjunction<is_nothrow_constructible<Ts, Us>...>::value)
+        : base_(detail::make_index_range<sizeof...(Us)>(),
+                typename detail::make_tuple_types<tuple, sizeof...(Us)>::type(),
+                detail::make_index_range<sizeof...(Ts), sizeof...(Us)>(),
+                typename detail::make_tuple_types<tuple, sizeof...(Ts), sizeof...(Us)>::type(),
+                forward<Us>(us)...)
+    {}
+
+    template<class Alloc, class... Us,
+             enable_if_t<conjunction<bool_constant<sizeof...(Us) == sizeof...(Ts)>,
+                                     EnableUTypesCtor<Us...>>::value, int> = 0>
+    constexpr explicit(negation<detail::Lazy<conjunction, is_convertible<Us, Ts>...>>::value)
+    tuple(const allocator_arg_t& tag, const Alloc& a, Us&&... us)
+        : base_(tag, a,
+                detail::make_index_range<sizeof...(Us)>(),
+                typename detail::make_tuple_types<tuple, sizeof...(Us)>::type(),
+                detail::make_index_range<sizeof...(Ts), sizeof...(Us)>(),
+                typename detail::make_tuple_types<tuple, sizeof...(Ts), sizeof...(Us)>::type(),
+                forward<Us>(us)...)
+    {}
+
+    // Copy and move constructors (including the allocator_arg_t variants)
+    tuple(const tuple&) = default;
+    tuple(tuple&&)      = default;
+
+    template<class Alloc,
+             enable_if_t<detail::dependent_v<
+                 detail::Lazy<conjunction, is_copy_constructible<Ts>...>, Alloc>, int> = 0>
+    constexpr tuple(const allocator_arg_t& tag, const Alloc& a, const tuple& t)
+        : base_(tag, a, t)
+    {}
+
+    template<class Alloc,
+             enable_if_t<detail::dependent_v<
+                 detail::Lazy<conjunction, is_move_constructible<Ts>...>, Alloc>, int> = 0>
+    constexpr tuple(const allocator_arg_t& tag, const Alloc& a, tuple&& t)
+        : base_(tag, a, move(t))
+    {}
+
+    // tuple(const tuple<U...>&) constructors (including allocator_arg_t variants)
+
+    template<class OtherTuple, class DecayedOtherTuple = remove_cvref_t<OtherTuple>, class = void>
+    struct EnableCtorFromUTypesTuple : false_type {};
+
+    template<class OtherTuple, class... Us>
+    struct EnableCtorFromUTypesTuple<
+        OtherTuple,
+        tuple<Us...>,
+        // the length of the packs needs to be checked first, otherwise the 2
+        // packs cannot be expanded simultaneously below
+        enable_if_t<sizeof...(Us) == sizeof...(Ts)>>
+        : conjunction<
+              // the two conditions below are not in spec. The purpose is to
+              // disable this ctor when the copy/move ctor can work; otherwise
+              // is_constructible can trigger a hard error in those cases
+              negation<is_same<OtherTuple, const tuple&>>,
+              negation<is_same<OtherTuple, tuple&&>>,
+              is_constructible<Ts, detail::copy_cvref_t<OtherTuple, Us>>...,
+              detail::Lazy<disjunction,
+                  bool_constant<sizeof...(Ts) != 1>,
+                  // Ts and Us are 1-element packs - the pack expansions look
+                  // weird to avoid tripping up the type traits in degenerate cases
+                  detail::Lazy<conjunction,
+                      negation<is_same<Ts, Us>>...,
+                      negation<is_convertible<OtherTuple, Ts>>...,
+                      negation<is_constructible<Ts, OtherTuple>>...>>> {};
+
+    template<class... Us,
+             enable_if_t<EnableCtorFromUTypesTuple<const tuple<Us...>&>::value, int> = 0>
+    constexpr explicit(negation<detail::Lazy<conjunction, is_convertible<const Us&, Ts>...>>::value)
+    tuple(const tuple<Us...>& t)
+        noexcept(conjunction<is_nothrow_constructible<Ts, const Us&>...>::value)
+        : base_(t)
+    {}
+
+    template<class Alloc, class... Us,
+             enable_if_t<EnableCtorFromUTypesTuple<const tuple<Us...>&>::value, int> = 0>
+    constexpr explicit(negation<detail::Lazy<conjunction, is_convertible<const Us&, Ts>...>>::value)
+    tuple(const allocator_arg_t& tag, const Alloc& a, const tuple<Us...>& t)
+        : base_(tag, a, t)
+    {}
+
+    // tuple(tuple<U...>&&) constructors (including allocator_arg_t variants)
+    template<class... Us,
+             enable_if_t<EnableCtorFromUTypesTuple<tuple<Us...>&&>::value, int> = 0>
+    constexpr explicit(negation<detail::Lazy<conjunction, is_convertible<Us, Ts>...>>::value)
+    tuple(tuple<Us...>&& t)
+        noexcept(conjunction<is_nothrow_constructible<Ts, Us>...>::value)
+        : base_(move(t))
+    {}
+
+    template<class Alloc, class... Us,
+             enable_if_t<EnableCtorFromUTypesTuple<tuple<Us...>&&>::value, int> = 0>
+    constexpr explicit(negation<detail::Lazy<conjunction, is_convertible<Us, Ts>...>>::value)
+    tuple(const allocator_arg_t& tag, const Alloc& a, tuple<Us...>&& t)
+        : base_(tag, a, move(t))
+    {}
+
+    // tuple(const pair<U1, U2>&) constructors (including allocator_arg_t variants)
+
+    template<template<class...> class Pred,
+             class Pair,
+             class DecayedPair = remove_cvref_t<Pair>,
+             class Tuple       = tuple>
+    struct CtorPredicateFromPair : false_type {};
+
+    template<template<class...> class Pred, class Pair, class U1, class U2, class T1, class T2>
+    struct CtorPredicateFromPair<Pred, Pair, pair<U1, U2>, tuple<T1, T2>>
+        : conjunction<Pred<T1, detail::copy_cvref_t<Pair, U1>>,
+                      Pred<T2, detail::copy_cvref_t<Pair, U2>>> {};
+
+    template<class Pair>
+    struct EnableCtorFromPair : CtorPredicateFromPair<is_constructible, Pair> {};
+
+    template<class Pair>
+    struct NothrowConstructibleFromPair : CtorPredicateFromPair<is_nothrow_constructible, Pair> {};
+
+    template<class Pair, class DecayedPair = remove_cvref_t<Pair>, class Tuple = tuple>
+    struct BothImplicitlyConvertible : false_type {};
+
+    template<class Pair, class U1, class U2, class T1, class T2>
+    struct BothImplicitlyConvertible<Pair, pair<U1, U2>, tuple<T1, T2>>
+        : conjunction<is_convertible<detail::copy_cvref_t<Pair, U1>, T1>,
+                      is_convertible<detail::copy_cvref_t<Pair, U2>, T2>> {};
+
+    template<class U1, class U2,
+             enable_if_t<conjunction<EnableCtorFromPair<const pair<U1, U2>&>>::value, int> = 0>
+    constexpr explicit(negation<BothImplicitlyConvertible<const pair<U1, U2>&>>::value)
+    tuple(const pair<U1, U2>& p)
+        noexcept(NothrowConstructibleFromPair<const pair<U1, U2>&>::value)
+        : base_(p)
+    {}
+
+    template<class Alloc, class U1, class U2,
+             enable_if_t<conjunction<EnableCtorFromPair<const pair<U1, U2>&>>::value, int> = 0>
+    constexpr explicit(negation<BothImplicitlyConvertible<const pair<U1, U2>&>>::value)
+    tuple(const allocator_arg_t& tag, const Alloc& a, const pair<U1, U2>& p)
+        : base_(tag, a, p)
+    {}
+
+    // tuple(pair<U1, U2>&&) constructors (including allocator_arg_t variants)
+
+    template<class U1, class U2,
+             enable_if_t<conjunction<EnableCtorFromPair<pair<U1, U2>&&>>::value, int> = 0>
+    constexpr explicit(negation<BothImplicitlyConvertible<pair<U1, U2>&&>>::value)
+    tuple(pair<U1, U2>&& p)
+        noexcept(NothrowConstructibleFromPair<pair<U1, U2>&&>::value)
+        : base_(move(p))
+    {}
+
+    template<class Alloc, class U1, class U2,
+             enable_if_t<conjunction<EnableCtorFromPair<pair<U1, U2>&&>>::value, int> = 0>
+    constexpr explicit(negation<BothImplicitlyConvertible<pair<U1, U2>&&>>::value)
+    tuple(const allocator_arg_t& tag, const Alloc& a, pair<U1, U2>&& p)
+        : base_(tag, a, move(p))
+    {}
+
+    // [tuple.assign]
+
+    // Copy assignment (the nat parameter type disables it when not all
+    // elements are copy-assignable, as in libc++).
+    constexpr tuple& operator=(
+        conditional_t<conjunction<is_copy_assignable<Ts>...>::value, tuple, detail::nat> const& t)
+        noexcept(conjunction<is_nothrow_copy_assignable<Ts>...>::value)
+    {
+        detail::memberwise_copy_assign(*this, t, index_sequence_for<Ts...>{});
+        return *this;
+    }
+
+    // Move assignment
+    constexpr tuple& operator=(
+        conditional_t<conjunction<is_move_assignable<Ts>...>::value, tuple, detail::nat>&& t)
+        noexcept(conjunction<is_nothrow_move_assignable<Ts>...>::value)
+    {
+        detail::memberwise_forward_assign(*this, move(t), index_sequence_for<Ts...>{});
+        return *this;
+    }
+
+    // Converting copy assignment from tuple<Us...>
+    template<class... Us,
+             enable_if_t<conjunction<bool_constant<sizeof...(Ts) == sizeof...(Us)>,
+                                     is_assignable<Ts&, const Us&>...>::value, int> = 0>
+    constexpr tuple& operator=(const tuple<Us...>& t)
+        noexcept(conjunction<is_nothrow_assignable<Ts&, const Us&>...>::value)
+    {
+        detail::memberwise_copy_assign(*this, t, index_sequence_for<Ts...>{});
+        return *this;
+    }
+
+    // Converting move assignment from tuple<Us...>&&
+    template<class... Us,
+             enable_if_t<conjunction<bool_constant<sizeof...(Ts) == sizeof...(Us)>,
+                                     is_assignable<Ts&, Us>...>::value, int> = 0>
+    constexpr tuple& operator=(tuple<Us...>&& t)
+        noexcept(conjunction<is_nothrow_assignable<Ts&, Us>...>::value)
+    {
+        detail::memberwise_forward_assign(*this, move(t), index_sequence_for<Ts...>{});
+        return *this;
+    }
+
+    // Assignment from pair (for 2-element tuples). The predicate is lazy:
+    // it is false_type unless this tuple has exactly two elements, without
+    // ever instantiating is_assignable (libc++'s _AssignPredicateFromPair).
+    template<template<class...> class Pred,
+             class Pair,
+             class DecayedPair = remove_cvref_t<Pair>,
+             class Tuple       = tuple>
+    struct AssignPredicateFromPair : false_type {};
+
+    template<template<class...> class Pred, class Pair, class U1, class U2, class T1, class T2>
+    struct AssignPredicateFromPair<Pred, Pair, pair<U1, U2>, tuple<T1, T2>>
+        : conjunction<Pred<T1&, detail::copy_cvref_t<Pair, U1>>,
+                      Pred<T2&, detail::copy_cvref_t<Pair, U2>>> {};
+
+    template<class Pair>
+    struct EnableAssignFromPair : AssignPredicateFromPair<is_assignable, Pair> {};
+
+    template<class Pair>
+    struct NothrowAssignFromPair : AssignPredicateFromPair<is_nothrow_assignable, Pair> {};
+
+    template<class U1, class U2,
+             enable_if_t<EnableAssignFromPair<const pair<U1, U2>&>::value, int> = 0>
+    constexpr tuple& operator=(const pair<U1, U2>& p)
+        noexcept(NothrowAssignFromPair<const pair<U1, U2>&>::value)
+    {
+        std::get<0>(*this) = p.first;
+        std::get<1>(*this) = p.second;
+        return *this;
+    }
+
+    template<class U1, class U2,
+             enable_if_t<EnableAssignFromPair<pair<U1, U2>&&>::value, int> = 0>
+    constexpr tuple& operator=(pair<U1, U2>&& p)
+        noexcept(NothrowAssignFromPair<pair<U1, U2>&&>::value)
+    {
+        std::get<0>(*this) = forward<U1>(p.first);
+        std::get<1>(*this) = forward<U2>(p.second);
+        return *this;
+    }
+
+    // EXTENSION (libc++): assignment from std::array
+    template<class U, size_t N,
+             enable_if_t<conjunction<bool_constant<N == sizeof...(Ts)>,
+                                     is_assignable<Ts&, const U&>...>::value, int> = 0>
+    constexpr tuple& operator=(const array<U, N>& a)
+        noexcept(conjunction<is_nothrow_assignable<Ts&, const U&>...>::value)
+    {
+        detail::memberwise_copy_assign(*this, a, index_sequence_for<Ts...>{});
+        return *this;
+    }
+
+    // EXTENSION (libc++): assignment from std::array (rvalue)
+    template<class U, size_t N,
+             class = void,
+             enable_if_t<conjunction<bool_constant<N == sizeof...(Ts)>,
+                                     is_assignable<Ts&, U>...>::value, int> = 0>
+    constexpr tuple& operator=(array<U, N>&& a)
+        noexcept(conjunction<is_nothrow_assignable<Ts&, U>...>::value)
+    {
+        detail::memberwise_forward_assign(*this, move(a), index_sequence_for<Ts...>{});
+        return *this;
+    }
+
+    // [tuple.swap]
+
+    constexpr void swap(tuple& t)
+        noexcept(detail::all_v<is_nothrow_swappable_v<Ts>...>)
+    {
+        base_.swap(t.base_);
+    }
+};
+
+// tuple<> — empty specialisation
+template<>
+class tuple<> {
+public:
+    constexpr tuple() noexcept = default;
+    template<class Alloc>
+    constexpr tuple(const allocator_arg_t&, const Alloc&) noexcept {}
+    template<class Alloc>
+    constexpr tuple(const allocator_arg_t&, const Alloc&, const tuple&) noexcept {}
+    template<class U>
+    constexpr tuple(array<U, 0>) noexcept {}
+    template<class Alloc, class U>
+    constexpr tuple(const allocator_arg_t&, const Alloc&, array<U, 0>) noexcept {}
+    constexpr void swap(tuple&) noexcept {}
+};
+
+// Deduction guides.
+// The decaying pack guides carry an extra constraint not present in libc++:
+// gcc-10.2 incorrectly treats the by-value guide as viable when an element
+// type has only-explicit copy/move constructors (the parameter copy is
+// checked too late, yielding a hard error instead of falling back to the
+// implicit tuple(const Ts&...) guide as a conforming compiler does). The
+// constraint removes the guide exactly in those cases, matching standard
+// viability: each deduced Ts must be copy-initializable from a const Ts&
+// or from a Ts rvalue.
+template<class... Ts,
+         enable_if_t<conjunction<disjunction<is_convertible<const Ts&, Ts>,
+                                             is_convertible<Ts, Ts>>...>::value, int> = 0>
+tuple(Ts...) -> tuple<Ts...>;
+
+template<class T1, class T2>
+tuple(pair<T1, T2>) -> tuple<T1, T2>;
+
+template<class Alloc, class... Ts,
+         enable_if_t<conjunction<disjunction<is_convertible<const Ts&, Ts>,
+                                             is_convertible<Ts, Ts>>...>::value, int> = 0>
+tuple(allocator_arg_t, Alloc, Ts...) -> tuple<Ts...>;
+
+template<class Alloc, class T1, class T2>
+tuple(allocator_arg_t, Alloc, pair<T1, T2>) -> tuple<T1, T2>;
+
+template<class Alloc, class... Ts>
+tuple(allocator_arg_t, Alloc, tuple<Ts...>) -> tuple<Ts...>;
+
+//===----------------------------------------------------------------------===//
+// get<I>(tuple) — index-based
+//===----------------------------------------------------------------------===//
+
+template<size_t I, class... Ts>
+[[nodiscard]] constexpr typename tuple_element<I, tuple<Ts...>>::type&
+get(tuple<Ts...>& t) noexcept {
+    using T    = typename tuple_element<I, tuple<Ts...>>::type;
+    using leaf = detail::tuple_leaf<I, T>;
+    return static_cast<leaf&>(t.base_).get();
+}
+
+template<size_t I, class... Ts>
+[[nodiscard]] constexpr const typename tuple_element<I, tuple<Ts...>>::type&
+get(const tuple<Ts...>& t) noexcept {
+    using T    = typename tuple_element<I, tuple<Ts...>>::type;
+    using leaf = detail::tuple_leaf<I, T>;
+    return static_cast<const leaf&>(t.base_).get();
+}
+
+template<size_t I, class... Ts>
+[[nodiscard]] constexpr typename tuple_element<I, tuple<Ts...>>::type&&
+get(tuple<Ts...>&& t) noexcept {
+    using T    = typename tuple_element<I, tuple<Ts...>>::type;
+    using leaf = detail::tuple_leaf<I, T>;
+    return static_cast<T&&>(static_cast<leaf&&>(t.base_).get());
+}
+
+template<size_t I, class... Ts>
+[[nodiscard]] constexpr const typename tuple_element<I, tuple<Ts...>>::type&&
+get(const tuple<Ts...>&& t) noexcept {
+    using T    = typename tuple_element<I, tuple<Ts...>>::type;
+    using leaf = detail::tuple_leaf<I, T>;
+    return static_cast<const T&&>(static_cast<const leaf&&>(t.base_).get());
+}
+
+//===----------------------------------------------------------------------===//
+// get<T>(tuple) — type-based
+//===----------------------------------------------------------------------===//
+
+template<class T, class... Args>
+[[nodiscard]] constexpr T& get(tuple<Args...>& t) noexcept {
+    return std::get<detail::find_exactly_one<T, Args...>::value>(t);
+}
+
+template<class T, class... Args>
+[[nodiscard]] constexpr const T& get(const tuple<Args...>& t) noexcept {
+    return std::get<detail::find_exactly_one<T, Args...>::value>(t);
+}
+
+template<class T, class... Args>
+[[nodiscard]] constexpr T&& get(tuple<Args...>&& t) noexcept {
+    return std::get<detail::find_exactly_one<T, Args...>::value>(move(t));
+}
+
+template<class T, class... Args>
+[[nodiscard]] constexpr const T&& get(const tuple<Args...>&& t) noexcept {
+    return std::get<detail::find_exactly_one<T, Args...>::value>(move(t));
+}
+
+//===----------------------------------------------------------------------===//
+// Relational operators
+//===----------------------------------------------------------------------===//
+
+template<class... Ts, class... Us>
+    requires (sizeof...(Ts) == sizeof...(Us))
+constexpr bool operator==(const tuple<Ts...>& x, const tuple<Us...>& y) {
+    return detail::tuple_compare_equal<sizeof...(Ts)>(x, y);
+}
+
+template<class... Ts, class... Us>
+    requires (sizeof...(Ts) == sizeof...(Us))
+constexpr common_comparison_category_t<detail::synth_three_way_result<Ts, Us>...>
+operator<=>(const tuple<Ts...>& x, const tuple<Us...>& y) {
+    using Ret = common_comparison_category_t<detail::synth_three_way_result<Ts, Us>...>;
+    return detail::tuple_compare_three_way<Ret>(x, y, index_sequence_for<Ts...>{});
+}
+
+//===----------------------------------------------------------------------===//
+// Free swap for tuple
+//===----------------------------------------------------------------------===//
+
+template<class... Ts, enable_if_t<detail::all_v<is_swappable_v<Ts>...>, int> = 0>
+constexpr void swap(tuple<Ts...>& x, tuple<Ts...>& y)
+    noexcept(detail::all_v<is_nothrow_swappable_v<Ts>...>)
+{
+    x.swap(y);
+}
+
+//===----------------------------------------------------------------------===//
+// make_tuple, tie, forward_as_tuple
+//===----------------------------------------------------------------------===//
+
+template<class... Ts>
+[[nodiscard]] constexpr tuple<unwrap_ref_decay_t<Ts>...>
+make_tuple(Ts&&... ts) {
+    return tuple<unwrap_ref_decay_t<Ts>...>(forward<Ts>(ts)...);
+}
+
+template<class... Ts>
+[[nodiscard]] constexpr tuple<Ts&...>
+tie(Ts&... ts) noexcept {
+    return tuple<Ts&...>(ts...);
+}
+
+template<class... Ts>
+[[nodiscard]] constexpr tuple<Ts&&...>
+forward_as_tuple(Ts&&... ts) noexcept {
+    return tuple<Ts&&...>(forward<Ts>(ts)...);
+}
+
+//===----------------------------------------------------------------------===//
+// tuple_cat (ported from libc++ <tuple>; accepts any tuple-like, i.e.
+// tuple/pair/array/tuple_types, via tuple_like_ext + make_tuple_types)
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+template<class T, class U>
+struct tuple_cat_type;
+
+template<class... Ttypes, class... Utypes>
+struct tuple_cat_type<tuple<Ttypes...>, tuple_types<Utypes...>> {
+    using type = tuple<Ttypes..., Utypes...>;
+};
+
+template<class ResultTuple, bool IsTuple0TupleLike, class... Tuples>
+struct tuple_cat_return_1 {};
+
+template<class... Types, class Tuple0>
+struct tuple_cat_return_1<tuple<Types...>, true, Tuple0> {
+    using type = typename tuple_cat_type<
+        tuple<Types...>,
+        typename make_tuple_types<remove_cvref_t<Tuple0>>::type>::type;
+};
+
+template<class... Types, class Tuple0, class Tuple1, class... Tuples>
+struct tuple_cat_return_1<tuple<Types...>, true, Tuple0, Tuple1, Tuples...>
+    : tuple_cat_return_1<
+          typename tuple_cat_type<tuple<Types...>,
+                                  typename make_tuple_types<remove_cvref_t<Tuple0>>::type>::type,
+          tuple_like_ext<remove_reference_t<Tuple1>>::value,
+          Tuple1,
+          Tuples...> {};
+
+template<class... Tuples>
+struct tuple_cat_return;
+
+template<class Tuple0, class... Tuples>
+struct tuple_cat_return<Tuple0, Tuples...>
+    : tuple_cat_return_1<tuple<>,
+                         tuple_like_ext<remove_reference_t<Tuple0>>::value,
+                         Tuple0,
+                         Tuples...> {};
+
+template<>
+struct tuple_cat_return<> {
+    using type = tuple<>;
+};
+
+template<class R, class Indices, class Tuple0, class... Tuples>
+struct tuple_cat_return_ref_imp;
+
+template<class... Types, size_t... I0, class Tuple0>
+struct tuple_cat_return_ref_imp<tuple<Types...>, index_sequence<I0...>, Tuple0> {
+    using T0 = remove_reference_t<Tuple0>;
+    using type = tuple<Types...,
+                       copy_cvref_t<Tuple0, typename tuple_element<I0, T0>::type>&&...>;
+};
+
+template<class... Types, size_t... I0, class Tuple0, class Tuple1, class... Tuples>
+struct tuple_cat_return_ref_imp<tuple<Types...>, index_sequence<I0...>, Tuple0, Tuple1, Tuples...>
+    : tuple_cat_return_ref_imp<
+          tuple<Types...,
+                copy_cvref_t<Tuple0, typename tuple_element<I0, remove_reference_t<Tuple0>>::type>&&...>,
+          make_index_range<tuple_size<remove_reference_t<Tuple1>>::value>,
+          Tuple1,
+          Tuples...> {};
+
+template<class Tuple0, class... Tuples>
+struct tuple_cat_return_ref
+    : tuple_cat_return_ref_imp<
+          tuple<>,
+          make_index_range<tuple_size<remove_reference_t<Tuple0>>::value>,
+          Tuple0,
+          Tuples...> {};
+
+// tuple_cat_impl<Types, I0, J0>:
+//   Types = accumulated element types so far (in a forward_as_tuple)
+//   I0    = indices into the accumulated forward_as_tuple
+//   J0    = indices into the next input tuple
+template<class Types, class I0, class J0>
+struct tuple_cat_impl;
+
+template<class... Types, size_t... I0, size_t... J0>
+struct tuple_cat_impl<tuple<Types...>, index_sequence<I0...>, index_sequence<J0...>> {
+    template<class Tuple0>
+    constexpr typename tuple_cat_return_ref<tuple<Types...>&&, Tuple0&&>::type
+    operator()(tuple<Types...> t, Tuple0&& t0)
+    {
+        (void)t; // avoid unused parameter warning when I0 is empty
+        return std::forward_as_tuple(
+            forward<Types>(std::get<I0>(t))...,
+            std::get<J0>(forward<Tuple0>(t0))...);
+    }
+
+    template<class Tuple0, class Tuple1, class... Tuples>
+    constexpr typename tuple_cat_return_ref<tuple<Types...>&&, Tuple0&&, Tuple1&&, Tuples&&...>::type
+    operator()(tuple<Types...> t, Tuple0&& t0, Tuple1&& t1, Tuples&&... tpls)
+    {
+        (void)t; // avoid unused parameter warning when I0 is empty
+        using T0 = remove_reference_t<Tuple0>;
+        using T1 = remove_reference_t<Tuple1>;
+        return tuple_cat_impl<
+            tuple<Types..., copy_cvref_t<Tuple0, typename tuple_element<J0, T0>::type>&&...>,
+            make_index_range<sizeof...(Types) + tuple_size<T0>::value>,
+            make_index_range<tuple_size<T1>::value>
+        >()(
+            std::forward_as_tuple(
+                forward<Types>(std::get<I0>(t))...,
+                std::get<J0>(forward<Tuple0>(t0))...),
+            forward<Tuple1>(t1),
+            forward<Tuples>(tpls)...);
+    }
+};
+
+template<class TupleDst, class TupleSrc, size_t... Indices>
+constexpr TupleDst tuple_cat_select_element_wise(TupleSrc&& src, index_sequence<Indices...>) {
+    static_assert(tuple_size<TupleDst>::value == tuple_size<TupleSrc>::value,
+                  "misuse of tuple_cat_select_element_wise with tuples of different sizes");
+    return TupleDst(std::get<Indices>(forward<TupleSrc>(src))...);
+}
+
+} // namespace detail
+
+[[nodiscard]] constexpr tuple<> tuple_cat() { return tuple<>(); }
+
+template<class Tuple0, class... Tuples>
+[[nodiscard]] constexpr typename detail::tuple_cat_return<Tuple0, Tuples...>::type
+tuple_cat(Tuple0&& t0, Tuples&&... tpls) {
+    using T0          = remove_reference_t<Tuple0>;
+    using Ret         = typename detail::tuple_cat_return<Tuple0, Tuples...>::type;
+    using T0Indices   = detail::make_index_range<tuple_size<T0>::value>;
+    using RetIndices  = detail::make_index_range<tuple_size<Ret>::value>;
+    return detail::tuple_cat_select_element_wise<Ret>(
+        detail::tuple_cat_impl<tuple<>, index_sequence<>, T0Indices>()(
+            tuple<>(), forward<Tuple0>(t0), forward<Tuples>(tpls)...),
+        RetIndices());
+}
+
+//===----------------------------------------------------------------------===//
+// ignore
+//===----------------------------------------------------------------------===//
+
+struct ignore_t {
+    template<class T>
+    constexpr const ignore_t& operator=(const T&) const noexcept { return *this; }
+};
+inline constexpr ignore_t ignore{};
+
+//===----------------------------------------------------------------------===//
+// apply — uses the INVOKE machinery from <type_traits>
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+    template<class Fn, class Tpl, size_t... Is>
+    constexpr decltype(auto)
+    apply_impl(Fn&& f, Tpl&& t, index_sequence<Is...>)
+        noexcept(noexcept(invoke_impl(forward<Fn>(f), std::get<Is>(forward<Tpl>(t))...)))
+    {
+        return invoke_impl(forward<Fn>(f), std::get<Is>(forward<Tpl>(t))...);
+    }
+} // namespace detail
+
+template<class Fn, class Tpl>
+constexpr decltype(auto)
+apply(Fn&& f, Tpl&& t)
+    noexcept(noexcept(detail::apply_impl(
+        forward<Fn>(f), forward<Tpl>(t),
+        make_index_sequence<tuple_size_v<remove_reference_t<Tpl>>>{})))
+{
+    return detail::apply_impl(
+        forward<Fn>(f), forward<Tpl>(t),
+        make_index_sequence<tuple_size_v<remove_reference_t<Tpl>>>{});
+}
+
+//===----------------------------------------------------------------------===//
+// make_from_tuple
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+    template<class T, class Tpl, size_t... Is>
+    constexpr T make_from_tuple_impl(Tpl&& t, index_sequence<Is...>)
+        noexcept(noexcept(T(std::get<Is>(forward<Tpl>(t))...)))
+        requires is_constructible_v<T, decltype(std::get<Is>(forward<Tpl>(t)))...>
+    {
+        return T(std::get<Is>(forward<Tpl>(t))...);
+    }
+
+    template<class T, class Tpl,
+             class Seq = make_index_sequence<tuple_size_v<remove_reference_t<Tpl>>>,
+             class     = void>
+    inline constexpr bool can_make_from_tuple_v = false;
+
+    template<class T, class Tpl, size_t... Is>
+    inline constexpr bool can_make_from_tuple_v<T, Tpl, index_sequence<Is...>,
+        enable_if_t<is_constructible_v<T, decltype(std::get<Is>(declval<Tpl>()))...>>> = true;
+} // namespace detail
+
+template<class T, class Tpl>
+    requires detail::can_make_from_tuple_v<T, Tpl>
+[[nodiscard]] constexpr T make_from_tuple(Tpl&& t)
+    noexcept(noexcept(detail::make_from_tuple_impl<T>(
+        forward<Tpl>(t),
+        make_index_sequence<tuple_size_v<remove_reference_t<Tpl>>>{})))
+{
+    return detail::make_from_tuple_impl<T>(
+        forward<Tpl>(t),
+        make_index_sequence<tuple_size_v<remove_reference_t<Tpl>>>{});
+}
+
+//===----------------------------------------------------------------------===//
+// uses_allocator — primary template + specialisation for tuple
+//===----------------------------------------------------------------------===//
+
+// Primary template: false (no uses_allocator support by default).
+// <memory> adds the allocator_type-based specialisation.
+template<class T, class Alloc>
+struct uses_allocator : false_type {};
+
+template<class T, class Alloc>
+inline constexpr bool uses_allocator_v = uses_allocator<T, Alloc>::value;
+
+// Specialisation: tuple always supports uses-allocator construction.
+template<class Alloc, class... Ts>
+struct uses_allocator<tuple<Ts...>, Alloc> : true_type {};
+
+//===----------------------------------------------------------------------===//
+// basic_common_reference and common_type for tuple (C++23)
+//===----------------------------------------------------------------------===//
+
+template<class... TTs, class... UTs,
+         template<class> class TQual, template<class> class UQual>
+    requires requires { typename tuple<common_reference_t<TQual<TTs>, UQual<UTs>>...>; }
+struct basic_common_reference<tuple<TTs...>, tuple<UTs...>, TQual, UQual> {
+    using type = tuple<common_reference_t<TQual<TTs>, UQual<UTs>>...>;
+};
+
+template<class... TTs, class... UTs>
+    requires requires { typename tuple<common_type_t<TTs, UTs>...>; }
+struct common_type<tuple<TTs...>, tuple<UTs...>> {
+    using type = tuple<common_type_t<TTs, UTs>...>;
+};
+
+} // namespace std

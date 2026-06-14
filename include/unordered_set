@@ -1,0 +1,869 @@
+// <unordered_set> — ported from libc++ include/unordered_set (release/20.x)
+// on top of bits/hash_table.h (libc++ __hash_table).
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+#pragma once
+
+#include <memory_resource>
+#include <bits/hash_table.h>
+#include <functional>
+#include <memory>
+#include <utility>
+#include <iterator>
+#include <algorithm>
+#include <initializer_list>
+#include <type_traits>
+
+namespace std {
+
+namespace detail {
+template<class InputIt>
+using ht_iter_value_type = typename iterator_traits<InputIt>::value_type;
+} // namespace detail
+
+template<class Value, class Hash, class Pred, class Alloc>
+class unordered_multiset;
+
+// ============================================================================
+// unordered_set
+// ============================================================================
+
+template<class Value,
+         class Hash  = hash<Value>,
+         class Pred  = equal_to<Value>,
+         class Alloc = allocator<Value>>
+class unordered_set {
+public:
+    // types
+    using key_type        = Value;
+    using value_type      = key_type;
+    using hasher          = type_identity_t<Hash>;
+    using key_equal       = type_identity_t<Pred>;
+    using allocator_type  = type_identity_t<Alloc>;
+    using reference       = value_type&;
+    using const_reference = const value_type&;
+    static_assert(is_same_v<value_type, typename allocator_type::value_type>,
+                  "Allocator::value_type must be same type as value_type");
+
+private:
+    using table = hash_table<value_type, hasher, key_equal, allocator_type>;
+
+    table table_;
+
+    using node = typename table::node;
+
+    template<class, class, class, class>
+    friend class unordered_set;
+    template<class, class, class, class>
+    friend class unordered_multiset;
+
+public:
+    using pointer         = typename table::pointer;
+    using const_pointer   = typename table::const_pointer;
+    using size_type       = typename table::size_type;
+    using difference_type = typename table::difference_type;
+
+    using iterator             = typename table::const_iterator;
+    using const_iterator       = typename table::const_iterator;
+    using local_iterator       = typename table::const_local_iterator;
+    using const_local_iterator = typename table::const_local_iterator;
+
+    using node_type          = ht_set_node_handle<node, allocator_type>;
+    using insert_return_type = ht_insert_return_type<iterator, node_type>;
+
+    // ------------------------------------------------------------------
+    // Constructors
+    // ------------------------------------------------------------------
+
+    unordered_set() noexcept(is_nothrow_default_constructible_v<table>) {}
+
+    explicit unordered_set(size_type n, const hasher& hf = hasher(),
+                           const key_equal& eql = key_equal())
+        : table_(hf, eql) {
+        table_.rehash_unique(n);
+    }
+
+    unordered_set(size_type n, const hasher& hf, const key_equal& eql, const allocator_type& a)
+        : table_(hf, eql, a) {
+        table_.rehash_unique(n);
+    }
+
+    template<class InputIterator>
+    unordered_set(InputIterator first, InputIterator last) {
+        insert(first, last);
+    }
+
+    template<class InputIterator>
+    unordered_set(InputIterator first, InputIterator last, size_type n,
+                  const hasher& hf = hasher(), const key_equal& eql = key_equal())
+        : table_(hf, eql) {
+        table_.rehash_unique(n);
+        insert(first, last);
+    }
+
+    template<class InputIterator>
+    unordered_set(InputIterator first, InputIterator last, size_type n, const hasher& hf,
+                  const key_equal& eql, const allocator_type& a)
+        : table_(hf, eql, a) {
+        table_.rehash_unique(n);
+        insert(first, last);
+    }
+
+    explicit unordered_set(const allocator_type& a) : table_(a) {}
+
+    unordered_set(const unordered_set& u) : table_(u.table_) {
+        table_.rehash_unique(u.bucket_count());
+        insert(u.begin(), u.end());
+    }
+
+    unordered_set(const unordered_set& u, const allocator_type& a) : table_(u.table_, a) {
+        table_.rehash_unique(u.bucket_count());
+        insert(u.begin(), u.end());
+    }
+
+    unordered_set(unordered_set&& u) noexcept(is_nothrow_move_constructible_v<table>)
+        : table_(std::move(u.table_)) {}
+
+    unordered_set(unordered_set&& u, const allocator_type& a) : table_(std::move(u.table_), a) {
+        if (a != u.get_allocator()) {
+            iterator i = u.begin();
+            while (u.size() != 0)
+                table_.insert_unique(std::move(u.table_.remove(i++)->get_value()));
+        }
+    }
+
+    unordered_set(initializer_list<value_type> il) { insert(il.begin(), il.end()); }
+
+    unordered_set(initializer_list<value_type> il, size_type n,
+                  const hasher& hf = hasher(), const key_equal& eql = key_equal())
+        : table_(hf, eql) {
+        table_.rehash_unique(n);
+        insert(il.begin(), il.end());
+    }
+
+    unordered_set(initializer_list<value_type> il, size_type n, const hasher& hf,
+                  const key_equal& eql, const allocator_type& a)
+        : table_(hf, eql, a) {
+        table_.rehash_unique(n);
+        insert(il.begin(), il.end());
+    }
+
+    unordered_set(size_type n, const allocator_type& a)
+        : unordered_set(n, hasher(), key_equal(), a) {}
+    unordered_set(size_type n, const hasher& hf, const allocator_type& a)
+        : unordered_set(n, hf, key_equal(), a) {}
+    template<class InputIterator>
+    unordered_set(InputIterator first, InputIterator last, size_type n, const allocator_type& a)
+        : unordered_set(first, last, n, hasher(), key_equal(), a) {}
+    template<class InputIterator>
+    unordered_set(InputIterator first, InputIterator last, size_type n, const hasher& hf,
+                  const allocator_type& a)
+        : unordered_set(first, last, n, hf, key_equal(), a) {}
+    unordered_set(initializer_list<value_type> il, size_type n, const allocator_type& a)
+        : unordered_set(il, n, hasher(), key_equal(), a) {}
+    unordered_set(initializer_list<value_type> il, size_type n, const hasher& hf,
+                  const allocator_type& a)
+        : unordered_set(il, n, hf, key_equal(), a) {}
+
+    ~unordered_set() = default;
+
+    // ------------------------------------------------------------------
+    // Assignment
+    // ------------------------------------------------------------------
+
+    unordered_set& operator=(const unordered_set& u) {
+        table_ = u.table_;
+        return *this;
+    }
+
+    unordered_set& operator=(unordered_set&& u) noexcept(is_nothrow_move_assignable_v<table>) {
+        table_ = std::move(u.table_);
+        return *this;
+    }
+
+    unordered_set& operator=(initializer_list<value_type> il) {
+        table_.assign_unique(il.begin(), il.end());
+        return *this;
+    }
+
+    allocator_type get_allocator() const noexcept {
+        return allocator_type(table_.node_alloc());
+    }
+
+    // ------------------------------------------------------------------
+    // Capacity / iterators
+    // ------------------------------------------------------------------
+
+    [[nodiscard]] bool empty() const noexcept { return table_.size() == 0; }
+    size_type size() const noexcept { return table_.size(); }
+    size_type max_size() const noexcept { return table_.max_size(); }
+
+    iterator begin() noexcept { return table_.begin(); }
+    iterator end() noexcept { return table_.end(); }
+    const_iterator begin() const noexcept { return table_.begin(); }
+    const_iterator end() const noexcept { return table_.end(); }
+    const_iterator cbegin() const noexcept { return table_.begin(); }
+    const_iterator cend() const noexcept { return table_.end(); }
+
+    // ------------------------------------------------------------------
+    // Modifiers
+    // ------------------------------------------------------------------
+
+    template<class... Args>
+    pair<iterator, bool> emplace(Args&&... args) {
+        return table_.emplace_unique(std::forward<Args>(args)...);
+    }
+
+    template<class... Args>
+    iterator emplace_hint(const_iterator, Args&&... args) {
+        return table_.emplace_unique(std::forward<Args>(args)...).first;
+    }
+
+    pair<iterator, bool> insert(const value_type& x) { return table_.insert_unique(x); }
+    pair<iterator, bool> insert(value_type&& x) { return table_.insert_unique(std::move(x)); }
+    iterator insert(const_iterator, const value_type& x) { return insert(x).first; }
+    iterator insert(const_iterator, value_type&& x) { return insert(std::move(x)).first; }
+
+    template<class InputIterator>
+    void insert(InputIterator first, InputIterator last) {
+        for (; first != last; ++first)
+            table_.insert_unique(*first);
+    }
+
+    void insert(initializer_list<value_type> il) { insert(il.begin(), il.end()); }
+
+    iterator erase(const_iterator p) { return table_.erase(p); }
+    size_type erase(const key_type& k) { return table_.erase_unique(k); }
+    iterator erase(const_iterator first, const_iterator last) {
+        return table_.erase(first, last);
+    }
+    void clear() noexcept { table_.clear(); }
+
+    insert_return_type insert(node_type&& nh) {
+        return table_.template node_handle_insert_unique<node_type, insert_return_type>(
+            std::move(nh));
+    }
+    iterator insert(const_iterator h, node_type&& nh) {
+        return table_.template node_handle_insert_unique<node_type>(h, std::move(nh));
+    }
+    node_type extract(const key_type& key) {
+        return table_.template node_handle_extract<node_type>(key);
+    }
+    node_type extract(const_iterator it) {
+        return table_.template node_handle_extract<node_type>(it);
+    }
+
+    template<class H2, class P2>
+    void merge(unordered_set<key_type, H2, P2, allocator_type>& source) {
+        table_.node_handle_merge_unique(source.table_);
+    }
+    template<class H2, class P2>
+    void merge(unordered_set<key_type, H2, P2, allocator_type>&& source) {
+        table_.node_handle_merge_unique(source.table_);
+    }
+    template<class H2, class P2>
+    void merge(unordered_multiset<key_type, H2, P2, allocator_type>& source) {
+        table_.node_handle_merge_unique(source.table_);
+    }
+    template<class H2, class P2>
+    void merge(unordered_multiset<key_type, H2, P2, allocator_type>&& source) {
+        table_.node_handle_merge_unique(source.table_);
+    }
+
+    void swap(unordered_set& u) noexcept(is_nothrow_swappable_v<table>) {
+        table_.swap(u.table_);
+    }
+
+    // ------------------------------------------------------------------
+    // Observers
+    // ------------------------------------------------------------------
+
+    hasher hash_function() const { return table_.hash_function(); }
+    key_equal key_eq() const { return table_.key_eq(); }
+
+    // ------------------------------------------------------------------
+    // Lookup
+    // ------------------------------------------------------------------
+
+    iterator find(const key_type& k) { return table_.find(k); }
+    const_iterator find(const key_type& k) const { return table_.find(k); }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    iterator find(const K2& k) { return table_.find(k); }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    const_iterator find(const K2& k) const { return table_.find(k); }
+
+    size_type count(const key_type& k) const { return table_.count_unique(k); }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    size_type count(const K2& k) const { return table_.count_unique(k); }
+
+    bool contains(const key_type& k) const { return find(k) != end(); }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    bool contains(const K2& k) const { return find(k) != end(); }
+
+    pair<iterator, iterator> equal_range(const key_type& k) {
+        return table_.equal_range_unique(k);
+    }
+    pair<const_iterator, const_iterator> equal_range(const key_type& k) const {
+        return table_.equal_range_unique(k);
+    }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    pair<iterator, iterator> equal_range(const K2& k) {
+        return table_.equal_range_unique(k);
+    }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    pair<const_iterator, const_iterator> equal_range(const K2& k) const {
+        return table_.equal_range_unique(k);
+    }
+
+    // ------------------------------------------------------------------
+    // Bucket interface / hash policy
+    // ------------------------------------------------------------------
+
+    size_type bucket_count() const noexcept { return table_.bucket_count(); }
+    size_type max_bucket_count() const noexcept { return table_.max_bucket_count(); }
+
+    size_type bucket_size(size_type n) const { return table_.bucket_size(n); }
+    size_type bucket(const key_type& k) const { return table_.bucket(k); }
+
+    local_iterator begin(size_type n) { return table_.cbegin(n); }
+    local_iterator end(size_type n) { return table_.cend(n); }
+    const_local_iterator begin(size_type n) const { return table_.cbegin(n); }
+    const_local_iterator end(size_type n) const { return table_.cend(n); }
+    const_local_iterator cbegin(size_type n) const { return table_.cbegin(n); }
+    const_local_iterator cend(size_type n) const { return table_.cend(n); }
+
+    float load_factor() const noexcept { return table_.load_factor(); }
+    float max_load_factor() const noexcept { return table_.max_load_factor(); }
+    void max_load_factor(float mlf) { table_.max_load_factor(mlf); }
+    void rehash(size_type n) { table_.rehash_unique(n); }
+    void reserve(size_type n) { table_.reserve_unique(n); }
+};
+
+// Deduction guides (libc++ unordered_set)
+template<class InputIterator,
+         class Hash      = hash<detail::ht_iter_value_type<InputIterator>>,
+         class Pred      = equal_to<detail::ht_iter_value_type<InputIterator>>,
+         class Allocator = allocator<detail::ht_iter_value_type<InputIterator>>,
+         class           = void_t<detail::ht_iter_category_t<InputIterator>>,
+         class           = enable_if_t<!detail::ht_is_allocator_v<Hash>>,
+         class           = enable_if_t<!is_integral_v<Hash>>,
+         class           = enable_if_t<!detail::ht_is_allocator_v<Pred>>,
+         class           = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_set(InputIterator, InputIterator, typename allocator_traits<Allocator>::size_type = 0,
+              Hash = Hash(), Pred = Pred(), Allocator = Allocator())
+    -> unordered_set<detail::ht_iter_value_type<InputIterator>, Hash, Pred, Allocator>;
+
+template<class T,
+         class Hash      = hash<T>,
+         class Pred      = equal_to<T>,
+         class Allocator = allocator<T>,
+         class           = enable_if_t<!detail::ht_is_allocator_v<Hash>>,
+         class           = enable_if_t<!is_integral_v<Hash>>,
+         class           = enable_if_t<!detail::ht_is_allocator_v<Pred>>,
+         class           = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_set(initializer_list<T>, typename allocator_traits<Allocator>::size_type = 0,
+              Hash = Hash(), Pred = Pred(), Allocator = Allocator())
+    -> unordered_set<T, Hash, Pred, Allocator>;
+
+template<class InputIterator, class Allocator,
+         class = void_t<detail::ht_iter_category_t<InputIterator>>,
+         class = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_set(InputIterator, InputIterator, typename allocator_traits<Allocator>::size_type,
+              Allocator)
+    -> unordered_set<detail::ht_iter_value_type<InputIterator>,
+                     hash<detail::ht_iter_value_type<InputIterator>>,
+                     equal_to<detail::ht_iter_value_type<InputIterator>>, Allocator>;
+
+template<class InputIterator, class Hash, class Allocator,
+         class = void_t<detail::ht_iter_category_t<InputIterator>>,
+         class = enable_if_t<!detail::ht_is_allocator_v<Hash>>,
+         class = enable_if_t<!is_integral_v<Hash>>,
+         class = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_set(InputIterator, InputIterator, typename allocator_traits<Allocator>::size_type, Hash,
+              Allocator)
+    -> unordered_set<detail::ht_iter_value_type<InputIterator>, Hash,
+                     equal_to<detail::ht_iter_value_type<InputIterator>>, Allocator>;
+
+template<class T, class Allocator,
+         class = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_set(initializer_list<T>, typename allocator_traits<Allocator>::size_type, Allocator)
+    -> unordered_set<T, hash<T>, equal_to<T>, Allocator>;
+
+template<class T, class Hash, class Allocator,
+         class = enable_if_t<!detail::ht_is_allocator_v<Hash>>,
+         class = enable_if_t<!is_integral_v<Hash>>,
+         class = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_set(initializer_list<T>, typename allocator_traits<Allocator>::size_type, Hash,
+              Allocator)
+    -> unordered_set<T, Hash, equal_to<T>, Allocator>;
+
+template<class Value, class Hash, class Pred, class Alloc>
+inline void swap(unordered_set<Value, Hash, Pred, Alloc>& x,
+                 unordered_set<Value, Hash, Pred, Alloc>& y) noexcept(noexcept(x.swap(y))) {
+    x.swap(y);
+}
+
+template<class Value, class Hash, class Pred, class Alloc, class Predicate>
+inline typename unordered_set<Value, Hash, Pred, Alloc>::size_type
+erase_if(unordered_set<Value, Hash, Pred, Alloc>& c, Predicate pred) {
+    typename unordered_set<Value, Hash, Pred, Alloc>::size_type old_size = c.size();
+    for (auto i = c.begin(), last = c.end(); i != last;) {
+        if (pred(*i))
+            i = c.erase(i);
+        else
+            ++i;
+    }
+    return old_size - c.size();
+}
+
+template<class Value, class Hash, class Pred, class Alloc>
+bool operator==(const unordered_set<Value, Hash, Pred, Alloc>& x,
+                const unordered_set<Value, Hash, Pred, Alloc>& y) {
+    if (x.size() != y.size())
+        return false;
+    using const_iterator = typename unordered_set<Value, Hash, Pred, Alloc>::const_iterator;
+    for (const_iterator i = x.begin(), ex = x.end(), ey = y.end(); i != ex; ++i) {
+        const_iterator j = y.find(*i);
+        if (j == ey || !(*i == *j))
+            return false;
+    }
+    return true;
+}
+
+// ============================================================================
+// unordered_multiset
+// ============================================================================
+
+template<class Value,
+         class Hash  = hash<Value>,
+         class Pred  = equal_to<Value>,
+         class Alloc = allocator<Value>>
+class unordered_multiset {
+public:
+    // types
+    using key_type        = Value;
+    using value_type      = key_type;
+    using hasher          = type_identity_t<Hash>;
+    using key_equal       = type_identity_t<Pred>;
+    using allocator_type  = type_identity_t<Alloc>;
+    using reference       = value_type&;
+    using const_reference = const value_type&;
+    static_assert(is_same_v<value_type, typename allocator_type::value_type>,
+                  "Allocator::value_type must be same type as value_type");
+
+private:
+    using table = hash_table<value_type, hasher, key_equal, allocator_type>;
+
+    table table_;
+
+    using node = typename table::node;
+
+    template<class, class, class, class>
+    friend class unordered_set;
+    template<class, class, class, class>
+    friend class unordered_multiset;
+
+public:
+    using pointer         = typename table::pointer;
+    using const_pointer   = typename table::const_pointer;
+    using size_type       = typename table::size_type;
+    using difference_type = typename table::difference_type;
+
+    using iterator             = typename table::const_iterator;
+    using const_iterator       = typename table::const_iterator;
+    using local_iterator       = typename table::const_local_iterator;
+    using const_local_iterator = typename table::const_local_iterator;
+
+    using node_type = ht_set_node_handle<node, allocator_type>;
+
+    // ------------------------------------------------------------------
+    // Constructors
+    // ------------------------------------------------------------------
+
+    unordered_multiset() noexcept(is_nothrow_default_constructible_v<table>) {}
+
+    explicit unordered_multiset(size_type n, const hasher& hf = hasher(),
+                                const key_equal& eql = key_equal())
+        : table_(hf, eql) {
+        table_.rehash_multi(n);
+    }
+
+    unordered_multiset(size_type n, const hasher& hf, const key_equal& eql,
+                       const allocator_type& a)
+        : table_(hf, eql, a) {
+        table_.rehash_multi(n);
+    }
+
+    template<class InputIterator>
+    unordered_multiset(InputIterator first, InputIterator last) {
+        insert(first, last);
+    }
+
+    template<class InputIterator>
+    unordered_multiset(InputIterator first, InputIterator last, size_type n,
+                       const hasher& hf = hasher(), const key_equal& eql = key_equal())
+        : table_(hf, eql) {
+        table_.rehash_multi(n);
+        insert(first, last);
+    }
+
+    template<class InputIterator>
+    unordered_multiset(InputIterator first, InputIterator last, size_type n, const hasher& hf,
+                       const key_equal& eql, const allocator_type& a)
+        : table_(hf, eql, a) {
+        table_.rehash_multi(n);
+        insert(first, last);
+    }
+
+    explicit unordered_multiset(const allocator_type& a) : table_(a) {}
+
+    unordered_multiset(const unordered_multiset& u) : table_(u.table_) {
+        table_.rehash_multi(u.bucket_count());
+        insert(u.begin(), u.end());
+    }
+
+    unordered_multiset(const unordered_multiset& u, const allocator_type& a)
+        : table_(u.table_, a) {
+        table_.rehash_multi(u.bucket_count());
+        insert(u.begin(), u.end());
+    }
+
+    unordered_multiset(unordered_multiset&& u) noexcept(is_nothrow_move_constructible_v<table>)
+        : table_(std::move(u.table_)) {}
+
+    unordered_multiset(unordered_multiset&& u, const allocator_type& a)
+        : table_(std::move(u.table_), a) {
+        if (a != u.get_allocator()) {
+            iterator i = u.begin();
+            while (u.size() != 0)
+                table_.insert_multi(std::move(u.table_.remove(i++)->get_value()));
+        }
+    }
+
+    unordered_multiset(initializer_list<value_type> il) { insert(il.begin(), il.end()); }
+
+    unordered_multiset(initializer_list<value_type> il, size_type n,
+                       const hasher& hf = hasher(), const key_equal& eql = key_equal())
+        : table_(hf, eql) {
+        table_.rehash_multi(n);
+        insert(il.begin(), il.end());
+    }
+
+    unordered_multiset(initializer_list<value_type> il, size_type n, const hasher& hf,
+                       const key_equal& eql, const allocator_type& a)
+        : table_(hf, eql, a) {
+        table_.rehash_multi(n);
+        insert(il.begin(), il.end());
+    }
+
+    unordered_multiset(size_type n, const allocator_type& a)
+        : unordered_multiset(n, hasher(), key_equal(), a) {}
+    unordered_multiset(size_type n, const hasher& hf, const allocator_type& a)
+        : unordered_multiset(n, hf, key_equal(), a) {}
+    template<class InputIterator>
+    unordered_multiset(InputIterator first, InputIterator last, size_type n,
+                       const allocator_type& a)
+        : unordered_multiset(first, last, n, hasher(), key_equal(), a) {}
+    template<class InputIterator>
+    unordered_multiset(InputIterator first, InputIterator last, size_type n, const hasher& hf,
+                       const allocator_type& a)
+        : unordered_multiset(first, last, n, hf, key_equal(), a) {}
+    unordered_multiset(initializer_list<value_type> il, size_type n, const allocator_type& a)
+        : unordered_multiset(il, n, hasher(), key_equal(), a) {}
+    unordered_multiset(initializer_list<value_type> il, size_type n, const hasher& hf,
+                       const allocator_type& a)
+        : unordered_multiset(il, n, hf, key_equal(), a) {}
+
+    ~unordered_multiset() = default;
+
+    // ------------------------------------------------------------------
+    // Assignment
+    // ------------------------------------------------------------------
+
+    unordered_multiset& operator=(const unordered_multiset& u) {
+        table_ = u.table_;
+        return *this;
+    }
+
+    unordered_multiset& operator=(unordered_multiset&& u)
+        noexcept(is_nothrow_move_assignable_v<table>) {
+        table_ = std::move(u.table_);
+        return *this;
+    }
+
+    unordered_multiset& operator=(initializer_list<value_type> il) {
+        table_.assign_multi(il.begin(), il.end());
+        return *this;
+    }
+
+    allocator_type get_allocator() const noexcept {
+        return allocator_type(table_.node_alloc());
+    }
+
+    // ------------------------------------------------------------------
+    // Capacity / iterators
+    // ------------------------------------------------------------------
+
+    [[nodiscard]] bool empty() const noexcept { return table_.size() == 0; }
+    size_type size() const noexcept { return table_.size(); }
+    size_type max_size() const noexcept { return table_.max_size(); }
+
+    iterator begin() noexcept { return table_.begin(); }
+    iterator end() noexcept { return table_.end(); }
+    const_iterator begin() const noexcept { return table_.begin(); }
+    const_iterator end() const noexcept { return table_.end(); }
+    const_iterator cbegin() const noexcept { return table_.begin(); }
+    const_iterator cend() const noexcept { return table_.end(); }
+
+    // ------------------------------------------------------------------
+    // Modifiers
+    // ------------------------------------------------------------------
+
+    template<class... Args>
+    iterator emplace(Args&&... args) {
+        return table_.emplace_multi(std::forward<Args>(args)...);
+    }
+
+    template<class... Args>
+    iterator emplace_hint(const_iterator p, Args&&... args) {
+        return table_.emplace_hint_multi(p, std::forward<Args>(args)...);
+    }
+
+    iterator insert(const value_type& x) { return table_.insert_multi(x); }
+    iterator insert(value_type&& x) { return table_.insert_multi(std::move(x)); }
+    iterator insert(const_iterator p, const value_type& x) { return table_.insert_multi(p, x); }
+    iterator insert(const_iterator p, value_type&& x) {
+        return table_.insert_multi(p, std::move(x));
+    }
+
+    template<class InputIterator>
+    void insert(InputIterator first, InputIterator last) {
+        for (; first != last; ++first)
+            table_.insert_multi(*first);
+    }
+
+    void insert(initializer_list<value_type> il) { insert(il.begin(), il.end()); }
+
+    iterator erase(const_iterator p) { return table_.erase(p); }
+    size_type erase(const key_type& k) { return table_.erase_multi(k); }
+    iterator erase(const_iterator first, const_iterator last) {
+        return table_.erase(first, last);
+    }
+    void clear() noexcept { table_.clear(); }
+
+    iterator insert(node_type&& nh) {
+        return table_.template node_handle_insert_multi<node_type>(std::move(nh));
+    }
+    iterator insert(const_iterator hint, node_type&& nh) {
+        return table_.template node_handle_insert_multi<node_type>(hint, std::move(nh));
+    }
+    node_type extract(const key_type& key) {
+        return table_.template node_handle_extract<node_type>(key);
+    }
+    node_type extract(const_iterator it) {
+        return table_.template node_handle_extract<node_type>(it);
+    }
+
+    template<class H2, class P2>
+    void merge(unordered_multiset<key_type, H2, P2, allocator_type>& source) {
+        table_.node_handle_merge_multi(source.table_);
+    }
+    template<class H2, class P2>
+    void merge(unordered_multiset<key_type, H2, P2, allocator_type>&& source) {
+        table_.node_handle_merge_multi(source.table_);
+    }
+    template<class H2, class P2>
+    void merge(unordered_set<key_type, H2, P2, allocator_type>& source) {
+        table_.node_handle_merge_multi(source.table_);
+    }
+    template<class H2, class P2>
+    void merge(unordered_set<key_type, H2, P2, allocator_type>&& source) {
+        table_.node_handle_merge_multi(source.table_);
+    }
+
+    void swap(unordered_multiset& u) noexcept(is_nothrow_swappable_v<table>) {
+        table_.swap(u.table_);
+    }
+
+    // ------------------------------------------------------------------
+    // Observers
+    // ------------------------------------------------------------------
+
+    hasher hash_function() const { return table_.hash_function(); }
+    key_equal key_eq() const { return table_.key_eq(); }
+
+    // ------------------------------------------------------------------
+    // Lookup
+    // ------------------------------------------------------------------
+
+    iterator find(const key_type& k) { return table_.find(k); }
+    const_iterator find(const key_type& k) const { return table_.find(k); }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    iterator find(const K2& k) { return table_.find(k); }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    const_iterator find(const K2& k) const { return table_.find(k); }
+
+    size_type count(const key_type& k) const { return table_.count_multi(k); }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    size_type count(const K2& k) const { return table_.count_multi(k); }
+
+    bool contains(const key_type& k) const { return find(k) != end(); }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    bool contains(const K2& k) const { return find(k) != end(); }
+
+    pair<iterator, iterator> equal_range(const key_type& k) {
+        return table_.equal_range_multi(k);
+    }
+    pair<const_iterator, const_iterator> equal_range(const key_type& k) const {
+        return table_.equal_range_multi(k);
+    }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    pair<iterator, iterator> equal_range(const K2& k) {
+        return table_.equal_range_multi(k);
+    }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    pair<const_iterator, const_iterator> equal_range(const K2& k) const {
+        return table_.equal_range_multi(k);
+    }
+
+    // ------------------------------------------------------------------
+    // Bucket interface / hash policy
+    // ------------------------------------------------------------------
+
+    size_type bucket_count() const noexcept { return table_.bucket_count(); }
+    size_type max_bucket_count() const noexcept { return table_.max_bucket_count(); }
+
+    size_type bucket_size(size_type n) const { return table_.bucket_size(n); }
+    size_type bucket(const key_type& k) const { return table_.bucket(k); }
+
+    local_iterator begin(size_type n) { return table_.cbegin(n); }
+    local_iterator end(size_type n) { return table_.cend(n); }
+    const_local_iterator begin(size_type n) const { return table_.cbegin(n); }
+    const_local_iterator end(size_type n) const { return table_.cend(n); }
+    const_local_iterator cbegin(size_type n) const { return table_.cbegin(n); }
+    const_local_iterator cend(size_type n) const { return table_.cend(n); }
+
+    float load_factor() const noexcept { return table_.load_factor(); }
+    float max_load_factor() const noexcept { return table_.max_load_factor(); }
+    void max_load_factor(float mlf) { table_.max_load_factor(mlf); }
+    void rehash(size_type n) { table_.rehash_multi(n); }
+    void reserve(size_type n) { table_.reserve_multi(n); }
+};
+
+// Deduction guides (libc++ unordered_multiset)
+template<class InputIterator,
+         class Hash      = hash<detail::ht_iter_value_type<InputIterator>>,
+         class Pred      = equal_to<detail::ht_iter_value_type<InputIterator>>,
+         class Allocator = allocator<detail::ht_iter_value_type<InputIterator>>,
+         class           = void_t<detail::ht_iter_category_t<InputIterator>>,
+         class           = enable_if_t<!detail::ht_is_allocator_v<Hash>>,
+         class           = enable_if_t<!is_integral_v<Hash>>,
+         class           = enable_if_t<!detail::ht_is_allocator_v<Pred>>,
+         class           = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_multiset(InputIterator, InputIterator,
+                   typename allocator_traits<Allocator>::size_type = 0,
+                   Hash = Hash(), Pred = Pred(), Allocator = Allocator())
+    -> unordered_multiset<detail::ht_iter_value_type<InputIterator>, Hash, Pred, Allocator>;
+
+template<class T,
+         class Hash      = hash<T>,
+         class Pred      = equal_to<T>,
+         class Allocator = allocator<T>,
+         class           = enable_if_t<!detail::ht_is_allocator_v<Hash>>,
+         class           = enable_if_t<!is_integral_v<Hash>>,
+         class           = enable_if_t<!detail::ht_is_allocator_v<Pred>>,
+         class           = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_multiset(initializer_list<T>, typename allocator_traits<Allocator>::size_type = 0,
+                   Hash = Hash(), Pred = Pred(), Allocator = Allocator())
+    -> unordered_multiset<T, Hash, Pred, Allocator>;
+
+template<class InputIterator, class Allocator,
+         class = void_t<detail::ht_iter_category_t<InputIterator>>,
+         class = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_multiset(InputIterator, InputIterator, typename allocator_traits<Allocator>::size_type,
+                   Allocator)
+    -> unordered_multiset<detail::ht_iter_value_type<InputIterator>,
+                          hash<detail::ht_iter_value_type<InputIterator>>,
+                          equal_to<detail::ht_iter_value_type<InputIterator>>, Allocator>;
+
+template<class InputIterator, class Hash, class Allocator,
+         class = void_t<detail::ht_iter_category_t<InputIterator>>,
+         class = enable_if_t<!detail::ht_is_allocator_v<Hash>>,
+         class = enable_if_t<!is_integral_v<Hash>>,
+         class = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_multiset(InputIterator, InputIterator, typename allocator_traits<Allocator>::size_type,
+                   Hash, Allocator)
+    -> unordered_multiset<detail::ht_iter_value_type<InputIterator>, Hash,
+                          equal_to<detail::ht_iter_value_type<InputIterator>>, Allocator>;
+
+template<class T, class Allocator,
+         class = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_multiset(initializer_list<T>, typename allocator_traits<Allocator>::size_type, Allocator)
+    -> unordered_multiset<T, hash<T>, equal_to<T>, Allocator>;
+
+template<class T, class Hash, class Allocator,
+         class = enable_if_t<!detail::ht_is_allocator_v<Hash>>,
+         class = enable_if_t<!is_integral_v<Hash>>,
+         class = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_multiset(initializer_list<T>, typename allocator_traits<Allocator>::size_type, Hash,
+                   Allocator)
+    -> unordered_multiset<T, Hash, equal_to<T>, Allocator>;
+
+template<class Value, class Hash, class Pred, class Alloc>
+inline void swap(unordered_multiset<Value, Hash, Pred, Alloc>& x,
+                 unordered_multiset<Value, Hash, Pred, Alloc>& y) noexcept(noexcept(x.swap(y))) {
+    x.swap(y);
+}
+
+template<class Value, class Hash, class Pred, class Alloc, class Predicate>
+inline typename unordered_multiset<Value, Hash, Pred, Alloc>::size_type
+erase_if(unordered_multiset<Value, Hash, Pred, Alloc>& c, Predicate pred) {
+    typename unordered_multiset<Value, Hash, Pred, Alloc>::size_type old_size = c.size();
+    for (auto i = c.begin(), last = c.end(); i != last;) {
+        if (pred(*i))
+            i = c.erase(i);
+        else
+            ++i;
+    }
+    return old_size - c.size();
+}
+
+template<class Value, class Hash, class Pred, class Alloc>
+bool operator==(const unordered_multiset<Value, Hash, Pred, Alloc>& x,
+                const unordered_multiset<Value, Hash, Pred, Alloc>& y) {
+    if (x.size() != y.size())
+        return false;
+    using const_iterator = typename unordered_multiset<Value, Hash, Pred, Alloc>::const_iterator;
+    using EqRng = pair<const_iterator, const_iterator>;
+    for (const_iterator i = x.begin(), ex = x.end(); i != ex;) {
+        EqRng xeq = x.equal_range(*i);
+        EqRng yeq = y.equal_range(*i);
+        if (std::distance(xeq.first, xeq.second) != std::distance(yeq.first, yeq.second) ||
+            !std::is_permutation(xeq.first, xeq.second, yeq.first))
+            return false;
+        i = xeq.second;
+    }
+    return true;
+}
+
+// [unord.set.syn] pmr aliases (libc++ include/unordered_set)
+namespace pmr {
+template <class KeyT, class HashT = std::hash<KeyT>, class PredT = std::equal_to<KeyT>>
+using unordered_set = std::unordered_set<KeyT, HashT, PredT, polymorphic_allocator<KeyT>>;
+
+template <class KeyT, class HashT = std::hash<KeyT>, class PredT = std::equal_to<KeyT>>
+using unordered_multiset = std::unordered_multiset<KeyT, HashT, PredT, polymorphic_allocator<KeyT>>;
+} // namespace pmr
+
+} // namespace std

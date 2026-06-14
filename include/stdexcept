@@ -1,0 +1,237 @@
+// <stdexcept> -- standard exception types.
+// Mechanically ported from libc++ include/stdexcept and
+//   src/include/refstring.h + src/support/runtime/stdexcept_default.ipp
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Message storage:
+//   A minimal reference-counted string (refstring) is used, ported directly
+//   from libc++'s __libcpp_refstring.  The buffer layout is:
+//     [ Rep (len + cap + count) | char data[] ]
+//   The `const char*` pointer stored in the exception object points to the
+//   char data immediately following the Rep header.  On copy/assignment the
+//   reference count is atomically incremented; on destruction it is
+//   decremented and the block is freed when it reaches -1.
+//   (libc++ uses 0 for "one live owner" so the threshold is < 0, not == 0.)
+//
+// The __throw_xxx helpers from libc++ are also included below, adapted for
+// -fno-exceptions: they call __builtin_trap() instead of throw.
+#pragma once
+
+#include <exception>
+#include <string>     // std::string — no cycle: <string> does not include <stdexcept>
+#include <stdlib.h>   // malloc, free
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// Internal: minimal refcounted string (ported from libcxx src/include/refstring.h)
+//===----------------------------------------------------------------------===//
+namespace detail {
+
+struct rep_base {
+    __SIZE_TYPE__ len;
+    __SIZE_TYPE__ cap;
+    int          count;   // starts at 0 (one live owner), freed when < 0
+};
+
+inline rep_base* rep_from_data(const char* data) noexcept {
+    return reinterpret_cast<rep_base*>(const_cast<char*>(data) - sizeof(rep_base));
+}
+
+inline char* data_from_rep(rep_base* rep) noexcept {
+    return reinterpret_cast<char*>(rep) + sizeof(rep_base);
+}
+
+} // namespace detail
+
+class refstring {
+    const char* imp;
+
+public:
+    explicit refstring(const char* msg) noexcept {
+        __SIZE_TYPE__ len    = __builtin_strlen(msg);
+        detail::rep_base* rep = static_cast<detail::rep_base*>(
+            ::malloc(sizeof(detail::rep_base) + len + 1));
+        if (!rep) { __builtin_trap(); }
+        rep->len   = len;
+        rep->cap   = len;
+        rep->count = 0;
+        char* data = detail::data_from_rep(rep);
+        __builtin_memcpy(data, msg, len + 1);
+        imp = data;
+    }
+
+    refstring(const refstring& s) noexcept : imp(s.imp) {
+        __atomic_add_fetch(&detail::rep_from_data(imp)->count, 1,
+                           __ATOMIC_RELAXED);
+    }
+
+    refstring& operator=(const refstring& s) noexcept {
+        detail::rep_base* old = detail::rep_from_data(imp);
+        imp = s.imp;
+        __atomic_add_fetch(&detail::rep_from_data(imp)->count, 1,
+                           __ATOMIC_RELAXED);
+        if (__atomic_add_fetch(&old->count, -1, __ATOMIC_ACQ_REL) < 0)
+            ::free(old);
+        return *this;
+    }
+
+    ~refstring() noexcept {
+        detail::rep_base* rep = detail::rep_from_data(imp);
+        if (__atomic_add_fetch(&rep->count, -1, __ATOMIC_ACQ_REL) < 0)
+            ::free(rep);
+    }
+
+    const char* c_str() const noexcept { return imp; }
+};
+
+//===----------------------------------------------------------------------===//
+// logic_error
+//===----------------------------------------------------------------------===//
+class logic_error : public exception {
+private:
+    refstring imp;
+
+public:
+    explicit logic_error(const char* msg) : imp(msg) {}
+    explicit logic_error(const string& msg) : imp(msg.c_str()) {}
+
+    logic_error(const logic_error&) noexcept            = default;
+    logic_error& operator=(const logic_error&) noexcept = default;
+
+    ~logic_error() noexcept override {}
+
+    [[nodiscard]] const char* what() const noexcept override { return imp.c_str(); }
+};
+
+//===----------------------------------------------------------------------===//
+// runtime_error
+//===----------------------------------------------------------------------===//
+class runtime_error : public exception {
+private:
+    refstring imp;
+
+public:
+    explicit runtime_error(const char* msg) : imp(msg) {}
+    explicit runtime_error(const string& msg) : imp(msg.c_str()) {}
+
+    runtime_error(const runtime_error&) noexcept            = default;
+    runtime_error& operator=(const runtime_error&) noexcept = default;
+
+    ~runtime_error() noexcept override {}
+
+    [[nodiscard]] const char* what() const noexcept override { return imp.c_str(); }
+};
+
+//===----------------------------------------------------------------------===//
+// logic_error derivatives
+//===----------------------------------------------------------------------===//
+class domain_error : public logic_error {
+public:
+    explicit domain_error(const char* msg) : logic_error(msg) {}
+    explicit domain_error(const string& msg) : logic_error(msg) {}
+    domain_error(const domain_error&) noexcept            = default;
+    domain_error& operator=(const domain_error&) noexcept = default;
+    ~domain_error() noexcept override {}
+};
+
+class invalid_argument : public logic_error {
+public:
+    explicit invalid_argument(const char* msg) : logic_error(msg) {}
+    explicit invalid_argument(const string& msg) : logic_error(msg) {}
+    invalid_argument(const invalid_argument&) noexcept            = default;
+    invalid_argument& operator=(const invalid_argument&) noexcept = default;
+    ~invalid_argument() noexcept override {}
+};
+
+class length_error : public logic_error {
+public:
+    explicit length_error(const char* msg) : logic_error(msg) {}
+    explicit length_error(const string& msg) : logic_error(msg) {}
+    length_error(const length_error&) noexcept            = default;
+    length_error& operator=(const length_error&) noexcept = default;
+    ~length_error() noexcept override {}
+};
+
+class out_of_range : public logic_error {
+public:
+    explicit out_of_range(const char* msg) : logic_error(msg) {}
+    explicit out_of_range(const string& msg) : logic_error(msg) {}
+    out_of_range(const out_of_range&) noexcept            = default;
+    out_of_range& operator=(const out_of_range&) noexcept = default;
+    ~out_of_range() noexcept override {}
+};
+
+//===----------------------------------------------------------------------===//
+// runtime_error derivatives
+//===----------------------------------------------------------------------===//
+class range_error : public runtime_error {
+public:
+    explicit range_error(const char* msg) : runtime_error(msg) {}
+    explicit range_error(const string& msg) : runtime_error(msg) {}
+    range_error(const range_error&) noexcept            = default;
+    range_error& operator=(const range_error&) noexcept = default;
+    ~range_error() noexcept override {}
+};
+
+class overflow_error : public runtime_error {
+public:
+    explicit overflow_error(const char* msg) : runtime_error(msg) {}
+    explicit overflow_error(const string& msg) : runtime_error(msg) {}
+    overflow_error(const overflow_error&) noexcept            = default;
+    overflow_error& operator=(const overflow_error&) noexcept = default;
+    ~overflow_error() noexcept override {}
+};
+
+class underflow_error : public runtime_error {
+public:
+    explicit underflow_error(const char* msg) : runtime_error(msg) {}
+    explicit underflow_error(const string& msg) : runtime_error(msg) {}
+    underflow_error(const underflow_error&) noexcept            = default;
+    underflow_error& operator=(const underflow_error&) noexcept = default;
+    ~underflow_error() noexcept override {}
+};
+
+//===----------------------------------------------------------------------===//
+// Internal trap helpers (replaces the libc++ __throw_xxx functions which use
+// throw; under -fno-exceptions we call __builtin_trap() instead).
+// These are inline so that containers can call them as "will not return" paths.
+//===----------------------------------------------------------------------===//
+[[noreturn]] inline void throw_logic_error(const char* msg) {
+    (void)msg;
+    __builtin_trap();
+}
+[[noreturn]] inline void throw_domain_error(const char* msg) {
+    (void)msg;
+    __builtin_trap();
+}
+[[noreturn]] inline void throw_invalid_argument(const char* msg) {
+    (void)msg;
+    __builtin_trap();
+}
+[[noreturn]] inline void throw_length_error(const char* msg) {
+    (void)msg;
+    __builtin_trap();
+}
+[[noreturn]] inline void throw_out_of_range(const char* msg) {
+    (void)msg;
+    __builtin_trap();
+}
+[[noreturn]] inline void throw_runtime_error(const char* msg) {
+    (void)msg;
+    __builtin_trap();
+}
+[[noreturn]] inline void throw_range_error(const char* msg) {
+    (void)msg;
+    __builtin_trap();
+}
+[[noreturn]] inline void throw_overflow_error(const char* msg) {
+    (void)msg;
+    __builtin_trap();
+}
+[[noreturn]] inline void throw_underflow_error(const char* msg) {
+    (void)msg;
+    __builtin_trap();
+}
+
+} // namespace std

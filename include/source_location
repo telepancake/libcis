@@ -1,0 +1,65 @@
+// <source_location> — compile-time source location information.
+// Mechanically ported from libc++ include/source_location
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// GCC-10 caveat:
+// - __builtin_COLUMN() is NOT available until gcc-11. However
+//   __builtin_source_location() IS available in gcc-10 and its __impl struct
+//   already carries the column field, so column() works correctly via
+//   __builtin_source_location(). No workaround needed beyond the note.
+// - The struct member names __impl / _M_file_name / _M_function_name /
+//   _M_line / _M_column are required by the GCC ABI — do not rename them.
+#pragma once
+
+#include <cstdint>
+
+namespace std {
+
+class source_location {
+    // The names __impl, _M_file_name, _M_function_name, _M_line, _M_column
+    // are hard-coded in the GCC compiler and must not be changed.
+    struct __impl {
+        const char* _M_file_name;
+        const char* _M_function_name;
+        unsigned    _M_line;
+        unsigned    _M_column;
+    };
+
+    const __impl* ptr_ = nullptr;
+
+    // GCC's __builtin_source_location() returns const void*.
+    using builtin_sl_type = decltype(__builtin_source_location());
+
+public:
+    // current() — the default argument is evaluated at the call site, which
+    // is how the compiler captures the caller's location.
+    static consteval source_location
+    current(builtin_sl_type p = __builtin_source_location()) noexcept {
+        source_location sl;
+        sl.ptr_ = static_cast<const __impl*>(p);
+        return sl;
+    }
+
+    constexpr source_location() noexcept = default;
+
+    // Accessors
+    constexpr uint_least32_t line() const noexcept {
+        return ptr_ != nullptr ? ptr_->_M_line : 0;
+    }
+
+    // column() — __builtin_source_location() provides column on gcc-10 via the
+    // __impl struct even though the standalone __builtin_COLUMN() is gcc-11+.
+    constexpr uint_least32_t column() const noexcept {
+        return ptr_ != nullptr ? ptr_->_M_column : 0;
+    }
+
+    constexpr const char* file_name() const noexcept {
+        return ptr_ != nullptr ? ptr_->_M_file_name : "";
+    }
+
+    constexpr const char* function_name() const noexcept {
+        return ptr_ != nullptr ? ptr_->_M_function_name : "";
+    }
+};
+
+} // namespace std

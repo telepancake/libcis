@@ -1,0 +1,66 @@
+// <cstdio> -- C stdio functions in namespace std.
+// Mechanically ported from libc++ include/cstdio.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+#pragma once
+
+// glibc declarations must keep DEFAULT visibility no matter where this
+// wrapper is first included from: io headers wrap their bodies in
+// `#pragma GCC visibility push(hidden)` (libstdc++-ABI isolation), and a
+// libc prototype first seen inside such a region becomes a hidden symbol
+// the linker then cannot resolve against libc (e.g. strtod via <sstream>).
+#pragma GCC visibility push(default)
+#include <stdio.h>
+#pragma GCC visibility pop
+
+namespace std {
+
+using ::FILE;
+using ::fpos_t;
+
+using ::fclose;
+using ::fflush;
+using ::setbuf;
+using ::setvbuf;
+using ::fprintf;
+using ::fscanf;
+using ::snprintf;
+using ::sprintf;
+using ::sscanf;
+using ::vfprintf;
+using ::vfscanf;
+using ::vsscanf;
+using ::vsnprintf;
+using ::vsprintf;
+using ::fgetc;
+using ::fgets;
+using ::fputc;
+using ::fputs;
+using ::getc;
+using ::putc;
+using ::ungetc;
+using ::fread;
+using ::fwrite;
+using ::fgetpos;
+using ::fseek;
+using ::fsetpos;
+using ::ftell;
+using ::rewind;
+using ::clearerr;
+using ::feof;
+using ::ferror;
+using ::perror;
+using ::fopen;
+using ::freopen;
+using ::remove;
+using ::rename;
+using ::tmpfile;
+using ::tmpnam;
+using ::getchar;
+using ::scanf;
+using ::vscanf;
+using ::printf;
+using ::putchar;
+using ::puts;
+using ::vprintf;
+
+} // namespace std

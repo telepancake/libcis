@@ -1,0 +1,442 @@
+// -*- C++ -*-
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// Faithful port of libc++ include/strstream + src/strstream.cpp (release/20.x).
+// The deprecated strstreambuf / istrstream / ostrstream / strstream classes.
+// libcis is header-only, so the out-of-line definitions from src/strstream.cpp
+// are folded in here as inline functions.
+
+#ifndef LIBCIS_STRSTREAM
+#define LIBCIS_STRSTREAM
+
+#include <istream>
+#include <ostream>
+#include <streambuf>
+#include <algorithm>
+#include <climits>
+#include <cstdlib>
+#include <cstring>
+
+namespace std {
+
+class strstreambuf : public streambuf {
+public:
+  strstreambuf() : strstreambuf(0) {}
+  explicit strstreambuf(streamsize alsize);
+  strstreambuf(void* (*palloc)(size_t), void (*pfree)(void*));
+  strstreambuf(char* gnext, streamsize n, char* pbeg = nullptr);
+  strstreambuf(const char* gnext, streamsize n);
+
+  strstreambuf(signed char* gnext, streamsize n, signed char* pbeg = nullptr);
+  strstreambuf(const signed char* gnext, streamsize n);
+  strstreambuf(unsigned char* gnext, streamsize n, unsigned char* pbeg = nullptr);
+  strstreambuf(const unsigned char* gnext, streamsize n);
+
+  strstreambuf(strstreambuf&& rhs);
+  strstreambuf& operator=(strstreambuf&& rhs);
+
+  ~strstreambuf() override;
+
+  void swap(strstreambuf& rhs);
+
+  void freeze(bool freezefl = true);
+  char* str();
+  int pcount() const;
+
+protected:
+  int_type overflow(int_type c = EOF) override;
+  int_type pbackfail(int_type c = EOF) override;
+  int_type underflow() override;
+  pos_type
+  seekoff(off_type off, ios_base::seekdir way, ios_base::openmode which = ios_base::in | ios_base::out) override;
+  pos_type seekpos(pos_type sp, ios_base::openmode which = ios_base::in | ios_base::out) override;
+
+private:
+  typedef unsigned mode_type;
+  static const mode_type allocated_      = 0x01;
+  static const mode_type constant_       = 0x02;
+  static const mode_type dynamic_        = 0x04;
+  static const mode_type frozen_         = 0x08;
+  static const streamsize default_alsize = 4096;
+
+  mode_type strmode_;
+  streamsize alsize_;
+  void* (*palloc_)(size_t);
+  void (*pfree_)(void*);
+
+  void init(char* gnext, streamsize n, char* pbeg);
+};
+
+inline strstreambuf::strstreambuf(strstreambuf&& rhs)
+    : streambuf(rhs), strmode_(rhs.strmode_), alsize_(rhs.alsize_), palloc_(rhs.palloc_), pfree_(rhs.pfree_) {
+  rhs.setg(nullptr, nullptr, nullptr);
+  rhs.setp(nullptr, nullptr);
+}
+
+inline strstreambuf& strstreambuf::operator=(strstreambuf&& rhs) {
+  if (eback() && (strmode_ & allocated_) != 0 && (strmode_ & frozen_) == 0) {
+    if (pfree_)
+      pfree_(eback());
+    else
+      delete[] eback();
+  }
+  streambuf::operator=(rhs);
+  strmode_ = rhs.strmode_;
+  alsize_  = rhs.alsize_;
+  palloc_  = rhs.palloc_;
+  pfree_   = rhs.pfree_;
+  rhs.setg(nullptr, nullptr, nullptr);
+  rhs.setp(nullptr, nullptr);
+  return *this;
+}
+
+inline strstreambuf::strstreambuf(streamsize alsize)
+    : strmode_(dynamic_), alsize_(alsize), palloc_(nullptr), pfree_(nullptr) {}
+
+inline strstreambuf::strstreambuf(void* (*palloc)(size_t), void (*pfree)(void*))
+    : strmode_(dynamic_), alsize_(default_alsize), palloc_(palloc), pfree_(pfree) {}
+
+inline void strstreambuf::init(char* gnext, streamsize n, char* pbeg) {
+  if (n == 0)
+    n = static_cast<streamsize>(strlen(gnext));
+  else if (n < 0)
+    n = INT_MAX;
+  if (pbeg == nullptr)
+    setg(gnext, gnext, gnext + n);
+  else {
+    setg(gnext, gnext, pbeg);
+    setp(pbeg, pbeg + n);
+  }
+}
+
+inline strstreambuf::strstreambuf(char* gnext, streamsize n, char* pbeg)
+    : strmode_(), alsize_(default_alsize), palloc_(nullptr), pfree_(nullptr) {
+  init(gnext, n, pbeg);
+}
+
+inline strstreambuf::strstreambuf(const char* gnext, streamsize n)
+    : strmode_(constant_), alsize_(default_alsize), palloc_(nullptr), pfree_(nullptr) {
+  init(const_cast<char*>(gnext), n, nullptr);
+}
+
+inline strstreambuf::strstreambuf(signed char* gnext, streamsize n, signed char* pbeg)
+    : strmode_(), alsize_(default_alsize), palloc_(nullptr), pfree_(nullptr) {
+  init(const_cast<char*>(reinterpret_cast<const char*>(gnext)), n, reinterpret_cast<char*>(pbeg));
+}
+
+inline strstreambuf::strstreambuf(const signed char* gnext, streamsize n)
+    : strmode_(constant_), alsize_(default_alsize), palloc_(nullptr), pfree_(nullptr) {
+  init(const_cast<char*>(reinterpret_cast<const char*>(gnext)), n, nullptr);
+}
+
+inline strstreambuf::strstreambuf(unsigned char* gnext, streamsize n, unsigned char* pbeg)
+    : strmode_(), alsize_(default_alsize), palloc_(nullptr), pfree_(nullptr) {
+  init(const_cast<char*>(reinterpret_cast<const char*>(gnext)), n, reinterpret_cast<char*>(pbeg));
+}
+
+inline strstreambuf::strstreambuf(const unsigned char* gnext, streamsize n)
+    : strmode_(constant_), alsize_(default_alsize), palloc_(nullptr), pfree_(nullptr) {
+  init(const_cast<char*>(reinterpret_cast<const char*>(gnext)), n, nullptr);
+}
+
+inline strstreambuf::~strstreambuf() {
+  if (eback() && (strmode_ & allocated_) != 0 && (strmode_ & frozen_) == 0) {
+    if (pfree_)
+      pfree_(eback());
+    else
+      delete[] eback();
+  }
+}
+
+inline void strstreambuf::swap(strstreambuf& rhs) {
+  streambuf::swap(rhs);
+  std::swap(strmode_, rhs.strmode_);
+  std::swap(alsize_, rhs.alsize_);
+  std::swap(palloc_, rhs.palloc_);
+  std::swap(pfree_, rhs.pfree_);
+}
+
+inline void strstreambuf::freeze(bool freezefl) {
+  if (strmode_ & dynamic_) {
+    if (freezefl)
+      strmode_ |= frozen_;
+    else
+      strmode_ &= ~frozen_;
+  }
+}
+
+inline char* strstreambuf::str() {
+  if (strmode_ & dynamic_)
+    strmode_ |= frozen_;
+  return eback();
+}
+
+inline int strstreambuf::pcount() const { return static_cast<int>(pptr() - pbase()); }
+
+inline strstreambuf::int_type strstreambuf::overflow(int_type c) {
+  if (c == EOF)
+    return int_type(0);
+  if (pptr() == epptr()) {
+    if ((strmode_ & dynamic_) == 0 || (strmode_ & frozen_) != 0)
+      return int_type(EOF);
+    size_t old_size = static_cast<size_t>((epptr() ? epptr() : egptr()) - eback());
+    size_t new_size = std::max<size_t>(static_cast<size_t>(alsize_), 2 * old_size);
+    if (new_size == 0)
+      new_size = default_alsize;
+    char* buf = nullptr;
+    if (palloc_)
+      buf = static_cast<char*>(palloc_(new_size));
+    else
+      buf = new char[new_size];
+    if (buf == nullptr)
+      return int_type(EOF);
+    if (old_size != 0) {
+      // libc++ asserts eback() is non-null here; under -fno-exceptions we keep
+      // the memcpy unconditionally as old_size != 0 implies a valid buffer.
+      memcpy(buf, eback(), static_cast<size_t>(old_size));
+    }
+    ptrdiff_t ninp = gptr() - eback();
+    ptrdiff_t einp = egptr() - eback();
+    ptrdiff_t nout = pptr() - pbase();
+    if (strmode_ & allocated_) {
+      if (pfree_)
+        pfree_(eback());
+      else
+        delete[] eback();
+    }
+    setg(buf, buf + ninp, buf + einp);
+    setp(buf + einp, buf + new_size);
+    pbump(static_cast<int>(nout));
+    strmode_ |= allocated_;
+  }
+  *pptr() = static_cast<char>(c);
+  pbump(1);
+  return int_type(static_cast<unsigned char>(c));
+}
+
+inline strstreambuf::int_type strstreambuf::pbackfail(int_type c) {
+  if (eback() == gptr())
+    return EOF;
+  if (c == EOF) {
+    gbump(-1);
+    return int_type(0);
+  }
+  if (strmode_ & constant_) {
+    if (gptr()[-1] == static_cast<char>(c)) {
+      gbump(-1);
+      return c;
+    }
+    return EOF;
+  }
+  gbump(-1);
+  *gptr() = static_cast<char>(c);
+  return c;
+}
+
+inline strstreambuf::int_type strstreambuf::underflow() {
+  if (gptr() == egptr()) {
+    if (egptr() >= pptr())
+      return EOF;
+    setg(eback(), gptr(), pptr());
+  }
+  return int_type(static_cast<unsigned char>(*gptr()));
+}
+
+inline strstreambuf::pos_type strstreambuf::seekoff(off_type off, ios_base::seekdir way, ios_base::openmode which) {
+  bool pos_in  = (which & ios::in) != 0;
+  bool pos_out = (which & ios::out) != 0;
+  switch (way) {
+  case ios::beg:
+  case ios::end:
+    if (!pos_in && !pos_out)
+      return pos_type(off_type(-1));
+    break;
+  case ios::cur:
+    if (pos_in == pos_out)
+      return pos_type(off_type(-1));
+    break;
+  }
+
+  if (pos_in && gptr() == nullptr)
+    return pos_type(off_type(-1));
+  if (pos_out && pptr() == nullptr)
+    return pos_type(off_type(-1));
+
+  off_type newoff;
+  char* seekhigh = epptr() ? epptr() : egptr();
+  switch (way) {
+  case ios::beg:
+    newoff = 0;
+    break;
+  case ios::cur:
+    newoff = (pos_in ? gptr() : pptr()) - eback();
+    break;
+  case ios::end:
+    newoff = seekhigh - eback();
+    break;
+  default:
+    __builtin_unreachable();
+  }
+  newoff += off;
+  if (newoff < 0 || newoff > seekhigh - eback())
+    return pos_type(off_type(-1));
+
+  char* newpos = eback() + newoff;
+  if (pos_in)
+    setg(eback(), newpos, std::max(newpos, egptr()));
+  if (pos_out) {
+    // min(pbase, newpos), newpos, epptr()
+    off = epptr() - newpos;
+    setp(std::min(pbase(), newpos), epptr());
+    pbump(static_cast<int>((epptr() - pbase()) - off));
+  }
+  return pos_type(newoff);
+}
+
+inline strstreambuf::pos_type strstreambuf::seekpos(pos_type sp, ios_base::openmode which) {
+  bool pos_in  = (which & ios::in) != 0;
+  bool pos_out = (which & ios::out) != 0;
+  if (!pos_in && !pos_out)
+    return pos_type(off_type(-1));
+
+  if ((pos_in && gptr() == nullptr) || (pos_out && pptr() == nullptr))
+    return pos_type(off_type(-1));
+
+  off_type newoff = sp;
+  char* seekhigh  = epptr() ? epptr() : egptr();
+  if (newoff < 0 || newoff > seekhigh - eback())
+    return pos_type(off_type(-1));
+
+  char* newpos = eback() + newoff;
+  if (pos_in)
+    setg(eback(), newpos, std::max(newpos, egptr()));
+  if (pos_out) {
+    // min(pbase, newpos), newpos, epptr()
+    off_type temp = epptr() - newpos;
+    setp(std::min(pbase(), newpos), epptr());
+    pbump(static_cast<int>((epptr() - pbase()) - temp));
+  }
+  return pos_type(newoff);
+}
+
+class istrstream : public istream {
+public:
+  explicit istrstream(const char* s) : istream(&sb_), sb_(s, 0) {}
+  explicit istrstream(char* s) : istream(&sb_), sb_(s, 0) {}
+  istrstream(const char* s, streamsize n) : istream(&sb_), sb_(s, n) {}
+  istrstream(char* s, streamsize n) : istream(&sb_), sb_(s, n) {}
+
+  istrstream(istrstream&& rhs) // extension
+      : istream(std::move(static_cast<istream&>(rhs))), sb_(std::move(rhs.sb_)) {
+    istream::set_rdbuf(&sb_);
+  }
+
+  istrstream& operator=(istrstream&& rhs) {
+    sb_ = std::move(rhs.sb_);
+    istream::operator=(std::move(rhs));
+    return *this;
+  }
+
+  ~istrstream() override;
+
+  void swap(istrstream& rhs) {
+    istream::swap(rhs);
+    sb_.swap(rhs.sb_);
+  }
+
+  strstreambuf* rdbuf() const { return const_cast<strstreambuf*>(&sb_); }
+  char* str() { return sb_.str(); }
+
+private:
+  strstreambuf sb_;
+};
+
+inline istrstream::~istrstream() {}
+
+class ostrstream : public ostream {
+public:
+  ostrstream() : ostream(&sb_) {}
+  ostrstream(char* s, int n, ios_base::openmode mode = ios_base::out)
+      : ostream(&sb_), sb_(s, n, s + (mode & ios::app ? std::strlen(s) : 0)) {}
+
+  ostrstream(ostrstream&& rhs) // extension
+      : ostream(std::move(static_cast<ostream&>(rhs))), sb_(std::move(rhs.sb_)) {
+    ostream::set_rdbuf(&sb_);
+  }
+
+  ostrstream& operator=(ostrstream&& rhs) {
+    sb_ = std::move(rhs.sb_);
+    ostream::operator=(std::move(rhs));
+    return *this;
+  }
+
+  ~ostrstream() override;
+
+  void swap(ostrstream& rhs) {
+    ostream::swap(rhs);
+    sb_.swap(rhs.sb_);
+  }
+
+  strstreambuf* rdbuf() const { return const_cast<strstreambuf*>(&sb_); }
+  void freeze(bool freezefl = true) { sb_.freeze(freezefl); }
+  char* str() { return sb_.str(); }
+  int pcount() const { return sb_.pcount(); }
+
+private:
+  strstreambuf sb_;
+};
+
+inline ostrstream::~ostrstream() {}
+
+class strstream : public iostream {
+public:
+  // Types
+  typedef char char_type;
+  typedef char_traits<char>::int_type int_type;
+  typedef char_traits<char>::pos_type pos_type;
+  typedef char_traits<char>::off_type off_type;
+
+  // constructors/destructor
+  strstream() : iostream(&sb_) {}
+  strstream(char* s, int n, ios_base::openmode mode = ios_base::in | ios_base::out)
+      : iostream(&sb_), sb_(s, n, s + (mode & ios::app ? std::strlen(s) : 0)) {}
+
+  strstream(strstream&& rhs) // extension
+      : iostream(std::move(static_cast<iostream&>(rhs))), sb_(std::move(rhs.sb_)) {
+    iostream::set_rdbuf(&sb_);
+  }
+
+  strstream& operator=(strstream&& rhs) {
+    sb_ = std::move(rhs.sb_);
+    iostream::operator=(std::move(rhs));
+    return *this;
+  }
+
+  ~strstream() override;
+
+  void swap(strstream& rhs) {
+    iostream::swap(rhs);
+    sb_.swap(rhs.sb_);
+  }
+
+  // Members:
+  strstreambuf* rdbuf() const { return const_cast<strstreambuf*>(&sb_); }
+  void freeze(bool freezefl = true) { sb_.freeze(freezefl); }
+  int pcount() const { return sb_.pcount(); }
+  char* str() { return sb_.str(); }
+
+private:
+  strstreambuf sb_;
+};
+
+inline strstream::~strstream() {}
+
+} // namespace std
+
+#endif // LIBCIS_STRSTREAM

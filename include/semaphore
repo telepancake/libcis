@@ -1,0 +1,138 @@
+// <semaphore> -- counting_semaphore and binary_semaphore.
+// Mechanically ported from libc++ include/semaphore.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+
+#include <atomic>
+#include <chrono>
+#include <limits>
+#include <cstddef>
+
+namespace std {
+
+// ============================================================
+// atomic_semaphore_base -- shared implementation detail
+// ============================================================
+
+class atomic_semaphore_base {
+    atomic<ptrdiff_t> a;
+
+    // Inner CAS loop: try to decrement the counter from >0.
+    // Returns true if acquired, updates old on failure.
+    bool try_acquire_impl(ptrdiff_t& old) noexcept {
+        while (true) {
+            if (old == 0)
+                return false;
+            if (a.compare_exchange_weak(old, old - 1,
+                                        memory_order_acquire,
+                                        memory_order_relaxed))
+                return true;
+        }
+    }
+
+public:
+    constexpr explicit atomic_semaphore_base(ptrdiff_t count) noexcept
+        : a(count) {}
+
+    void release(ptrdiff_t update = 1) noexcept {
+        auto old = a.fetch_add(update, memory_order_release);
+        if (old == 0)
+            a.notify_all();
+    }
+
+    bool try_acquire() noexcept {
+        auto old = a.load(memory_order_relaxed);
+        return try_acquire_impl(old);
+    }
+
+    void acquire() noexcept {
+        // Spin-wait until try_acquire succeeds.
+        ptrdiff_t old = a.load(memory_order_relaxed);
+        while (true) {
+            if (old != 0) {
+                if (try_acquire_impl(old))
+                    return;
+            } else {
+                // Wait until value changes from 0.
+                a.wait(ptrdiff_t(0), memory_order_relaxed);
+                old = a.load(memory_order_relaxed);
+            }
+        }
+    }
+
+    template<class Rep, class Period>
+    bool try_acquire_for(const chrono::duration<Rep, Period>& rel_time) noexcept {
+        if (rel_time <= chrono::duration<Rep, Period>::zero())
+            return try_acquire();
+        auto deadline = chrono::steady_clock::now() +
+                        chrono::duration_cast<chrono::nanoseconds>(rel_time);
+        ptrdiff_t old = a.load(memory_order_relaxed);
+        while (true) {
+            if (old != 0) {
+                if (try_acquire_impl(old))
+                    return true;
+            }
+            if (chrono::steady_clock::now() >= deadline)
+                return false;
+            // Brief spin/yield before re-checking.
+#if defined(__i386__) || defined(__x86_64__)
+            __builtin_ia32_pause();
+#else
+            __asm__ volatile("" ::: "memory");
+#endif
+            old = a.load(memory_order_relaxed);
+        }
+    }
+
+    template<class Clock, class Duration>
+    bool try_acquire_until(const chrono::time_point<Clock, Duration>& abs_time) noexcept {
+        auto now = Clock::now();
+        if (now >= abs_time)
+            return try_acquire();
+        return try_acquire_for(abs_time - now);
+    }
+};
+
+// ============================================================
+// counting_semaphore<LeastMaxValue>
+// ============================================================
+
+template<ptrdiff_t least_max_value = numeric_limits<ptrdiff_t>::max()>
+class counting_semaphore {
+    static_assert(least_max_value >= 0,
+        "counting_semaphore: least_max_value must be non-negative");
+
+    atomic_semaphore_base sem;
+
+public:
+    [[nodiscard]] static constexpr ptrdiff_t max() noexcept {
+        return least_max_value;
+    }
+
+    constexpr explicit counting_semaphore(ptrdiff_t desired) noexcept
+        : sem(desired) {}
+
+    ~counting_semaphore() = default;
+
+    counting_semaphore(const counting_semaphore&)            = delete;
+    counting_semaphore& operator=(const counting_semaphore&) = delete;
+
+    void release(ptrdiff_t update = 1) noexcept { sem.release(update); }
+    void acquire() noexcept                     { sem.acquire(); }
+    [[nodiscard]] bool try_acquire() noexcept   { return sem.try_acquire(); }
+
+    template<class Rep, class Period>
+    [[nodiscard]] bool try_acquire_for(
+        const chrono::duration<Rep, Period>& rel_time) noexcept {
+        return sem.try_acquire_for(rel_time);
+    }
+
+    template<class Clock, class Duration>
+    [[nodiscard]] bool try_acquire_until(
+        const chrono::time_point<Clock, Duration>& abs_time) noexcept {
+        return sem.try_acquire_until(abs_time);
+    }
+};
+
+using binary_semaphore = counting_semaphore<1>;
+
+} // namespace std

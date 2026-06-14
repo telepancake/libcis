@@ -1,0 +1,829 @@
+// <compare> -- three-way comparison category types and algorithms.
+// Mechanically ported from libc++ include/compare + include/__compare/*.h
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// All __compare/*.h fragments are folded inline; no include/bits/ file needed.
+// Depends on <type_traits>, <bit> (bit_cast), <limits> (numeric_limits).
+// std::bit_cast is non-constexpr on gcc-10 (no __builtin_bit_cast); the
+// strong_order float path uses it only at runtime (guarded by !is_constant_evaluated()).
+#pragma once
+
+#include <type_traits>
+#include <bit>         // std::bit_cast (non-constexpr on gcc-10)
+#include <limits>      // std::numeric_limits
+#include <stdint.h>    // int32_t, int64_t
+#include <math.h>      // __builtin_isnan, __builtin_signbit, __builtin_copysign*
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// Internal helpers
+//===----------------------------------------------------------------------===//
+
+// priority_tag — for CPO overload dispatch (from __utility/priority_tag.h)
+namespace detail {
+    template<size_t N> struct priority_tag : priority_tag<N - 1> {};
+    template<> struct priority_tag<0> {};
+} // namespace detail
+
+// make_const_lvalue_ref (from __type_traits/make_const_lvalue_ref.h)
+namespace detail {
+    template<class T>
+    using make_const_lvalue_ref = const remove_reference_t<T>&;
+} // namespace detail
+
+// Note: std::bit_cast (from <bit>) is non-constexpr on gcc-10 (no __builtin_bit_cast).
+// The strong_order float go() guards bit_cast with !is_constant_evaluated() so the
+// whole CPO machinery is constexpr end-to-end.
+
+//===----------------------------------------------------------------------===//
+// [cmp.categories] — ordering category types (from __compare/ordering.h)
+//===----------------------------------------------------------------------===//
+
+// Implementation note: libc++ uses private enum _OrdResult/_PartialOrdResult to
+// tag-construct the ordering types.  We keep that design with the leading
+// underscores stripped from the enumerator names.
+
+enum class ord_result : signed char {
+    less    = -1,
+    equiv   =  0,
+    greater =  1
+};
+
+enum class partial_ord_result : signed char {
+    less      = static_cast<signed char>(ord_result::less),
+    equiv     = static_cast<signed char>(ord_result::equiv),
+    greater   = static_cast<signed char>(ord_result::greater),
+    unordered = -127
+};
+
+// Forward declarations
+class partial_ordering;
+class weak_ordering;
+class strong_ordering;
+
+// CmpUnspecifiedParam — accepted in place of literal 0.
+// We accept any int (the libc++ attribute guard is dropped; -Wzero-as-null-pointer-constant
+// is a style concern, not a correctness issue for us).
+struct cmp_unspecified_param {
+    template<class T, enable_if_t<is_same_v<T, int>, int> = 0>
+    consteval cmp_unspecified_param(T zero) noexcept { (void)zero; }
+};
+
+// ---- partial_ordering ----
+
+class partial_ordering {
+    explicit constexpr partial_ordering(partial_ord_result v) noexcept : value(v) {}
+
+public:
+    static const partial_ordering less;
+    static const partial_ordering equivalent;
+    static const partial_ordering greater;
+    static const partial_ordering unordered;
+
+    // equality
+    friend constexpr bool operator==(partial_ordering, partial_ordering) noexcept = default;
+
+    friend constexpr bool operator==(partial_ordering v, cmp_unspecified_param) noexcept {
+        return v.value == partial_ord_result::equiv;
+    }
+
+    // relational (lhs is partial_ordering)
+    friend constexpr bool operator<(partial_ordering v, cmp_unspecified_param) noexcept {
+        return v.value == partial_ord_result::less;
+    }
+    friend constexpr bool operator<=(partial_ordering v, cmp_unspecified_param) noexcept {
+        return v.value == partial_ord_result::equiv || v.value == partial_ord_result::less;
+    }
+    friend constexpr bool operator>(partial_ordering v, cmp_unspecified_param) noexcept {
+        return v.value == partial_ord_result::greater;
+    }
+    friend constexpr bool operator>=(partial_ordering v, cmp_unspecified_param) noexcept {
+        return v.value == partial_ord_result::equiv || v.value == partial_ord_result::greater;
+    }
+
+    // relational (rhs is partial_ordering)
+    friend constexpr bool operator<(cmp_unspecified_param, partial_ordering v) noexcept {
+        return v.value == partial_ord_result::greater;
+    }
+    friend constexpr bool operator<=(cmp_unspecified_param, partial_ordering v) noexcept {
+        return v.value == partial_ord_result::equiv || v.value == partial_ord_result::greater;
+    }
+    friend constexpr bool operator>(cmp_unspecified_param, partial_ordering v) noexcept {
+        return v.value == partial_ord_result::less;
+    }
+    friend constexpr bool operator>=(cmp_unspecified_param, partial_ordering v) noexcept {
+        return v.value == partial_ord_result::equiv || v.value == partial_ord_result::less;
+    }
+
+    // spaceship
+    friend constexpr partial_ordering operator<=>(partial_ordering v, cmp_unspecified_param) noexcept {
+        return v;
+    }
+    friend constexpr partial_ordering operator<=>(cmp_unspecified_param, partial_ordering v) noexcept {
+        return v < 0 ? partial_ordering::greater : (v > 0 ? partial_ordering::less : v);
+    }
+
+private:
+    partial_ord_result value;
+};
+
+inline constexpr partial_ordering partial_ordering::less(partial_ord_result::less);
+inline constexpr partial_ordering partial_ordering::equivalent(partial_ord_result::equiv);
+inline constexpr partial_ordering partial_ordering::greater(partial_ord_result::greater);
+inline constexpr partial_ordering partial_ordering::unordered(partial_ord_result::unordered);
+
+// ---- weak_ordering ----
+
+class weak_ordering {
+    using value_type = signed char;
+    explicit constexpr weak_ordering(ord_result v) noexcept : value(value_type(v)) {}
+
+public:
+    static const weak_ordering less;
+    static const weak_ordering equivalent;
+    static const weak_ordering greater;
+
+    constexpr operator partial_ordering() const noexcept {
+        return value == 0 ? partial_ordering::equivalent
+                          : (value < 0 ? partial_ordering::less : partial_ordering::greater);
+    }
+
+    // equality
+    friend constexpr bool operator==(weak_ordering, weak_ordering) noexcept = default;
+
+    friend constexpr bool operator==(weak_ordering v, cmp_unspecified_param) noexcept {
+        return v.value == 0;
+    }
+
+    // relational (lhs is weak_ordering)
+    friend constexpr bool operator<(weak_ordering v, cmp_unspecified_param) noexcept { return v.value < 0; }
+    friend constexpr bool operator<=(weak_ordering v, cmp_unspecified_param) noexcept { return v.value <= 0; }
+    friend constexpr bool operator>(weak_ordering v, cmp_unspecified_param) noexcept { return v.value > 0; }
+    friend constexpr bool operator>=(weak_ordering v, cmp_unspecified_param) noexcept { return v.value >= 0; }
+
+    // relational (rhs is weak_ordering)
+    friend constexpr bool operator<(cmp_unspecified_param, weak_ordering v) noexcept { return 0 < v.value; }
+    friend constexpr bool operator<=(cmp_unspecified_param, weak_ordering v) noexcept { return 0 <= v.value; }
+    friend constexpr bool operator>(cmp_unspecified_param, weak_ordering v) noexcept { return 0 > v.value; }
+    friend constexpr bool operator>=(cmp_unspecified_param, weak_ordering v) noexcept { return 0 >= v.value; }
+
+    // spaceship
+    friend constexpr weak_ordering operator<=>(weak_ordering v, cmp_unspecified_param) noexcept { return v; }
+    friend constexpr weak_ordering operator<=>(cmp_unspecified_param, weak_ordering v) noexcept {
+        return v < 0 ? weak_ordering::greater : (v > 0 ? weak_ordering::less : v);
+    }
+
+private:
+    value_type value;
+};
+
+inline constexpr weak_ordering weak_ordering::less(ord_result::less);
+inline constexpr weak_ordering weak_ordering::equivalent(ord_result::equiv);
+inline constexpr weak_ordering weak_ordering::greater(ord_result::greater);
+
+// ---- strong_ordering ----
+
+class strong_ordering {
+    using value_type = signed char;
+    explicit constexpr strong_ordering(ord_result v) noexcept : value(value_type(v)) {}
+
+public:
+    static const strong_ordering less;
+    static const strong_ordering equal;
+    static const strong_ordering equivalent;
+    static const strong_ordering greater;
+
+    // conversions
+    constexpr operator partial_ordering() const noexcept {
+        return value == 0 ? partial_ordering::equivalent
+                          : (value < 0 ? partial_ordering::less : partial_ordering::greater);
+    }
+    constexpr operator weak_ordering() const noexcept {
+        return value == 0 ? weak_ordering::equivalent
+                          : (value < 0 ? weak_ordering::less : weak_ordering::greater);
+    }
+
+    // equality
+    friend constexpr bool operator==(strong_ordering, strong_ordering) noexcept = default;
+
+    friend constexpr bool operator==(strong_ordering v, cmp_unspecified_param) noexcept {
+        return v.value == 0;
+    }
+
+    // relational (lhs is strong_ordering)
+    friend constexpr bool operator<(strong_ordering v, cmp_unspecified_param) noexcept { return v.value < 0; }
+    friend constexpr bool operator<=(strong_ordering v, cmp_unspecified_param) noexcept { return v.value <= 0; }
+    friend constexpr bool operator>(strong_ordering v, cmp_unspecified_param) noexcept { return v.value > 0; }
+    friend constexpr bool operator>=(strong_ordering v, cmp_unspecified_param) noexcept { return v.value >= 0; }
+
+    // relational (rhs is strong_ordering)
+    friend constexpr bool operator<(cmp_unspecified_param, strong_ordering v) noexcept { return 0 < v.value; }
+    friend constexpr bool operator<=(cmp_unspecified_param, strong_ordering v) noexcept { return 0 <= v.value; }
+    friend constexpr bool operator>(cmp_unspecified_param, strong_ordering v) noexcept { return 0 > v.value; }
+    friend constexpr bool operator>=(cmp_unspecified_param, strong_ordering v) noexcept { return 0 >= v.value; }
+
+    // spaceship
+    friend constexpr strong_ordering operator<=>(strong_ordering v, cmp_unspecified_param) noexcept { return v; }
+    friend constexpr strong_ordering operator<=>(cmp_unspecified_param, strong_ordering v) noexcept {
+        return v < 0 ? strong_ordering::greater : (v > 0 ? strong_ordering::less : v);
+    }
+
+private:
+    value_type value;
+};
+
+inline constexpr strong_ordering strong_ordering::less(ord_result::less);
+inline constexpr strong_ordering strong_ordering::equal(ord_result::equiv);
+inline constexpr strong_ordering strong_ordering::equivalent(ord_result::equiv);
+inline constexpr strong_ordering strong_ordering::greater(ord_result::greater);
+
+// Internal concept: T is one of the three comparison category types.
+namespace detail {
+    template<class T>
+    concept comparison_category =
+        is_same_v<T, partial_ordering> || is_same_v<T, weak_ordering> || is_same_v<T, strong_ordering>;
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
+// [cmp.categories], named comparison functions (from __compare/is_eq.h)
+//===----------------------------------------------------------------------===//
+
+[[nodiscard]] inline constexpr bool is_eq  (partial_ordering c) noexcept { return c == 0; }
+[[nodiscard]] inline constexpr bool is_neq (partial_ordering c) noexcept { return c != 0; }
+[[nodiscard]] inline constexpr bool is_lt  (partial_ordering c) noexcept { return c < 0; }
+[[nodiscard]] inline constexpr bool is_lteq(partial_ordering c) noexcept { return c <= 0; }
+[[nodiscard]] inline constexpr bool is_gt  (partial_ordering c) noexcept { return c > 0; }
+[[nodiscard]] inline constexpr bool is_gteq(partial_ordering c) noexcept { return c >= 0; }
+
+//===----------------------------------------------------------------------===//
+// [cmp.common], common_comparison_category (from __compare/common_comparison_category.h)
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+    enum classify_comp_category : unsigned {
+        none       = 0,
+        partial_ord = 1,
+        weak_ord   = 2,
+        strong_ord = 3,
+        ccc_size   = 4
+    };
+
+    template<class T>
+    constexpr classify_comp_category type_to_enum() noexcept {
+        if (is_same_v<T, partial_ordering>) return partial_ord;
+        if (is_same_v<T, weak_ordering>)   return weak_ord;
+        if (is_same_v<T, strong_ordering>)  return strong_ord;
+        return none;
+    }
+
+    template<size_t N>
+    constexpr classify_comp_category compute_comp_type(const classify_comp_category (&types)[N]) {
+        int seen[ccc_size] = {};
+        for (auto t : types) ++seen[t];
+        if (seen[none])       return none;
+        if (seen[partial_ord]) return partial_ord;
+        if (seen[weak_ord])   return weak_ord;
+        return strong_ord;
+    }
+
+    template<class... Ts>
+    constexpr auto get_comp_type() {
+        constexpr classify_comp_category type_kinds[] =
+            { strong_ord, detail::type_to_enum<Ts>()... };
+        constexpr classify_comp_category cat =
+            detail::compute_comp_type(type_kinds);
+        if constexpr (cat == none)
+            return void();
+        else if constexpr (cat == partial_ord)
+            return partial_ordering::equivalent;
+        else if constexpr (cat == weak_ord)
+            return weak_ordering::equivalent;
+        else
+            return strong_ordering::equivalent;
+    }
+} // namespace detail
+
+template<class... Ts>
+struct common_comparison_category {
+    using type = decltype(detail::get_comp_type<Ts...>());
+};
+
+template<class... Ts>
+using common_comparison_category_t = typename common_comparison_category<Ts...>::type;
+
+//===----------------------------------------------------------------------===//
+// [cmp.result], compare_three_way_result (from __compare/compare_three_way_result.h)
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+    template<class T, class U, class = void>
+    struct compare_three_way_result_impl {};
+
+    template<class T, class U>
+    struct compare_three_way_result_impl<T, U,
+        void_t<decltype(declval<const remove_reference_t<T>&>() <=>
+                        declval<const remove_reference_t<U>&>())>> {
+        using type = decltype(declval<const remove_reference_t<T>&>() <=>
+                              declval<const remove_reference_t<U>&>());
+    };
+} // namespace detail
+
+template<class T, class U = T>
+struct compare_three_way_result : detail::compare_three_way_result_impl<T, U> {};
+
+template<class T, class U = T>
+using compare_three_way_result_t = typename compare_three_way_result<T, U>::type;
+
+//===----------------------------------------------------------------------===//
+// [cmp.concept], three_way_comparable / three_way_comparable_with
+// (from __compare/three_way_comparable.h, plus inlined concept deps)
+//
+// These depend on __weakly_equality_comparable_with, __partially_ordered_with,
+// __boolean_testable, __comparison_common_type_with, and common_reference_t.
+// We inline the minimal boolean-testable and partial-order checks here.
+// __comparison_common_type_with and common_reference_t would require <concepts>
+// and <type_traits> common_reference.  For the _with variant we include only the
+// direct-expression requirements (sufficient for most uses); the
+// common_reference cross-type requirement is gated on availability.
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+    // boolean-testable: convertible to bool, and !x is also bool-convertible
+    template<class T>
+    concept boolean_testable_impl = is_convertible_v<T, bool>;
+
+    template<class T>
+    concept boolean_testable =
+        boolean_testable_impl<T> &&
+        requires(T&& t) { { !static_cast<T&&>(t) } -> boolean_testable_impl; };
+
+    // __weakly_equality_comparable_with
+    template<class T, class U>
+    concept weakly_equality_comparable_with =
+        requires(make_const_lvalue_ref<T> t, make_const_lvalue_ref<U> u) {
+            { t == u } -> boolean_testable;
+            { t != u } -> boolean_testable;
+            { u == t } -> boolean_testable;
+            { u != t } -> boolean_testable;
+        };
+
+    // __partially_ordered_with
+    template<class T, class U>
+    concept partially_ordered_with =
+        requires(make_const_lvalue_ref<T> t, make_const_lvalue_ref<U> u) {
+            { t <  u } -> boolean_testable;
+            { t >  u } -> boolean_testable;
+            { t <= u } -> boolean_testable;
+            { t >= u } -> boolean_testable;
+            { u <  t } -> boolean_testable;
+            { u >  t } -> boolean_testable;
+            { u <= t } -> boolean_testable;
+            { u >= t } -> boolean_testable;
+        };
+} // namespace detail
+
+// compares_as<T, Cat>: the common_comparison_category of T and Cat is Cat
+template<class T, class Cat>
+concept compares_as = is_same_v<common_comparison_category_t<T, Cat>, Cat>;
+
+// three_way_comparable<T, Cat = partial_ordering>
+template<class T, class Cat = partial_ordering>
+concept three_way_comparable =
+    detail::weakly_equality_comparable_with<T, T> &&
+    detail::partially_ordered_with<T, T> &&
+    requires(detail::make_const_lvalue_ref<T> a, detail::make_const_lvalue_ref<T> b) {
+        { a <=> b } -> compares_as<Cat>;
+    };
+
+// three_way_comparable_with<T, U, Cat = partial_ordering>
+// We omit the common_reference cross-type constraint (requires <concepts> +
+// common_reference_t, which is being ported in a parallel agent).  The
+// expression-based requirements are preserved.
+template<class T, class U, class Cat = partial_ordering>
+concept three_way_comparable_with =
+    three_way_comparable<T, Cat> &&
+    three_way_comparable<U, Cat> &&
+    detail::weakly_equality_comparable_with<T, U> &&
+    detail::partially_ordered_with<T, U> &&
+    requires(detail::make_const_lvalue_ref<T> t, detail::make_const_lvalue_ref<U> u) {
+        { t <=> u } -> compares_as<Cat>;
+        { u <=> t } -> compares_as<Cat>;
+    };
+
+//===----------------------------------------------------------------------===//
+// [comparisons.three.way], compare_three_way (from __compare/compare_three_way.h)
+//===----------------------------------------------------------------------===//
+
+struct compare_three_way {
+    template<class T1, class T2>
+        requires three_way_comparable_with<T1, T2>
+    constexpr auto operator()(T1&& t, T2&& u) const
+        noexcept(noexcept(static_cast<T1&&>(t) <=> static_cast<T2&&>(u)))
+    {
+        return static_cast<T1&&>(t) <=> static_cast<T2&&>(u);
+    }
+
+    using is_transparent = void;
+};
+
+//===----------------------------------------------------------------------===//
+// [cmp.alg], CPO helpers
+//===----------------------------------------------------------------------===//
+
+// ---- strong_order (from __compare/strong_order.h) ----
+
+namespace cpo_strong_order {
+// No poison pill: would interfere with ADL in gcc-10 template substitution.
+
+struct fn {
+    // (1) ADL-found strong_order(t, u), result convertible to strong_ordering
+    template<class T, class U>
+        requires is_same_v<decay_t<T>, decay_t<U>>
+    static constexpr auto go(T&& t, U&& u, detail::priority_tag<2>)
+        noexcept(noexcept(strong_ordering(strong_order(static_cast<T&&>(t), static_cast<U&&>(u)))))
+        -> decltype(strong_ordering(strong_order(static_cast<T&&>(t), static_cast<U&&>(u))))
+    {
+        return strong_ordering(strong_order(static_cast<T&&>(t), static_cast<U&&>(u)));
+    }
+
+    // (2) Floating-point: IEC 559 bit-level total order.
+    //     The function is constexpr end-to-end; at runtime we use the fast
+    //     bit_cast path (bit_cast is non-constexpr on gcc-10, so we guard it
+    //     with is_constant_evaluated()).
+    template<class T, class U, class D = decay_t<T>>
+        requires is_same_v<D, decay_t<U>> && is_floating_point_v<D>
+    static constexpr strong_ordering go(T&& t, U&& u, detail::priority_tag<1>) noexcept {
+        D td = static_cast<D>(t);
+        D ud = static_cast<D>(u);
+
+        // At runtime, use the fast bit-manipulation path for IEC 559 float/double.
+        if (!is_constant_evaluated()) {
+            if constexpr (numeric_limits<D>::is_iec559 &&
+                          (sizeof(D) == sizeof(int32_t) || sizeof(D) == sizeof(int64_t))) {
+                using int_t = conditional_t<sizeof(D) == sizeof(int32_t), int32_t, int64_t>;
+                int_t rx = bit_cast<int_t>(td);
+                int_t ry = bit_cast<int_t>(ud);
+                // IEEE 754 total order: flip sign bit of negative values so that
+                // integer comparison gives the right total order.
+                using uint_t = make_unsigned_t<int_t>;
+                const int_t min_val = int_t(uint_t(1) << (sizeof(int_t)*8 - 1));
+                rx = (rx < 0) ? (min_val - rx - 1) : rx;
+                ry = (ry < 0) ? (min_val - ry - 1) : ry;
+                return (rx <=> ry);
+            }
+        }
+
+        // Constexpr path (and runtime fallback for long double / non-IEC559).
+        // NaN comparisons are undefined in constant expressions (GCC rejects them),
+        // so callers must not pass NaN in a constant-expression context; the test
+        // guards all NaN checks with !std::is_constant_evaluated().
+        if (td < ud)  return strong_ordering::less;
+        if (td > ud)  return strong_ordering::greater;
+        if (td == ud) {
+            // Distinguish -0 from +0: signbit(-0) > signbit(+0) in the total order,
+            // so -0 < +0 means we need (signbit(td) > signbit(ud)).
+            return __builtin_signbit(ud) <=> __builtin_signbit(td);
+        }
+        // td and ud are unordered (at least one NaN).
+        // This branch is never reached in a constant-expression (GCC forbids NaN
+        // comparisons there); it is reachable only at runtime.
+        {
+            bool t_nan = __builtin_isnan(td);
+            bool u_nan = __builtin_isnan(ud);
+            bool t_neg = __builtin_signbit(td);
+            bool u_neg = __builtin_signbit(ud);
+            if (t_nan && u_nan) {
+                if (t_neg != u_neg)
+                    return u_neg <=> t_neg;
+                // Both same-sign NaN: order by raw bit pattern.
+                if constexpr (sizeof(D) == sizeof(int32_t)) {
+                    int32_t a = bit_cast<int32_t>(td);
+                    int32_t b = bit_cast<int32_t>(ud);
+                    return a <=> b;
+                } else if constexpr (sizeof(D) == sizeof(int64_t)) {
+                    int64_t a = bit_cast<int64_t>(td);
+                    int64_t b = bit_cast<int64_t>(ud);
+                    return a <=> b;
+                } else {
+                    return strong_ordering::equal;
+                }
+            } else if (t_nan) {
+                return t_neg ? strong_ordering::less : strong_ordering::greater;
+            } else {
+                return u_neg ? strong_ordering::greater : strong_ordering::less;
+            }
+        }
+    }
+
+    // (3) compare_three_way()(t, u) convertible to strong_ordering
+    template<class T, class U>
+        requires is_same_v<decay_t<T>, decay_t<U>>
+    static constexpr auto go(T&& t, U&& u, detail::priority_tag<0>)
+        noexcept(noexcept(strong_ordering(compare_three_way()(static_cast<T&&>(t), static_cast<U&&>(u)))))
+        -> decltype(strong_ordering(compare_three_way()(static_cast<T&&>(t), static_cast<U&&>(u))))
+    {
+        return strong_ordering(compare_three_way()(static_cast<T&&>(t), static_cast<U&&>(u)));
+    }
+
+    template<class T, class U>
+    constexpr auto operator()(T&& t, U&& u) const
+        noexcept(noexcept(go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<2>{})))
+        -> decltype(go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<2>{}))
+    {
+        return go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<2>{});
+    }
+};
+} // namespace cpo_strong_order
+
+inline namespace cpo {
+inline constexpr auto strong_order = cpo_strong_order::fn{};
+} // namespace cpo
+
+// ---- weak_order (from __compare/weak_order.h) ----
+
+namespace cpo_weak_order {
+
+struct fn {
+    // (1) ADL weak_order
+    template<class T, class U>
+        requires is_same_v<decay_t<T>, decay_t<U>>
+    static constexpr auto go(T&& t, U&& u, detail::priority_tag<3>)
+        noexcept(noexcept(weak_ordering(weak_order(static_cast<T&&>(t), static_cast<U&&>(u)))))
+        -> decltype(weak_ordering(weak_order(static_cast<T&&>(t), static_cast<U&&>(u))))
+    {
+        return weak_ordering(weak_order(static_cast<T&&>(t), static_cast<U&&>(u)));
+    }
+
+    // (2) Floating-point: weak total order treating all NaNs as equivalent
+    template<class T, class U, class D = decay_t<T>>
+        requires is_same_v<D, decay_t<U>> && is_floating_point_v<D>
+    static constexpr weak_ordering go(T&& t, U&& u, detail::priority_tag<2>) noexcept {
+        partial_ordering po = (static_cast<D>(t) <=> static_cast<D>(u));
+        if (po == partial_ordering::less)       return weak_ordering::less;
+        if (po == partial_ordering::equivalent) return weak_ordering::equivalent;
+        if (po == partial_ordering::greater)    return weak_ordering::greater;
+        // unordered — at least one NaN
+        bool t_nan = __builtin_isnan(static_cast<D>(t));
+        bool u_nan = __builtin_isnan(static_cast<D>(u));
+        bool t_neg = __builtin_signbit(static_cast<D>(t));
+        bool u_neg = __builtin_signbit(static_cast<D>(u));
+        if (t_nan && u_nan) return (u_neg <=> t_neg);
+        if (t_nan) return t_neg ? weak_ordering::less : weak_ordering::greater;
+        return u_neg ? weak_ordering::greater : weak_ordering::less;
+    }
+
+    // (3) compare_three_way
+    template<class T, class U>
+        requires is_same_v<decay_t<T>, decay_t<U>>
+    static constexpr auto go(T&& t, U&& u, detail::priority_tag<1>)
+        noexcept(noexcept(weak_ordering(compare_three_way()(static_cast<T&&>(t), static_cast<U&&>(u)))))
+        -> decltype(weak_ordering(compare_three_way()(static_cast<T&&>(t), static_cast<U&&>(u))))
+    {
+        return weak_ordering(compare_three_way()(static_cast<T&&>(t), static_cast<U&&>(u)));
+    }
+
+    // (4) fall back to strong_order
+    template<class T, class U>
+        requires is_same_v<decay_t<T>, decay_t<U>>
+    static constexpr auto go(T&& t, U&& u, detail::priority_tag<0>)
+        noexcept(noexcept(weak_ordering(std::strong_order(static_cast<T&&>(t), static_cast<U&&>(u)))))
+        -> decltype(weak_ordering(std::strong_order(static_cast<T&&>(t), static_cast<U&&>(u))))
+    {
+        return weak_ordering(std::strong_order(static_cast<T&&>(t), static_cast<U&&>(u)));
+    }
+
+    template<class T, class U>
+    constexpr auto operator()(T&& t, U&& u) const
+        noexcept(noexcept(go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<3>{})))
+        -> decltype(go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<3>{}))
+    {
+        return go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<3>{});
+    }
+};
+} // namespace cpo_weak_order
+
+inline namespace cpo {
+inline constexpr auto weak_order = cpo_weak_order::fn{};
+} // namespace cpo
+
+// ---- partial_order (from __compare/partial_order.h) ----
+
+namespace cpo_partial_order {
+
+struct fn {
+    // (1) ADL partial_order
+    template<class T, class U>
+        requires is_same_v<decay_t<T>, decay_t<U>>
+    static constexpr auto go(T&& t, U&& u, detail::priority_tag<2>)
+        noexcept(noexcept(partial_ordering(partial_order(static_cast<T&&>(t), static_cast<U&&>(u)))))
+        -> decltype(partial_ordering(partial_order(static_cast<T&&>(t), static_cast<U&&>(u))))
+    {
+        return partial_ordering(partial_order(static_cast<T&&>(t), static_cast<U&&>(u)));
+    }
+
+    // (2) compare_three_way
+    template<class T, class U>
+        requires is_same_v<decay_t<T>, decay_t<U>>
+    static constexpr auto go(T&& t, U&& u, detail::priority_tag<1>)
+        noexcept(noexcept(partial_ordering(compare_three_way()(static_cast<T&&>(t), static_cast<U&&>(u)))))
+        -> decltype(partial_ordering(compare_three_way()(static_cast<T&&>(t), static_cast<U&&>(u))))
+    {
+        return partial_ordering(compare_three_way()(static_cast<T&&>(t), static_cast<U&&>(u)));
+    }
+
+    // (3) fall back to weak_order
+    template<class T, class U>
+        requires is_same_v<decay_t<T>, decay_t<U>>
+    static constexpr auto go(T&& t, U&& u, detail::priority_tag<0>)
+        noexcept(noexcept(partial_ordering(std::weak_order(static_cast<T&&>(t), static_cast<U&&>(u)))))
+        -> decltype(partial_ordering(std::weak_order(static_cast<T&&>(t), static_cast<U&&>(u))))
+    {
+        return partial_ordering(std::weak_order(static_cast<T&&>(t), static_cast<U&&>(u)));
+    }
+
+    template<class T, class U>
+    constexpr auto operator()(T&& t, U&& u) const
+        noexcept(noexcept(go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<2>{})))
+        -> decltype(go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<2>{}))
+    {
+        return go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<2>{});
+    }
+};
+} // namespace cpo_partial_order
+
+inline namespace cpo {
+inline constexpr auto partial_order = cpo_partial_order::fn{};
+} // namespace cpo
+
+// ---- compare_strong_order_fallback (from __compare/compare_strong_order_fallback.h) ----
+
+namespace cpo_compare_strong_order_fallback {
+struct fn {
+    // (1) strong_order is well-formed
+    template<class T, class U>
+        requires is_same_v<decay_t<T>, decay_t<U>>
+    static constexpr auto go(T&& t, U&& u, detail::priority_tag<1>)
+        noexcept(noexcept(std::strong_order(static_cast<T&&>(t), static_cast<U&&>(u))))
+        -> decltype(std::strong_order(static_cast<T&&>(t), static_cast<U&&>(u)))
+    {
+        return std::strong_order(static_cast<T&&>(t), static_cast<U&&>(u));
+    }
+
+    // (2) fallback: ==, < operators
+    template<class T, class U>
+        requires is_same_v<decay_t<T>, decay_t<U>> &&
+                 requires(T&& t, U&& u) {
+                     { static_cast<T&&>(t) == static_cast<U&&>(u) } -> detail::boolean_testable;
+                     { static_cast<T&&>(t) <  static_cast<U&&>(u) } -> detail::boolean_testable;
+                 }
+    static constexpr strong_ordering go(T&& t, U&& u, detail::priority_tag<0>)
+        noexcept(noexcept(static_cast<T&&>(t) == static_cast<U&&>(u)
+                          ? strong_ordering::equal
+                          : static_cast<T&&>(t) < static_cast<U&&>(u)
+                            ? strong_ordering::less : strong_ordering::greater))
+    {
+        return static_cast<T&&>(t) == static_cast<U&&>(u) ? strong_ordering::equal
+             : static_cast<T&&>(t) <  static_cast<U&&>(u) ? strong_ordering::less
+             : strong_ordering::greater;
+    }
+
+    template<class T, class U>
+    constexpr auto operator()(T&& t, U&& u) const
+        noexcept(noexcept(go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<1>{})))
+        -> decltype(go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<1>{}))
+    {
+        return go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<1>{});
+    }
+};
+} // namespace cpo_compare_strong_order_fallback
+
+inline namespace cpo {
+inline constexpr auto compare_strong_order_fallback = cpo_compare_strong_order_fallback::fn{};
+} // namespace cpo
+
+// ---- compare_weak_order_fallback (from __compare/compare_weak_order_fallback.h) ----
+
+namespace cpo_compare_weak_order_fallback {
+struct fn {
+    // (1) weak_order is well-formed
+    template<class T, class U>
+        requires is_same_v<decay_t<T>, decay_t<U>>
+    static constexpr auto go(T&& t, U&& u, detail::priority_tag<1>)
+        noexcept(noexcept(std::weak_order(static_cast<T&&>(t), static_cast<U&&>(u))))
+        -> decltype(std::weak_order(static_cast<T&&>(t), static_cast<U&&>(u)))
+    {
+        return std::weak_order(static_cast<T&&>(t), static_cast<U&&>(u));
+    }
+
+    // (2) fallback: ==, <
+    template<class T, class U>
+        requires is_same_v<decay_t<T>, decay_t<U>> &&
+                 requires(T&& t, U&& u) {
+                     { static_cast<T&&>(t) == static_cast<U&&>(u) } -> detail::boolean_testable;
+                     { static_cast<T&&>(t) <  static_cast<U&&>(u) } -> detail::boolean_testable;
+                 }
+    static constexpr weak_ordering go(T&& t, U&& u, detail::priority_tag<0>)
+        noexcept(noexcept(static_cast<T&&>(t) == static_cast<U&&>(u)
+                          ? weak_ordering::equivalent
+                          : static_cast<T&&>(t) < static_cast<U&&>(u)
+                            ? weak_ordering::less : weak_ordering::greater))
+    {
+        return static_cast<T&&>(t) == static_cast<U&&>(u) ? weak_ordering::equivalent
+             : static_cast<T&&>(t) <  static_cast<U&&>(u) ? weak_ordering::less
+             : weak_ordering::greater;
+    }
+
+    template<class T, class U>
+    constexpr auto operator()(T&& t, U&& u) const
+        noexcept(noexcept(go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<1>{})))
+        -> decltype(go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<1>{}))
+    {
+        return go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<1>{});
+    }
+};
+} // namespace cpo_compare_weak_order_fallback
+
+inline namespace cpo {
+inline constexpr auto compare_weak_order_fallback = cpo_compare_weak_order_fallback::fn{};
+} // namespace cpo
+
+// ---- compare_partial_order_fallback (from __compare/compare_partial_order_fallback.h) ----
+
+namespace cpo_compare_partial_order_fallback {
+struct fn {
+    // (1) partial_order is well-formed
+    template<class T, class U>
+        requires is_same_v<decay_t<T>, decay_t<U>>
+    static constexpr auto go(T&& t, U&& u, detail::priority_tag<1>)
+        noexcept(noexcept(std::partial_order(static_cast<T&&>(t), static_cast<U&&>(u))))
+        -> decltype(std::partial_order(static_cast<T&&>(t), static_cast<U&&>(u)))
+    {
+        return std::partial_order(static_cast<T&&>(t), static_cast<U&&>(u));
+    }
+
+    // (2) fallback: ==, < (two directions for unordered detection)
+    template<class T, class U>
+        requires is_same_v<decay_t<T>, decay_t<U>> &&
+                 requires(T&& t, U&& u) {
+                     { static_cast<T&&>(t) == static_cast<U&&>(u) } -> detail::boolean_testable;
+                     { static_cast<T&&>(t) <  static_cast<U&&>(u) } -> detail::boolean_testable;
+                     { static_cast<U&&>(u) <  static_cast<T&&>(t) } -> detail::boolean_testable;
+                 }
+    static constexpr partial_ordering go(T&& t, U&& u, detail::priority_tag<0>)
+        noexcept(noexcept(
+            static_cast<T&&>(t) == static_cast<U&&>(u) ? partial_ordering::equivalent
+            : static_cast<T&&>(t) < static_cast<U&&>(u) ? partial_ordering::less
+            : static_cast<U&&>(u) < static_cast<T&&>(t) ? partial_ordering::greater
+            : partial_ordering::unordered))
+    {
+        return static_cast<T&&>(t) == static_cast<U&&>(u) ? partial_ordering::equivalent
+             : static_cast<T&&>(t) <  static_cast<U&&>(u) ? partial_ordering::less
+             : static_cast<U&&>(u) <  static_cast<T&&>(t) ? partial_ordering::greater
+             : partial_ordering::unordered;
+    }
+
+    template<class T, class U>
+    constexpr auto operator()(T&& t, U&& u) const
+        noexcept(noexcept(go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<1>{})))
+        -> decltype(go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<1>{}))
+    {
+        return go(static_cast<T&&>(t), static_cast<U&&>(u), detail::priority_tag<1>{});
+    }
+};
+} // namespace cpo_compare_partial_order_fallback
+
+inline namespace cpo {
+inline constexpr auto compare_partial_order_fallback = cpo_compare_partial_order_fallback::fn{};
+} // namespace cpo
+
+//===----------------------------------------------------------------------===//
+// synth_three_way (from __compare/synth_three_way.h)
+// Exposition-only: placed in std::detail so it is not a public std:: name.
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+inline constexpr auto synth_three_way =
+    []<class T, class U>(const T& t, const U& u)
+        requires requires {
+            { t < u } -> boolean_testable;
+            { u < t } -> boolean_testable;
+        }
+    {
+        if constexpr (three_way_comparable_with<T, U>) {
+            return t <=> u;
+        } else {
+            if (t < u) return weak_ordering::less;
+            if (u < t) return weak_ordering::greater;
+            return weak_ordering::equivalent;
+        }
+    };
+
+template<class T, class U = T>
+using synth_three_way_result =
+    decltype(synth_three_way(declval<T&>(), declval<U&>()));
+
+} // namespace detail
+
+} // namespace std

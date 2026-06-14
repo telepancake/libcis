@@ -1,0 +1,409 @@
+// <any> — type-erased value container (no-RTTI variant)
+// Mechanically ported from libc++ include/any.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Type identity for any_cast is performed via a per-type static int address
+// (unique_typeinfo<T>::id) instead of typeid(). This is the no-RTTI path:
+// type comparison uses pointer identity rather than the RTTI runtime.
+//
+// any::type() is OMITTED — it returns a type_info reference which requires
+// RTTI. The member is commented out below.
+//
+// bad_any_cast: kept as a type deriving from std::exception. Under
+// -fno-exceptions a failed any_cast (value form) calls __builtin_trap()
+// instead of throwing.
+#pragma once
+
+#include <type_traits>
+#include <utility>
+#include <new>
+#include <typeinfo>   // type_info (for any::type()'s signature)
+#include <initializer_list>
+#include <functional>
+#include <exception>
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// bad_any_cast
+//===----------------------------------------------------------------------===//
+
+class bad_any_cast : public exception {
+public:
+    bad_any_cast() noexcept                              = default;
+    bad_any_cast(const bad_any_cast&) noexcept           = default;
+    bad_any_cast& operator=(const bad_any_cast&) noexcept = default;
+    ~bad_any_cast() noexcept override                    = default;
+    [[nodiscard]] const char* what() const noexcept override {
+        return "bad_any_cast";
+    }
+};
+
+// Under -fno-exceptions: trap instead of throwing bad_any_cast.
+[[noreturn]] inline void throw_bad_any_cast() noexcept {
+    // Would throw bad_any_cast() under -fexceptions.
+    __builtin_trap();
+}
+
+// Helper: detect in_place_type_t specialisations (needed before any class).
+namespace any_imp {
+    template<class T> struct is_inplace_type      : false_type {};
+    template<class T> struct is_inplace_type<in_place_type_t<T>> : true_type {};
+} // namespace any_imp
+
+template<class T>
+struct is_specialization_of_in_place_type
+    : any_imp::is_inplace_type<remove_cvref_t<T>> {};
+
+// Forward declarations
+class any;
+
+template<class V> add_pointer_t<add_const_t<V>> any_cast(const any*) noexcept;
+template<class V> add_pointer_t<V>               any_cast(any*) noexcept;
+
+//===----------------------------------------------------------------------===//
+// Internal implementation helpers (in namespace any_imp)
+//===----------------------------------------------------------------------===//
+
+namespace any_imp {
+
+// Small-buffer size: 3 words, aligned to void*.
+inline constexpr size_t small_buffer_size      = 3 * sizeof(void*);
+inline constexpr size_t small_buffer_alignment = alignof(void*);
+
+// Per-type unique identity tag (the address of this static int is unique per
+// instantiation — no RTTI needed).
+template<class T>
+struct unique_typeinfo {
+    static constexpr int id = 0;
+};
+
+template<class T>
+inline constexpr const void* get_fallback_typeid() noexcept {
+    return &unique_typeinfo<remove_cv_t<remove_reference_t<T>>>::id;
+}
+
+template<class T>
+inline bool compare_typeid(const void* fallback_id) noexcept {
+    return fallback_id == get_fallback_typeid<T>();
+}
+
+// Is T small enough / trivially-moveable enough for the small buffer?
+template<class T>
+inline constexpr bool is_small_object =
+    sizeof(T)     <= small_buffer_size &&
+    alignof(T)    <= small_buffer_alignment &&
+    is_nothrow_move_constructible_v<T>;
+
+enum class Action { Destroy, Copy, Move, Get };
+
+template<class T> struct SmallHandler;
+template<class T> struct LargeHandler;
+
+template<class T>
+using Handler = conditional_t<is_small_object<T>, SmallHandler<T>, LargeHandler<T>>;
+
+} // namespace any_imp
+
+//===----------------------------------------------------------------------===//
+// any
+//===----------------------------------------------------------------------===//
+
+class any {
+public:
+    // --- construct / destruct ---
+    constexpr any() noexcept : h_(nullptr) {}
+
+    any(const any& other) : h_(nullptr) {
+        if (other.h_)
+            other.call(any_imp::Action::Copy, this);
+    }
+
+    any(any&& other) noexcept : h_(nullptr) {
+        if (other.h_)
+            other.call(any_imp::Action::Move, this);
+    }
+
+    template<class V,
+             class T = decay_t<V>,
+             class = enable_if_t<!is_same_v<T, any> &&
+                                 !is_specialization_of_in_place_type<V>::value &&
+                                 is_copy_constructible_v<T>>>
+    any(V&& v) : h_(nullptr) {
+        any_imp::Handler<T>::create(*this, forward<V>(v));
+    }
+
+    template<class V, class... Args,
+             class T = decay_t<V>,
+             class = enable_if_t<is_constructible_v<T, Args...> &&
+                                 is_copy_constructible_v<T>>>
+    explicit any(in_place_type_t<V>, Args&&... args) : h_(nullptr) {
+        any_imp::Handler<T>::create(*this, forward<Args>(args)...);
+    }
+
+    template<class V, class U, class... Args,
+             class T = decay_t<V>,
+             class = enable_if_t<is_constructible_v<T, initializer_list<U>&, Args...> &&
+                                 is_copy_constructible_v<T>>>
+    explicit any(in_place_type_t<V>, initializer_list<U> il, Args&&... args) : h_(nullptr) {
+        any_imp::Handler<T>::create(*this, il, forward<Args>(args)...);
+    }
+
+    ~any() { reset(); }
+
+    // --- assignments ---
+    any& operator=(const any& rhs) {
+        any(rhs).swap(*this);
+        return *this;
+    }
+
+    any& operator=(any&& rhs) noexcept {
+        any(move(rhs)).swap(*this);
+        return *this;
+    }
+
+    template<class V,
+             class T = decay_t<V>,
+             class = enable_if_t<!is_same_v<T, any> && is_copy_constructible_v<T>>>
+    any& operator=(V&& rhs) {
+        any(forward<V>(rhs)).swap(*this);
+        return *this;
+    }
+
+    // --- modifiers ---
+    template<class V, class... Args,
+             class T = decay_t<V>,
+             class = enable_if_t<is_constructible_v<T, Args...> &&
+                                 is_copy_constructible_v<T>>>
+    T& emplace(Args&&... args) {
+        reset();
+        return any_imp::Handler<T>::create(*this, forward<Args>(args)...);
+    }
+
+    template<class V, class U, class... Args,
+             class T = decay_t<V>,
+             class = enable_if_t<is_constructible_v<T, initializer_list<U>&, Args...> &&
+                                 is_copy_constructible_v<T>>>
+    T& emplace(initializer_list<U> il, Args&&... args) {
+        reset();
+        return any_imp::Handler<T>::create(*this, il, forward<Args>(args)...);
+    }
+
+    void reset() noexcept {
+        if (h_) call(any_imp::Action::Destroy);
+    }
+
+    void swap(any& rhs) noexcept {
+        if (this == &rhs) return;
+        if (h_ && rhs.h_) {
+            any tmp;
+            rhs.call(any_imp::Action::Move, &tmp);
+            this->call(any_imp::Action::Move, &rhs);
+            tmp.call(any_imp::Action::Move, this);
+        } else if (h_) {
+            this->call(any_imp::Action::Move, &rhs);
+        } else if (rhs.h_) {
+            rhs.call(any_imp::Action::Move, this);
+        }
+    }
+
+    // --- observers ---
+    [[nodiscard]] bool has_value() const noexcept { return h_ != nullptr; }
+
+    // type() exists for the API surface ([any.observers]): the transferred
+    // tests excise every evaluated use (rtti untestable on target) but still
+    // check its declaration via unevaluated contexts (ASSERT_NOEXCEPT).
+    // Under -fno-rtti there is no typeid to return, so calling it traps —
+    // same convention as the library's other would-throw paths.
+    [[nodiscard]] const type_info& type() const noexcept {
+        __builtin_trap();   // would return typeid(T); impossible without RTTI
+    }
+
+private:
+    using HandleFuncPtr = void* (*)(any_imp::Action, const any*, any*, const void*);
+
+    union Storage {
+        constexpr Storage() : ptr(nullptr) {}
+        void* ptr;
+        alignas(any_imp::small_buffer_alignment) char buf[any_imp::small_buffer_size];
+    };
+
+    void* call(any_imp::Action a, any* other = nullptr,
+               const void* fallback_id = nullptr) const {
+        return h_(a, this, other, fallback_id);
+    }
+    void* call(any_imp::Action a, any* other = nullptr,
+               const void* fallback_id = nullptr) {
+        return h_(a, this, other, fallback_id);
+    }
+
+    template<class> friend struct any_imp::SmallHandler;
+    template<class> friend struct any_imp::LargeHandler;
+    template<class V> friend add_pointer_t<add_const_t<V>> any_cast(const any*) noexcept;
+    template<class V> friend add_pointer_t<V>               any_cast(any*) noexcept;
+
+    HandleFuncPtr h_ = nullptr;
+    Storage       s_;
+};
+
+//===----------------------------------------------------------------------===//
+// SmallHandler / LargeHandler
+//===----------------------------------------------------------------------===//
+
+namespace any_imp {
+
+template<class T>
+struct SmallHandler {
+    static void* handle(Action act, const any* self, any* other,
+                        const void* fallback_id) {
+        switch (act) {
+        case Action::Destroy: destroy(const_cast<any&>(*self)); return nullptr;
+        case Action::Copy:    copy(*self, *other);               return nullptr;
+        case Action::Move:    move(const_cast<any&>(*self), *other); return nullptr;
+        case Action::Get:     return get(const_cast<any&>(*self), fallback_id);
+        }
+        __builtin_unreachable();
+    }
+
+    template<class... Args>
+    static T& create(any& dest, Args&&... args) {
+        T* p = ::new (static_cast<void*>(&dest.s_.buf)) T(forward<Args>(args)...);
+        dest.h_ = &SmallHandler::handle;
+        return *p;
+    }
+
+private:
+    static void destroy(any& self) {
+        reinterpret_cast<T*>(&self.s_.buf)->~T();
+        self.h_ = nullptr;
+    }
+    static void copy(const any& self, any& dest) {
+        create(dest, *reinterpret_cast<const T*>(&self.s_.buf));
+    }
+    static void move(any& self, any& dest) {
+        create(dest, std::move(*reinterpret_cast<T*>(&self.s_.buf)));
+        destroy(self);
+    }
+    static void* get(any& self, const void* fallback_id) {
+        if (compare_typeid<T>(fallback_id))
+            return static_cast<void*>(&self.s_.buf);
+        return nullptr;
+    }
+};
+
+template<class T>
+struct LargeHandler {
+    static void* handle(Action act, const any* self, any* other,
+                        const void* fallback_id) {
+        switch (act) {
+        case Action::Destroy: destroy(const_cast<any&>(*self)); return nullptr;
+        case Action::Copy:    copy(*self, *other);               return nullptr;
+        case Action::Move:    move(const_cast<any&>(*self), *other); return nullptr;
+        case Action::Get:     return get(const_cast<any&>(*self), fallback_id);
+        }
+        __builtin_unreachable();
+    }
+
+    template<class... Args>
+    static T& create(any& dest, Args&&... args) {
+        T* p = new T(forward<Args>(args)...);
+        dest.s_.ptr = p;
+        dest.h_     = &LargeHandler::handle;
+        return *p;
+    }
+
+private:
+    static void destroy(any& self) {
+        delete static_cast<T*>(self.s_.ptr);
+        self.h_ = nullptr;
+    }
+    static void copy(const any& self, any& dest) {
+        create(dest, *static_cast<const T*>(self.s_.ptr));
+    }
+    static void move(any& self, any& dest) {
+        dest.s_.ptr = self.s_.ptr;
+        dest.h_     = &LargeHandler::handle;
+        self.h_     = nullptr;
+    }
+    static void* get(any& self, const void* fallback_id) {
+        if (compare_typeid<T>(fallback_id))
+            return self.s_.ptr;
+        return nullptr;
+    }
+};
+
+} // namespace any_imp
+
+//===----------------------------------------------------------------------===//
+// Non-member functions
+//===----------------------------------------------------------------------===//
+
+inline void swap(any& x, any& y) noexcept { x.swap(y); }
+
+template<class T, class... Args>
+[[nodiscard]] inline any make_any(Args&&... args) {
+    return any(in_place_type<T>, forward<Args>(args)...);
+}
+
+template<class T, class U, class... Args>
+[[nodiscard]] inline any make_any(initializer_list<U> il, Args&&... args) {
+    return any(in_place_type<T>, il, forward<Args>(args)...);
+}
+
+// Pointer forms — return nullptr on type mismatch (no-throw, no RTTI needed).
+template<class V>
+[[nodiscard]] inline add_pointer_t<V> any_cast(any* a) noexcept {
+    static_assert(!is_void_v<V>,      "V may not be void");
+    static_assert(!is_reference_v<V>, "V may not be a reference");
+    if (a && a->h_) {
+        void* p = a->call(any_imp::Action::Get, nullptr,
+                          any_imp::get_fallback_typeid<V>());
+        // An any can never store a function type, but any_cast<void()> must
+        // still compile and yield nullptr: static_cast from void* to a
+        // function pointer is ill-formed, so dispatch like libc++'s
+        // __pointer_or_func_cast instead of casting unconditionally.
+        if constexpr (is_function_v<V>)
+            return nullptr;
+        else
+            return static_cast<add_pointer_t<V>>(p);
+    }
+    return nullptr;
+}
+
+template<class V>
+[[nodiscard]] inline add_pointer_t<add_const_t<V>> any_cast(const any* a) noexcept {
+    return any_cast<V>(const_cast<any*>(a));
+}
+
+// Value forms — trap on mismatch (no exceptions).
+template<class V>
+[[nodiscard]] inline V any_cast(const any& a) {
+    using R = remove_cvref_t<V>;
+    static_assert(is_constructible_v<V, const R&>,
+                  "V must be constructible from const R&");
+    const R* p = any_cast<R>(&a);
+    if (!p) throw_bad_any_cast();
+    return static_cast<V>(*p);
+}
+
+template<class V>
+[[nodiscard]] inline V any_cast(any& a) {
+    using R = remove_cvref_t<V>;
+    static_assert(is_constructible_v<V, R&>,
+                  "V must be constructible from R&");
+    R* p = any_cast<R>(&a);
+    if (!p) throw_bad_any_cast();
+    return static_cast<V>(*p);
+}
+
+template<class V>
+[[nodiscard]] inline V any_cast(any&& a) {
+    using R = remove_cvref_t<V>;
+    static_assert(is_constructible_v<V, R>,
+                  "V must be constructible from R");
+    R* p = any_cast<R>(&a);
+    if (!p) throw_bad_any_cast();
+    return static_cast<V>(move(*p));
+}
+
+} // namespace std

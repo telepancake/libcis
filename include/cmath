@@ -1,0 +1,518 @@
+// <cmath> -- C math functions + C++20 additions in namespace std.
+// Mechanically ported from libc++ include/cmath, __math/hypot.h,
+// __math/special_functions.h, __type_traits/promote.h.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+#pragma once
+
+// Include stdlib.h first so abs(int), abs(long), abs(long long) are declared
+// before math.h adds floating-point abs overloads in C++ mode.
+// glibc declarations must keep DEFAULT visibility no matter where this
+// wrapper is first included from: io headers wrap their bodies in
+// `#pragma GCC visibility push(hidden)` (libstdc++-ABI isolation), and a
+// libc prototype first seen inside such a region becomes a hidden symbol
+// the linker then cannot resolve against libc (e.g. strtod via <sstream>).
+#pragma GCC visibility push(default)
+#include <stdlib.h>
+#include <math.h>
+#pragma GCC visibility pop
+#include <bits/fp_abs.h>
+#include <type_traits>
+
+// glibc defines signbit, fpclassify, isfinite, isinf, isnan, isnormal,
+// isgreater*, isless*, isunordered as macros that expand to __builtin_*.
+// Undefine them so we can provide real inline functions in namespace std.
+#ifdef signbit
+#  undef signbit
+#endif
+#ifdef fpclassify
+#  undef fpclassify
+#endif
+#ifdef isfinite
+#  undef isfinite
+#endif
+#ifdef isinf
+#  undef isinf
+#endif
+#ifdef isnan
+#  undef isnan
+#endif
+#ifdef isnormal
+#  undef isnormal
+#endif
+#ifdef isgreater
+#  undef isgreater
+#endif
+#ifdef isgreaterequal
+#  undef isgreaterequal
+#endif
+#ifdef isless
+#  undef isless
+#endif
+#ifdef islessequal
+#  undef islessequal
+#endif
+#ifdef islessgreater
+#  undef islessgreater
+#endif
+#ifdef isunordered
+#  undef isunordered
+#endif
+
+namespace std {
+
+// ---------------------------------------------------------------------------
+// Promote helper (from __type_traits/promote.h)
+// ---------------------------------------------------------------------------
+namespace detail {
+
+float       promote_impl(float);
+double      promote_impl(char);
+double      promote_impl(int);
+double      promote_impl(unsigned);
+double      promote_impl(long);
+double      promote_impl(unsigned long);
+double      promote_impl(long long);
+double      promote_impl(unsigned long long);
+double      promote_impl(double);
+long double promote_impl(long double);
+
+} // namespace detail
+
+template<class... Args>
+using promote_t = decltype((detail::promote_impl(Args()) + ...));
+
+// ---------------------------------------------------------------------------
+// Re-export regular (non-macro) C math names into std
+// ---------------------------------------------------------------------------
+
+using ::float_t;
+using ::double_t;
+
+using ::abs;   // C stdlib.h: abs(int), abs(long), abs(long long)
+// floating std::abs overloads shared with <cstdlib> -- see bits/fp_abs.h
+
+using ::acos;
+using ::acosf;
+using ::acosl;
+using ::asin;
+using ::asinf;
+using ::asinl;
+using ::atan;
+using ::atanf;
+using ::atanl;
+using ::atan2;
+using ::atan2f;
+using ::atan2l;
+using ::ceil;
+using ::ceilf;
+using ::ceill;
+using ::cos;
+using ::cosf;
+using ::cosl;
+using ::cosh;
+using ::coshf;
+using ::coshl;
+using ::exp;
+using ::expf;
+using ::expl;
+using ::fabs;
+using ::fabsf;
+using ::fabsl;
+using ::floor;
+using ::floorf;
+using ::floorl;
+using ::fmod;
+using ::fmodf;
+using ::fmodl;
+using ::frexp;
+using ::frexpf;
+using ::frexpl;
+using ::ldexp;
+using ::ldexpf;
+using ::ldexpl;
+using ::log;
+using ::logf;
+using ::logl;
+using ::log10;
+using ::log10f;
+using ::log10l;
+using ::modf;
+using ::modff;
+using ::modfl;
+using ::pow;
+using ::powf;
+using ::powl;
+using ::sin;
+using ::sinf;
+using ::sinl;
+using ::sinh;
+using ::sinhf;
+using ::sinhl;
+using ::sqrt;
+using ::sqrtf;
+using ::sqrtl;
+using ::tan;
+using ::tanf;
+using ::tanl;
+using ::tanh;
+using ::tanhf;
+using ::tanhl;
+using ::acosh;
+using ::acoshf;
+using ::acoshl;
+using ::asinh;
+using ::asinhf;
+using ::asinhl;
+using ::atanh;
+using ::atanhf;
+using ::atanhl;
+using ::cbrt;
+using ::cbrtf;
+using ::cbrtl;
+using ::copysign;
+using ::copysignf;
+using ::copysignl;
+// C++ overloads for copysign: ensure float/long double variants call the
+// correct C function rather than promoting to double (which corrupts NaN payloads).
+inline float copysign(float x, float y) noexcept { return ::copysignf(x, y); }
+inline long double copysign(long double x, long double y) noexcept { return ::copysignl(x, y); }
+using ::erf;
+using ::erff;
+using ::erfl;
+using ::erfc;
+using ::erfcf;
+using ::erfcl;
+using ::exp2;
+using ::exp2f;
+using ::exp2l;
+using ::expm1;
+using ::expm1f;
+using ::expm1l;
+using ::fdim;
+using ::fdimf;
+using ::fdiml;
+using ::fma;
+using ::fmaf;
+using ::fmal;
+using ::fmax;
+using ::fmaxf;
+using ::fmaxl;
+using ::fmin;
+using ::fminf;
+using ::fminl;
+using ::hypot;
+using ::hypotf;
+using ::hypotl;
+using ::ilogb;
+using ::ilogbf;
+using ::ilogbl;
+using ::lgamma;
+using ::lgammaf;
+using ::lgammal;
+using ::llrint;
+using ::llrintf;
+using ::llrintl;
+using ::llround;
+using ::llroundf;
+using ::llroundl;
+using ::log1p;
+using ::log1pf;
+using ::log1pl;
+using ::log2;
+using ::log2f;
+using ::log2l;
+using ::logb;
+using ::logbf;
+using ::logbl;
+using ::lrint;
+using ::lrintf;
+using ::lrintl;
+using ::lround;
+using ::lroundf;
+using ::lroundl;
+using ::nan;
+using ::nanf;
+using ::nanl;
+using ::nearbyint;
+using ::nearbyintf;
+using ::nearbyintl;
+using ::nextafter;
+using ::nextafterf;
+using ::nextafterl;
+// C++ overloads for nextafter (from libc++ cmath): float/long double variants
+// must call the correct C function rather than promoting to double, which
+// would collapse adjacent values back together.
+inline float nextafter(float x, float y) noexcept { return __builtin_nextafterf(x, y); }
+inline long double nextafter(long double x, long double y) noexcept { return __builtin_nextafterl(x, y); }
+template<class A1, class A2>
+    requires(std::is_arithmetic_v<A1> && std::is_arithmetic_v<A2>)
+inline promote_t<A1, A2> nextafter(A1 x, A2 y) noexcept {
+    using result_type = promote_t<A1, A2>;
+    static_assert(!(std::is_same_v<A1, result_type> && std::is_same_v<A2, result_type>));
+    return std::nextafter(static_cast<result_type>(x), static_cast<result_type>(y));
+}
+using ::nexttoward;
+using ::nexttowardf;
+using ::nexttowardl;
+inline float nexttoward(float x, long double y) noexcept { return __builtin_nexttowardf(x, y); }
+inline long double nexttoward(long double x, long double y) noexcept { return __builtin_nexttowardl(x, y); }
+template<class Integer>
+    requires std::is_integral_v<Integer>
+inline double nexttoward(Integer x, long double y) noexcept {
+    return __builtin_nexttoward(static_cast<double>(x), y);
+}
+using ::remainder;
+using ::remainderf;
+using ::remainderl;
+using ::remquo;
+using ::remquof;
+using ::remquol;
+using ::rint;
+using ::rintf;
+using ::rintl;
+using ::round;
+using ::roundf;
+using ::roundl;
+using ::scalbln;
+using ::scalblnf;
+using ::scalblnl;
+using ::scalbn;
+using ::scalbnf;
+using ::scalbnl;
+using ::tgamma;
+using ::tgammaf;
+using ::tgammal;
+using ::trunc;
+using ::truncf;
+using ::truncl;
+
+// ---------------------------------------------------------------------------
+// Classification functions — glibc defines these as macros expanding to
+// __builtin_* so we provide inline wrappers (C++ overload set).
+// ---------------------------------------------------------------------------
+
+// signbit
+inline bool signbit(float x) noexcept       { return __builtin_signbitf(x); }
+inline bool signbit(double x) noexcept      { return __builtin_signbit(x); }
+inline bool signbit(long double x) noexcept { return __builtin_signbitl(x); }
+template<class Integer>
+    requires std::is_integral_v<Integer>
+inline bool signbit(Integer x) noexcept { return signbit(static_cast<double>(x)); }
+
+// fpclassify
+inline int fpclassify(float x) noexcept       { return __builtin_fpclassify(FP_NAN, FP_INFINITE, FP_NORMAL, FP_SUBNORMAL, FP_ZERO, x); }
+inline int fpclassify(double x) noexcept      { return __builtin_fpclassify(FP_NAN, FP_INFINITE, FP_NORMAL, FP_SUBNORMAL, FP_ZERO, x); }
+inline int fpclassify(long double x) noexcept { return __builtin_fpclassify(FP_NAN, FP_INFINITE, FP_NORMAL, FP_SUBNORMAL, FP_ZERO, x); }
+template<class Integer>
+    requires std::is_integral_v<Integer>
+inline int fpclassify(Integer x) noexcept { return fpclassify(static_cast<double>(x)); }
+
+// isfinite
+inline bool isfinite(float x) noexcept       { return __builtin_isfinite(x); }
+inline bool isfinite(double x) noexcept      { return __builtin_isfinite(x); }
+inline bool isfinite(long double x) noexcept { return __builtin_isfinite(x); }
+template<class Integer>
+    requires std::is_integral_v<Integer>
+inline bool isfinite(Integer) noexcept { return true; }
+
+// isinf
+inline bool isinf(float x) noexcept       { return __builtin_isinf(x); }
+inline bool isinf(double x) noexcept      { return __builtin_isinf(x); }
+inline bool isinf(long double x) noexcept { return __builtin_isinf(x); }
+template<class Integer>
+    requires std::is_integral_v<Integer>
+inline bool isinf(Integer) noexcept { return false; }
+
+// isnan
+inline bool isnan(float x) noexcept       { return __builtin_isnan(x); }
+inline bool isnan(double x) noexcept      { return __builtin_isnan(x); }
+inline bool isnan(long double x) noexcept { return __builtin_isnan(x); }
+template<class Integer>
+    requires std::is_integral_v<Integer>
+inline bool isnan(Integer) noexcept { return false; }
+
+// isnormal
+inline bool isnormal(float x) noexcept       { return __builtin_isnormal(x); }
+inline bool isnormal(double x) noexcept      { return __builtin_isnormal(x); }
+inline bool isnormal(long double x) noexcept { return __builtin_isnormal(x); }
+template<class Integer>
+    requires std::is_integral_v<Integer>
+inline bool isnormal(Integer x) noexcept { return x != 0; }
+
+// isgreater / isgreaterequal / isless / islessequal / islessgreater / isunordered
+inline bool isgreater(float x, float y) noexcept             { return __builtin_isgreater(x, y); }
+inline bool isgreater(double x, double y) noexcept           { return __builtin_isgreater(x, y); }
+inline bool isgreater(long double x, long double y) noexcept { return __builtin_isgreater(x, y); }
+
+inline bool isgreaterequal(float x, float y) noexcept             { return __builtin_isgreaterequal(x, y); }
+inline bool isgreaterequal(double x, double y) noexcept           { return __builtin_isgreaterequal(x, y); }
+inline bool isgreaterequal(long double x, long double y) noexcept { return __builtin_isgreaterequal(x, y); }
+
+inline bool isless(float x, float y) noexcept             { return __builtin_isless(x, y); }
+inline bool isless(double x, double y) noexcept           { return __builtin_isless(x, y); }
+inline bool isless(long double x, long double y) noexcept { return __builtin_isless(x, y); }
+
+inline bool islessequal(float x, float y) noexcept             { return __builtin_islessequal(x, y); }
+inline bool islessequal(double x, double y) noexcept           { return __builtin_islessequal(x, y); }
+inline bool islessequal(long double x, long double y) noexcept { return __builtin_islessequal(x, y); }
+
+inline bool islessgreater(float x, float y) noexcept             { return __builtin_islessgreater(x, y); }
+inline bool islessgreater(double x, double y) noexcept           { return __builtin_islessgreater(x, y); }
+inline bool islessgreater(long double x, long double y) noexcept { return __builtin_islessgreater(x, y); }
+
+inline bool isunordered(float x, float y) noexcept             { return __builtin_isunordered(x, y); }
+inline bool isunordered(double x, double y) noexcept           { return __builtin_isunordered(x, y); }
+inline bool isunordered(long double x, long double y) noexcept { return __builtin_isunordered(x, y); }
+
+// ---------------------------------------------------------------------------
+// C++20 lerp
+// ---------------------------------------------------------------------------
+namespace detail {
+
+template<class Fp>
+constexpr Fp lerp_impl(Fp a, Fp b, Fp t) noexcept {
+    if ((a <= 0 && b >= 0) || (a >= 0 && b <= 0))
+        return t * b + (1 - t) * a;
+    if (t == 1)
+        return b;
+    const Fp x = a + t * (b - a);
+    if ((t > 1) == (b > a))
+        return b < x ? x : b;
+    else
+        return x < b ? x : b;
+}
+
+} // namespace detail
+
+inline constexpr float lerp(float a, float b, float t) noexcept {
+    return detail::lerp_impl(a, b, t);
+}
+
+inline constexpr double lerp(double a, double b, double t) noexcept {
+    return detail::lerp_impl(a, b, t);
+}
+
+inline constexpr long double lerp(long double a, long double b, long double t) noexcept {
+    return detail::lerp_impl(a, b, t);
+}
+
+template<class A1, class A2, class A3>
+    requires(std::is_arithmetic_v<A1> && std::is_arithmetic_v<A2> && std::is_arithmetic_v<A3>)
+inline constexpr promote_t<A1, A2, A3> lerp(A1 a, A2 b, A3 t) noexcept {
+    using result_type = promote_t<A1, A2, A3>;
+    static_assert(!(std::is_same_v<A1, result_type> &&
+                    std::is_same_v<A2, result_type> &&
+                    std::is_same_v<A3, result_type>));
+    return detail::lerp_impl(static_cast<result_type>(a),
+                             static_cast<result_type>(b),
+                             static_cast<result_type>(t));
+}
+
+// ---------------------------------------------------------------------------
+// C++17 hermite (special math)
+// ---------------------------------------------------------------------------
+namespace detail {
+
+template<class Real>
+Real hermite_impl(unsigned n, Real x) {
+    if (isnan(x))
+        return x;
+    Real H_0{1};
+    if (n == 0)
+        return H_0;
+    Real H_n_prev = H_0;
+    Real H_n      = 2 * x;
+    for (unsigned i = 1; i < n; ++i) {
+        Real H_n_next = 2 * (x * H_n - i * H_n_prev);
+        H_n_prev = H_n;
+        H_n      = H_n_next;
+    }
+    if (!isfinite(H_n)) {
+        Real inf_val = static_cast<Real>(__builtin_huge_val());
+        return (n & 1) ? copysign(inf_val, x) : inf_val;
+    }
+    return H_n;
+}
+
+} // namespace detail
+
+inline double     hermite(unsigned n, double x)      { return detail::hermite_impl(n, x); }
+inline float      hermite(unsigned n, float x)        {
+    return static_cast<float>(hermite(n, static_cast<double>(x)));
+}
+inline long double hermite(unsigned n, long double x) { return detail::hermite_impl(n, x); }
+inline float       hermitef(unsigned n, float x)      { return hermite(n, x); }
+inline long double hermitel(unsigned n, long double x){ return hermite(n, x); }
+
+template<class Integer>
+    requires std::is_integral_v<Integer>
+inline double hermite(unsigned n, Integer x) {
+    return hermite(n, static_cast<double>(x));
+}
+
+// ---------------------------------------------------------------------------
+// C++17 3-argument hypot
+// ---------------------------------------------------------------------------
+namespace detail {
+
+template<class Real>
+Real hypot3_impl(Real x, Real y, Real z) {
+    Real ax = x < 0 ? -x : x;
+    Real ay = y < 0 ? -y : y;
+    Real az = z < 0 ? -z : z;
+    Real max_abs = ax > ay ? (ax > az ? ax : az) : (ay > az ? ay : az);
+    if (max_abs == 0)
+        return Real(0);
+    x /= max_abs;
+    y /= max_abs;
+    z /= max_abs;
+    return ::sqrt(static_cast<double>(x * x + y * y + z * z)) * max_abs;
+}
+
+template<>
+inline float hypot3_impl<float>(float x, float y, float z) {
+    float ax = x < 0 ? -x : x;
+    float ay = y < 0 ? -y : y;
+    float az = z < 0 ? -z : z;
+    float max_abs = ax > ay ? (ax > az ? ax : az) : (ay > az ? ay : az);
+    if (max_abs == 0.0f)
+        return 0.0f;
+    x /= max_abs;
+    y /= max_abs;
+    z /= max_abs;
+    return ::sqrtf(x * x + y * y + z * z) * max_abs;
+}
+
+template<>
+inline long double hypot3_impl<long double>(long double x, long double y, long double z) {
+    long double ax = x < 0 ? -x : x;
+    long double ay = y < 0 ? -y : y;
+    long double az = z < 0 ? -z : z;
+    long double max_abs = ax > ay ? (ax > az ? ax : az) : (ay > az ? ay : az);
+    if (max_abs == 0.0L)
+        return 0.0L;
+    x /= max_abs;
+    y /= max_abs;
+    z /= max_abs;
+    return ::sqrtl(x * x + y * y + z * z) * max_abs;
+}
+
+} // namespace detail
+
+inline float       hypot(float x, float y, float z)             { return detail::hypot3_impl(x, y, z); }
+inline double      hypot(double x, double y, double z)           { return detail::hypot3_impl(x, y, z); }
+inline long double hypot(long double x, long double y, long double z) { return detail::hypot3_impl(x, y, z); }
+
+template<class A1, class A2, class A3>
+    requires(std::is_arithmetic_v<A1> && std::is_arithmetic_v<A2> && std::is_arithmetic_v<A3>)
+inline promote_t<A1, A2, A3> hypot(A1 x, A2 y, A3 z) {
+    using result_type = promote_t<A1, A2, A3>;
+    static_assert(!(std::is_same_v<A1, result_type> &&
+                    std::is_same_v<A2, result_type> &&
+                    std::is_same_v<A3, result_type>));
+    return detail::hypot3_impl(static_cast<result_type>(x),
+                               static_cast<result_type>(y),
+                               static_cast<result_type>(z));
+}
+
+} // namespace std

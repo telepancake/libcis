@@ -1,0 +1,370 @@
+// <concepts> -- C++20 concepts library.
+// Mechanically ported from libc++ include/concepts + include/__concepts/*.h
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Design decisions:
+//
+// 1. common_reference / common_reference_t:
+//    Provided by <type_traits>. No local copy here.
+//
+// 2. std::forward / std::move / std::exchange:
+//    Provided by <utility>. No local copy here.
+//
+// 3. ranges::swap CPO:
+//    Per [utility.swap.range], the CPO lives in std::ranges. We define it here
+//    (matching libc++'s __concepts/swap.h placement) and use std::move /
+//    std::exchange from <utility>.
+//
+// 4. invoke / invoke_result_t:
+//    The INVOKE expression machinery (detail::invoke_impl) and trait wrappers
+//    (invoke_result_t, is_invocable_v, ...) live in <type_traits>. The concepts
+//    invocable / predicate / relation use detail::invoke_impl directly from there.
+//
+// 5. Shared helpers from <compare>:
+//    <utility> includes <compare>, which already defines in namespace std::detail:
+//      - make_const_lvalue_ref<T>   = const remove_reference_t<T>&
+//      - boolean_testable_impl<T>   (concept)
+//      - boolean_testable<T>        (concept)
+//      - weakly_equality_comparable_with<T,U>  (concept)
+//      - partially_ordered_with<T,U>           (concept)
+//    We use those directly without redefinition.
+#pragma once
+
+#include <type_traits>
+#include <utility>
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// [concept.same] same_as
+//===----------------------------------------------------------------------===//
+namespace detail {
+    template<class T, class U>
+    concept same_as_impl = is_same_v<T, U>;
+}
+
+template<class T, class U>
+concept same_as = detail::same_as_impl<T,U> && detail::same_as_impl<U,T>;
+
+//===----------------------------------------------------------------------===//
+// [concept.derived] derived_from
+//===----------------------------------------------------------------------===//
+template<class Derived, class Base>
+concept derived_from =
+    is_base_of_v<Base, Derived> &&
+    is_convertible_v<const volatile Derived*, const volatile Base*>;
+
+//===----------------------------------------------------------------------===//
+// [concept.convertible] convertible_to
+//===----------------------------------------------------------------------===//
+template<class From, class To>
+concept convertible_to =
+    is_convertible_v<From, To> &&
+    requires { static_cast<To>(std::declval<From>()); };
+
+//===----------------------------------------------------------------------===//
+// [concept.commonref] common_reference_with
+// Uses common_reference_t from <type_traits>.
+//===----------------------------------------------------------------------===//
+template<class T, class U>
+concept common_reference_with =
+    same_as<common_reference_t<T,U>, common_reference_t<U,T>> &&
+    convertible_to<T, common_reference_t<T,U>> &&
+    convertible_to<U, common_reference_t<T,U>>;
+
+//===----------------------------------------------------------------------===//
+// [concept.common] common_with
+// Uses common_reference_t from <type_traits>.
+//===----------------------------------------------------------------------===//
+template<class T, class U>
+concept common_with =
+    same_as<common_type_t<T,U>, common_type_t<U,T>> &&
+    requires {
+        static_cast<common_type_t<T,U>>(std::declval<T>());
+        static_cast<common_type_t<T,U>>(std::declval<U>());
+    } &&
+    common_reference_with<add_lvalue_reference_t<const T>,
+                          add_lvalue_reference_t<const U>> &&
+    common_reference_with<
+        add_lvalue_reference_t<common_type_t<T,U>>,
+        common_reference_t<add_lvalue_reference_t<const T>,
+                           add_lvalue_reference_t<const U>>>;
+
+//===----------------------------------------------------------------------===//
+// [concepts.arithmetic] arithmetic concepts
+//===----------------------------------------------------------------------===//
+template<class T>
+concept integral = is_integral_v<T>;
+
+template<class T>
+concept signed_integral = integral<T> && is_signed_v<T>;
+
+template<class T>
+concept unsigned_integral = integral<T> && !signed_integral<T>;
+
+template<class T>
+concept floating_point = is_floating_point_v<T>;
+
+//===----------------------------------------------------------------------===//
+// [concept.destructible] destructible
+//===----------------------------------------------------------------------===//
+template<class T>
+concept destructible = is_nothrow_destructible_v<T>;
+
+//===----------------------------------------------------------------------===//
+// [concept.constructible] constructible_from
+//===----------------------------------------------------------------------===//
+template<class T, class... Args>
+concept constructible_from = destructible<T> && is_constructible_v<T, Args...>;
+
+//===----------------------------------------------------------------------===//
+// [concept.default.init] default_initializable
+//===----------------------------------------------------------------------===//
+namespace detail {
+    template<class T>
+    concept default_initializable_helper = requires { ::new T; };
+}
+
+template<class T>
+concept default_initializable =
+    constructible_from<T> &&
+    requires { T{}; } &&
+    detail::default_initializable_helper<T>;
+
+//===----------------------------------------------------------------------===//
+// [concept.moveconstructible] move_constructible
+//===----------------------------------------------------------------------===//
+template<class T>
+concept move_constructible = constructible_from<T, T> && convertible_to<T, T>;
+
+//===----------------------------------------------------------------------===//
+// [concept.copyconstructible] copy_constructible
+//===----------------------------------------------------------------------===//
+template<class T>
+concept copy_constructible =
+    move_constructible<T> &&
+    constructible_from<T, T&>        && convertible_to<T&, T> &&
+    constructible_from<T, const T&>  && convertible_to<const T&, T> &&
+    constructible_from<T, const T>   && convertible_to<const T, T>;
+
+//===----------------------------------------------------------------------===//
+// [concept.assignable] assignable_from
+// Uses detail::make_const_lvalue_ref from <compare> (via <utility>):
+//   make_const_lvalue_ref<T> = const remove_reference_t<T>&
+//===----------------------------------------------------------------------===//
+namespace detail {
+    // class_or_enum: needed for ranges::swap ADL test
+    template<class T>
+    concept class_or_enum = is_class_v<T> || is_union_v<T> || is_enum_v<T>;
+} // namespace detail
+
+template<class Lhs, class Rhs>
+concept assignable_from =
+    is_lvalue_reference_v<Lhs> &&
+    common_reference_with<detail::make_const_lvalue_ref<Lhs>,
+                          detail::make_const_lvalue_ref<Rhs>> &&
+    requires(Lhs lhs, Rhs&& rhs) {
+        { lhs = std::forward<Rhs>(rhs) } -> same_as<Lhs>;
+    };
+
+//===----------------------------------------------------------------------===//
+// [concept.swappable] swappable / swappable_with
+// ranges::swap CPO lives here (matches libc++'s __concepts/swap.h placement).
+// Uses std::move and std::exchange from <utility>.
+// Uses detail::boolean_testable / detail::class_or_enum defined above / in <compare>.
+//===----------------------------------------------------------------------===//
+
+namespace ranges {
+namespace swap_detail {
+
+// Poison-pill overload: prevents ADL from finding std::swap via this name
+template<class T>
+void swap(T&, T&) = delete;
+
+// Whether T or U has a class/enum type (needed for ADL-found swap)
+template<class T, class U>
+concept unqualified_swappable_with =
+    (detail::class_or_enum<remove_cvref_t<T>> ||
+     detail::class_or_enum<remove_cvref_t<U>>) &&
+    requires(T&& t, U&& u) { swap(std::forward<T>(t), std::forward<U>(u)); };
+
+struct swap_fn;
+
+// Array swap: element-wise recursion
+template<class T, class U, size_t N>
+concept swappable_arrays =
+    (!unqualified_swappable_with<T(&)[N], U(&)[N]>) &&
+    extent_v<T> == extent_v<U> &&
+    requires(T (&t)[N], U (&u)[N], const swap_fn& sw) {
+        sw(t[0], u[0]);
+    };
+
+// Exchangeable: no ADL swap, but move-constructible and assignable
+template<class T>
+concept exchangeable =
+    (!unqualified_swappable_with<T&, T&>) &&
+    move_constructible<T> &&
+    assignable_from<T&, T>;
+
+struct swap_fn {
+    // 2.1: ADL swap for class/enum types
+    template<class T, class U>
+        requires unqualified_swappable_with<T, U>
+    constexpr void operator()(T&& t, U&& u) const
+        noexcept(noexcept(swap(std::forward<T>(t), std::forward<U>(u)))) {
+        swap(std::forward<T>(t), std::forward<U>(u));
+    }
+
+    // 2.2: array swap (element-wise)
+    template<class T, class U, size_t N>
+        requires swappable_arrays<T, U, N>
+    constexpr void operator()(T (&t)[N], U (&u)[N]) const
+        noexcept(noexcept((*this)(t[0], u[0]))) {
+        for (size_t i = 0; i < N; ++i)
+            (*this)(t[i], u[i]);
+    }
+
+    // 2.3: exchange-based swap for same-type objects
+    template<exchangeable T>
+    constexpr void operator()(T& x, T& y) const
+        noexcept(is_nothrow_move_constructible_v<T> &&
+                 is_nothrow_move_assignable_v<T>) {
+        y = std::exchange(x, std::move(y));
+    }
+};
+
+} // namespace swap_detail
+
+inline namespace cpo {
+    inline constexpr auto swap = swap_detail::swap_fn{};
+} // namespace cpo
+} // namespace ranges
+
+template<class T>
+concept swappable = requires(T& a, T& b) { ranges::swap(a, b); };
+
+template<class T, class U>
+concept swappable_with =
+    common_reference_with<T, U> &&
+    requires(T&& t, U&& u) {
+        ranges::swap(std::forward<T>(t), std::forward<T>(t));
+        ranges::swap(std::forward<U>(u), std::forward<U>(u));
+        ranges::swap(std::forward<T>(t), std::forward<U>(u));
+        ranges::swap(std::forward<U>(u), std::forward<T>(t));
+    };
+
+//===----------------------------------------------------------------------===//
+// [concepts.object] movable, copyable, semiregular, regular
+//===----------------------------------------------------------------------===//
+template<class T>
+concept movable =
+    is_object_v<T> &&
+    move_constructible<T> &&
+    assignable_from<T&, T> &&
+    swappable<T>;
+
+template<class T>
+concept copyable =
+    copy_constructible<T> &&
+    movable<T> &&
+    assignable_from<T&, T&> &&
+    assignable_from<T&, const T&> &&
+    assignable_from<T&, const T>;
+
+template<class T>
+concept semiregular = copyable<T> && default_initializable<T>;
+
+//===----------------------------------------------------------------------===//
+// [concept.equalitycomparable] equality_comparable
+// Uses detail::weakly_equality_comparable_with from <compare> (via <utility>).
+// Uses detail::make_const_lvalue_ref from <compare> (via <utility>).
+// Uses detail::comparison_common_type_with (local — <compare> doesn't define it).
+//===----------------------------------------------------------------------===//
+namespace detail {
+    // comparison_common_type_with helper
+    template<class T, class U,
+             class CR = common_reference_t<const T&, const U&>>
+    concept comparison_common_type_with_impl =
+        same_as<common_reference_t<const T&, const U&>,
+                common_reference_t<const U&, const T&>> &&
+        requires {
+            requires convertible_to<const T&, const CR&> ||
+                     convertible_to<T, const CR&>;
+            requires convertible_to<const U&, const CR&> ||
+                     convertible_to<U, const CR&>;
+        };
+
+    template<class T, class U>
+    concept comparison_common_type_with =
+        comparison_common_type_with_impl<remove_cvref_t<T>, remove_cvref_t<U>>;
+} // namespace detail
+
+template<class T>
+concept equality_comparable = detail::weakly_equality_comparable_with<T, T>;
+
+template<class T, class U>
+concept equality_comparable_with =
+    equality_comparable<T> && equality_comparable<U> &&
+    detail::comparison_common_type_with<T, U> &&
+    equality_comparable<
+        common_reference_t<detail::make_const_lvalue_ref<T>,
+                           detail::make_const_lvalue_ref<U>>> &&
+    detail::weakly_equality_comparable_with<T, U>;
+
+//===----------------------------------------------------------------------===//
+// [concept.totallyordered] totally_ordered
+// Uses detail::partially_ordered_with from <compare> (via <utility>).
+//===----------------------------------------------------------------------===//
+template<class T>
+concept totally_ordered =
+    equality_comparable<T> && detail::partially_ordered_with<T, T>;
+
+template<class T, class U>
+concept totally_ordered_with =
+    totally_ordered<T> && totally_ordered<U> &&
+    equality_comparable_with<T, U> &&
+    totally_ordered<
+        common_reference_t<detail::make_const_lvalue_ref<T>,
+                           detail::make_const_lvalue_ref<U>>> &&
+    detail::partially_ordered_with<T, U>;
+
+//===----------------------------------------------------------------------===//
+// [concept.object] regular (after equality_comparable)
+//===----------------------------------------------------------------------===//
+template<class T>
+concept regular = semiregular<T> && equality_comparable<T>;
+
+//===----------------------------------------------------------------------===//
+// [concept.invocable] invocable, regular_invocable
+// Uses is_invocable_v / invoke_result_t from <type_traits>.
+//===----------------------------------------------------------------------===//
+template<class Fn, class... Args>
+concept invocable = is_invocable_v<Fn, Args...>;
+
+template<class Fn, class... Args>
+concept regular_invocable = invocable<Fn, Args...>;
+
+//===----------------------------------------------------------------------===//
+// [concept.predicate] predicate
+// Uses invoke_result_t and detail::boolean_testable from <compare> (via <utility>).
+//===----------------------------------------------------------------------===//
+template<class Fn, class... Args>
+concept predicate =
+    regular_invocable<Fn, Args...> &&
+    detail::boolean_testable<invoke_result_t<Fn, Args...>>;
+
+//===----------------------------------------------------------------------===//
+// [concept.relation] relation, equivalence_relation, strict_weak_order
+//===----------------------------------------------------------------------===//
+template<class R, class T, class U>
+concept relation =
+    predicate<R, T, T> && predicate<R, U, U> &&
+    predicate<R, T, U> && predicate<R, U, T>;
+
+template<class R, class T, class U>
+concept equivalence_relation = relation<R, T, U>;
+
+template<class R, class T, class U>
+concept strict_weak_order = relation<R, T, U>;
+
+} // namespace std

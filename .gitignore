@@ -1,0 +1,12 @@
+build/
+a.out
+*.out
+__pycache__/
+*.pyc
+.claude/
+test/std/
+libcxx.??????
+libstdcxx.??????
+*.dat
+.ninja_deps
+.ninja_log

@@ -1,0 +1,434 @@
+// <array> — mechanically ported from libc++ include/array
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Covers: array<T,N> aggregate (incl. N==0 specialisation), all member/iterator
+// access, fill, swap, operator== + operator<=>, to_array, and tuple-interface
+// specialisations (tuple_size, tuple_element, get<I>).
+//
+// at() out-of-range behaviour: libc++ calls std::__throw_out_of_range which
+// throws std::out_of_range.  Under -fno-exceptions that path is unavailable.
+// We keep at() in the interface but replace the throw with __builtin_trap()
+// which terminates the process immediately (producing a backtrace under gdb),
+// matching the project's no-exception contract.
+#pragma once
+
+#include <type_traits>
+#include <compare>
+#include <cstddef>
+#include <utility>
+#include <iterator>
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// Internal algorithm helpers (inlined; <algorithm> not yet ported)
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+    // equal: returns true if [first1, last1) element-wise equals [first2, ...)
+    template<class InputIt1, class InputIt2>
+    constexpr bool array_equal(InputIt1 first1, InputIt1 last1,
+                               InputIt2 first2) {
+        for (; first1 != last1; ++first1, ++first2)
+            if (!(*first1 == *first2))
+                return false;
+        return true;
+    }
+
+    // lexicographic_compare_three_way using synth_three_way
+    template<class InputIt1, class InputIt2>
+    constexpr auto array_lex_three_way(InputIt1 first1, InputIt1 last1,
+                                       InputIt2 first2, InputIt2 last2)
+        -> decltype(detail::synth_three_way(*first1, *first2))
+    {
+        for (; first1 != last1 && first2 != last2; ++first1, ++first2) {
+            if (auto c = detail::synth_three_way(*first1, *first2); c != 0)
+                return c;
+        }
+        // If one range is shorter (shouldn't happen for same-N arrays,
+        // but handle generically)
+        if (first1 == last1 && first2 == last2)
+            return detail::synth_three_way(0, 0); // equivalent
+        if (first1 == last1)
+            return detail::synth_three_way(0, 1); // less
+        return detail::synth_three_way(1, 0);      // greater
+    }
+
+    // fill_n helper
+    template<class ForwardIt, class T>
+    constexpr void array_fill_n(ForwardIt first, size_t n, const T& val) {
+        for (size_t i = 0; i < n; ++i, ++first)
+            *first = val;
+    }
+
+    // swap_ranges helper using std::swap declared in <type_traits>
+    template<class ForwardIt1, class ForwardIt2>
+    constexpr void array_swap_ranges(ForwardIt1 first1, ForwardIt1 last1,
+                                     ForwardIt2 first2) {
+        for (; first1 != last1; ++first1, ++first2) {
+            // Use ADL swap (std::swap is declared in <type_traits>)
+            using std::swap;
+            swap(*first1, *first2);
+        }
+    }
+
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
+// [array], class template array
+//===----------------------------------------------------------------------===//
+
+template<class T, size_t N>
+struct array {
+    // types
+    using value_type             = T;
+    using reference              = value_type&;
+    using const_reference        = const value_type&;
+    using pointer                = value_type*;
+    using const_pointer          = const value_type*;
+    using iterator               = pointer;
+    using const_iterator         = const_pointer;
+    using size_type              = size_t;
+    using difference_type        = ptrdiff_t;
+    using reverse_iterator       = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+    // The aggregate data member (no leading underscore per conventions)
+    T elems[N];
+
+    // No explicit construct/copy/destroy for aggregate type
+
+    // fill
+    constexpr void fill(const value_type& u) {
+        detail::array_fill_n(data(), N, u);
+    }
+
+    // swap
+    constexpr void swap(array& a) noexcept(is_nothrow_swappable_v<T>) {
+        detail::array_swap_ranges(data(), data() + N, a.data());
+    }
+
+    // iterators
+    [[nodiscard]] constexpr iterator begin() noexcept {
+        return iterator(data());
+    }
+    [[nodiscard]] constexpr const_iterator begin() const noexcept {
+        return const_iterator(data());
+    }
+    [[nodiscard]] constexpr iterator end() noexcept {
+        return iterator(data() + N);
+    }
+    [[nodiscard]] constexpr const_iterator end() const noexcept {
+        return const_iterator(data() + N);
+    }
+
+    [[nodiscard]] constexpr reverse_iterator rbegin() noexcept {
+        return reverse_iterator(end());
+    }
+    [[nodiscard]] constexpr const_reverse_iterator rbegin() const noexcept {
+        return const_reverse_iterator(end());
+    }
+    [[nodiscard]] constexpr reverse_iterator rend() noexcept {
+        return reverse_iterator(begin());
+    }
+    [[nodiscard]] constexpr const_reverse_iterator rend() const noexcept {
+        return const_reverse_iterator(begin());
+    }
+
+    [[nodiscard]] constexpr const_iterator cbegin() const noexcept {
+        return begin();
+    }
+    [[nodiscard]] constexpr const_iterator cend() const noexcept {
+        return end();
+    }
+    [[nodiscard]] constexpr const_reverse_iterator crbegin() const noexcept {
+        return rbegin();
+    }
+    [[nodiscard]] constexpr const_reverse_iterator crend() const noexcept {
+        return rend();
+    }
+
+    // capacity
+    [[nodiscard]] constexpr size_type size() const noexcept { return N; }
+    [[nodiscard]] constexpr size_type max_size() const noexcept { return N; }
+    [[nodiscard]] constexpr bool empty() const noexcept { return N == 0; }
+
+    // element access
+    [[nodiscard]] constexpr reference operator[](size_type n) noexcept {
+        return elems[n];
+    }
+    [[nodiscard]] constexpr const_reference operator[](size_type n) const noexcept {
+        return elems[n];
+    }
+
+    // at(): keeps the standard interface but uses __builtin_trap() instead of
+    // throwing std::out_of_range, since -fno-exceptions is in effect.
+    // On out-of-range access the process is terminated immediately so a
+    // debugger or sanitiser can show the exact callsite.
+    [[nodiscard]] constexpr reference at(size_type n) {
+        if (n >= N)
+            __builtin_trap(); // no exceptions: terminate on out-of-range
+        return elems[n];
+    }
+    [[nodiscard]] constexpr const_reference at(size_type n) const {
+        if (n >= N)
+            __builtin_trap(); // no exceptions: terminate on out-of-range
+        return elems[n];
+    }
+
+    [[nodiscard]] constexpr reference front() noexcept {
+        return (*this)[0];
+    }
+    [[nodiscard]] constexpr const_reference front() const noexcept {
+        return (*this)[0];
+    }
+    [[nodiscard]] constexpr reference back() noexcept {
+        return (*this)[N - 1];
+    }
+    [[nodiscard]] constexpr const_reference back() const noexcept {
+        return (*this)[N - 1];
+    }
+
+    [[nodiscard]] constexpr pointer data() noexcept {
+        return elems;
+    }
+    [[nodiscard]] constexpr const_pointer data() const noexcept {
+        return elems;
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// [array], class template array<T, 0> — zero-size specialisation
+//===----------------------------------------------------------------------===//
+
+template<class T>
+struct array<T, 0> {
+    // types
+    using value_type             = T;
+    using reference              = value_type&;
+    using const_reference        = const value_type&;
+    using pointer                = value_type*;
+    using const_pointer          = const value_type*;
+    using iterator               = pointer;
+    using const_iterator         = const_pointer;
+    using size_type              = size_t;
+    using difference_type        = ptrdiff_t;
+    using reverse_iterator       = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+    // For a zero-element array we keep aggregate-initability by providing a
+    // dummy properly-aligned storage field (same technique as libc++).
+    // No T objects actually live here.
+    // Like libc++, the dummy elements are const-qualified when T is const so
+    // that array<const T, 0> has a deleted implicit copy assignment operator
+    // (tested by array.cons/implicit_copy.pass.cpp).
+    struct empty_placeholder {};
+    using empty_type = conditional_t<is_const_v<T>, const empty_placeholder, empty_placeholder>;
+    struct array_in_struct_t { T data_[1]; };
+    alignas(array_in_struct_t) empty_type storage[sizeof(array_in_struct_t)];
+
+    // data() returns nullptr per the standard
+    [[nodiscard]] constexpr pointer data() noexcept { return nullptr; }
+    [[nodiscard]] constexpr const_pointer data() const noexcept { return nullptr; }
+
+    // fill / swap: no-ops; forbid const T
+    constexpr void fill(const value_type&) noexcept {
+        static_assert(!is_const_v<T>,
+            "cannot fill a zero-sized array of type 'const T'");
+    }
+    constexpr void swap(array&) noexcept {
+        static_assert(!is_const_v<T>,
+            "cannot swap a zero-sized array of type 'const T'");
+    }
+
+    // iterators: begin == end == nullptr
+    [[nodiscard]] constexpr iterator begin() noexcept {
+        return iterator(nullptr);
+    }
+    [[nodiscard]] constexpr const_iterator begin() const noexcept {
+        return const_iterator(nullptr);
+    }
+    [[nodiscard]] constexpr iterator end() noexcept {
+        return iterator(nullptr);
+    }
+    [[nodiscard]] constexpr const_iterator end() const noexcept {
+        return const_iterator(nullptr);
+    }
+
+    [[nodiscard]] constexpr reverse_iterator rbegin() noexcept {
+        return reverse_iterator(end());
+    }
+    [[nodiscard]] constexpr const_reverse_iterator rbegin() const noexcept {
+        return const_reverse_iterator(end());
+    }
+    [[nodiscard]] constexpr reverse_iterator rend() noexcept {
+        return reverse_iterator(begin());
+    }
+    [[nodiscard]] constexpr const_reverse_iterator rend() const noexcept {
+        return const_reverse_iterator(begin());
+    }
+    [[nodiscard]] constexpr const_iterator cbegin() const noexcept {
+        return begin();
+    }
+    [[nodiscard]] constexpr const_iterator cend() const noexcept {
+        return end();
+    }
+    [[nodiscard]] constexpr const_reverse_iterator crbegin() const noexcept {
+        return rbegin();
+    }
+    [[nodiscard]] constexpr const_reverse_iterator crend() const noexcept {
+        return rend();
+    }
+
+    // capacity
+    [[nodiscard]] constexpr size_type size() const noexcept { return 0; }
+    [[nodiscard]] constexpr size_type max_size() const noexcept { return 0; }
+    [[nodiscard]] constexpr bool empty() const noexcept { return true; }
+
+    // element access: all accesses are ill-formed / UB — terminate immediately
+    [[nodiscard]] constexpr reference operator[](size_type) noexcept {
+        __builtin_trap();
+    }
+    [[nodiscard]] constexpr const_reference operator[](size_type) const noexcept {
+        __builtin_trap();
+    }
+
+    // at() on a zero-sized array: always out-of-range; terminate
+    [[nodiscard]] constexpr reference at(size_type) {
+        // Out-of-range: no exceptions under -fno-exceptions; terminate.
+        __builtin_trap();
+    }
+    [[nodiscard]] constexpr const_reference at(size_type) const {
+        // Out-of-range: no exceptions under -fno-exceptions; terminate.
+        __builtin_trap();
+    }
+
+    [[nodiscard]] constexpr reference front() noexcept { __builtin_trap(); }
+    [[nodiscard]] constexpr const_reference front() const noexcept { __builtin_trap(); }
+    [[nodiscard]] constexpr reference back() noexcept { __builtin_trap(); }
+    [[nodiscard]] constexpr const_reference back() const noexcept { __builtin_trap(); }
+};
+
+//===----------------------------------------------------------------------===//
+// Deduction guide (C++17)
+//===----------------------------------------------------------------------===//
+
+template<class T, class... U>
+    requires (is_same_v<T, U> && ...)
+array(T, U...) -> array<T, 1 + sizeof...(U)>;
+
+//===----------------------------------------------------------------------===//
+// [array.comparison], operators
+//===----------------------------------------------------------------------===//
+
+template<class T, size_t N>
+constexpr bool operator==(const array<T, N>& x, const array<T, N>& y) {
+    return detail::array_equal(x.begin(), x.end(), y.begin());
+}
+
+// C++20: synthesised three-way comparison
+template<class T, size_t N>
+constexpr detail::synth_three_way_result<T>
+operator<=>(const array<T, N>& x, const array<T, N>& y) {
+    return detail::array_lex_three_way(x.begin(), x.end(), y.begin(), y.end());
+}
+
+//===----------------------------------------------------------------------===//
+// [array.special], free swap
+//===----------------------------------------------------------------------===//
+
+template<class T, size_t N>
+    requires (N == 0 || is_swappable_v<T>)
+constexpr void swap(array<T, N>& x, array<T, N>& y)
+    noexcept(noexcept(x.swap(y)))
+{
+    x.swap(y);
+}
+
+//===----------------------------------------------------------------------===//
+// [array.creation], to_array
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+    template<class T, size_t N, size_t... Idx>
+    constexpr array<remove_cv_t<T>, N>
+    to_array_lvalue_impl(T (&arr)[N], index_sequence<Idx...>) {
+        return {{arr[Idx]...}};
+    }
+
+    template<class T, size_t N, size_t... Idx>
+    constexpr array<remove_cv_t<T>, N>
+    to_array_rvalue_impl(T (&&arr)[N], index_sequence<Idx...>) {
+        return {{move(arr[Idx])...}};
+    }
+} // namespace detail
+
+template<class T, size_t N>
+[[nodiscard]] constexpr array<remove_cv_t<T>, N>
+to_array(T (&arr)[N])
+    noexcept(is_nothrow_constructible_v<T, T&>)
+{
+    static_assert(!is_array_v<T>,
+        "[array.creation]/1: to_array does not accept multidimensional arrays.");
+    static_assert(is_constructible_v<T, T&>,
+        "[array.creation]/1: to_array requires copy constructible elements.");
+    return detail::to_array_lvalue_impl(arr, make_index_sequence<N>{});
+}
+
+template<class T, size_t N>
+[[nodiscard]] constexpr array<remove_cv_t<T>, N>
+to_array(T (&&arr)[N])
+    noexcept(is_nothrow_move_constructible_v<T>)
+{
+    static_assert(!is_array_v<T>,
+        "[array.creation]/4: to_array does not accept multidimensional arrays.");
+    static_assert(is_move_constructible_v<T>,
+        "[array.creation]/4: to_array requires move constructible elements.");
+    return detail::to_array_rvalue_impl(move(arr),
+                                        make_index_sequence<N>{});
+}
+
+//===----------------------------------------------------------------------===//
+// [array.tuple], tuple interface
+// tuple_size and tuple_element primary templates come from <utility> (already
+// included above).  We provide only the array specialisations here.
+//===----------------------------------------------------------------------===//
+
+// Specialisation for array
+template<class T, size_t N>
+struct tuple_size<array<T, N>> : integral_constant<size_t, N> {};
+
+template<size_t I, class T, size_t N>
+struct tuple_element<I, array<T, N>> {
+    static_assert(I < N, "Index out of bounds in std::tuple_element<> (std::array)");
+    using type = T;
+};
+
+// get<I>(array&) — four overloads
+
+template<size_t I, class T, size_t N>
+[[nodiscard]] constexpr T& get(array<T, N>& a) noexcept {
+    static_assert(I < N, "Index out of bounds in std::get<> (std::array)");
+    return a.elems[I];
+}
+
+template<size_t I, class T, size_t N>
+[[nodiscard]] constexpr const T& get(const array<T, N>& a) noexcept {
+    static_assert(I < N, "Index out of bounds in std::get<> (const std::array)");
+    return a.elems[I];
+}
+
+template<size_t I, class T, size_t N>
+[[nodiscard]] constexpr T&& get(array<T, N>&& a) noexcept {
+    static_assert(I < N, "Index out of bounds in std::get<> (std::array&&)");
+    return move(a.elems[I]);
+}
+
+template<size_t I, class T, size_t N>
+[[nodiscard]] constexpr const T&& get(const array<T, N>&& a) noexcept {
+    static_assert(I < N, "Index out of bounds in std::get<> (const std::array&&)");
+    return move(a.elems[I]);
+}
+
+} // namespace std

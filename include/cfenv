@@ -1,0 +1,39 @@
+// <cfenv> -- C floating-point environment in namespace std.
+// Mechanically ported from libc++ include/cfenv.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Includes <fenv.h> (reachable via the system include path even with
+// -nostdinc++) and re-exports every type and function into namespace std.
+// The macros (FE_DIVBYZERO, FE_INEXACT, FE_INVALID, FE_OVERFLOW,
+// FE_UNDERFLOW, FE_ALL_EXCEPT, FE_DOWNWARD, FE_TONEAREST, FE_TOWARDZERO,
+// FE_UPWARD, FE_DFL_ENV) remain in the global namespace as provided by
+// <fenv.h>; the standard only requires them there.
+#pragma once
+
+// glibc declarations must keep DEFAULT visibility no matter where this
+// wrapper is first included from: io headers wrap their bodies in
+// `#pragma GCC visibility push(hidden)` (libstdc++-ABI isolation), and a
+// libc prototype first seen inside such a region becomes a hidden symbol
+// the linker then cannot resolve against libc (e.g. strtod via <sstream>).
+#pragma GCC visibility push(default)
+#include <fenv.h>
+#pragma GCC visibility pop
+
+namespace std {
+
+using ::fenv_t;
+using ::fexcept_t;
+
+using ::feclearexcept;
+using ::fegetexceptflag;
+using ::feraiseexcept;
+using ::fesetexceptflag;
+using ::fetestexcept;
+using ::fegetround;
+using ::fesetround;
+using ::fegetenv;
+using ::feholdexcept;
+using ::fesetenv;
+using ::feupdateenv;
+
+} // namespace std

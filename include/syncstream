@@ -1,0 +1,280 @@
+// <syncstream> — basic_syncbuf / basic_osyncstream ([syncstream]).
+// Mechanically ported from libc++ include/syncstream (release/20.x).
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti, -lpthread.
+//
+// Exception paths in emit()/overflow() are removed (-fno-exceptions); the
+// synchronisation guarantee uses a process-wide registry of per-wrapped-buffer
+// mutexes (libc++ __wrapped_streambuf_mutex).
+#pragma once
+
+#include <mutex>
+#include <map>
+#include <string>
+#include <ios>
+#include <streambuf>
+#include <ostream>
+#include <memory>
+#include <cstdint>
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// __wrapped_streambuf_mutex: maps each wrapped streambuf* to a mutex + refcount
+// so that emit() transfers are atomic w.r.t. other syncbufs wrapping the same
+// buffer ([syncstream.syncbuf.overview]/1).
+//===----------------------------------------------------------------------===//
+namespace detail {
+
+class wrapped_streambuf_mutex {
+    wrapped_streambuf_mutex() = default;
+
+public:
+    wrapped_streambuf_mutex(const wrapped_streambuf_mutex&)            = delete;
+    wrapped_streambuf_mutex& operator=(const wrapped_streambuf_mutex&) = delete;
+
+    void inc_reference(void* ptr) {
+        unique_lock<mutex> lock{mutex_};
+        ++lut_[reinterpret_cast<uintptr_t>(ptr)].count;
+    }
+
+    // pre: ptr is in lut_
+    void dec_reference(void* ptr) noexcept {
+        unique_lock<mutex> lock{mutex_};
+        auto it = get_it(ptr);
+        if (it->second.count == 1)
+            lut_.erase(it);
+        else
+            --it->second.count;
+    }
+
+    [[nodiscard]] lock_guard<mutex> get_lock(void* ptr) noexcept {
+        lock_guard<mutex> lock{mutex_};
+        return lock_guard<mutex>{get_it(ptr)->second.mtx};
+    }
+
+    // for testing: may be called with a non-registered pointer.
+    [[nodiscard]] size_t get_count(void* ptr) noexcept {
+        lock_guard<mutex> lock{mutex_};
+        auto it = lut_.find(reinterpret_cast<uintptr_t>(ptr));
+        return it != lut_.end() ? it->second.count : 0;
+    }
+
+    [[nodiscard]] static wrapped_streambuf_mutex& instance() noexcept {
+        static wrapped_streambuf_mutex result;
+        return result;
+    }
+
+private:
+    struct value {
+        mutex  mtx;
+        size_t count{0};
+    };
+
+    // plain mutex (not shared_mutex): the registry is touched briefly and
+    // avoiding shared_mutex keeps <condition_variable> out of every TU that
+    // only needs synchronized output.
+    mutex                   mutex_;
+    map<uintptr_t, value>   lut_;
+
+    [[nodiscard]] map<uintptr_t, value>::iterator get_it(void* ptr) noexcept {
+        return lut_.find(reinterpret_cast<uintptr_t>(ptr));
+    }
+};
+
+} // namespace detail
+
+//===----------------------------------------------------------------------===//
+// basic_syncbuf
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits = char_traits<CharT>,
+         class Allocator = allocator<CharT>>
+class basic_syncbuf : public basic_streambuf<CharT, Traits> {
+public:
+    using char_type      = CharT;
+    using traits_type    = Traits;
+    using int_type       = typename traits_type::int_type;
+    using pos_type       = typename traits_type::pos_type;
+    using off_type       = typename traits_type::off_type;
+    using allocator_type = Allocator;
+    using streambuf_type = basic_streambuf<CharT, Traits>;
+
+    basic_syncbuf() : basic_syncbuf(nullptr) {}
+
+    explicit basic_syncbuf(streambuf_type* obuf) : basic_syncbuf(obuf, Allocator()) {}
+
+    basic_syncbuf(streambuf_type* obuf, Allocator const& alloc)
+        : wrapped_(obuf), str_(alloc) {
+        inc_reference();
+    }
+
+    basic_syncbuf(basic_syncbuf&& other)
+        : wrapped_(other.get_wrapped()), str_(std::move(other.str_)),
+          emit_on_sync_(other.emit_on_sync_) {
+        move_common(other);
+    }
+
+    ~basic_syncbuf() {
+        emit_impl(false);   // would propagate exceptions under -fexceptions
+        dec_reference();
+    }
+
+    basic_syncbuf& operator=(basic_syncbuf&& other) {
+        emit_impl(false);
+        dec_reference();
+        wrapped_      = other.get_wrapped();
+        str_          = std::move(other.str_);
+        emit_on_sync_ = other.emit_on_sync_;
+        move_common(other);
+        return *this;
+    }
+
+    void swap(basic_syncbuf& other) {
+        basic_syncbuf tmp(std::move(other));
+        other = std::move(*this);
+        *this = std::move(tmp);
+    }
+
+    bool emit() { return emit_impl(false); }
+
+    streambuf_type* get_wrapped() const noexcept { return wrapped_; }
+    allocator_type  get_allocator() const noexcept { return str_.get_allocator(); }
+    void set_emit_on_sync(bool b) noexcept { emit_on_sync_ = b; }
+
+protected:
+    int sync() override {
+        if (emit_on_sync_ && !emit_impl(true))
+            return -1;
+        return 0;
+    }
+
+    int_type overflow(int_type c = traits_type::eof()) override {
+        if (traits_type::eq_int_type(c, traits_type::eof()))
+            return traits_type::not_eof(c);
+
+        if (this->pptr() == this->epptr()) {
+            size_t size = str_.size();
+            str_.resize(str_.capacity() + 1);
+            char_type* p = str_.data();
+            this->setp(p, p + str_.size());
+            this->pbump(static_cast<int>(size));
+        }
+        return this->sputc(traits_type::to_char_type(c));
+    }
+
+private:
+    streambuf_type*                           wrapped_;
+    basic_string<CharT, Traits, Allocator>    str_;
+    bool                                      emit_on_sync_{false};
+
+    bool emit_impl(bool flush) {
+        if (!wrapped_)
+            return false;
+
+        lock_guard<mutex> lock =
+            detail::wrapped_streambuf_mutex::instance().get_lock(wrapped_);
+
+        bool result = true;
+        if (this->pptr() != this->pbase()) {
+            result &= (wrapped_->sputn(this->pbase(), this->pptr() - this->pbase()) != -1);
+            this->setp(this->pbase(), this->epptr());
+        }
+        if (flush)
+            result &= (wrapped_->pubsync() != -1);
+        return result;
+    }
+
+    void move_common(basic_syncbuf& other) {
+        char_type* p = str_.data();
+        this->setp(p, p + str_.size());
+        this->pbump(static_cast<int>(other.pptr() - other.pbase()));
+
+        other.setp(nullptr, nullptr);
+        other.wrapped_ = nullptr;
+    }
+
+    void inc_reference() {
+        if (wrapped_)
+            detail::wrapped_streambuf_mutex::instance().inc_reference(wrapped_);
+    }
+    void dec_reference() noexcept {
+        if (wrapped_)
+            detail::wrapped_streambuf_mutex::instance().dec_reference(wrapped_);
+    }
+};
+
+using syncbuf  = basic_syncbuf<char>;
+using wsyncbuf = basic_syncbuf<wchar_t>;
+
+template<class CharT, class Traits, class Allocator>
+void swap(basic_syncbuf<CharT, Traits, Allocator>& lhs,
+          basic_syncbuf<CharT, Traits, Allocator>& rhs) {
+    lhs.swap(rhs);
+}
+
+//===----------------------------------------------------------------------===//
+// basic_osyncstream
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits = char_traits<CharT>,
+         class Allocator = allocator<CharT>>
+class basic_osyncstream : public basic_ostream<CharT, Traits> {
+public:
+    using char_type      = CharT;
+    using traits_type    = Traits;
+    using int_type       = typename traits_type::int_type;
+    using pos_type       = typename traits_type::pos_type;
+    using off_type       = typename traits_type::off_type;
+    using allocator_type = Allocator;
+    using streambuf_type = basic_streambuf<char_type, traits_type>;
+    using syncbuf_type   = basic_syncbuf<char_type, traits_type, allocator_type>;
+
+    basic_osyncstream(streambuf_type* obuf, allocator_type const& alloc)
+        : basic_ostream<CharT, Traits>(std::addressof(sb_)), sb_(obuf, alloc) {}
+
+    explicit basic_osyncstream(streambuf_type* obuf)
+        : basic_osyncstream(obuf, allocator_type()) {}
+
+    basic_osyncstream(basic_ostream<char_type, traits_type>& os, allocator_type const& alloc)
+        : basic_osyncstream(os.rdbuf(), alloc) {}
+
+    explicit basic_osyncstream(basic_ostream<char_type, traits_type>& os)
+        : basic_osyncstream(os, allocator_type()) {}
+
+    basic_osyncstream(basic_osyncstream&& other) noexcept
+        : basic_ostream<CharT, Traits>(std::addressof(sb_)), sb_(std::move(other.sb_)) {
+        this->set_rdbuf(std::addressof(sb_));
+    }
+
+    // libc++ defaults this, relying on basic_ios::move leaving rdbuf to the
+    // derived class.  libcis's basic_ios move transfers the rdbuf pointer, so
+    // a defaulted move-assign would leave this stream pointing at other.sb_.
+    // Move the syncbuf explicitly (basic_syncbuf::operator= emits the old
+    // associated output first, per [syncstream.osyncstream.assign]) and
+    // re-point rdbuf at our own sb_.
+    basic_osyncstream& operator=(basic_osyncstream&& other) {
+        sb_ = std::move(other.sb_);
+        this->set_rdbuf(std::addressof(sb_));
+        return *this;
+    }
+
+    void emit() {
+        typename basic_ostream<char_type, traits_type>::sentry s(*this);
+        if (s) {
+            if (sb_.emit() == false)
+                this->setstate(ios_base::badbit);
+        }
+    }
+
+    streambuf_type* get_wrapped() const noexcept { return sb_.get_wrapped(); }
+
+    syncbuf_type* rdbuf() const noexcept {
+        return const_cast<syncbuf_type*>(std::addressof(sb_));
+    }
+
+private:
+    syncbuf_type sb_;
+};
+
+using osyncstream  = basic_osyncstream<char>;
+using wosyncstream = basic_osyncstream<wchar_t>;
+
+} // namespace std

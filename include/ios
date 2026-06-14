@@ -1,0 +1,573 @@
+// <ios> — ios_base, basic_ios<CharT,Traits>, io manipulators.
+// Mechanically ported from libc++ include/ios + relevant __locale / __ios fragments.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// DESIGN NOTE (libcis reduced iostreams):
+//   Under -fno-exceptions, ios_base::clear() / setstate() that would throw
+//   (when (rdstate() & exceptions()) != 0) instead call __builtin_trap().
+//   ios_base::failure is defined as a subclass of system_error but is never
+//   actually thrown; it exists so code that catches it compiles.
+//
+//   narrow()/widen() delegate to ctype<CharT> from <locale>.
+#pragma once
+
+// Hide all our symbols to prevent ABI conflict with libstdc++ shared library.
+#pragma GCC visibility push(hidden)
+
+#include <iosfwd>        // streamoff, fpos<>, streampos/wstreampos, stream fwd-decls
+#include <locale>        // locale, ctype<>
+#include <system_error>  // error_code, error_condition, system_error
+#include <cstddef>       // ptrdiff_t, size_t
+#include <cwchar>        // mbstate_t
+
+namespace std {
+
+// Forward-declare basic_streambuf (defined in <streambuf>, which includes <ios>).
+template<class CharT, class Traits> class basic_streambuf;
+// Forward-declare basic_ostream (defined in <ostream>).
+template<class CharT, class Traits> class basic_ostream;
+
+// streamoff, fpos<>, streampos/wstreampos now come from <iosfwd> (single home).
+using streamsize = ptrdiff_t;
+
+//===----------------------------------------------------------------------===//
+// io_errc
+//===----------------------------------------------------------------------===//
+enum class io_errc { stream = 1 };
+
+template<>
+struct is_error_code_enum<io_errc> : true_type {};
+
+// iostream_category is defined inline (no .cpp needed)
+class iostream_error_category_t : public error_category {
+public:
+    const char* name() const noexcept override { return "iostream"; }
+    string message(int ev) const override {
+        if (ev == static_cast<int>(io_errc::stream))
+            return "iostream error";
+        return "unknown iostream error";
+    }
+};
+
+[[nodiscard]] inline const error_category& iostream_category() noexcept {
+    // Held in a union whose destructor does NOT destroy the category, so the
+    // object (and its vtable) survives until process teardown. This avoids the
+    // static-destruction-order hazard of D65667, where a later-destroyed static's
+    // destructor calls name() on this category after it would otherwise be gone.
+    static const union holder_t {
+        iostream_error_category_t cat;
+        constexpr holder_t() : cat() {}
+        ~holder_t() {}
+    } holder;
+    return holder.cat;
+}
+
+[[nodiscard]] inline error_code make_error_code(io_errc e) noexcept {
+    return error_code(static_cast<int>(e), iostream_category());
+}
+[[nodiscard]] inline error_condition make_error_condition(io_errc e) noexcept {
+    return error_condition(static_cast<int>(e), iostream_category());
+}
+
+//===----------------------------------------------------------------------===//
+// ios_base
+//===----------------------------------------------------------------------===//
+class ios_base {
+public:
+    // ---- failure ----
+    class failure : public system_error {
+    public:
+        explicit failure(const char* msg,
+                         const error_code& ec = make_error_code(io_errc::stream))
+            : system_error(ec, msg) {}
+        explicit failure(const string& msg,
+                         const error_code& ec = make_error_code(io_errc::stream))
+            : system_error(ec, msg) {}
+        failure(const failure&) noexcept = default;
+        ~failure() override = default;
+    };
+
+    // ---- fmtflags ----
+    typedef unsigned int fmtflags;
+    static constexpr fmtflags boolalpha   = 0x0001u;
+    static constexpr fmtflags dec         = 0x0002u;
+    static constexpr fmtflags fixed       = 0x0004u;
+    static constexpr fmtflags hex         = 0x0008u;
+    static constexpr fmtflags internal    = 0x0010u;
+    static constexpr fmtflags left        = 0x0020u;
+    static constexpr fmtflags oct         = 0x0040u;
+    static constexpr fmtflags right       = 0x0080u;
+    static constexpr fmtflags scientific  = 0x0100u;
+    static constexpr fmtflags showbase    = 0x0200u;
+    static constexpr fmtflags showpoint   = 0x0400u;
+    static constexpr fmtflags showpos     = 0x0800u;
+    static constexpr fmtflags skipws      = 0x1000u;
+    static constexpr fmtflags unitbuf     = 0x2000u;
+    static constexpr fmtflags uppercase   = 0x4000u;
+    static constexpr fmtflags adjustfield = left | right | internal;
+    static constexpr fmtflags basefield   = dec | oct | hex;
+    static constexpr fmtflags floatfield  = scientific | fixed;
+
+    // ---- iostate ----
+    typedef unsigned int iostate;
+    static constexpr iostate badbit  = 0x1u;
+    static constexpr iostate eofbit  = 0x2u;
+    static constexpr iostate failbit = 0x4u;
+    static constexpr iostate goodbit = 0x0u;
+
+    // ---- openmode ----
+    typedef unsigned int openmode;
+    static constexpr openmode app    = 0x01u;
+    static constexpr openmode ate    = 0x02u;
+    static constexpr openmode binary = 0x04u;
+    static constexpr openmode in     = 0x08u;
+    static constexpr openmode out    = 0x10u;
+    static constexpr openmode trunc  = 0x20u;
+
+    // ---- seekdir ----
+    enum seekdir { beg, cur, end };
+
+    // ---- Init (ensures std streams initialised; stub here) ----
+    class Init {
+    public:
+        Init()  {}
+        ~Init() {}
+    };
+
+    // ---- callbacks ----
+    enum event { erase_event, imbue_event, copyfmt_event };
+    typedef void (*event_callback)(event, ios_base&, int index);
+    void register_callback(event_callback fn, int index) {
+        // Grow callback arrays
+        if (event_size_ == event_cap_) {
+            size_t new_cap = event_cap_ == 0 ? 4 : event_cap_ * 2;
+            auto* new_fn  = new event_callback[new_cap];
+            auto* new_idx = new int[new_cap];
+            for (size_t i = 0; i < event_size_; ++i) {
+                new_fn[i]  = fn_[i];
+                new_idx[i] = index_[i];
+            }
+            delete[] fn_;
+            delete[] index_;
+            fn_        = new_fn;
+            index_     = new_idx;
+            event_cap_ = new_cap;
+        }
+        fn_[event_size_]    = fn;
+        index_[event_size_] = index;
+        ++event_size_;
+    }
+
+    // ---- fmtflags state ----
+    [[nodiscard]] fmtflags flags() const            { return fmtflags_; }
+    fmtflags flags(fmtflags fl)                     { fmtflags r = fmtflags_; fmtflags_ = fl; return r; }
+    fmtflags setf(fmtflags fl)                      { fmtflags r = fmtflags_; fmtflags_ |= fl; return r; }
+    fmtflags setf(fmtflags fl, fmtflags mask)       { fmtflags r = fmtflags_; fmtflags_ &= ~mask; fmtflags_ |= fl & mask; return r; }
+    void     unsetf(fmtflags mask)                  { fmtflags_ &= ~mask; }
+
+    // ---- precision / width ----
+    [[nodiscard]] streamsize precision() const           { return precision_; }
+    streamsize precision(streamsize prec)                { streamsize r = precision_; precision_ = prec; return r; }
+    [[nodiscard]] streamsize width() const               { return width_; }
+    streamsize width(streamsize w)                       { streamsize r = width_; width_ = w; return r; }
+
+    // ---- locales ----
+    locale imbue(const locale& loc) {
+        locale r = loc_;
+        loc_ = loc;
+        call_callbacks(imbue_event);
+        return r;
+    }
+    [[nodiscard]] locale getloc() const { return loc_; }
+
+    // ---- xalloc / iword / pword ----
+    static int xalloc() {
+        static int counter = 0;
+        return counter++;
+    }
+    [[nodiscard]] long& iword(int index) {
+        grow_iarray(static_cast<size_t>(index) + 1);
+        return iarray_[index];
+    }
+    [[nodiscard]] void*& pword(int index) {
+        grow_parray(static_cast<size_t>(index) + 1);
+        return parray_[index];
+    }
+
+    // ---- iostate ----
+    [[nodiscard]] iostate rdstate() const        { return rdstate_; }
+    void clear(iostate state = goodbit);
+    void setstate(iostate state)                 { clear(rdstate_ | state); }
+
+    [[nodiscard]] bool good() const { return rdstate_ == 0; }
+    [[nodiscard]] bool eof()  const { return (rdstate_ & eofbit)  != 0; }
+    [[nodiscard]] bool fail() const { return (rdstate_ & (failbit | badbit)) != 0; }
+    [[nodiscard]] bool bad()  const { return (rdstate_ & badbit) != 0; }
+
+    [[nodiscard]] iostate exceptions() const     { return exceptions_; }
+    void exceptions(iostate e)                   { exceptions_ = e; clear(rdstate_); }
+
+    // ---- sync_with_stdio ----
+    static bool sync_with_stdio(bool sync = true) {
+        // Returns the previous synchronization state ([ios.members.static]).
+        // (libcis streams are already independent of <cstdio>; this only tracks
+        // the flag so the observable return value is conforming.)
+        static bool synced = true;
+        bool prev = synced;
+        synced = sync;
+        return prev;
+    }
+
+    // ---- destructor ----
+    virtual ~ios_base() {
+        call_callbacks(erase_event);
+        delete[] fn_;
+        delete[] index_;
+        delete[] iarray_;
+        delete[] parray_;
+    }
+
+    ios_base(const ios_base&) = delete;
+    ios_base& operator=(const ios_base&) = delete;
+
+protected:
+    ios_base()
+        : fmtflags_(0), precision_(0), width_(0),
+          rdstate_(0), exceptions_(0),
+          rdbuf_(nullptr),
+          fn_(nullptr), index_(nullptr),
+          event_size_(0), event_cap_(0),
+          iarray_(nullptr), iarray_size_(0), iarray_cap_(0),
+          parray_(nullptr), parray_size_(0), parray_cap_(0) {}
+
+    // Called by basic_ios::init()
+    void init(void* sb) {
+        rdbuf_     = sb;
+        fmtflags_  = skipws | dec;
+        precision_ = 6;
+        width_     = 0;
+        rdstate_   = sb ? goodbit : badbit;
+        exceptions_= goodbit;
+        loc_       = locale();
+    }
+
+    void*  rdbuf_raw() const { return rdbuf_; }
+    void   rdbuf_raw(void* sb) { rdbuf_ = sb; clear(); }
+    void   set_rdbuf_raw(void* sb) { rdbuf_ = sb; }
+
+    void call_callbacks(event e) {
+        // Call in reverse-registration order (standard requirement)
+        for (size_t i = event_size_; i > 0; --i)
+            fn_[i-1](e, *this, index_[i-1]);
+    }
+
+    void copyfmt_base(const ios_base& rhs) {
+        call_callbacks(erase_event);
+        // copy everything except rdstate_ and exceptions_
+        fmtflags_  = rhs.fmtflags_;
+        precision_ = rhs.precision_;
+        width_     = rhs.width_;
+        loc_       = rhs.loc_;
+        // copy iarray
+        if (rhs.iarray_size_ > 0) {
+            grow_iarray(rhs.iarray_size_);
+            for (size_t i = 0; i < rhs.iarray_size_; ++i)
+                iarray_[i] = rhs.iarray_[i];
+            iarray_size_ = rhs.iarray_size_;
+        }
+        // copy parray
+        if (rhs.parray_size_ > 0) {
+            grow_parray(rhs.parray_size_);
+            for (size_t i = 0; i < rhs.parray_size_; ++i)
+                parray_[i] = rhs.parray_[i];
+            parray_size_ = rhs.parray_size_;
+        }
+        // copy callbacks
+        delete[] fn_; delete[] index_;
+        fn_ = nullptr; index_ = nullptr;
+        event_size_ = event_cap_ = 0;
+        for (size_t i = 0; i < rhs.event_size_; ++i)
+            register_callback(rhs.fn_[i], rhs.index_[i]);
+        call_callbacks(copyfmt_event);
+    }
+
+    void move_base(ios_base& rhs) {
+        fmtflags_  = rhs.fmtflags_;
+        precision_ = rhs.precision_;
+        width_     = rhs.width_;
+        rdstate_   = rhs.rdstate_;
+        exceptions_= rhs.exceptions_;
+        loc_       = rhs.loc_;
+        fn_        = rhs.fn_;        rhs.fn_        = nullptr;
+        index_     = rhs.index_;     rhs.index_     = nullptr;
+        event_size_= rhs.event_size_; rhs.event_size_= 0;
+        event_cap_ = rhs.event_cap_;  rhs.event_cap_ = 0;
+        iarray_    = rhs.iarray_;    rhs.iarray_    = nullptr;
+        iarray_size_= rhs.iarray_size_; rhs.iarray_size_= 0;
+        iarray_cap_ = rhs.iarray_cap_;  rhs.iarray_cap_ = 0;
+        parray_    = rhs.parray_;    rhs.parray_    = nullptr;
+        parray_size_= rhs.parray_size_; rhs.parray_size_= 0;
+        parray_cap_ = rhs.parray_cap_;  rhs.parray_cap_ = 0;
+        // rdbuf_ is intentionally NOT moved: [basic.ios.members] specifies that
+        // basic_ios::move leaves rdbuf() unchanged on both *this and rhs (the
+        // derived class transfers any owned buffer via set_rdbuf).
+    }
+
+    void swap_base(ios_base& rhs) noexcept {
+        using std::swap;
+        swap(fmtflags_,   rhs.fmtflags_);
+        swap(precision_,  rhs.precision_);
+        swap(width_,      rhs.width_);
+        swap(rdstate_,    rhs.rdstate_);
+        swap(exceptions_, rhs.exceptions_);
+        swap(loc_,        rhs.loc_);
+        swap(fn_,         rhs.fn_);
+        swap(index_,      rhs.index_);
+        swap(event_size_, rhs.event_size_);
+        swap(event_cap_,  rhs.event_cap_);
+        swap(iarray_,     rhs.iarray_);
+        swap(iarray_size_,rhs.iarray_size_);
+        swap(iarray_cap_, rhs.iarray_cap_);
+        swap(parray_,     rhs.parray_);
+        swap(parray_size_,rhs.parray_size_);
+        swap(parray_cap_, rhs.parray_cap_);
+        // rdbuf_ is intentionally NOT swapped: [basic.ios.members] excludes
+        // rdbuf() from basic_ios::swap (owners swap their own buffer separately).
+    }
+
+private:
+    fmtflags   fmtflags_;
+    streamsize precision_;
+    streamsize width_;
+    iostate    rdstate_;
+    iostate    exceptions_;
+    void*      rdbuf_;   // type-erased basic_streambuf pointer
+    locale     loc_;
+
+    event_callback* fn_;
+    int*            index_;
+    size_t          event_size_;
+    size_t          event_cap_;
+
+    long*  iarray_;
+    size_t iarray_size_;
+    size_t iarray_cap_;
+
+    void** parray_;
+    size_t parray_size_;
+    size_t parray_cap_;
+
+    void grow_iarray(size_t needed) {
+        if (needed <= iarray_cap_) {
+            if (needed > iarray_size_) iarray_size_ = needed;
+            return;
+        }
+        size_t new_cap = iarray_cap_ == 0 ? needed : iarray_cap_;
+        while (new_cap < needed) new_cap *= 2;
+        long* na = new long[new_cap]();
+        for (size_t i = 0; i < iarray_size_; ++i) na[i] = iarray_[i];
+        delete[] iarray_;
+        iarray_ = na; iarray_cap_ = new_cap; iarray_size_ = needed;
+    }
+
+    void grow_parray(size_t needed) {
+        if (needed <= parray_cap_) {
+            if (needed > parray_size_) parray_size_ = needed;
+            return;
+        }
+        size_t new_cap = parray_cap_ == 0 ? needed : parray_cap_;
+        while (new_cap < needed) new_cap *= 2;
+        void** na = new void*[new_cap]();
+        for (size_t i = 0; i < parray_size_; ++i) na[i] = parray_[i];
+        delete[] parray_;
+        parray_ = na; parray_cap_ = new_cap; parray_size_ = needed;
+    }
+};
+
+// clear(): if the resulting state intersects exceptions mask, trap (no-exceptions build).
+inline void ios_base::clear(iostate state) {
+    if (rdbuf_ == nullptr)
+        state |= badbit;
+    rdstate_ = state;
+    if ((rdstate_ & exceptions_) != 0) {
+        // Under -fno-exceptions we cannot throw ios_base::failure.
+        // __builtin_trap() here; callers should not set exceptions mask
+        // without installing an exception handler.
+        __builtin_trap();
+    }
+}
+
+//===----------------------------------------------------------------------===//
+// basic_ios<CharT,Traits>
+//===----------------------------------------------------------------------===//
+template<class CharT, class Traits>  // defaults: <iosfwd>
+class basic_ios : public ios_base {
+public:
+    using char_type   = CharT;
+    using traits_type = Traits;
+    using int_type    = typename traits_type::int_type;
+    using pos_type    = typename traits_type::pos_type;
+    using off_type    = typename traits_type::off_type;
+
+    static_assert(is_same_v<CharT, typename traits_type::char_type>,
+                  "traits_type::char_type must be the same type as CharT");
+
+    // bool conversion
+    explicit operator bool() const { return !fail(); }
+    [[nodiscard]] bool operator!() const { return fail(); }
+
+    // state forwarding
+    [[nodiscard]] iostate rdstate() const { return ios_base::rdstate(); }
+    void clear(iostate state = goodbit)   { ios_base::clear(state); }
+    void setstate(iostate state)          { ios_base::setstate(state); }
+    [[nodiscard]] bool good() const { return ios_base::good(); }
+    [[nodiscard]] bool eof()  const { return ios_base::eof(); }
+    [[nodiscard]] bool fail() const { return ios_base::fail(); }
+    [[nodiscard]] bool bad()  const { return ios_base::bad(); }
+
+    [[nodiscard]] iostate exceptions() const { return ios_base::exceptions(); }
+    void exceptions(iostate e)               { ios_base::exceptions(e); }
+
+    // Constructor / destructor
+    explicit basic_ios(basic_streambuf<char_type, traits_type>* sb) { init(sb); }
+    ~basic_ios() override = default;
+
+    // tie
+    [[nodiscard]] basic_ostream<char_type, traits_type>* tie() const { return tie_; }
+    basic_ostream<char_type, traits_type>*
+    tie(basic_ostream<char_type, traits_type>* tiestr) {
+        auto* r = tie_; tie_ = tiestr; return r;
+    }
+
+    // rdbuf
+    [[nodiscard]] basic_streambuf<char_type, traits_type>* rdbuf() const {
+        return static_cast<basic_streambuf<char_type, traits_type>*>(rdbuf_raw());
+    }
+    basic_streambuf<char_type, traits_type>*
+    rdbuf(basic_streambuf<char_type, traits_type>* sb) {
+        auto* r = rdbuf();
+        rdbuf_raw(sb);
+        return r;
+    }
+
+    // copyfmt
+    basic_ios& copyfmt(const basic_ios& rhs) {
+        if (this != std::addressof(rhs)) {
+            copyfmt_base(rhs);
+            tie_   = rhs.tie_;
+            fill_  = rhs.fill_;
+            fill_set_ = rhs.fill_set_;
+            exceptions(rhs.exceptions());
+        }
+        return *this;
+    }
+
+    // fill
+    [[nodiscard]] char_type fill() const {
+        if (!fill_set_) {
+            fill_    = widen(' ');
+            fill_set_ = true;
+        }
+        return fill_;
+    }
+    char_type fill(char_type ch) {
+        char_type r = fill(); // ensure fill_ is initialised
+        fill_ = ch; fill_set_ = true;
+        return r;
+    }
+
+    // imbue (also imbues the streambuf)
+    locale imbue(const locale& loc) {
+        locale r = ios_base::imbue(loc);
+        if (rdbuf())
+            rdbuf()->pubimbue(loc);
+        fill_set_ = false; // invalidate cached fill (depends on locale)
+        return r;
+    }
+
+    // narrow / widen — delegate to ctype<CharT>
+    [[nodiscard]] char narrow(char_type c, char dfault) const {
+        return use_facet<ctype<char_type>>(getloc()).narrow(c, dfault);
+    }
+    [[nodiscard]] char_type widen(char c) const {
+        return use_facet<ctype<char_type>>(getloc()).widen(c);
+    }
+
+protected:
+    basic_ios()
+        : ios_base(), tie_(nullptr), fill_(char_type()), fill_set_(false) {}
+
+    void init(basic_streambuf<char_type, traits_type>* sb) {
+        ios_base::init(sb);
+        tie_      = nullptr;
+        fill_     = char_type();
+        fill_set_ = false;
+    }
+
+    void move(basic_ios& rhs) {
+        move_base(rhs);
+        tie_       = rhs.tie_;     rhs.tie_ = nullptr;
+        fill_      = rhs.fill_;
+        fill_set_  = rhs.fill_set_;
+    }
+    void move(basic_ios&& rhs) { move(rhs); }
+
+    void swap(basic_ios& rhs) noexcept {
+        swap_base(rhs);
+        using std::swap;
+        swap(tie_,      rhs.tie_);
+        swap(fill_,     rhs.fill_);
+        swap(fill_set_, rhs.fill_set_);
+    }
+
+    void set_rdbuf(basic_streambuf<char_type, traits_type>* sb) {
+        set_rdbuf_raw(sb);
+    }
+
+private:
+    basic_ostream<char_type, traits_type>* tie_;
+    mutable char_type fill_;
+    mutable bool      fill_set_;
+};
+
+//===----------------------------------------------------------------------===//
+// Typedefs
+//===----------------------------------------------------------------------===//
+using ios  = basic_ios<char>;
+using wios = basic_ios<wchar_t>;
+
+//===----------------------------------------------------------------------===//
+// Manipulators — 27.5.5
+//===----------------------------------------------------------------------===//
+
+inline ios_base& boolalpha(ios_base& s)    { s.setf(ios_base::boolalpha); return s; }
+inline ios_base& noboolalpha(ios_base& s)  { s.unsetf(ios_base::boolalpha); return s; }
+inline ios_base& showbase(ios_base& s)     { s.setf(ios_base::showbase); return s; }
+inline ios_base& noshowbase(ios_base& s)   { s.unsetf(ios_base::showbase); return s; }
+inline ios_base& showpoint(ios_base& s)    { s.setf(ios_base::showpoint); return s; }
+inline ios_base& noshowpoint(ios_base& s)  { s.unsetf(ios_base::showpoint); return s; }
+inline ios_base& showpos(ios_base& s)      { s.setf(ios_base::showpos); return s; }
+inline ios_base& noshowpos(ios_base& s)    { s.unsetf(ios_base::showpos); return s; }
+inline ios_base& skipws(ios_base& s)       { s.setf(ios_base::skipws); return s; }
+inline ios_base& noskipws(ios_base& s)     { s.unsetf(ios_base::skipws); return s; }
+inline ios_base& uppercase(ios_base& s)    { s.setf(ios_base::uppercase); return s; }
+inline ios_base& nouppercase(ios_base& s)  { s.unsetf(ios_base::uppercase); return s; }
+inline ios_base& unitbuf(ios_base& s)      { s.setf(ios_base::unitbuf); return s; }
+inline ios_base& nounitbuf(ios_base& s)    { s.unsetf(ios_base::unitbuf); return s; }
+
+inline ios_base& internal(ios_base& s)     { s.setf(ios_base::internal,   ios_base::adjustfield); return s; }
+inline ios_base& left(ios_base& s)         { s.setf(ios_base::left,        ios_base::adjustfield); return s; }
+inline ios_base& right(ios_base& s)        { s.setf(ios_base::right,       ios_base::adjustfield); return s; }
+
+inline ios_base& dec(ios_base& s)          { s.setf(ios_base::dec,  ios_base::basefield); return s; }
+inline ios_base& hex(ios_base& s)          { s.setf(ios_base::hex,  ios_base::basefield); return s; }
+inline ios_base& oct(ios_base& s)          { s.setf(ios_base::oct,  ios_base::basefield); return s; }
+
+inline ios_base& fixed(ios_base& s)        { s.setf(ios_base::fixed,     ios_base::floatfield); return s; }
+inline ios_base& scientific(ios_base& s)   { s.setf(ios_base::scientific, ios_base::floatfield); return s; }
+inline ios_base& hexfloat(ios_base& s)     { s.setf(ios_base::fixed | ios_base::scientific, ios_base::floatfield); return s; }
+inline ios_base& defaultfloat(ios_base& s) { s.unsetf(ios_base::floatfield); return s; }
+
+} // namespace std
+
+#pragma GCC visibility pop

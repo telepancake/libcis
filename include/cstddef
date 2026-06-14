@@ -1,0 +1,87 @@
+// <cstddef> -- fundamental supporting types and C macros NULL / offsetof.
+// Mechanically ported from libc++ include/cstddef + include/__cstddef/*.h
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Pull NULL, offsetof, size_t, ptrdiff_t, max_align_t, and nullptr_t from the
+// underlying C <stddef.h> (always reachable even under -nostdinc++), then
+// re-export them into namespace std exactly as the other C-wrapper headers do.
+#pragma once
+
+// glibc declarations must keep DEFAULT visibility no matter where this
+// wrapper is first included from: io headers wrap their bodies in
+// `#pragma GCC visibility push(hidden)` (libstdc++-ABI isolation), and a
+// libc prototype first seen inside such a region becomes a hidden symbol
+// the linker then cannot resolve against libc (e.g. strtod via <sstream>).
+#pragma GCC visibility push(default)
+#include <stddef.h>    // NULL, offsetof, ::size_t, ::ptrdiff_t, ::max_align_t, ::nullptr_t
+#pragma GCC visibility pop
+#include <type_traits> // is_integral_v (needed by byte operators)
+
+namespace std {
+
+using ::size_t;
+using ::ptrdiff_t;
+using ::max_align_t;
+using ::nullptr_t;
+
+// byte (C++17, from byte.h): a distinct type for raw memory manipulation.
+// Shift operators require an integral Integer per [support.types.byteops].
+// SFINAE (__enable_if_t<is_integral<...>>) converted to requires clause.
+enum class byte : unsigned char {};
+
+template<class Integer>
+    requires is_integral_v<Integer>
+constexpr byte& operator<<=(byte& b, Integer shift) noexcept {
+    return b = b << shift;
+}
+template<class Integer>
+    requires is_integral_v<Integer>
+constexpr byte operator<<(byte b, Integer shift) noexcept {
+    return static_cast<byte>(
+        static_cast<unsigned char>(static_cast<unsigned int>(b) << shift));
+}
+template<class Integer>
+    requires is_integral_v<Integer>
+constexpr byte& operator>>=(byte& b, Integer shift) noexcept {
+    return b = b >> shift;
+}
+template<class Integer>
+    requires is_integral_v<Integer>
+constexpr byte operator>>(byte b, Integer shift) noexcept {
+    return static_cast<byte>(
+        static_cast<unsigned char>(static_cast<unsigned int>(b) >> shift));
+}
+
+inline constexpr byte operator|(byte l, byte r) noexcept {
+    return static_cast<byte>(
+        static_cast<unsigned char>(
+            static_cast<unsigned int>(l) | static_cast<unsigned int>(r)));
+}
+inline constexpr byte& operator|=(byte& l, byte r) noexcept { return l = l | r; }
+
+inline constexpr byte operator&(byte l, byte r) noexcept {
+    return static_cast<byte>(
+        static_cast<unsigned char>(
+            static_cast<unsigned int>(l) & static_cast<unsigned int>(r)));
+}
+inline constexpr byte& operator&=(byte& l, byte r) noexcept { return l = l & r; }
+
+inline constexpr byte operator^(byte l, byte r) noexcept {
+    return static_cast<byte>(
+        static_cast<unsigned char>(
+            static_cast<unsigned int>(l) ^ static_cast<unsigned int>(r)));
+}
+inline constexpr byte& operator^=(byte& l, byte r) noexcept { return l = l ^ r; }
+
+inline constexpr byte operator~(byte b) noexcept {
+    return static_cast<byte>(
+        static_cast<unsigned char>(~static_cast<unsigned int>(b)));
+}
+
+template<class Integer>
+    requires is_integral_v<Integer>
+[[nodiscard]] constexpr Integer to_integer(byte b) noexcept {
+    return static_cast<Integer>(b);
+}
+
+}  // namespace std

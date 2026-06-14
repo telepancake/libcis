@@ -1,0 +1,1439 @@
+#ifndef LIBCIS_VALARRAY
+#define LIBCIS_VALARRAY
+
+// valarray<T> and supporting classes.
+// Ported from LLVM libc++ for g++-10.2 -std=gnu++20 -fno-exceptions -fno-rtti.
+//
+// ORDERING NOTE: valarray<T> must be fully defined BEFORE gslice/gslice_array/
+// mask_array/indirect_array because those hold valarray<size_t> members.
+// slice (plain struct, no valarray members) can come early.
+
+#include <cstddef>
+#include <cmath>
+#include <initializer_list>
+#include <memory>
+#include <algorithm>
+#include <utility>
+#include <functional>
+#include <new>
+
+namespace std {
+
+// Forward declarations
+template <class T> class valarray;
+template <class T> class slice_array;
+class gslice;
+template <class T> class gslice_array;
+template <class T> class mask_array;
+template <class T> class indirect_array;
+
+// begin/end forward decls
+template <class T> T*       begin(valarray<T>& v);
+template <class T> const T* begin(const valarray<T>& v);
+template <class T> T*       end(valarray<T>& v);
+template <class T> const T* end(const valarray<T>& v);
+
+// ─── slice ───────────────────────────────────────────────────────────────────
+class slice {
+  size_t start_;
+  size_t size_;
+  size_t stride_;
+
+public:
+  slice() : start_(0), size_(0), stride_(0) {}
+  slice(size_t start, size_t size, size_t stride)
+    : start_(start), size_(size), stride_(stride) {}
+
+  [[nodiscard]] size_t start()  const noexcept { return start_;  }
+  [[nodiscard]] size_t size()   const noexcept { return size_;   }
+  [[nodiscard]] size_t stride() const noexcept { return stride_; }
+
+  friend bool operator==(const slice& x, const slice& y) noexcept {
+    return x.start_ == y.start_ && x.size_ == y.size_ && x.stride_ == y.stride_;
+  }
+};
+
+// ─── Expression-template helpers (need to be declared before valarray) ───────
+
+template <class Op, class A0>
+struct UnaryOp {
+  using result_type = typename Op::result_type;
+  using value_type  = typename std::decay<result_type>::type;
+  Op op_;
+  A0 a0_;
+  UnaryOp(const Op& op, const A0& a0) : op_(op), a0_(a0) {}
+  result_type operator[](size_t i) const { return op_(a0_[i]); }
+  size_t size() const { return a0_.size(); }
+};
+
+template <class Op, class A0, class A1>
+struct BinaryOp {
+  using result_type = typename Op::result_type;
+  using value_type  = typename std::decay<result_type>::type;
+  Op op_;
+  A0 a0_;
+  A1 a1_;
+  BinaryOp(const Op& op, const A0& a0, const A1& a1) : op_(op), a0_(a0), a1_(a1) {}
+  result_type operator[](size_t i) const { return op_(a0_[i], a1_[i]); }
+  size_t size() const { return a0_.size(); }
+};
+
+// Scalar expression wrapper
+template <class T>
+class scalar_expr {
+public:
+  using value_type  = T;
+  using result_type = const T&;
+
+private:
+  const T& val_;
+  size_t   size_;
+
+public:
+  explicit scalar_expr(const T& val, size_t s) : val_(val), size_(s) {}
+  result_type operator[](size_t) const { return val_; }
+  size_t size() const { return size_; }
+};
+
+// Operation functors with result_type typedef (for expression templates)
+template <class T> struct unary_plus_op  { using result_type = T; T operator()(const T& x) const { return +x; } };
+template <class T> struct bit_not_op     { using result_type = T; T operator()(const T& x) const { return ~x; } };
+template <class T> struct bit_shift_left { using result_type = T; T operator()(const T& x, const T& y) const { return x << y; } };
+template <class T> struct bit_shift_right{ using result_type = T; T operator()(const T& x, const T& y) const { return x >> y; } };
+
+template <class T, class F>
+struct apply_expr_op {
+  using result_type = T;
+  F f_;
+  explicit apply_expr_op(F f) : f_(f) {}
+  T operator()(const T& x) const { return f_(x); }
+};
+
+template <class T> struct abs_op   { using result_type = T; T operator()(const T& x) const { return std::abs(x); } };
+template <class T> struct acos_op  { using result_type = T; T operator()(const T& x) const { return std::acos(x); } };
+template <class T> struct asin_op  { using result_type = T; T operator()(const T& x) const { return std::asin(x); } };
+template <class T> struct atan_op  { using result_type = T; T operator()(const T& x) const { return std::atan(x); } };
+template <class T> struct atan2_op { using result_type = T; T operator()(const T& x, const T& y) const { return std::atan2(x,y); } };
+template <class T> struct cos_op   { using result_type = T; T operator()(const T& x) const { return std::cos(x); } };
+template <class T> struct cosh_op  { using result_type = T; T operator()(const T& x) const { return std::cosh(x); } };
+template <class T> struct exp_op   { using result_type = T; T operator()(const T& x) const { return std::exp(x); } };
+template <class T> struct log_op   { using result_type = T; T operator()(const T& x) const { return std::log(x); } };
+template <class T> struct log10_op { using result_type = T; T operator()(const T& x) const { return std::log10(x); } };
+template <class T> struct pow_op   { using result_type = T; T operator()(const T& x, const T& y) const { return std::pow(x,y); } };
+template <class T> struct sin_op   { using result_type = T; T operator()(const T& x) const { return std::sin(x); } };
+template <class T> struct sinh_op  { using result_type = T; T operator()(const T& x) const { return std::sinh(x); } };
+template <class T> struct sqrt_op  { using result_type = T; T operator()(const T& x) const { return std::sqrt(x); } };
+template <class T> struct tan_op   { using result_type = T; T operator()(const T& x) const { return std::tan(x); } };
+template <class T> struct tanh_op  { using result_type = T; T operator()(const T& x) const { return std::tanh(x); } };
+
+// Wrap std functors to add result_type
+template <class T> struct plus_op         : std::plus<T>         { using result_type = T; };
+template <class T> struct minus_op        : std::minus<T>        { using result_type = T; };
+template <class T> struct multiplies_op   : std::multiplies<T>   { using result_type = T; };
+template <class T> struct divides_op      : std::divides<T>      { using result_type = T; };
+template <class T> struct modulus_op      : std::modulus<T>      { using result_type = T; };
+template <class T> struct bit_and_op      : std::bit_and<T>      { using result_type = T; };
+template <class T> struct bit_or_op       : std::bit_or<T>       { using result_type = T; };
+template <class T> struct bit_xor_op      : std::bit_xor<T>      { using result_type = T; };
+template <class T> struct logical_and_op  : std::logical_and<T>  { using result_type = bool; };
+template <class T> struct logical_or_op   : std::logical_or<T>   { using result_type = bool; };
+template <class T> struct logical_not_op  : std::logical_not<T>  { using result_type = bool; };
+template <class T> struct negate_op       : std::negate<T>       { using result_type = T; };
+template <class T> struct equal_to_op     : std::equal_to<T>     { using result_type = bool; };
+template <class T> struct not_equal_to_op : std::not_equal_to<T> { using result_type = bool; };
+template <class T> struct less_op         : std::less<T>         { using result_type = bool; };
+template <class T> struct greater_op      : std::greater<T>      { using result_type = bool; };
+template <class T> struct less_equal_op   : std::less_equal<T>   { using result_type = bool; };
+template <class T> struct greater_equal_op: std::greater_equal<T>{ using result_type = bool; };
+
+// is_val_expr trait
+template <class E>
+struct is_val_expr : std::false_type {};
+
+template <class T>
+struct is_val_expr<valarray<T>> : std::true_type {};
+
+// val_expr template (lazy proxy) — forward declared, defined after valarray
+template <class ValExpr>
+class val_expr;
+
+template <class E>
+struct is_val_expr<val_expr<E>> : std::true_type {};
+
+// Helper: use_member_get trait — tells __get() whether to call .get(i) or [i]
+template <class E>
+struct use_member_get : std::false_type {};
+template <class T>
+struct use_member_get<slice_array<T>>    : std::true_type {};
+template <class T>
+struct use_member_get<gslice_array<T>>   : std::true_type {};
+template <class T>
+struct use_member_get<mask_array<T>>     : std::true_type {};
+template <class T>
+struct use_member_get<indirect_array<T>> : std::true_type {};
+
+template <class E>
+  requires (!use_member_get<E>::value)
+inline typename E::value_type val_get(const E& v, size_t i) { return v[i]; }
+
+template <class E>
+  requires use_member_get<E>::value
+inline typename E::value_type val_get(const E& v, size_t i) { return v.get(i); }
+
+// Slice expression (lazy read-only slice view)
+template <class ValExpr>
+class slice_expr {
+  using rm_ref = typename std::remove_reference<ValExpr>::type;
+public:
+  using value_type  = typename rm_ref::value_type;
+  using result_type = value_type;
+
+private:
+  ValExpr expr_;
+  size_t  start_;
+  size_t  size_;
+  size_t  stride_;
+
+  slice_expr(const slice& sl, const rm_ref& e)
+    : expr_(e), start_(sl.start()), size_(sl.size()), stride_(sl.stride()) {}
+
+public:
+  result_type operator[](size_t i) const { return expr_[start_ + i * stride_]; }
+  size_t size() const { return size_; }
+
+  template <class> friend class val_expr;
+  template <class> friend class valarray;
+};
+
+// mask_expr / indirect_expr — forward declared body after valarray
+template <class ValExpr>
+class mask_expr;
+
+template <class ValExpr>
+class indirect_expr;
+
+// shift_expr / cshift_expr
+template <class ValExpr>
+class shift_expr {
+  using rm_ref = typename std::remove_reference<ValExpr>::type;
+public:
+  using value_type  = typename rm_ref::value_type;
+  using result_type = value_type;
+
+private:
+  ValExpr   expr_;
+  size_t    sz_;
+  ptrdiff_t ul_;
+  ptrdiff_t sn_;
+  ptrdiff_t n_;
+  static const ptrdiff_t Np = static_cast<ptrdiff_t>(sizeof(ptrdiff_t) * __CHAR_BIT__ - 1);
+
+  shift_expr(int n, const rm_ref& e) : expr_(e), sz_(e.size()), n_(n) {
+    ptrdiff_t neg_n = static_cast<ptrdiff_t>(n_ >> Np);
+    sn_ = neg_n | static_cast<ptrdiff_t>(static_cast<size_t>(-n_) >> Np);
+    ul_ = ((sz_ - n_) & ~neg_n) | ((n_ + 1) & neg_n);
+  }
+
+public:
+  result_type operator[](size_t j) const {
+    ptrdiff_t i = static_cast<ptrdiff_t>(j);
+    ptrdiff_t m = (sn_ * i - ul_) >> Np;
+    return (expr_[(i + n_) & m] & m) | (value_type() & ~m);
+  }
+  size_t size() const { return sz_; }
+
+  template <class> friend class val_expr;
+};
+
+template <class ValExpr>
+class cshift_expr {
+  using rm_ref = typename std::remove_reference<ValExpr>::type;
+public:
+  using value_type  = typename rm_ref::value_type;
+  using result_type = value_type;
+
+private:
+  ValExpr expr_;
+  size_t  sz_;
+  size_t  m_;
+  size_t  o1_;
+  size_t  o2_;
+
+  cshift_expr(int n, const rm_ref& e) : expr_(e), sz_(e.size()) {
+    n %= static_cast<int>(sz_);
+    if (n >= 0) { m_ = sz_ - n; o1_ = n; o2_ = n - sz_; }
+    else        { m_ = -n;      o1_ = n + sz_; o2_ = n; }
+  }
+
+public:
+  result_type operator[](size_t i) const {
+    return (i < m_) ? expr_[i + o1_] : expr_[i + o2_];
+  }
+  size_t size() const { return sz_; }
+
+  template <class> friend class val_expr;
+};
+
+// ─── valarray<T> ─────────────────────────────────────────────────────────────
+// MUST be fully defined before gslice, gslice_array, mask_array, indirect_array
+// because those hold valarray<size_t> members.
+
+template <class T>
+class valarray {
+public:
+  using value_type  = T;
+  using result_type = T;
+
+private:
+  T* begin_;
+  T* end_;
+
+  void clear(size_t capacity) {
+    if (begin_ != nullptr) {
+      while (end_ != begin_)
+        (--end_)->~T();
+      std::allocator<T>().deallocate(begin_, capacity);
+      begin_ = end_ = nullptr;
+    }
+  }
+
+  valarray& assign_range(const T* f, const T* l) {
+    size_t n = static_cast<size_t>(l - f);
+    if (size() != n) {
+      clear(size());
+      begin_ = std::allocator<T>().allocate(n);
+      end_   = begin_ + n;
+      std::uninitialized_copy(f, l, begin_);
+    } else {
+      std::copy(f, l, begin_);
+    }
+    return *this;
+  }
+
+public:
+  // construct/destroy
+  valarray() : begin_(nullptr), end_(nullptr) {}
+
+  explicit valarray(size_t n) : begin_(nullptr), end_(nullptr) {
+    if (n) {
+      begin_ = end_ = std::allocator<T>().allocate(n);
+      for (size_t left = n; left; --left, ++end_)
+        ::new (static_cast<void*>(end_)) T();
+    }
+  }
+
+  valarray(const T& x, size_t n) : begin_(nullptr), end_(nullptr) {
+    resize(n, x);
+  }
+
+  valarray(const T* p, size_t n) : begin_(nullptr), end_(nullptr) {
+    if (n) {
+      begin_ = end_ = std::allocator<T>().allocate(n);
+      for (size_t left = n; left; ++end_, ++p, --left)
+        ::new (static_cast<void*>(end_)) T(*p);
+    }
+  }
+
+  valarray(const valarray& v) : begin_(nullptr), end_(nullptr) {
+    if (v.size()) {
+      begin_ = end_ = std::allocator<T>().allocate(v.size());
+      for (const T* p = v.begin_; p != v.end_; ++end_, ++p)
+        ::new (static_cast<void*>(end_)) T(*p);
+    }
+  }
+
+  valarray(valarray&& v) noexcept : begin_(v.begin_), end_(v.end_) {
+    v.begin_ = v.end_ = nullptr;
+  }
+
+  valarray(std::initializer_list<T> il) : begin_(nullptr), end_(nullptr) {
+    const size_t n = il.size();
+    if (n) {
+      begin_ = end_ = std::allocator<T>().allocate(n);
+      for (const T* p = il.begin(); p != il.end(); ++end_, ++p)
+        ::new (static_cast<void*>(end_)) T(*p);
+    }
+  }
+
+  valarray(const slice_array<T>& sa);
+  valarray(const gslice_array<T>& ga);
+  valarray(const mask_array<T>& ma);
+  valarray(const indirect_array<T>& ia);
+
+  ~valarray() { clear(size()); }
+
+  // assignment
+  valarray& operator=(const valarray& v) {
+    if (this != std::addressof(v))
+      return assign_range(v.begin_, v.end_);
+    return *this;
+  }
+
+  valarray& operator=(valarray&& v) noexcept {
+    clear(size());
+    begin_   = v.begin_;
+    end_     = v.end_;
+    v.begin_ = v.end_ = nullptr;
+    return *this;
+  }
+
+  valarray& operator=(std::initializer_list<T> il) {
+    return assign_range(il.begin(), il.end());
+  }
+
+  valarray& operator=(const T& x) {
+    std::fill(begin_, end_, x);
+    return *this;
+  }
+
+  valarray& operator=(const slice_array<T>& sa);
+  valarray& operator=(const gslice_array<T>& ga);
+  valarray& operator=(const mask_array<T>& ma);
+  valarray& operator=(const indirect_array<T>& ia);
+
+  template <class VE>
+  valarray& operator=(const val_expr<VE>& v);
+
+  // element access
+  [[nodiscard]] const T& operator[](size_t i) const { return begin_[i]; }
+  [[nodiscard]] T&       operator[](size_t i)       { return begin_[i]; }
+
+  // subset operations — return types
+  [[nodiscard]] val_expr<slice_expr<const valarray&>>   operator[](slice s) const;
+  [[nodiscard]] slice_array<T>                          operator[](slice s);
+
+  [[nodiscard]] val_expr<indirect_expr<const valarray&>> operator[](const gslice& gs) const;
+  [[nodiscard]] gslice_array<T>                          operator[](const gslice& gs);
+
+  [[nodiscard]] val_expr<mask_expr<const valarray&>>     operator[](const valarray<bool>& vb) const;
+  [[nodiscard]] mask_array<T>                            operator[](const valarray<bool>& vb);
+
+  [[nodiscard]] val_expr<indirect_expr<const valarray&>> operator[](const valarray<size_t>& vs) const;
+  [[nodiscard]] indirect_array<T>                        operator[](const valarray<size_t>& vs);
+
+  [[nodiscard]] val_expr<indirect_expr<const valarray&>> operator[](valarray<size_t>&& vs) const;
+  [[nodiscard]] indirect_array<T>                        operator[](valarray<size_t>&& vs);
+
+  // unary operators
+  val_expr<UnaryOp<unary_plus_op<T>, const valarray&>>  operator+() const;
+  val_expr<UnaryOp<negate_op<T>,     const valarray&>>  operator-() const;
+  val_expr<UnaryOp<bit_not_op<T>,    const valarray&>>  operator~() const;
+  val_expr<UnaryOp<logical_not_op<T>,const valarray&>>  operator!() const;
+
+  // computed assignment (scalar)
+  valarray& operator*= (const T& x) { for (T* p=begin_;p!=end_;++p) *p *= x; return *this; }
+  valarray& operator/= (const T& x) { for (T* p=begin_;p!=end_;++p) *p /= x; return *this; }
+  valarray& operator%= (const T& x) { for (T* p=begin_;p!=end_;++p) *p %= x; return *this; }
+  valarray& operator+= (const T& x) { for (T* p=begin_;p!=end_;++p) *p += x; return *this; }
+  valarray& operator-= (const T& x) { for (T* p=begin_;p!=end_;++p) *p -= x; return *this; }
+  valarray& operator^= (const T& x) { for (T* p=begin_;p!=end_;++p) *p ^= x; return *this; }
+  valarray& operator&= (const T& x) { for (T* p=begin_;p!=end_;++p) *p &= x; return *this; }
+  valarray& operator|= (const T& x) { for (T* p=begin_;p!=end_;++p) *p |= x; return *this; }
+  valarray& operator<<=(const T& x) { for (T* p=begin_;p!=end_;++p) *p <<= x; return *this; }
+  valarray& operator>>=(const T& x) { for (T* p=begin_;p!=end_;++p) *p >>= x; return *this; }
+
+  // computed assignment (val_expr)
+  template <class E>
+    requires is_val_expr<E>::value
+  valarray& operator*=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t *= val_get(v,i); return *this; }
+  template <class E>
+    requires is_val_expr<E>::value
+  valarray& operator/=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t /= val_get(v,i); return *this; }
+  template <class E>
+    requires is_val_expr<E>::value
+  valarray& operator%=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t %= val_get(v,i); return *this; }
+  template <class E>
+    requires is_val_expr<E>::value
+  valarray& operator+=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t += val_get(v,i); return *this; }
+  template <class E>
+    requires is_val_expr<E>::value
+  valarray& operator-=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t -= val_get(v,i); return *this; }
+  template <class E>
+    requires is_val_expr<E>::value
+  valarray& operator^=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t ^= val_get(v,i); return *this; }
+  template <class E>
+    requires is_val_expr<E>::value
+  valarray& operator|=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t |= val_get(v,i); return *this; }
+  template <class E>
+    requires is_val_expr<E>::value
+  valarray& operator&=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t &= val_get(v,i); return *this; }
+  template <class E>
+    requires is_val_expr<E>::value
+  valarray& operator<<=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t <<= val_get(v,i); return *this; }
+  template <class E>
+    requires is_val_expr<E>::value
+  valarray& operator>>=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t >>= val_get(v,i); return *this; }
+
+  // computed assignment (proxy array types: slice_array, gslice_array, mask_array, indirect_array)
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator*=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t *= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator/=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t /= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator%=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t %= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator+=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t += val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator-=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t -= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator^=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t ^= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator|=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t |= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator&=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t &= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator<<=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t <<= val_get(v,i); return *this; }
+  template <class E>
+    requires use_member_get<E>::value
+  valarray& operator>>=(const E& v) { size_t i=0; for (T* t=begin_;t!=end_;++t,++i) *t >>= val_get(v,i); return *this; }
+
+  // member functions
+  void swap(valarray& v) noexcept {
+    std::swap(begin_, v.begin_);
+    std::swap(end_, v.end_);
+  }
+
+  [[nodiscard]] size_t size() const noexcept {
+    return static_cast<size_t>(end_ - begin_);
+  }
+
+  [[nodiscard]] T sum() const {
+    if (begin_ == end_) return T();
+    T r = *begin_;
+    for (const T* p = begin_ + 1; p != end_; ++p)
+      r += *p;
+    return r;
+  }
+
+  [[nodiscard]] T min() const {
+    if (begin_ == end_) return T();
+    return *std::min_element(begin_, end_);
+  }
+
+  [[nodiscard]] T max() const {
+    if (begin_ == end_) return T();
+    return *std::max_element(begin_, end_);
+  }
+
+  [[nodiscard]] valarray shift(int i) const;
+  [[nodiscard]] valarray cshift(int i) const;
+  [[nodiscard]] valarray apply(T f(T)) const;
+  [[nodiscard]] valarray apply(T f(const T&)) const;
+
+  void resize(size_t n, T x = T()) {
+    clear(size());
+    if (n) {
+      begin_ = end_ = std::allocator<T>().allocate(n);
+      for (size_t left = n; left; --left, ++end_)
+        ::new (static_cast<void*>(end_)) T(x);
+    }
+  }
+
+private:
+  template <class> friend class valarray;
+  template <class> friend class slice_array;
+  template <class> friend class gslice_array;
+  template <class> friend class mask_array;
+  template <class> friend class indirect_array;
+  template <class> friend class mask_expr;
+  template <class> friend class indirect_expr;
+  template <class> friend class val_expr;
+
+  template <class U> friend U*       begin(valarray<U>& v);
+  template <class U> friend const U* begin(const valarray<U>& v);
+  template <class U> friend U*       end(valarray<U>& v);
+  template <class U> friend const U* end(const valarray<U>& v);
+};
+
+// CTAD
+template <class T, size_t N>
+valarray(const T(&)[N], size_t) -> valarray<T>;
+
+// begin/end
+template <class T> [[nodiscard]] inline T*       begin(valarray<T>& v)       { return v.begin_; }
+template <class T> [[nodiscard]] inline const T* begin(const valarray<T>& v) { return v.begin_; }
+template <class T> [[nodiscard]] inline T*       end(valarray<T>& v)         { return v.end_; }
+template <class T> [[nodiscard]] inline const T* end(const valarray<T>& v)   { return v.end_; }
+
+// ─── val_expr<ValExpr> ───────────────────────────────────────────────────────
+template <class ValExpr>
+class val_expr {
+  using rm_ref = typename std::remove_reference<ValExpr>::type;
+  ValExpr expr_;
+
+public:
+  using value_type  = typename rm_ref::value_type;
+  using result_type = typename rm_ref::result_type;
+
+  explicit val_expr(const rm_ref& e) : expr_(e) {}
+
+  result_type operator[](size_t i) const { return expr_[i]; }
+
+  val_expr<slice_expr<ValExpr>> operator[](slice s) const {
+    using E = slice_expr<ValExpr>;
+    return val_expr<E>(E(s, expr_));
+  }
+
+  val_expr<indirect_expr<ValExpr>> operator[](const valarray<size_t>& vs) const;
+  val_expr<mask_expr<ValExpr>>     operator[](const valarray<bool>& vb) const;
+  val_expr<indirect_expr<ValExpr>> operator[](const gslice& gs) const;
+
+  val_expr<UnaryOp<unary_plus_op<value_type>,  ValExpr>> operator+() const {
+    using Op = UnaryOp<unary_plus_op<value_type>, ValExpr>;
+    return val_expr<Op>(Op(unary_plus_op<value_type>(), expr_));
+  }
+  val_expr<UnaryOp<negate_op<value_type>, ValExpr>> operator-() const {
+    using Op = UnaryOp<negate_op<value_type>, ValExpr>;
+    return val_expr<Op>(Op(negate_op<value_type>(), expr_));
+  }
+  val_expr<UnaryOp<bit_not_op<value_type>, ValExpr>> operator~() const {
+    using Op = UnaryOp<bit_not_op<value_type>, ValExpr>;
+    return val_expr<Op>(Op(bit_not_op<value_type>(), expr_));
+  }
+  val_expr<UnaryOp<logical_not_op<value_type>, ValExpr>> operator!() const {
+    using Op = UnaryOp<logical_not_op<value_type>, ValExpr>;
+    return val_expr<Op>(Op(logical_not_op<value_type>(), expr_));
+  }
+
+  operator valarray<result_type>() const;
+
+  size_t size() const { return expr_.size(); }
+
+  result_type sum() const {
+    size_t n = expr_.size();
+    result_type r = n ? expr_[0] : result_type();
+    for (size_t i = 1; i < n; ++i) r += expr_[i];
+    return r;
+  }
+
+  result_type min() const {
+    size_t n = size();
+    result_type r = n ? (*this)[0] : result_type();
+    for (size_t i = 1; i < n; ++i) { auto x = expr_[i]; if (x < r) r = x; }
+    return r;
+  }
+
+  result_type max() const {
+    size_t n = size();
+    result_type r = n ? (*this)[0] : result_type();
+    for (size_t i = 1; i < n; ++i) { auto x = expr_[i]; if (r < x) r = x; }
+    return r;
+  }
+
+  val_expr<shift_expr<ValExpr>>  shift(int i) const {
+    return val_expr<shift_expr<ValExpr>>(shift_expr<ValExpr>(i, expr_));
+  }
+  val_expr<cshift_expr<ValExpr>> cshift(int i) const {
+    return val_expr<cshift_expr<ValExpr>>(cshift_expr<ValExpr>(i, expr_));
+  }
+
+  val_expr<UnaryOp<apply_expr_op<value_type, value_type(*)(value_type)>, ValExpr>>
+  apply(value_type f(value_type)) const {
+    using Op = apply_expr_op<value_type, value_type(*)(value_type)>;
+    using E  = UnaryOp<Op, ValExpr>;
+    return val_expr<E>(E(Op(f), expr_));
+  }
+
+  val_expr<UnaryOp<apply_expr_op<value_type, value_type(*)(const value_type&)>, ValExpr>>
+  apply(value_type f(const value_type&)) const {
+    using Op = apply_expr_op<value_type, value_type(*)(const value_type&)>;
+    using E  = UnaryOp<Op, ValExpr>;
+    return val_expr<E>(E(Op(f), expr_));
+  }
+};
+
+template <class ValExpr>
+val_expr<ValExpr>::operator valarray<result_type>() const {
+  valarray<result_type> r;
+  size_t n = expr_.size();
+  if (n) {
+    r.begin_ = r.end_ = std::allocator<result_type>().allocate(n);
+    for (size_t i = 0; i != n; ++r.end_, ++i)
+      ::new (static_cast<void*>(r.end_)) result_type(expr_[i]);
+  }
+  return r;
+}
+
+// ─── Now define gslice (holds valarray<size_t> members — must come AFTER valarray) ─
+
+class gslice {
+  valarray<size_t> size_;
+  valarray<size_t> stride_;
+  valarray<size_t> d1_;  // flattened 1d indices
+
+  void init(size_t start) {
+    // Compute number of elements
+    size_t n = 1;
+    for (size_t i = 0; i < size_.size(); ++i) n *= size_[i];
+    d1_.resize(n);
+    size_t j = 0;
+    // Fill via nested iteration
+    // We compute index as a mixed-radix counter
+    if (n == 0) return;
+    valarray<size_t> counter(size_t(0), size_.size());
+    size_t ndims = size_.size();
+    for (size_t k = 0; k < n; ++k) {
+      size_t idx = start;
+      for (size_t d = 0; d < ndims; ++d)
+        idx += counter[d] * stride_[d];
+      d1_[k] = idx;
+      // increment counter (mixed-radix)
+      for (size_t d2 = ndims; d2-- > 0; ) {
+        counter[d2]++;
+        if (counter[d2] < size_[d2]) break;
+        counter[d2] = 0;
+      }
+    }
+    (void)j;
+  }
+
+public:
+  gslice() {}
+
+  gslice(size_t start, const valarray<size_t>& sz, const valarray<size_t>& st)
+    : size_(sz), stride_(st) { init(start); }
+
+  gslice(size_t start, valarray<size_t>&& sz, const valarray<size_t>& st)
+    : size_(std::move(sz)), stride_(st) { init(start); }
+
+  gslice(size_t start, const valarray<size_t>& sz, valarray<size_t>&& st)
+    : size_(sz), stride_(std::move(st)) { init(start); }
+
+  gslice(size_t start, valarray<size_t>&& sz, valarray<size_t>&& st)
+    : size_(std::move(sz)), stride_(std::move(st)) { init(start); }
+
+  [[nodiscard]] size_t           start()  const noexcept { return d1_.size() ? d1_[0] : 0; }
+  [[nodiscard]] valarray<size_t> size()   const { return size_; }
+  [[nodiscard]] valarray<size_t> stride() const { return stride_; }
+
+  template <class> friend class gslice_array;
+  template <class> friend class valarray;
+  template <class> friend class val_expr;
+};
+
+// ─── slice_array<T> ──────────────────────────────────────────────────────────
+template <class T>
+class slice_array {
+public:
+  using value_type = T;
+
+private:
+  T*     vp_;
+  size_t size_;
+  size_t stride_;
+
+  slice_array(const slice& sl, const valarray<T>& v)
+    : vp_(const_cast<T*>(v.begin_ + sl.start())),
+      size_(sl.size()), stride_(sl.stride()) {}
+
+  template <class> friend class valarray;
+
+public:
+  slice_array(const slice_array&) = default;
+  slice_array() = delete;
+
+  const slice_array& operator=(const slice_array& sa) const {
+    T* t = vp_;
+    const T* s = sa.vp_;
+    for (size_t n = size_; n; --n, t += stride_, s += sa.stride_)
+      *t = *s;
+    return *this;
+  }
+
+  void operator=(const T& x) const {
+    T* t = vp_;
+    for (size_t n = size_; n; --n, t += stride_)
+      *t = x;
+  }
+
+  void operator=(const valarray<T>& va) const {
+    T* t = vp_;
+    for (size_t i = 0; i < va.size(); ++i, t += stride_)
+      *t = va[i];
+  }
+
+  template <class E>
+    requires is_val_expr<E>::value
+  void operator=(const E& v) const {
+    T* t = vp_;
+    for (size_t i = 0; i < size_; ++i, t += stride_)
+      *t = v[i];
+  }
+
+  template <class E> requires is_val_expr<E>::value
+  void operator*= (const E& v) const { T* t=vp_; for(size_t i=0;i<size_;++i,t+=stride_) *t *= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator/= (const E& v) const { T* t=vp_; for(size_t i=0;i<size_;++i,t+=stride_) *t /= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator+= (const E& v) const { T* t=vp_; for(size_t i=0;i<size_;++i,t+=stride_) *t += v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator-= (const E& v) const { T* t=vp_; for(size_t i=0;i<size_;++i,t+=stride_) *t -= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator^= (const E& v) const { T* t=vp_; for(size_t i=0;i<size_;++i,t+=stride_) *t ^= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator&= (const E& v) const { T* t=vp_; for(size_t i=0;i<size_;++i,t+=stride_) *t &= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator|= (const E& v) const { T* t=vp_; for(size_t i=0;i<size_;++i,t+=stride_) *t |= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator<<=(const E& v) const { T* t=vp_; for(size_t i=0;i<size_;++i,t+=stride_) *t <<= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator>>=(const E& v) const { T* t=vp_; for(size_t i=0;i<size_;++i,t+=stride_) *t >>= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator%= (const E& v) const { T* t=vp_; for(size_t i=0;i<size_;++i,t+=stride_) *t %= v[i]; }
+
+  // .get(i) for use_member_get
+  T get(size_t i) const { return vp_[i * stride_]; }
+};
+
+// ─── gslice_array<T> ─────────────────────────────────────────────────────────
+template <class T>
+class gslice_array {
+public:
+  using value_type = T;
+
+private:
+  T*               vp_;
+  valarray<size_t> d1_;
+
+  gslice_array(const gslice& gs, const valarray<T>& v)
+    : vp_(const_cast<T*>(v.begin_)), d1_(gs.d1_) {}
+
+  gslice_array(gslice&& gs, const valarray<T>& v)
+    : vp_(const_cast<T*>(v.begin_)), d1_(std::move(gs.d1_)) {}
+
+  template <class> friend class valarray;
+
+public:
+  gslice_array(const gslice_array&) = default;
+  gslice_array() = delete;
+
+  const gslice_array& operator=(const gslice_array& ga) const {
+    const T* s = ga.vp_;
+    for (size_t i = 0; i < d1_.size(); ++i)
+      vp_[d1_[i]] = s[ga.d1_[i]];
+    return *this;
+  }
+
+  void operator=(const T& x) const {
+    for (size_t i = 0; i < d1_.size(); ++i) vp_[d1_[i]] = x;
+  }
+
+  template <class E> requires is_val_expr<E>::value
+  void operator=(const E& v) const {
+    for (size_t i = 0; i < d1_.size(); ++i) vp_[d1_[i]] = v[i];
+  }
+
+  template <class E> requires is_val_expr<E>::value
+  void operator*= (const E& v) const { for(size_t i=0;i<d1_.size();++i) vp_[d1_[i]] *= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator/= (const E& v) const { for(size_t i=0;i<d1_.size();++i) vp_[d1_[i]] /= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator+= (const E& v) const { for(size_t i=0;i<d1_.size();++i) vp_[d1_[i]] += v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator-= (const E& v) const { for(size_t i=0;i<d1_.size();++i) vp_[d1_[i]] -= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator^= (const E& v) const { for(size_t i=0;i<d1_.size();++i) vp_[d1_[i]] ^= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator&= (const E& v) const { for(size_t i=0;i<d1_.size();++i) vp_[d1_[i]] &= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator|= (const E& v) const { for(size_t i=0;i<d1_.size();++i) vp_[d1_[i]] |= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator<<=(const E& v) const { for(size_t i=0;i<d1_.size();++i) vp_[d1_[i]] <<= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator>>=(const E& v) const { for(size_t i=0;i<d1_.size();++i) vp_[d1_[i]] >>= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator%= (const E& v) const { for(size_t i=0;i<d1_.size();++i) vp_[d1_[i]] %= v[i]; }
+
+  T get(size_t i) const { return vp_[d1_[i]]; }
+};
+
+// ─── mask_array<T> ───────────────────────────────────────────────────────────
+template <class T>
+class mask_array {
+public:
+  using value_type = T;
+
+private:
+  T*               vp_;
+  valarray<size_t> d1_;
+
+  mask_array(const valarray<bool>& vb, const valarray<T>& v)
+    : vp_(const_cast<T*>(v.begin_)),
+      d1_(static_cast<size_t>(std::count(vb.begin_, vb.end_, true))) {
+    size_t j = 0;
+    for (size_t i = 0; i < vb.size(); ++i)
+      if (vb[i]) d1_[j++] = i;
+  }
+
+  template <class> friend class valarray;
+
+public:
+  mask_array(const mask_array&) = default;
+  mask_array() = delete;
+
+  const mask_array& operator=(const mask_array& ma) const {
+    size_t n = d1_.size();
+    for (size_t i = 0; i < n; ++i) vp_[d1_[i]] = ma.vp_[d1_[i]];
+    return *this;
+  }
+
+  void operator=(const T& x) const {
+    size_t n = d1_.size();
+    for (size_t i = 0; i < n; ++i) vp_[d1_[i]] = x;
+  }
+
+  template <class E> requires is_val_expr<E>::value
+  void operator=(const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] = v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator*= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] *= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator/= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] /= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator+= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] += v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator-= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] -= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator^= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] ^= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator&= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] &= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator|= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] |= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator<<=(const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] <<= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator>>=(const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] >>= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator%= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] %= v[i]; }
+
+  T get(size_t i) const { return vp_[d1_[i]]; }
+};
+
+// ─── indirect_array<T> ───────────────────────────────────────────────────────
+template <class T>
+class indirect_array {
+public:
+  using value_type = T;
+
+private:
+  T*               vp_;
+  valarray<size_t> d1_;
+
+  indirect_array(const valarray<size_t>& ia, const valarray<T>& v)
+    : vp_(const_cast<T*>(v.begin_)), d1_(ia) {}
+
+  indirect_array(valarray<size_t>&& ia, const valarray<T>& v)
+    : vp_(const_cast<T*>(v.begin_)), d1_(std::move(ia)) {}
+
+  template <class> friend class valarray;
+
+public:
+  indirect_array(const indirect_array&) = default;
+  indirect_array() = delete;
+
+  const indirect_array& operator=(const indirect_array& ia) const {
+    const T* s = ia.vp_;
+    for (size_t i = 0; i < d1_.size(); ++i) vp_[d1_[i]] = s[ia.d1_[i]];
+    return *this;
+  }
+
+  void operator=(const T& x) const {
+    for (size_t i = 0; i < d1_.size(); ++i) vp_[d1_[i]] = x;
+  }
+
+  template <class E> requires is_val_expr<E>::value
+  void operator=(const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] = v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator*= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] *= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator/= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] /= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator+= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] += v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator-= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] -= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator^= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] ^= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator&= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] &= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator|= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] |= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator<<=(const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] <<= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator>>=(const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] >>= v[i]; }
+  template <class E> requires is_val_expr<E>::value
+  void operator%= (const E& v) const { size_t n=d1_.size(); for(size_t i=0;i<n;++i) vp_[d1_[i]] %= v[i]; }
+
+  T get(size_t i) const { return vp_[d1_[i]]; }
+};
+
+// ─── mask_expr / indirect_expr (defined after mask_array/indirect_array) ─────
+
+template <class ValExpr>
+class mask_expr {
+  using rm_ref = typename std::remove_reference<ValExpr>::type;
+public:
+  using value_type  = typename rm_ref::value_type;
+  using result_type = value_type;
+
+private:
+  ValExpr          expr_;
+  valarray<size_t> d1_;
+
+  mask_expr(const valarray<bool>& vb, const rm_ref& e)
+    : expr_(e),
+      d1_(static_cast<size_t>(std::count(vb.begin_, vb.end_, true))) {
+    size_t j = 0;
+    for (size_t i = 0; i < vb.size(); ++i)
+      if (vb[i]) d1_[j++] = i;
+  }
+
+public:
+  result_type operator[](size_t i) const { return expr_[d1_[i]]; }
+  size_t size() const { return d1_.size(); }
+
+  template <class> friend class val_expr;
+  template <class> friend class valarray;
+};
+
+template <class ValExpr>
+class indirect_expr {
+  using rm_ref = typename std::remove_reference<ValExpr>::type;
+public:
+  using value_type  = typename rm_ref::value_type;
+  using result_type = value_type;
+
+private:
+  ValExpr          expr_;
+  valarray<size_t> d1_;
+
+  indirect_expr(const valarray<size_t>& ia, const rm_ref& e) : expr_(e), d1_(ia) {}
+  indirect_expr(valarray<size_t>&& ia, const rm_ref& e) : expr_(e), d1_(std::move(ia)) {}
+
+public:
+  result_type operator[](size_t i) const { return expr_[d1_[i]]; }
+  size_t size() const { return d1_.size(); }
+
+  template <class> friend class val_expr;
+  template <class> friend class valarray;
+};
+
+// ─── valarray member bodies that depend on the complete helper types ──────────
+
+template <class T>
+valarray<T>::valarray(const slice_array<T>& sa) : begin_(nullptr), end_(nullptr) {
+  const size_t n = sa.size_;
+  if (n) {
+    begin_ = end_ = std::allocator<T>().allocate(n);
+    const T* p = sa.vp_;
+    for (size_t left = n; left; ++end_, p += sa.stride_, --left)
+      ::new (static_cast<void*>(end_)) T(*p);
+  }
+}
+
+template <class T>
+valarray<T>::valarray(const gslice_array<T>& ga) : begin_(nullptr), end_(nullptr) {
+  const size_t n = ga.d1_.size();
+  if (n) {
+    begin_ = end_ = std::allocator<T>().allocate(n);
+    for (size_t i = 0; i < n; ++i, ++end_)
+      ::new (static_cast<void*>(end_)) T(ga.vp_[ga.d1_[i]]);
+  }
+}
+
+template <class T>
+valarray<T>::valarray(const mask_array<T>& ma) : begin_(nullptr), end_(nullptr) {
+  const size_t n = ma.d1_.size();
+  if (n) {
+    begin_ = end_ = std::allocator<T>().allocate(n);
+    for (size_t i = 0; i < n; ++i, ++end_)
+      ::new (static_cast<void*>(end_)) T(ma.vp_[ma.d1_[i]]);
+  }
+}
+
+template <class T>
+valarray<T>::valarray(const indirect_array<T>& ia) : begin_(nullptr), end_(nullptr) {
+  const size_t n = ia.d1_.size();
+  if (n) {
+    begin_ = end_ = std::allocator<T>().allocate(n);
+    for (size_t i = 0; i < n; ++i, ++end_)
+      ::new (static_cast<void*>(end_)) T(ia.vp_[ia.d1_[i]]);
+  }
+}
+
+template <class T>
+valarray<T>& valarray<T>::operator=(const slice_array<T>& sa) {
+  T* t = begin_;
+  const T* s = sa.vp_;
+  for (size_t n = sa.size_; n; --n, s += sa.stride_, ++t)
+    *t = *s;
+  return *this;
+}
+
+template <class T>
+valarray<T>& valarray<T>::operator=(const gslice_array<T>& ga) {
+  T* t = begin_;
+  for (size_t i = 0; i < ga.d1_.size(); ++i, ++t)
+    *t = ga.vp_[ga.d1_[i]];
+  return *this;
+}
+
+template <class T>
+valarray<T>& valarray<T>::operator=(const mask_array<T>& ma) {
+  T* t = begin_;
+  for (size_t i = 0; i < ma.d1_.size(); ++i, ++t)
+    *t = ma.vp_[ma.d1_[i]];
+  return *this;
+}
+
+template <class T>
+valarray<T>& valarray<T>::operator=(const indirect_array<T>& ia) {
+  T* t = begin_;
+  for (size_t i = 0; i < ia.d1_.size(); ++i, ++t)
+    *t = ia.vp_[ia.d1_[i]];
+  return *this;
+}
+
+template <class T>
+template <class VE>
+valarray<T>& valarray<T>::operator=(const val_expr<VE>& v) {
+  size_t n = v.size();
+  if (size() != n) resize(n);
+  T* t = begin_;
+  for (size_t i = 0; i != n; ++t, ++i)
+    *t = T(v[i]);
+  return *this;
+}
+
+// Subset operator[] bodies
+template <class T>
+val_expr<slice_expr<const valarray<T>&>> valarray<T>::operator[](slice s) const {
+  using E = slice_expr<const valarray<T>&>;
+  return val_expr<E>(E(s, *this));
+}
+
+template <class T>
+slice_array<T> valarray<T>::operator[](slice s) {
+  return slice_array<T>(s, *this);
+}
+
+template <class T>
+val_expr<indirect_expr<const valarray<T>&>> valarray<T>::operator[](const gslice& gs) const {
+  using E = indirect_expr<const valarray<T>&>;
+  return val_expr<E>(E(gs.d1_, *this));
+}
+
+template <class T>
+gslice_array<T> valarray<T>::operator[](const gslice& gs) {
+  return gslice_array<T>(gs, *this);
+}
+
+template <class T>
+val_expr<mask_expr<const valarray<T>&>> valarray<T>::operator[](const valarray<bool>& vb) const {
+  using E = mask_expr<const valarray<T>&>;
+  return val_expr<E>(E(vb, *this));
+}
+
+template <class T>
+mask_array<T> valarray<T>::operator[](const valarray<bool>& vb) {
+  return mask_array<T>(vb, *this);
+}
+
+template <class T>
+val_expr<indirect_expr<const valarray<T>&>> valarray<T>::operator[](const valarray<size_t>& vs) const {
+  using E = indirect_expr<const valarray<T>&>;
+  return val_expr<E>(E(vs, *this));
+}
+
+template <class T>
+indirect_array<T> valarray<T>::operator[](const valarray<size_t>& vs) {
+  return indirect_array<T>(vs, *this);
+}
+
+template <class T>
+val_expr<indirect_expr<const valarray<T>&>> valarray<T>::operator[](valarray<size_t>&& vs) const {
+  using E = indirect_expr<const valarray<T>&>;
+  return val_expr<E>(E(std::move(vs), *this));
+}
+
+template <class T>
+indirect_array<T> valarray<T>::operator[](valarray<size_t>&& vs) {
+  return indirect_array<T>(std::move(vs), *this);
+}
+
+// Unary operator bodies
+template <class T>
+val_expr<UnaryOp<unary_plus_op<T>, const valarray<T>&>> valarray<T>::operator+() const {
+  using Op = UnaryOp<unary_plus_op<T>, const valarray<T>&>;
+  return val_expr<Op>(Op(unary_plus_op<T>(), *this));
+}
+
+template <class T>
+val_expr<UnaryOp<negate_op<T>, const valarray<T>&>> valarray<T>::operator-() const {
+  using Op = UnaryOp<negate_op<T>, const valarray<T>&>;
+  return val_expr<Op>(Op(negate_op<T>(), *this));
+}
+
+template <class T>
+val_expr<UnaryOp<bit_not_op<T>, const valarray<T>&>> valarray<T>::operator~() const {
+  using Op = UnaryOp<bit_not_op<T>, const valarray<T>&>;
+  return val_expr<Op>(Op(bit_not_op<T>(), *this));
+}
+
+template <class T>
+val_expr<UnaryOp<logical_not_op<T>, const valarray<T>&>> valarray<T>::operator!() const {
+  using Op = UnaryOp<logical_not_op<T>, const valarray<T>&>;
+  return val_expr<Op>(Op(logical_not_op<T>(), *this));
+}
+
+// shift/cshift/apply member bodies
+template <class T>
+valarray<T> valarray<T>::shift(int i) const {
+  valarray<T> r;
+  size_t n = size();
+  if (n) {
+    r.begin_ = r.end_ = std::allocator<T>().allocate(n);
+    const T* sb;
+    T *tb, *te;
+    if (i >= 0) {
+      i  = std::min(i, static_cast<int>(n));
+      sb = begin_ + i;
+      tb = r.begin_;
+      te = r.begin_ + (n - i);
+    } else {
+      i  = std::min(-i, static_cast<int>(n));
+      sb = begin_;
+      tb = r.begin_ + i;
+      te = r.begin_ + n;
+    }
+    for (; r.end_ != tb; ++r.end_)
+      ::new (static_cast<void*>(r.end_)) T();
+    for (; r.end_ != te; ++r.end_, ++sb)
+      ::new (static_cast<void*>(r.end_)) T(*sb);
+    for (te = r.begin_ + n; r.end_ != te; ++r.end_)
+      ::new (static_cast<void*>(r.end_)) T();
+  }
+  return r;
+}
+
+template <class T>
+valarray<T> valarray<T>::cshift(int i) const {
+  valarray<T> r;
+  size_t n = size();
+  if (n) {
+    r.begin_ = r.end_ = std::allocator<T>().allocate(n);
+    i %= static_cast<int>(n);
+    const T* m = (i >= 0) ? begin_ + i : end_ + i;
+    for (const T* s = m; s != end_; ++r.end_, ++s)
+      ::new (static_cast<void*>(r.end_)) T(*s);
+    for (const T* s = begin_; s != m; ++r.end_, ++s)
+      ::new (static_cast<void*>(r.end_)) T(*s);
+  }
+  return r;
+}
+
+template <class T>
+valarray<T> valarray<T>::apply(T f(T)) const {
+  valarray<T> r;
+  size_t n = size();
+  if (n) {
+    r.begin_ = r.end_ = std::allocator<T>().allocate(n);
+    for (const T* p = begin_; n; ++r.end_, ++p, --n)
+      ::new (static_cast<void*>(r.end_)) T(f(*p));
+  }
+  return r;
+}
+
+template <class T>
+valarray<T> valarray<T>::apply(T f(const T&)) const {
+  valarray<T> r;
+  size_t n = size();
+  if (n) {
+    r.begin_ = r.end_ = std::allocator<T>().allocate(n);
+    for (const T* p = begin_; n; ++r.end_, ++p, --n)
+      ::new (static_cast<void*>(r.end_)) T(f(*p));
+  }
+  return r;
+}
+
+// val_expr member bodies that depend on mask_expr / indirect_expr
+
+template <class ValExpr>
+val_expr<indirect_expr<ValExpr>>
+val_expr<ValExpr>::operator[](const valarray<size_t>& vs) const {
+  using E = indirect_expr<ValExpr>;
+  return val_expr<E>(E(vs, expr_));
+}
+
+template <class ValExpr>
+val_expr<mask_expr<ValExpr>>
+val_expr<ValExpr>::operator[](const valarray<bool>& vb) const {
+  using E = mask_expr<ValExpr>;
+  return val_expr<E>(E(vb, expr_));
+}
+
+template <class ValExpr>
+val_expr<indirect_expr<ValExpr>>
+val_expr<ValExpr>::operator[](const gslice& gs) const {
+  using E = indirect_expr<ValExpr>;
+  return val_expr<E>(E(gs.d1_, expr_));
+}
+
+// ─── swap ────────────────────────────────────────────────────────────────────
+template <class T>
+inline void swap(valarray<T>& x, valarray<T>& y) noexcept { x.swap(y); }
+
+// ─── Non-member arithmetic operators ────────────────────────────────────────
+// We use a macro to reduce boilerplate for binary operators
+
+#define VALARRAY_BINARY_OP(opname, functor)                                    \
+template <class E1, class E2>                                                  \
+  requires (is_val_expr<E1>::value && is_val_expr<E2>::value)                 \
+inline val_expr<BinaryOp<functor<typename E1::value_type>, E1, E2>>           \
+opname(const E1& x, const E2& y) {                                            \
+  using VT = typename E1::value_type;                                          \
+  using Op = BinaryOp<functor<VT>, E1, E2>;                                   \
+  return val_expr<Op>(Op(functor<VT>(), x, y));                               \
+}                                                                              \
+template <class E>                                                             \
+  requires is_val_expr<E>::value                                               \
+inline val_expr<BinaryOp<functor<typename E::value_type>,                      \
+                         E, scalar_expr<typename E::value_type>>>             \
+opname(const E& x, const typename E::value_type& y) {                        \
+  using VT = typename E::value_type;                                           \
+  using Op = BinaryOp<functor<VT>, E, scalar_expr<VT>>;                       \
+  return val_expr<Op>(Op(functor<VT>(), x, scalar_expr<VT>(y, x.size())));   \
+}                                                                              \
+template <class E>                                                             \
+  requires is_val_expr<E>::value                                               \
+inline val_expr<BinaryOp<functor<typename E::value_type>,                      \
+                         scalar_expr<typename E::value_type>, E>>             \
+opname(const typename E::value_type& x, const E& y) {                        \
+  using VT = typename E::value_type;                                           \
+  using Op = BinaryOp<functor<VT>, scalar_expr<VT>, E>;                       \
+  return val_expr<Op>(Op(functor<VT>(), scalar_expr<VT>(x, y.size()), y));   \
+}
+
+VALARRAY_BINARY_OP(operator*, multiplies_op)
+VALARRAY_BINARY_OP(operator/, divides_op)
+VALARRAY_BINARY_OP(operator%, modulus_op)
+VALARRAY_BINARY_OP(operator+, plus_op)
+VALARRAY_BINARY_OP(operator-, minus_op)
+VALARRAY_BINARY_OP(operator^, bit_xor_op)
+VALARRAY_BINARY_OP(operator&, bit_and_op)
+VALARRAY_BINARY_OP(operator|, bit_or_op)
+VALARRAY_BINARY_OP(operator<<, bit_shift_left)
+VALARRAY_BINARY_OP(operator>>, bit_shift_right)
+VALARRAY_BINARY_OP(operator&&, logical_and_op)
+VALARRAY_BINARY_OP(operator||, logical_or_op)
+VALARRAY_BINARY_OP(operator==, equal_to_op)
+VALARRAY_BINARY_OP(operator!=, not_equal_to_op)
+VALARRAY_BINARY_OP(operator<,  less_op)
+VALARRAY_BINARY_OP(operator>,  greater_op)
+VALARRAY_BINARY_OP(operator<=, less_equal_op)
+VALARRAY_BINARY_OP(operator>=, greater_equal_op)
+
+#undef VALARRAY_BINARY_OP
+
+// ─── Transcendentals ─────────────────────────────────────────────────────────
+
+#define VALARRAY_UNARY_FN(fn, op)                                              \
+template <class E>                                                             \
+  requires is_val_expr<E>::value                                               \
+[[nodiscard]] inline                                                           \
+val_expr<UnaryOp<op<typename E::value_type>, E>>                              \
+fn(const E& x) {                                                               \
+  using VT = typename E::value_type;                                           \
+  using Op = UnaryOp<op<VT>, E>;                                               \
+  return val_expr<Op>(Op(op<VT>(), x));                                       \
+}
+
+VALARRAY_UNARY_FN(abs,   abs_op)
+VALARRAY_UNARY_FN(acos,  acos_op)
+VALARRAY_UNARY_FN(asin,  asin_op)
+VALARRAY_UNARY_FN(atan,  atan_op)
+VALARRAY_UNARY_FN(cos,   cos_op)
+VALARRAY_UNARY_FN(cosh,  cosh_op)
+VALARRAY_UNARY_FN(exp,   exp_op)
+VALARRAY_UNARY_FN(log,   log_op)
+VALARRAY_UNARY_FN(log10, log10_op)
+VALARRAY_UNARY_FN(sin,   sin_op)
+VALARRAY_UNARY_FN(sinh,  sinh_op)
+VALARRAY_UNARY_FN(sqrt,  sqrt_op)
+VALARRAY_UNARY_FN(tan,   tan_op)
+VALARRAY_UNARY_FN(tanh,  tanh_op)
+
+#undef VALARRAY_UNARY_FN
+
+// atan2 and pow (binary)
+template <class E1, class E2>
+  requires (is_val_expr<E1>::value && is_val_expr<E2>::value)
+[[nodiscard]] inline
+val_expr<BinaryOp<atan2_op<typename E1::value_type>, E1, E2>>
+atan2(const E1& x, const E2& y) {
+  using VT = typename E1::value_type;
+  using Op = BinaryOp<atan2_op<VT>, E1, E2>;
+  return val_expr<Op>(Op(atan2_op<VT>(), x, y));
+}
+
+template <class E>
+  requires is_val_expr<E>::value
+[[nodiscard]] inline
+val_expr<BinaryOp<atan2_op<typename E::value_type>, E, scalar_expr<typename E::value_type>>>
+atan2(const E& x, const typename E::value_type& y) {
+  using VT = typename E::value_type;
+  using Op = BinaryOp<atan2_op<VT>, E, scalar_expr<VT>>;
+  return val_expr<Op>(Op(atan2_op<VT>(), x, scalar_expr<VT>(y, x.size())));
+}
+
+template <class E>
+  requires is_val_expr<E>::value
+[[nodiscard]] inline
+val_expr<BinaryOp<atan2_op<typename E::value_type>, scalar_expr<typename E::value_type>, E>>
+atan2(const typename E::value_type& x, const E& y) {
+  using VT = typename E::value_type;
+  using Op = BinaryOp<atan2_op<VT>, scalar_expr<VT>, E>;
+  return val_expr<Op>(Op(atan2_op<VT>(), scalar_expr<VT>(x, y.size()), y));
+}
+
+template <class E1, class E2>
+  requires (is_val_expr<E1>::value && is_val_expr<E2>::value)
+[[nodiscard]] inline
+val_expr<BinaryOp<pow_op<typename E1::value_type>, E1, E2>>
+pow(const E1& x, const E2& y) {
+  using VT = typename E1::value_type;
+  using Op = BinaryOp<pow_op<VT>, E1, E2>;
+  return val_expr<Op>(Op(pow_op<VT>(), x, y));
+}
+
+template <class E>
+  requires is_val_expr<E>::value
+[[nodiscard]] inline
+val_expr<BinaryOp<pow_op<typename E::value_type>, E, scalar_expr<typename E::value_type>>>
+pow(const E& x, const typename E::value_type& y) {
+  using VT = typename E::value_type;
+  using Op = BinaryOp<pow_op<VT>, E, scalar_expr<VT>>;
+  return val_expr<Op>(Op(pow_op<VT>(), x, scalar_expr<VT>(y, x.size())));
+}
+
+template <class E>
+  requires is_val_expr<E>::value
+[[nodiscard]] inline
+val_expr<BinaryOp<pow_op<typename E::value_type>, scalar_expr<typename E::value_type>, E>>
+pow(const typename E::value_type& x, const E& y) {
+  using VT = typename E::value_type;
+  using Op = BinaryOp<pow_op<VT>, scalar_expr<VT>, E>;
+  return val_expr<Op>(Op(pow_op<VT>(), scalar_expr<VT>(x, y.size()), y));
+}
+
+} // namespace std
+
+#endif // LIBCIS_VALARRAY

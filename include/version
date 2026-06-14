@@ -1,0 +1,140 @@
+// -*- C++ -*-
+// libcis <version> — feature-test macros
+//
+// This file defines the __cpp_lib_* macros for features ACTUALLY IMPLEMENTED
+// in libcis (C++20 target, g++-10.2, -fno-exceptions -fno-rtti).
+// It is a conservative subset of the standard C++14/17/20 list; macros for
+// unimplemented features (format, syncstream, execution, coroutine extensions,
+// floating-point charconv, constexpr bit_cast, etc.) are intentionally omitted.
+//
+// No header guards needed — the standard says <version> may be included
+// multiple times; re-defining the same value is harmless.
+
+// ---- C++14 features ----
+#define __cpp_lib_chrono_udls                          201304L
+#define __cpp_lib_complex_udls                         201309L
+#define __cpp_lib_destroying_delete 201806L
+#define __cpp_lib_exchange_function                    201304L
+#define __cpp_lib_generic_associative_lookup           201304L
+#define __cpp_lib_integer_sequence                     201304L
+#define __cpp_lib_integral_constant_callable           201304L
+#define __cpp_lib_is_final                             201402L
+#define __cpp_lib_is_null_pointer                      201309L
+#define __cpp_lib_make_reverse_iterator                201402L
+#define __cpp_lib_make_unique                          201304L
+#define __cpp_lib_null_iterators                       201304L
+#define __cpp_lib_result_of_sfinae                     201210L
+#define __cpp_lib_robust_nonmodifying_seq_ops          201304L
+#define __cpp_lib_string_udls                          201304L
+#define __cpp_lib_transformation_trait_aliases         201304L
+#define __cpp_lib_transparent_operators                201210L
+#define __cpp_lib_tuple_element_t                      201402L
+#define __cpp_lib_tuples_by_type                       201304L
+
+// ---- C++17 features ----
+#define __cpp_lib_addressof_constexpr                  201603L
+#define __cpp_lib_allocator_traits_is_always_equal     201411L
+#define __cpp_lib_any                                  201606L
+#define __cpp_lib_apply                                201603L
+#define __cpp_lib_array_constexpr                      201603L
+#define __cpp_lib_as_const                             201510L
+#define __cpp_lib_atomic_is_always_lock_free           201603L
+#define __cpp_lib_bool_constant                        201505L
+#define __cpp_lib_boyer_moore_searcher                 201603L
+#define __cpp_lib_byte                                 201603L
+#define __cpp_lib_chrono                               201611L
+#define __cpp_lib_clamp                                201603L
+#define __cpp_lib_enable_shared_from_this              201603L
+#define __cpp_lib_gcd_lcm                              201606L
+#define __cpp_lib_has_unique_object_representations    201606L
+#define __cpp_lib_hypot                                201603L
+#define __cpp_lib_incomplete_container_elements        201505L
+#define __cpp_lib_invoke                               201411L
+#define __cpp_lib_is_aggregate                         201703L
+#define __cpp_lib_is_invocable                         201703L
+#define __cpp_lib_is_swappable                         201603L
+#define __cpp_lib_launder                              201606L
+#define __cpp_lib_logical_traits                       201510L
+#define __cpp_lib_make_from_tuple                      201606L
+#define __cpp_lib_map_try_emplace                      201411L
+#define __cpp_lib_node_extract                         201606L
+#define __cpp_lib_nonmember_container_access           201411L
+#define __cpp_lib_not_fn                               201603L
+#define __cpp_lib_optional                             201606L
+#define __cpp_lib_raw_memory_algorithms                201606L
+#define __cpp_lib_sample                               201603L
+#define __cpp_lib_shared_ptr_arrays                    201611L
+#define __cpp_lib_shared_ptr_weak_type                 201606L
+#define __cpp_lib_string_view                          201606L
+#undef  __cpp_lib_transparent_operators
+#define __cpp_lib_transparent_operators                201510L
+#define __cpp_lib_type_trait_variable_templates        201510L
+#define __cpp_lib_uncaught_exceptions                  201411L
+#define __cpp_lib_unordered_map_try_emplace            201411L
+#define __cpp_lib_variant                              202102L
+#define __cpp_lib_void_t                               201411L
+
+// ---- C++20 features ----
+#undef  __cpp_lib_array_constexpr
+#define __cpp_lib_array_constexpr                      201811L
+#define __cpp_lib_assume_aligned                       201811L
+#define __cpp_lib_atomic_flag_test                     201907L
+#define __cpp_lib_atomic_float                         201711L
+#define __cpp_lib_atomic_lock_free_type_aliases        201907L
+#define __cpp_lib_atomic_ref                           201806L
+#define __cpp_lib_atomic_value_initialization          201911L
+#define __cpp_lib_atomic_wait                          201907L
+#define __cpp_lib_bind_front                           201907L
+// __cpp_lib_bit_cast omitted: gcc-10.2 lacks __builtin_bit_cast; our
+// bit_cast<> uses memcpy and is not constexpr, so the C++20 guarantee
+// is not fully met.
+#define __cpp_lib_bitops                               201907L
+#define __cpp_lib_bounded_array_traits                 201902L
+#define __cpp_lib_char8_t                              201907L
+#define __cpp_lib_concepts                             202207L
+#define __cpp_lib_constexpr_algorithms                 201806L
+#define __cpp_lib_constexpr_complex                    201711L
+#define __cpp_lib_constexpr_dynamic_alloc              201907L
+#define __cpp_lib_constexpr_functional                 201907L
+#define __cpp_lib_constexpr_iterator                   201811L
+#define __cpp_lib_constexpr_memory                     201811L
+#define __cpp_lib_constexpr_numeric                    201911L
+#define __cpp_lib_constexpr_string                     201907L
+#define __cpp_lib_constexpr_string_view                201811L
+#define __cpp_lib_constexpr_tuple                      201811L
+#define __cpp_lib_constexpr_utility                    201811L
+#define __cpp_lib_constexpr_vector                     201907L
+#define __cpp_lib_endian                               201907L
+#define __cpp_lib_erase_if                             202002L
+#define __cpp_lib_generic_unordered_lookup             201811L
+#define __cpp_lib_int_pow2                             202002L
+#define __cpp_lib_integer_comparison_functions         202002L
+#define __cpp_lib_interpolate                          201902L
+#define __cpp_lib_is_constant_evaluated                201811L
+#define __cpp_lib_is_nothrow_convertible               201806L
+#define __cpp_lib_list_remove_return_type              201806L
+#define __cpp_lib_math_constants                       201907L
+#define __cpp_lib_move_iterator_concept                202207L
+#undef  __cpp_lib_optional
+#define __cpp_lib_optional                             202106L
+#define __cpp_lib_ranges                               202110L
+#define __cpp_lib_remove_cvref                         201711L
+#undef  __cpp_lib_shared_ptr_arrays
+#define __cpp_lib_shared_ptr_arrays                    201707L
+#define __cpp_lib_smart_ptr_for_overwrite              202002L
+#define __cpp_lib_source_location                      201907L
+#define __cpp_lib_span                                 202002L
+#define __cpp_lib_ssize                                201902L
+#define __cpp_lib_starts_ends_with                     201711L
+#undef  __cpp_lib_string_view
+#define __cpp_lib_string_view                          201803L
+#define __cpp_lib_three_way_comparison                 201907L
+#define __cpp_lib_to_address                           201711L
+#define __cpp_lib_to_array                             201907L
+// __cpp_lib_to_chars: integer only (float overloads are = delete);
+// the standard value covers both, so we set it for the integer subset we have.
+#define __cpp_lib_to_chars                             201611L
+#define __cpp_lib_type_identity                        201806L
+#define __cpp_lib_unwrap_ref                           201811L
+#undef  __cpp_lib_variant
+#define __cpp_lib_variant                              202106L

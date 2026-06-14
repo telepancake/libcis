@@ -1,0 +1,487 @@
+// <iomanip> — I/O manipulators: setw, setprecision, setfill, setbase,
+//             setiosflags, resetiosflags, quoted,
+//             get_money, put_money, get_time, put_time.
+// Mechanically ported from libc++ include/iomanip.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// get_money/put_money use the money_get/money_put facets and
+// get_time/put_time use the time_get/time_put facets from <locale>.
+#pragma once
+
+// Hide all our symbols to prevent ABI conflict with libstdc++ shared library.
+#pragma GCC visibility push(hidden)
+
+#include <ios>       // ios_base, basic_ios, noskipws
+#include <istream>   // basic_istream
+#include <ostream>   // basic_ostream
+#include <locale>    // money_get/put, time_get/put, use_facet
+#include <string>    // basic_string
+#include <string_view> // basic_string_view
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// resetiosflags
+//===----------------------------------------------------------------------===//
+class iom_resetiosflags {
+    ios_base::fmtflags mask_;
+public:
+    explicit iom_resetiosflags(ios_base::fmtflags m) : mask_(m) {}
+
+    template<class CharT, class Traits>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os, const iom_resetiosflags& x) {
+        os.unsetf(x.mask_); return os;
+    }
+    template<class CharT, class Traits>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is, const iom_resetiosflags& x) {
+        is.unsetf(x.mask_); return is;
+    }
+};
+
+inline iom_resetiosflags resetiosflags(ios_base::fmtflags mask) {
+    return iom_resetiosflags(mask);
+}
+
+//===----------------------------------------------------------------------===//
+// setiosflags
+//===----------------------------------------------------------------------===//
+class iom_setiosflags {
+    ios_base::fmtflags mask_;
+public:
+    explicit iom_setiosflags(ios_base::fmtflags m) : mask_(m) {}
+
+    template<class CharT, class Traits>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os, const iom_setiosflags& x) {
+        os.setf(x.mask_); return os;
+    }
+    template<class CharT, class Traits>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is, const iom_setiosflags& x) {
+        is.setf(x.mask_); return is;
+    }
+};
+
+inline iom_setiosflags setiosflags(ios_base::fmtflags mask) {
+    return iom_setiosflags(mask);
+}
+
+//===----------------------------------------------------------------------===//
+// setbase
+//===----------------------------------------------------------------------===//
+class iom_setbase {
+    int base_;
+public:
+    explicit iom_setbase(int b) : base_(b) {}
+
+    template<class CharT, class Traits>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os, const iom_setbase& x) {
+        os.setf(x.base_ == 8  ? ios_base::oct :
+                x.base_ == 10 ? ios_base::dec :
+                x.base_ == 16 ? ios_base::hex : ios_base::fmtflags(0),
+                ios_base::basefield);
+        return os;
+    }
+    template<class CharT, class Traits>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is, const iom_setbase& x) {
+        is.setf(x.base_ == 8  ? ios_base::oct :
+                x.base_ == 10 ? ios_base::dec :
+                x.base_ == 16 ? ios_base::hex : ios_base::fmtflags(0),
+                ios_base::basefield);
+        return is;
+    }
+};
+
+inline iom_setbase setbase(int base) {
+    return iom_setbase(base);
+}
+
+//===----------------------------------------------------------------------===//
+// setfill
+//===----------------------------------------------------------------------===//
+template<class CharT>
+class iom_setfill {
+    CharT fill_;
+public:
+    explicit iom_setfill(CharT c) : fill_(c) {}
+
+    template<class Traits>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os, const iom_setfill& x) {
+        os.fill(x.fill_); return os;
+    }
+};
+
+template<class CharT>
+inline iom_setfill<CharT> setfill(CharT c) {
+    return iom_setfill<CharT>(c);
+}
+
+//===----------------------------------------------------------------------===//
+// setprecision
+//===----------------------------------------------------------------------===//
+class iom_setprecision {
+    int n_;
+public:
+    explicit iom_setprecision(int n) : n_(n) {}
+
+    template<class CharT, class Traits>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os, const iom_setprecision& x) {
+        os.precision(x.n_); return os;
+    }
+    template<class CharT, class Traits>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is, const iom_setprecision& x) {
+        is.precision(x.n_); return is;
+    }
+};
+
+inline iom_setprecision setprecision(int n) {
+    return iom_setprecision(n);
+}
+
+//===----------------------------------------------------------------------===//
+// setw
+//===----------------------------------------------------------------------===//
+class iom_setw {
+    int n_;
+public:
+    explicit iom_setw(int n) : n_(n) {}
+
+    template<class CharT, class Traits>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os, const iom_setw& x) {
+        os.width(x.n_); return os;
+    }
+    template<class CharT, class Traits>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is, const iom_setw& x) {
+        is.width(x.n_); return is;
+    }
+};
+
+inline iom_setw setw(int n) {
+    return iom_setw(n);
+}
+
+//===----------------------------------------------------------------------===//
+// get_money
+//===----------------------------------------------------------------------===//
+template <class MoneyT>
+class iom_get_money;
+
+template <class CharT, class Traits, class MoneyT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, const iom_get_money<MoneyT>& x);
+
+template <class MoneyT>
+class iom_get_money {
+    MoneyT& mon_;
+    bool intl_;
+public:
+    iom_get_money(MoneyT& mon, bool intl) : mon_(mon), intl_(intl) {}
+
+    template <class CharT, class Traits, class Mp>
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is, const iom_get_money<Mp>& x);
+};
+
+template <class CharT, class Traits, class MoneyT>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, const iom_get_money<MoneyT>& x) {
+    typename basic_istream<CharT, Traits>::sentry s(is);
+    if (s) {
+        typedef istreambuf_iterator<CharT, Traits> Ip;
+        typedef money_get<CharT, Ip> Fp;
+        ios_base::iostate err = ios_base::goodbit;
+        const Fp& mf = std::use_facet<Fp>(is.getloc());
+        mf.get(Ip(is), Ip(), x.intl_, is, err, x.mon_);
+        is.setstate(err);
+    }
+    return is;
+}
+
+template <class MoneyT>
+inline iom_get_money<MoneyT> get_money(MoneyT& mon, bool intl = false) {
+    return iom_get_money<MoneyT>(mon, intl);
+}
+
+//===----------------------------------------------------------------------===//
+// put_money
+//===----------------------------------------------------------------------===//
+template <class MoneyT>
+class iom_put_money;
+
+template <class CharT, class Traits, class MoneyT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const iom_put_money<MoneyT>& x);
+
+template <class MoneyT>
+class iom_put_money {
+    const MoneyT& mon_;
+    bool intl_;
+public:
+    iom_put_money(const MoneyT& mon, bool intl) : mon_(mon), intl_(intl) {}
+
+    template <class CharT, class Traits, class Mp>
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os, const iom_put_money<Mp>& x);
+};
+
+template <class CharT, class Traits, class MoneyT>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const iom_put_money<MoneyT>& x) {
+    typename basic_ostream<CharT, Traits>::sentry s(os);
+    if (s) {
+        typedef ostreambuf_iterator<CharT, Traits> Op;
+        typedef money_put<CharT, Op> Fp;
+        const Fp& mf = std::use_facet<Fp>(os.getloc());
+        if (mf.put(Op(os), x.intl_, os, os.fill(), x.mon_).failed())
+            os.setstate(ios_base::badbit);
+    }
+    return os;
+}
+
+template <class MoneyT>
+inline iom_put_money<MoneyT> put_money(const MoneyT& mon, bool intl = false) {
+    return iom_put_money<MoneyT>(mon, intl);
+}
+
+//===----------------------------------------------------------------------===//
+// get_time
+//===----------------------------------------------------------------------===//
+template <class CharT>
+class iom_get_time;
+
+template <class CharT, class Traits>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, const iom_get_time<CharT>& x);
+
+template <class CharT>
+class iom_get_time {
+    tm* tm_;
+    const CharT* fmt_;
+public:
+    iom_get_time(tm* t, const CharT* fmt) : tm_(t), fmt_(fmt) {}
+
+    template <class Cp, class Traits>
+    friend basic_istream<Cp, Traits>&
+    operator>>(basic_istream<Cp, Traits>& is, const iom_get_time<Cp>& x);
+};
+
+template <class CharT, class Traits>
+basic_istream<CharT, Traits>&
+operator>>(basic_istream<CharT, Traits>& is, const iom_get_time<CharT>& x) {
+    typename basic_istream<CharT, Traits>::sentry s(is);
+    if (s) {
+        typedef istreambuf_iterator<CharT, Traits> Ip;
+        typedef time_get<CharT, Ip> Fp;
+        ios_base::iostate err = ios_base::goodbit;
+        const Fp& tf = std::use_facet<Fp>(is.getloc());
+        tf.get(Ip(is), Ip(), is, err, x.tm_, x.fmt_, x.fmt_ + Traits::length(x.fmt_));
+        is.setstate(err);
+    }
+    return is;
+}
+
+template <class CharT>
+inline iom_get_time<CharT> get_time(tm* t, const CharT* fmt) {
+    return iom_get_time<CharT>(t, fmt);
+}
+
+//===----------------------------------------------------------------------===//
+// put_time
+//===----------------------------------------------------------------------===//
+template <class CharT>
+class iom_put_time;
+
+template <class CharT, class Traits>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const iom_put_time<CharT>& x);
+
+template <class CharT>
+class iom_put_time {
+    const tm* tm_;
+    const CharT* fmt_;
+public:
+    iom_put_time(const tm* t, const CharT* fmt) : tm_(t), fmt_(fmt) {}
+
+    template <class Cp, class Traits>
+    friend basic_ostream<Cp, Traits>&
+    operator<<(basic_ostream<Cp, Traits>& os, const iom_put_time<Cp>& x);
+};
+
+template <class CharT, class Traits>
+basic_ostream<CharT, Traits>&
+operator<<(basic_ostream<CharT, Traits>& os, const iom_put_time<CharT>& x) {
+    typename basic_ostream<CharT, Traits>::sentry s(os);
+    if (s) {
+        typedef ostreambuf_iterator<CharT, Traits> Op;
+        typedef time_put<CharT, Op> Fp;
+        const Fp& tf = std::use_facet<Fp>(os.getloc());
+        if (tf.put(Op(os), os, os.fill(), x.tm_, x.fmt_,
+                   x.fmt_ + Traits::length(x.fmt_)).failed())
+            os.setstate(ios_base::badbit);
+    }
+    return os;
+}
+
+template <class CharT>
+inline iom_put_time<CharT> put_time(const tm* t, const CharT* fmt) {
+    return iom_put_time<CharT>(t, fmt);
+}
+
+//===----------------------------------------------------------------------===//
+// quoted — std::quoted (C++14)
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+// Output: write delim + escaped content + delim into os
+template<class CharT, class Traits>
+basic_ostream<CharT, Traits>&
+quoted_output(basic_ostream<CharT, Traits>& os,
+              const CharT* first, const CharT* last,
+              CharT delim, CharT escape)
+{
+    basic_string<CharT, Traits> buf;
+    buf.push_back(delim);
+    for (; first != last; ++first) {
+        if (Traits::eq(*first, escape) || Traits::eq(*first, delim))
+            buf.push_back(escape);
+        buf.push_back(*first);
+    }
+    buf.push_back(delim);
+    return detail::put_character_sequence(os, buf.data(), buf.size());
+}
+
+// Input: read delimited (possibly escaped) string from is into string
+template<class CharT, class Traits, class Str>
+basic_istream<CharT, Traits>&
+quoted_input(basic_istream<CharT, Traits>& is, Str& str,
+             CharT delim, CharT escape)
+{
+    str.clear();
+    CharT c;
+    is >> c;
+    if (is.fail())
+        return is;
+    if (!Traits::eq(c, delim)) {
+        // no delimiter — read the whole word
+        is.putback(c);
+        is >> str;
+        return is;
+    }
+    // Read until closing delim, handling escape
+    ios_base& (*noskipws_fn)(ios_base&) = noskipws;
+    auto saved_flags = is.flags();
+    noskipws_fn(is);
+    while (true) {
+        is >> c;
+        if (is.fail()) break;
+        if (Traits::eq(c, escape)) {
+            is >> c;
+            if (is.fail()) break;
+        } else if (Traits::eq(c, delim)) {
+            break;
+        }
+        str.push_back(c);
+    }
+    is.flags(saved_flags);
+    return is;
+}
+
+} // namespace detail
+
+// Proxy for output-only (const CharT* or const string&)
+template<class CharT, class Traits = void>
+struct quoted_output_proxy {
+    const CharT* first_;
+    const CharT* last_;
+    CharT delim_;
+    CharT escape_;
+
+    explicit quoted_output_proxy(const CharT* f, const CharT* l,
+                                 CharT d, CharT e)
+        : first_(f), last_(l), delim_(d), escape_(e) {}
+
+    template<class T2,
+             class = enable_if_t<is_same_v<Traits, void> || is_same_v<Traits, T2>>>
+    friend basic_ostream<CharT, T2>&
+    operator<<(basic_ostream<CharT, T2>& os, const quoted_output_proxy& p) {
+        return detail::quoted_output(os, p.first_, p.last_, p.delim_, p.escape_);
+    }
+};
+
+// Proxy for mutable string& (both input and output)
+template<class CharT, class Traits, class Allocator>
+struct quoted_proxy {
+    basic_string<CharT, Traits, Allocator>& str_;
+    CharT delim_;
+    CharT escape_;
+
+    explicit quoted_proxy(basic_string<CharT, Traits, Allocator>& s,
+                          CharT d, CharT e)
+        : str_(s), delim_(d), escape_(e) {}
+
+    friend basic_ostream<CharT, Traits>&
+    operator<<(basic_ostream<CharT, Traits>& os, const quoted_proxy& p) {
+        return detail::quoted_output(os, p.str_.data(),
+                                     p.str_.data() + p.str_.size(),
+                                     p.delim_, p.escape_);
+    }
+
+    friend basic_istream<CharT, Traits>&
+    operator>>(basic_istream<CharT, Traits>& is, const quoted_proxy& p) {
+        return detail::quoted_input(is, p.str_, p.delim_, p.escape_);
+    }
+};
+
+// quoted(const CharT*)
+template<class CharT>
+inline auto quoted(const CharT* s,
+                   CharT delim  = CharT('"'),
+                   CharT escape = CharT('\\'))
+{
+    const CharT* end = s;
+    while (*end) ++end;
+    return quoted_output_proxy<CharT, void>(s, end, delim, escape);
+}
+
+// quoted(const basic_string<>&) — output only
+template<class CharT, class Traits, class Allocator>
+inline auto quoted(const basic_string<CharT, Traits, Allocator>& s,
+                   CharT delim  = CharT('"'),
+                   CharT escape = CharT('\\'))
+{
+    return quoted_output_proxy<CharT, Traits>(
+        s.data(), s.data() + s.size(), delim, escape);
+}
+
+// quoted(basic_string<>&) — input + output
+template<class CharT, class Traits, class Allocator>
+inline auto quoted(basic_string<CharT, Traits, Allocator>& s,
+                   CharT delim  = CharT('"'),
+                   CharT escape = CharT('\\'))
+{
+    return quoted_proxy<CharT, Traits, Allocator>(s, delim, escape);
+}
+
+// quoted(basic_string_view<>) — output only
+template<class CharT, class Traits>
+inline auto quoted(basic_string_view<CharT, Traits> sv,
+                   CharT delim  = CharT('"'),
+                   CharT escape = CharT('\\'))
+{
+    return quoted_output_proxy<CharT, Traits>(
+        sv.data(), sv.data() + sv.size(), delim, escape);
+}
+
+} // namespace std
+
+#pragma GCC visibility pop

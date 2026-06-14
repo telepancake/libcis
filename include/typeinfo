@@ -1,0 +1,88 @@
+// <typeinfo> — type_info, bad_cast, bad_typeid   [type.info],[bad.cast],[bad.typeid]
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// This is a freestanding, header-only port: under -fno-rtti the compiler never
+// emits std::type_info objects and typeid is unavailable, so type_info's layout
+// is NOT ABI-constrained here (member spelling is invisible to codegen, and
+// there is no system libstdc++ to interoperate with under -nodefaultlibs).  We
+// provide a conforming interface so headers that name std::type_info compile,
+// and keep libstdc++'s name-comparison strategy (Linux/ELF non-merged names:
+// the leading '*' marks an un-mergeable name) so the type stays correct if some
+// TU is ever compiled with -frtti.
+#pragma once
+
+#include <exception>   // std::exception
+#include <cstddef>     // std::size_t
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// class type_info  [type.info]
+//===----------------------------------------------------------------------===//
+class type_info {
+public:
+    virtual ~type_info() {}   // inline: vtable has vague linkage, header-only
+
+    [[nodiscard]] const char* name() const noexcept {
+        // libstdc++ convention: a leading '*' marks a non-merged name whose
+        // real text starts one past it.
+        return name_ptr[0] == '*' ? name_ptr + 1 : name_ptr;
+    }
+
+    [[nodiscard]] bool before(const type_info& arg) const noexcept {
+        if (name_ptr[0] == '*' && arg.name_ptr[0] == '*')
+            return name_ptr < arg.name_ptr;            // non-merged: by address
+        return __builtin_strcmp(name_ptr, arg.name_ptr) < 0;
+    }
+
+    [[nodiscard]] size_t hash_code() const noexcept {
+        const unsigned char* p = reinterpret_cast<const unsigned char*>(name());
+        size_t h = 5381;
+        while (unsigned char c = *p++)
+            h = (h * 33) ^ c;
+        return h;
+    }
+
+    bool operator==(const type_info& arg) const noexcept {
+        return name_ptr == arg.name_ptr ||
+               (name_ptr[0] != '*' && __builtin_strcmp(name_ptr, arg.name_ptr) == 0);
+    }
+    // operator!= is synthesized from operator== in C++20.
+
+    // Non-copyable / non-assignable per [type.info].
+    type_info(const type_info&)            = delete;
+    type_info& operator=(const type_info&) = delete;
+
+protected:
+    const char* name_ptr;
+    explicit type_info(const char* n) : name_ptr(n) {}
+};
+
+//===----------------------------------------------------------------------===//
+// class bad_cast  [bad.cast] — thrown by a failing dynamic_cast (never under
+// -fno-rtti, but must remain a valid concrete type).  Inline so the header is
+// self-contained under -nostdinc++.
+//===----------------------------------------------------------------------===//
+class bad_cast : public exception {
+public:
+    bad_cast() noexcept {}
+    bad_cast(const bad_cast&) noexcept            = default;
+    bad_cast& operator=(const bad_cast&) noexcept = default;
+    ~bad_cast() noexcept override {}
+    [[nodiscard]] const char* what() const noexcept override { return "std::bad_cast"; }
+};
+
+//===----------------------------------------------------------------------===//
+// class bad_typeid  [bad.typeid] — thrown by typeid on a null polymorphic
+// dereference (never under -fno-rtti).
+//===----------------------------------------------------------------------===//
+class bad_typeid : public exception {
+public:
+    bad_typeid() noexcept {}
+    bad_typeid(const bad_typeid&) noexcept            = default;
+    bad_typeid& operator=(const bad_typeid&) noexcept = default;
+    ~bad_typeid() noexcept override {}
+    [[nodiscard]] const char* what() const noexcept override { return "std::bad_typeid"; }
+};
+
+} // namespace std

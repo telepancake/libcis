@@ -1,0 +1,86 @@
+// <typeindex> — type_index wrapping const type_info*
+// Mechanically ported from libc++ include/typeindex.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// *** UNUSABLE UNDER -fno-rtti ***
+// type_info and typeid() require RTTI. This header compiles cleanly but
+// type_index cannot be constructed (there is no way to obtain a type_info
+// object under -fno-rtti). It is provided as a noted-omission stub so that
+// code that merely names the type still compiles.
+//
+// hash<type_index> is provided; it delegates to hash_code() which calls
+// type_info::hash_code() — again, only reachable at runtime if RTTI is on.
+#pragma once
+
+#include <compare>
+#include <functional>
+
+// Forward-declare type_info so we do not need to pull in the system <typeinfo>
+// (which may not play well with -nostdinc++).
+namespace std { class type_info; }
+
+namespace std {
+
+class type_index {
+    const type_info* ti_;
+public:
+    // UNUSABLE under -fno-rtti: there is no way to obtain a type_info reference.
+    type_index(const type_info& t) noexcept : ti_(&t) {}
+
+    bool operator==(const type_index& y) const noexcept;
+    bool operator< (const type_index& y) const noexcept;
+    bool operator<=(const type_index& y) const noexcept;
+    bool operator> (const type_index& y) const noexcept;
+    bool operator>=(const type_index& y) const noexcept;
+    strong_ordering operator<=>(const type_index& y) const noexcept;
+
+    [[nodiscard]] size_t      hash_code() const noexcept;
+    [[nodiscard]] const char* name()      const noexcept;
+};
+
+// Definitions must be inline so they can appear in multiple TUs.
+// They call through the type_info pointer — only safe when RTTI is enabled.
+inline bool type_index::operator==(const type_index& y) const noexcept {
+    // requires RTTI: *ti_ == *y.ti_
+    return ti_ == y.ti_;  // pointer comparison as fallback identity check
+}
+inline bool type_index::operator<(const type_index& y) const noexcept {
+    // type_info::before() requires RTTI
+    return ti_ < y.ti_;
+}
+inline bool type_index::operator<=(const type_index& y) const noexcept {
+    return !(y < *this);
+}
+inline bool type_index::operator>(const type_index& y) const noexcept {
+    return y < *this;
+}
+inline bool type_index::operator>=(const type_index& y) const noexcept {
+    return !(*this < y);
+}
+inline strong_ordering type_index::operator<=>(const type_index& y) const noexcept {
+    if (*this == y) return strong_ordering::equal;
+    if (*this <  y) return strong_ordering::less;
+    return strong_ordering::greater;
+}
+inline size_t type_index::hash_code() const noexcept {
+    // type_info::hash_code() requires RTTI; approximate with pointer hash.
+    return reinterpret_cast<size_t>(ti_);
+}
+inline const char* type_index::name() const noexcept {
+    // type_info::name() requires RTTI; returns nullptr without it.
+    return nullptr;
+}
+
+// hash<type_index>
+template<class T> struct hash;
+
+template<>
+struct hash<type_index> {
+    using argument_type = type_index;
+    using result_type   = size_t;
+    [[nodiscard]] size_t operator()(type_index idx) const noexcept {
+        return idx.hash_code();
+    }
+};
+
+} // namespace std

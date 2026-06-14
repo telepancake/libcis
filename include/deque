@@ -1,0 +1,1649 @@
+// <deque> — mechanically ported from libc++ include/deque
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// The map-of-blocks representation is preserved exactly.
+// Since libcis has no __split_buffer, the map is managed as a plain
+// raw array of pointers with front/back spare (same logical layout).
+//
+// Out-of-range at(): __builtin_trap() (comment: would throw std::out_of_range)
+#pragma once
+
+#include <memory_resource>
+#include <memory>
+#include <list>   // detail::container_is_allocator_v (shared with <list>)
+#include <iterator>
+#include <algorithm>
+#include <compare>
+#include <initializer_list>
+#include <limits>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// deque_block_size — number of T elements per block
+//===----------------------------------------------------------------------===//
+
+template<class ValueType, class DiffType>
+struct deque_block_size {
+    static const DiffType value =
+        sizeof(ValueType) < 256 ? 4096 / sizeof(ValueType) : 16;
+};
+
+//===----------------------------------------------------------------------===//
+// deque_iterator
+//===----------------------------------------------------------------------===//
+
+template<class ValueType,
+         class Pointer,
+         class Reference,
+         class MapPointer,
+         class DiffType,
+         DiffType BlockSize = deque_block_size<ValueType, DiffType>::value>
+class deque_iterator {
+public:
+    using value_type        = ValueType;
+    using pointer           = Pointer;
+    using reference         = Reference;
+    using difference_type   = DiffType;
+    using iterator_category = random_access_iterator_tag;
+
+    // map_iter points to the block pointer inside the map array
+    using map_iter = MapPointer; // pointer to (pointer to ValueType)
+
+private:
+    map_iter m_iter; // pointer into the map (each element is a block ptr)
+    pointer  ptr;    // pointer into the current block
+
+    static const difference_type block_size_val;
+
+public:
+    deque_iterator() noexcept : m_iter(nullptr), ptr(nullptr) {}
+
+    // Converting constructor: non-const -> const
+    template<class Pp, class Rp, class MP>
+        requires is_convertible_v<Pp, pointer>
+    deque_iterator(const deque_iterator<ValueType, Pp, Rp, MP, DiffType, BlockSize>& it) noexcept
+        : m_iter(it.m_iter), ptr(it.ptr) {}
+
+    reference operator*()  const { return *ptr; }
+    pointer   operator->() const { return ptr; }
+
+    deque_iterator& operator++() {
+        if (++ptr - *m_iter == block_size_val) {
+            ++m_iter;
+            ptr = *m_iter;
+        }
+        return *this;
+    }
+
+    deque_iterator operator++(int) {
+        deque_iterator tmp = *this;
+        ++(*this);
+        return tmp;
+    }
+
+    deque_iterator& operator--() {
+        if (ptr == *m_iter) {
+            --m_iter;
+            ptr = *m_iter + block_size_val;
+        }
+        --ptr;
+        return *this;
+    }
+
+    deque_iterator operator--(int) {
+        deque_iterator tmp = *this;
+        --(*this);
+        return tmp;
+    }
+
+    deque_iterator& operator+=(difference_type n) {
+        if (n != 0) {
+            n += ptr - *m_iter;
+            if (n > 0) {
+                m_iter += n / block_size_val;
+                ptr     = *m_iter + n % block_size_val;
+            } else {
+                difference_type z = block_size_val - 1 - n;
+                m_iter -= z / block_size_val;
+                ptr     = *m_iter + (block_size_val - 1 - z % block_size_val);
+            }
+        }
+        return *this;
+    }
+
+    deque_iterator& operator-=(difference_type n) { return *this += -n; }
+
+    deque_iterator operator+(difference_type n) const {
+        deque_iterator t(*this);
+        t += n;
+        return t;
+    }
+
+    deque_iterator operator-(difference_type n) const {
+        deque_iterator t(*this);
+        t -= n;
+        return t;
+    }
+
+    friend deque_iterator operator+(difference_type n, const deque_iterator& it) {
+        return it + n;
+    }
+
+    friend difference_type operator-(const deque_iterator& x, const deque_iterator& y) {
+        if (x != y)
+            return (x.m_iter - y.m_iter) * block_size_val
+                   + (x.ptr - *x.m_iter)
+                   - (y.ptr - *y.m_iter);
+        return 0;
+    }
+
+    reference operator[](difference_type n) const { return *(*this + n); }
+
+    friend bool operator==(const deque_iterator& x, const deque_iterator& y) {
+        return x.ptr == y.ptr;
+    }
+
+    friend strong_ordering operator<=>(const deque_iterator& x, const deque_iterator& y) {
+        if (x.m_iter < y.m_iter) return strong_ordering::less;
+        if (x.m_iter == y.m_iter) {
+            if (x.ptr < y.ptr) return strong_ordering::less;
+            if (x.ptr == y.ptr) return strong_ordering::equal;
+            return strong_ordering::greater;
+        }
+        return strong_ordering::greater;
+    }
+
+private:
+    explicit deque_iterator(map_iter m, pointer p) noexcept
+        : m_iter(m), ptr(p) {}
+
+    template<class T, class A>
+    friend class deque;
+
+    template<class VT2, class Pp2, class Rp2, class MP2, class DT2, DT2>
+    friend class deque_iterator;
+
+    // Access hook for the block-wise copy/move algorithm overloads below
+    // (libc++ declares the algorithms themselves as friends; one access
+    // struct keeps the friend surface small).
+    friend struct deque_iter_access;
+};
+
+// Internal accessor for deque_iterator's representation, used by the
+// segmented (block-wise) copy/move overloads below.
+struct deque_iter_access {
+    template<class It> static auto& map(It& i) noexcept { return i.m_iter; }
+    template<class It> static auto& ptr(It& i) noexcept { return i.ptr; }
+};
+
+template<class VT, class Pp, class Rp, class MP, class DT, DT BS>
+const DT deque_iterator<VT,Pp,Rp,MP,DT,BS>::block_size_val =
+    deque_block_size<VT, DT>::value;
+
+//===----------------------------------------------------------------------===//
+// Segmented copy/move overloads for deque_iterator.
+// libc++ dispatches std::copy/std::move through __segmented_iterator_traits;
+// libcis has no segmented-iterator machinery in <algorithm>, so (like
+// pre-LLVM-15 libc++ <deque>) the specialized overloads live here. They also
+// keep user iterator types with a deleted operator, out of the generic
+// comma-using loops in <algorithm>.
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+
+template<class T>
+inline constexpr bool deque_is_iterator_v = false;
+template<class V, class P, class R, class MP, class D, D BS>
+inline constexpr bool deque_is_iterator_v<deque_iterator<V, P, R, MP, D, BS>> = true;
+
+template<class V, class P, class R, class MP, class D, D BS>
+constexpr D deque_iter_block_size(const deque_iterator<V, P, R, MP, D, BS>&) {
+    return BS;
+}
+
+template<bool IsMove, class In, class Out>
+Out deque_seg_copy(In f, In l, Out r) {
+    using A = deque_iter_access;
+    if constexpr (deque_is_iterator_v<In> && deque_is_iterator_v<Out>) {
+        using D = typename In::difference_type;
+        D n = l - f;
+        while (n > 0) {
+            auto fb = A::ptr(f);
+            auto fe = *A::map(f) + deque_iter_block_size(f);
+            auto rb = A::ptr(r);
+            auto re = *A::map(r) + deque_iter_block_size(r);
+            D db = fe - fb;
+            if (re - rb < db) db = re - rb;
+            if (n < db)       db = n;
+            auto q = rb;
+            for (auto p = fb; p != fb + db; ++p, (void)++q) {
+                if constexpr (IsMove) *q = std::move(*p);
+                else                  *q = *p;
+            }
+            f += db;
+            r += db;
+            n -= db;
+        }
+        return r;
+    } else if constexpr (deque_is_iterator_v<In>) {
+        using D = typename In::difference_type;
+        D n = l - f;
+        while (n > 0) {
+            auto fb = A::ptr(f);
+            auto fe = *A::map(f) + deque_iter_block_size(f);
+            D db = fe - fb;
+            if (n < db) db = n;
+            for (auto p = fb; p != fb + db; ++p, (void)++r) {
+                if constexpr (IsMove) *r = std::move(*p);
+                else                  *r = *p;
+            }
+            f += db;
+            n -= db;
+        }
+        return r;
+    } else if constexpr (is_base_of_v<random_access_iterator_tag,
+                             typename iterator_traits<In>::iterator_category>) {
+        using D = typename Out::difference_type;
+        D n = static_cast<D>(l - f);
+        while (n > 0) {
+            auto rb = A::ptr(r);
+            auto re = *A::map(r) + deque_iter_block_size(r);
+            D db = re - rb;
+            if (n < db) db = n;
+            for (auto p = rb; p != rb + db; ++p, (void)++f) {
+                if constexpr (IsMove) *p = std::move(*f);
+                else                  *p = *f;
+            }
+            r += db;
+            n -= db;
+        }
+        return r;
+    } else {
+        for (; f != l; ++f, (void)++r) {
+            if constexpr (IsMove) *r = std::move(*f);
+            else                  *r = *f;
+        }
+        return r;
+    }
+}
+
+} // namespace detail
+
+template<class InputIter, class V, class P, class R, class MP, class D, D BS>
+inline deque_iterator<V, P, R, MP, D, BS>
+copy(InputIter f, InputIter l, deque_iterator<V, P, R, MP, D, BS> r) {
+    return detail::deque_seg_copy<false>(f, l, r);
+}
+
+template<class V, class P, class R, class MP, class D, D BS, class OutIter>
+inline OutIter
+copy(deque_iterator<V, P, R, MP, D, BS> f, deque_iterator<V, P, R, MP, D, BS> l, OutIter r) {
+    return detail::deque_seg_copy<false>(f, l, r);
+}
+
+template<class V, class P1, class R1, class M1, class P2, class R2, class M2, class D, D BS>
+inline deque_iterator<V, P2, R2, M2, D, BS>
+copy(deque_iterator<V, P1, R1, M1, D, BS> f, deque_iterator<V, P1, R1, M1, D, BS> l,
+     deque_iterator<V, P2, R2, M2, D, BS> r) {
+    return detail::deque_seg_copy<false>(f, l, r);
+}
+
+template<class InputIter, class V, class P, class R, class MP, class D, D BS>
+inline deque_iterator<V, P, R, MP, D, BS>
+move(InputIter f, InputIter l, deque_iterator<V, P, R, MP, D, BS> r) {
+    return detail::deque_seg_copy<true>(f, l, r);
+}
+
+template<class V, class P, class R, class MP, class D, D BS, class OutIter>
+inline OutIter
+move(deque_iterator<V, P, R, MP, D, BS> f, deque_iterator<V, P, R, MP, D, BS> l, OutIter r) {
+    return detail::deque_seg_copy<true>(f, l, r);
+}
+
+template<class V, class P1, class R1, class M1, class P2, class R2, class M2, class D, D BS>
+inline deque_iterator<V, P2, R2, M2, D, BS>
+move(deque_iterator<V, P1, R1, M1, D, BS> f, deque_iterator<V, P1, R1, M1, D, BS> l,
+     deque_iterator<V, P2, R2, M2, D, BS> r) {
+    return detail::deque_seg_copy<true>(f, l, r);
+}
+
+//===----------------------------------------------------------------------===//
+// deque_map — a growable array of block-pointers.
+// This replaces __split_buffer: we maintain a raw allocation with front/back
+// spare so that push_front/push_back on the map are O(1) amortized.
+//===----------------------------------------------------------------------===//
+
+// deque_map — a growable array of block-pointers with no allocator of its own.
+// The deque class owns the single allocator; deque_map uses ::operator new /
+// ::operator delete for its internal map array (just pointers-to-pointers).
+template<class Pointer>
+class deque_map {
+public:
+    using value_type = Pointer;
+    using size_type  = size_t;
+
+private:
+    Pointer* data_;   // raw allocation (size == cap_)
+    size_type cap_;   // total allocated slots
+    size_type front_; // index of first used slot
+    size_type back_;  // index one-past last used slot
+
+    static size_type next_cap(size_type c) { return c == 0 ? 8 : 2*c; }
+
+public:
+    deque_map() noexcept : data_(nullptr), cap_(0), front_(0), back_(0) {}
+
+    deque_map(const deque_map&) = delete;
+    deque_map& operator=(const deque_map&) = delete;
+
+    deque_map(deque_map&& o) noexcept
+        : data_(o.data_), cap_(o.cap_), front_(o.front_), back_(o.back_) {
+        o.data_ = nullptr; o.cap_ = o.front_ = o.back_ = 0;
+    }
+
+    deque_map& operator=(deque_map&& o) noexcept {
+        if (this != &o) {
+            free_();
+            data_  = o.data_;
+            cap_   = o.cap_;
+            front_ = o.front_;
+            back_  = o.back_;
+            o.data_ = nullptr; o.cap_ = o.front_ = o.back_ = 0;
+        }
+        return *this;
+    }
+
+    ~deque_map() { free_(); }
+
+    size_type size()     const noexcept { return back_ - front_; }
+    size_type capacity() const noexcept { return cap_; }
+    bool      empty()    const noexcept { return front_ == back_; }
+
+    Pointer*       begin()       noexcept { return data_ + front_; }
+    Pointer*       end()         noexcept { return data_ + back_; }
+    const Pointer* begin() const noexcept { return data_ + front_; }
+    const Pointer* end()   const noexcept { return data_ + back_; }
+
+    Pointer& front() noexcept { return data_[front_]; }
+    Pointer& back()  noexcept { return data_[back_-1]; }
+    const Pointer& front() const noexcept { return data_[front_]; }
+    const Pointer& back()  const noexcept { return data_[back_-1]; }
+
+    size_type front_spare() const noexcept { return front_; }
+    size_type back_spare()  const noexcept { return cap_ - back_; }
+
+    // Add a block pointer at the front
+    void push_front(Pointer p) {
+        if (front_ == 0)
+            grow_front_();
+        data_[--front_] = p;
+    }
+
+    void push_back(Pointer p) {
+        if (back_ == cap_)
+            grow_back_();
+        data_[back_++] = p;
+    }
+
+    void pop_front() noexcept { ++front_; }
+    void pop_back()  noexcept { --back_; }
+
+    // Clear the array of block pointers (does NOT deallocate the blocks)
+    void clear() noexcept { front_ = back_ = cap_ / 2; }
+
+    void swap(deque_map& o) noexcept {
+        std::swap(data_,  o.data_);
+        std::swap(cap_,   o.cap_);
+        std::swap(front_, o.front_);
+        std::swap(back_,  o.back_);
+    }
+
+    void shrink_to_fit() noexcept {
+        size_type n = size();
+        if (n == 0) { free_(); data_ = nullptr; cap_ = front_ = back_ = 0; return; }
+        Pointer* nd = (Pointer*)::operator new(n * sizeof(Pointer));
+        for (size_type i = 0; i < n; ++i)
+            nd[i] = data_[front_ + i];
+        ::operator delete(data_);
+        data_ = nd; cap_ = n; front_ = 0; back_ = n;
+    }
+
+    // Grow the map so that we have at least need_front front spare
+    // and need_back back spare (after realloc, balanced in the middle).
+    void reallocate(size_type need_front, size_type need_back) {
+        size_type n    = size();
+        size_type nc   = std::max<size_type>(next_cap(cap_),
+                                              n + need_front + need_back);
+        Pointer* nd    = (Pointer*)::operator new(nc * sizeof(Pointer));
+        size_type nf   = (nc - n) / 2;
+        for (size_type i = 0; i < n; ++i)
+            nd[nf + i] = data_[front_ + i];
+        ::operator delete(data_);
+        data_  = nd;
+        cap_   = nc;
+        back_  = nf + n;
+        front_ = nf;
+    }
+
+private:
+    void free_() noexcept {
+        if (data_) { ::operator delete(data_); data_ = nullptr; }
+    }
+
+    void grow_front_() {
+        size_type n  = size();
+        size_type nc = next_cap(cap_);
+        Pointer* nd  = (Pointer*)::operator new(nc * sizeof(Pointer));
+        size_type nf = nc / 2;
+        for (size_type i = 0; i < n; ++i)
+            nd[nf + i] = data_[front_ + i];
+        ::operator delete(data_);
+        data_  = nd;
+        cap_   = nc;
+        back_  = nf + n;
+        front_ = nf;
+    }
+
+    void grow_back_() {
+        size_type n  = size();
+        size_type nc = next_cap(cap_);
+        Pointer* nd  = (Pointer*)::operator new(nc * sizeof(Pointer));
+        size_type nf = nc / 2;
+        for (size_type i = 0; i < n; ++i)
+            nd[nf + i] = data_[front_ + i];
+        ::operator delete(data_);
+        data_  = nd;
+        cap_   = nc;
+        back_  = nf + n;
+        front_ = nf;
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// deque<T, Allocator>
+//===----------------------------------------------------------------------===//
+
+template<class T, class Allocator = allocator<T>>
+class deque {
+public:
+    using value_type      = T;
+    using allocator_type  = Allocator;
+
+private:
+    using alloc_traits    = allocator_traits<allocator_type>;
+
+public:
+    using size_type       = typename alloc_traits::size_type;
+    using difference_type = typename alloc_traits::difference_type;
+    using pointer         = typename alloc_traits::pointer;
+    using const_pointer   = typename alloc_traits::const_pointer;
+    using reference       = value_type&;
+    using const_reference = const value_type&;
+
+private:
+    using map_t         = deque_map<pointer>;
+    using map_pointer   = pointer*;         // pointer into map's raw array
+    using const_map_ptr = const pointer*;
+
+    static const difference_type block_size;
+
+public:
+    using iterator               = deque_iterator<value_type, pointer, reference,
+                                                   map_pointer, difference_type>;
+    using const_iterator         = deque_iterator<value_type, const_pointer,
+                                                   const_reference, const_map_ptr,
+                                                   difference_type>;
+    using reverse_iterator       = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+private:
+    // Internal range helper: iterates block-by-block over [pos, pos+n)
+    struct block_range {
+        const pointer* m_iter;
+        pointer        beg;
+        pointer        blk_end;
+        difference_type remaining;
+        difference_type bs;
+
+        block_range(iterator it, difference_type n, difference_type bs_)
+            : m_iter(it.m_iter), beg(it.ptr), bs(bs_) {
+            blk_end   = *m_iter + bs_;
+            remaining = n;
+        }
+
+        bool has_next() const { return remaining > 0; }
+        pointer cur_beg()   const { return beg; }
+        pointer cur_end()   const {
+            difference_type avail = blk_end - beg;
+            return beg + (remaining < avail ? remaining : avail);
+        }
+        void advance() {
+            difference_type took = cur_end() - beg;
+            remaining -= took;
+            if (remaining > 0) {
+                ++m_iter;
+                beg      = *m_iter;
+                blk_end  = *m_iter + bs;
+            }
+        }
+    };
+
+    // --- ConstructTransaction: tracks how many elements were constructed
+    //     and updates __size accordingly on destruction ---
+    struct ConstructTransaction {
+        deque* base;
+        pointer pos;
+        const pointer end_ptr;
+        const pointer begin_ptr;
+
+        ConstructTransaction(deque* d, pointer b, pointer e)
+            : base(d), pos(b), end_ptr(e), begin_ptr(b) {}
+
+        ~ConstructTransaction() {
+            base->size_ += static_cast<size_type>(pos - begin_ptr);
+        }
+    };
+
+    map_t      map_;
+    size_type  start_;
+    size_type  size_;
+    allocator_type alloc_;
+
+    // Accessors
+    allocator_type&       alloc_ref()       noexcept { return alloc_; }
+    const allocator_type& alloc_ref() const noexcept { return alloc_; }
+
+    size_type capacity() const noexcept {
+        return map_.size() == 0 ? 0 : map_.size() * block_size - 1;
+    }
+
+    size_type front_spare() const noexcept { return start_; }
+    size_type back_spare()  const noexcept { return capacity() - (start_ + size_); }
+
+    size_type front_spare_blocks() const noexcept { return front_spare() / block_size; }
+    size_type back_spare_blocks()  const noexcept { return back_spare()  / block_size; }
+
+    static size_type recommend_blocks(size_type n) {
+        return n / block_size + (n % block_size != 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Capacity management
+    // -----------------------------------------------------------------------
+
+    void add_back_capacity() {
+        allocator_type& a = alloc_ref();
+        if (front_spare() >= static_cast<size_type>(block_size)) {
+            start_ -= block_size;
+            pointer pt = map_.front();
+            map_.pop_front();
+            map_.push_back(pt);
+        } else if (map_.back_spare() > 0) {
+            map_.push_back(alloc_traits::allocate(a, block_size));
+        } else {
+            map_.reallocate(0, 1);
+            map_.push_back(alloc_traits::allocate(a, block_size));
+        }
+    }
+
+    void add_back_capacity(size_type n) {
+        allocator_type& a      = alloc_ref();
+        size_type nb           = recommend_blocks(n + map_.empty());
+        size_type front_cap    = front_spare_blocks();
+        front_cap              = std::min(front_cap, nb);
+        nb -= front_cap;
+
+        if (nb == 0) {
+            start_ -= block_size * front_cap;
+            for (; front_cap > 0; --front_cap) {
+                pointer pt = map_.front();
+                map_.pop_front();
+                map_.push_back(pt);
+            }
+        } else if (nb <= map_.back_spare()) {
+            for (; nb > 0; --nb)
+                map_.push_back(alloc_traits::allocate(a, block_size));
+            start_ -= block_size * front_cap;
+            for (; front_cap > 0; --front_cap) {
+                pointer pt = map_.front();
+                map_.pop_front();
+                map_.push_back(pt);
+            }
+        } else {
+            // Need to reallocate map
+            size_type total_new = nb + front_cap;
+            map_.reallocate(0, total_new);
+            for (; nb > 0; --nb)
+                map_.push_back(alloc_traits::allocate(a, block_size));
+            start_ -= block_size * front_cap;
+            for (; front_cap > 0; --front_cap) {
+                pointer pt = map_.front();
+                map_.pop_front();
+                map_.push_back(pt);
+            }
+        }
+    }
+
+    void add_front_capacity() {
+        allocator_type& a = alloc_ref();
+        if (back_spare() >= static_cast<size_type>(block_size)) {
+            start_ += block_size;
+            pointer pt = map_.back();
+            map_.pop_back();
+            map_.push_front(pt);
+        } else if (map_.front_spare() > 0) {
+            map_.push_front(alloc_traits::allocate(a, block_size));
+            start_ = (map_.size() == 1) ? block_size / 2 : start_ + block_size;
+        } else {
+            map_.reallocate(1, 0);
+            map_.push_front(alloc_traits::allocate(a, block_size));
+            start_ = (map_.size() == 1) ? block_size / 2 : start_ + block_size;
+        }
+    }
+
+    void add_front_capacity(size_type n) {
+        // We need front_spare() >= n after this call.
+        // Strategy: move unused back blocks to front first (free), then allocate.
+        allocator_type& a  = alloc_ref();
+        size_type nb       = recommend_blocks(n + (size_type)map_.empty());
+        size_type back_cap = back_spare_blocks();
+        back_cap           = std::min(back_cap, nb);
+        nb                -= back_cap; // still need to allocate nb new blocks
+
+        if (nb == 0) {
+            // Enough back blocks to recycle
+            start_ += block_size * back_cap;
+            for (size_type i = 0; i < back_cap; ++i) {
+                pointer pt = map_.back();
+                map_.pop_back();
+                map_.push_front(pt);
+            }
+        } else {
+            // Need to allocate nb new blocks at front; possibly recycle back_cap from back.
+            // Ensure map has room for nb new entries.
+            if (nb > map_.front_spare())
+                map_.reallocate(nb, 0);
+            for (size_type i = 0; i < nb; ++i)
+                map_.push_front(alloc_traits::allocate(a, block_size));
+            // Now move back_cap unused back blocks to front as well
+            start_ += block_size * back_cap;
+            for (size_type i = 0; i < back_cap; ++i) {
+                pointer pt = map_.back();
+                map_.pop_back();
+                map_.push_front(pt);
+            }
+            // Adjust start_ for the nb newly allocated front blocks
+            start_ += block_size * nb;
+        }
+    }
+
+    bool maybe_remove_front_spare(bool keep_one = true) {
+        if (front_spare_blocks() >= 2 || (!keep_one && front_spare_blocks() >= 1)) {
+            alloc_traits::deallocate(alloc_ref(), map_.front(), block_size);
+            map_.pop_front();
+            start_ -= block_size;
+            return true;
+        }
+        return false;
+    }
+
+    bool maybe_remove_back_spare(bool keep_one = true) {
+        if (back_spare_blocks() >= 2 || (!keep_one && back_spare_blocks() >= 1)) {
+            alloc_traits::deallocate(alloc_ref(), map_.back(), block_size);
+            map_.pop_back();
+            return true;
+        }
+        return false;
+    }
+
+    // -----------------------------------------------------------------------
+    // Append helpers
+    // -----------------------------------------------------------------------
+
+    void append_n(size_type n) {
+        if (back_spare() < n) add_back_capacity(n - back_spare());
+        allocator_type& a = alloc_ref();
+        iterator e = end();
+        for (size_type i = 0; i < n; ++i, (void)++e) {
+            alloc_traits::construct(a, addressof(*e));
+            ++size_;
+        }
+    }
+
+    void append_n(size_type n, const value_type& v) {
+        if (back_spare() < n) add_back_capacity(n - back_spare());
+        allocator_type& a = alloc_ref();
+        iterator e = end();
+        for (size_type i = 0; i < n; ++i, (void)++e) {
+            alloc_traits::construct(a, addressof(*e), v);
+            ++size_;
+        }
+    }
+
+    template<class InputIter>
+    void append_iter(InputIter f, InputIter l) {
+        for (; f != l; ++f)
+            emplace_back(*f);
+    }
+
+    template<class ForwardIter>
+    void append_fwd(ForwardIter f, size_type n) {
+        if (back_spare() < n) add_back_capacity(n - back_spare());
+        allocator_type& a = alloc_ref();
+        iterator e = end();
+        for (size_type i = 0; i < n; ++i, (void)++e, (void)++f) {   // (void): user types may delete operator,
+            alloc_traits::construct(a, addressof(*e), *f);
+            ++size_;
+        }
+    }
+
+    void erase_to_end(const_iterator f) {
+        iterator b  = begin();
+        difference_type pos = f - b;
+        iterator p  = b + pos;
+        iterator e  = end();
+        difference_type n = e - p;
+        if (n > 0) {
+            allocator_type& a = alloc_ref();
+            for (iterator i = p; i != e; ++i)
+                alloc_traits::destroy(a, addressof(*i));
+            size_ -= static_cast<size_type>(n);
+            while (maybe_remove_back_spare()) {}
+        }
+    }
+
+    // assign helpers
+    template<class InputIter, class Sentinel>
+    void assign_with_sentinel(InputIter f, Sentinel l) {
+        iterator i = begin();
+        iterator e = end();
+        for (; f != l && i != e; ++f, (void)++i)
+            *i = *f;
+        if (f != l)
+            append_iter(f, l);
+        else
+            erase_to_end(i);
+    }
+
+    template<class RAIter>
+    void assign_ra(RAIter f, size_type n) {
+        if (n > size_) {
+            RAIter l = f + size_;
+            std::copy(f, l, begin());
+            append_fwd(l, n - size_);
+        } else {
+            // use std::copy so the deque_iterator overload above applies
+            erase_to_end(std::copy(f, f + static_cast<difference_type>(n), begin()));
+        }
+    }
+
+    // move_and_check: move-assign [f,l) to [r,...). Adjusts vt if it aliases.
+    iterator move_and_check_impl(iterator f, iterator l, iterator r, const_pointer& vt) {
+        difference_type n = l - f;
+        while (n > 0) {
+            pointer fb         = f.ptr;
+            pointer fe         = *f.m_iter + block_size;
+            difference_type bs = fe - fb;
+            if (bs > n) { bs = n; fe = fb + bs; }
+            if (fb <= vt && vt < fe)
+                vt = (const_iterator(f.m_iter, vt) -= (f - r)).ptr;
+            r = std::move(fb, fe, r);
+            n -= bs;
+            f += bs;
+        }
+        return r;
+    }
+
+    iterator move_backward_and_check_impl(iterator f, iterator l, iterator r, const_pointer& vt) {
+        difference_type n = l - f;
+        while (n > 0) {
+            --l;
+            pointer lb         = *l.m_iter;
+            pointer le         = l.ptr + 1;
+            difference_type bs = le - lb;
+            if (bs > n) { bs = n; lb = le - bs; }
+            if (lb <= vt && vt < le)
+                vt = (const_iterator(l.m_iter, vt) += (r - l - 1)).ptr;
+            r = std::move_backward(lb, le, r);
+            n -= bs;
+            l -= bs - 1;
+        }
+        return r;
+    }
+
+    void move_construct_and_check_impl(iterator f, iterator l, iterator r, const_pointer& vt) {
+        allocator_type& a = alloc_ref();
+        difference_type n = l - f;
+        while (n > 0) {
+            pointer fb         = f.ptr;
+            pointer fe         = *f.m_iter + block_size;
+            difference_type bs = fe - fb;
+            if (bs > n) { bs = n; fe = fb + bs; }
+            if (fb <= vt && vt < fe)
+                vt = (const_iterator(f.m_iter, vt) += (r - f)).ptr;
+            for (; fb != fe; ++fb, (void)++r, (void)++size_)
+                alloc_traits::construct(a, addressof(*r), std::move(*fb));
+            n -= bs;
+            f += bs;
+        }
+    }
+
+    void move_construct_backward_and_check_impl(iterator f, iterator l, iterator r, const_pointer& vt) {
+        allocator_type& a = alloc_ref();
+        difference_type n = l - f;
+        while (n > 0) {
+            --l;
+            pointer lb         = *l.m_iter;
+            pointer le         = l.ptr + 1;
+            difference_type bs = le - lb;
+            if (bs > n) { bs = n; lb = le - bs; }
+            if (lb <= vt && vt < le)
+                vt = (const_iterator(l.m_iter, vt) -= (l - r + 1)).ptr;
+            while (le != lb) {
+                alloc_traits::construct(a, addressof(*--r), std::move(*--le));
+                --start_;
+                ++size_;
+            }
+            n -= bs;
+            l -= bs - 1;
+        }
+    }
+
+    // copy_assign_alloc
+    void copy_assign_alloc(const deque& c) {
+        if constexpr (alloc_traits::propagate_on_container_copy_assignment::value) {
+            if (alloc_ref() != c.alloc_ref()) {
+                clear();
+                shrink_to_fit();
+            }
+            alloc_ref() = c.alloc_ref();
+        }
+    }
+
+    // move_assign_alloc
+    void move_assign_alloc_impl(deque& c) noexcept {
+        if constexpr (alloc_traits::propagate_on_container_move_assignment::value)
+            alloc_ref() = std::move(c.alloc_ref());
+    }
+
+    void move_assign_from(deque& c) noexcept {
+        map_    = std::move(c.map_);
+        start_  = c.start_;
+        size_   = c.size_;
+        move_assign_alloc_impl(c);
+        c.start_ = c.size_ = 0;
+    }
+
+public:
+    //--- Construct/copy/destroy ---
+
+    deque() noexcept(is_nothrow_default_constructible_v<allocator_type>)
+        : map_(), start_(0), size_(0) {}
+
+    explicit deque(const allocator_type& a)
+        : map_(), start_(0), size_(0), alloc_(a) {}
+
+    explicit deque(size_type n)
+        : map_(), start_(0), size_(0) {
+        if (n > 0) append_n(n);
+    }
+
+    // libc++ guards the (n, alloc) and (n, v, alloc) constructors with
+    // __is_allocator in a default template parameter so the implicit
+    // deduction guides SFINAE away for non-allocators before
+    // allocator_traits<Alloc> gets hard-instantiated in the signature.
+    template<class Alloc2 = Allocator,
+             enable_if_t<detail::container_is_allocator_v<Alloc2>, int> = 0>
+    explicit deque(size_type n, const allocator_type& a)
+        : map_(), start_(0), size_(0), alloc_(a) {
+        if (n > 0) append_n(n);
+    }
+
+    deque(size_type n, const value_type& v)
+        : map_(), start_(0), size_(0) {
+        if (n > 0) append_n(n, v);
+    }
+
+    template<class Alloc2 = Allocator,
+             enable_if_t<detail::container_is_allocator_v<Alloc2>, int> = 0>
+    deque(size_type n, const value_type& v, const allocator_type& a)
+        : map_(), start_(0), size_(0), alloc_(a) {
+        if (n > 0) append_n(n, v);
+    }
+
+    template<class InputIter>
+        requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    deque(InputIter f, InputIter l)
+        : map_(), start_(0), size_(0) {
+        if constexpr (is_base_of_v<forward_iterator_tag,
+                        typename iterator_traits<InputIter>::iterator_category>)
+            append_fwd(f, static_cast<size_type>(std::distance(f, l)));
+        else
+            append_iter(f, l);
+    }
+
+    template<class InputIter>
+        requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    deque(InputIter f, InputIter l, const allocator_type& a)
+        : map_(), start_(0), size_(0), alloc_(a) {
+        if constexpr (is_base_of_v<forward_iterator_tag,
+                        typename iterator_traits<InputIter>::iterator_category>)
+            append_fwd(f, static_cast<size_type>(std::distance(f, l)));
+        else
+            append_iter(f, l);
+    }
+
+    deque(initializer_list<value_type> il)
+        : map_(), start_(0), size_(0) {
+        append_fwd(il.begin(), static_cast<size_type>(il.size()));
+    }
+
+    deque(initializer_list<value_type> il, const allocator_type& a)
+        : map_(), start_(0), size_(0), alloc_(a) {
+        append_fwd(il.begin(), static_cast<size_type>(il.size()));
+    }
+
+    deque(const deque& c)
+        : map_(), start_(0), size_(0),
+          alloc_(alloc_traits::select_on_container_copy_construction(c.alloc_ref())) {
+        append_fwd(c.begin(), c.size());
+    }
+
+    deque(const deque& c, const type_identity_t<allocator_type>& a)
+        : map_(), start_(0), size_(0), alloc_(a) {
+        append_fwd(c.begin(), c.size());
+    }
+
+    deque(deque&& c) noexcept(is_nothrow_move_constructible_v<allocator_type>)
+        : map_(std::move(c.map_)),
+          start_(c.start_), size_(c.size_),
+          alloc_(std::move(c.alloc_)) {
+        c.start_ = c.size_ = 0;
+    }
+
+    deque(deque&& c, const type_identity_t<allocator_type>& a)
+        : map_(), start_(0), size_(0), alloc_(a) {
+        if (a == c.alloc_ref()) {
+            map_    = std::move(c.map_);
+            start_  = c.start_;
+            size_   = c.size_;
+            c.start_ = c.size_ = 0;
+        } else {
+            append_fwd(std::make_move_iterator(c.begin()),
+                       static_cast<size_type>(c.size()));
+        }
+    }
+
+    ~deque() {
+        clear();
+        allocator_type& a = alloc_ref();
+        for (pointer p : map_)
+            alloc_traits::deallocate(a, p, block_size);
+    }
+
+    deque& operator=(const deque& c) {
+        if (this != addressof(c)) {
+            copy_assign_alloc(c);
+            assign(c.begin(), c.end());
+        }
+        return *this;
+    }
+
+    deque& operator=(deque&& c) noexcept(
+        (alloc_traits::propagate_on_container_move_assignment::value &&
+         is_nothrow_move_assignable_v<allocator_type>) ||
+        alloc_traits::is_always_equal::value) {
+        if constexpr (alloc_traits::propagate_on_container_move_assignment::value) {
+            // propagate: take ownership
+            clear();
+            shrink_to_fit();
+            move_assign_from(c);
+        } else if (alloc_ref() == c.alloc_ref()) {
+            clear();
+            shrink_to_fit();
+            move_assign_from(c);
+        } else {
+            // can't steal memory
+            assign(std::make_move_iterator(c.begin()),
+                   std::make_move_iterator(c.end()));
+        }
+        return *this;
+    }
+
+    deque& operator=(initializer_list<value_type> il) {
+        assign(il.begin(), il.end());
+        return *this;
+    }
+
+    // assign
+    template<class InputIter>
+        requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    void assign(InputIter f, InputIter l) {
+        if constexpr (is_base_of_v<random_access_iterator_tag,
+                        typename iterator_traits<InputIter>::iterator_category>)
+            assign_ra(f, static_cast<size_type>(l - f));
+        else
+            assign_with_sentinel(f, l);
+    }
+
+    void assign(size_type n, const value_type& v) {
+        if (n > size_) {
+            std::fill_n(begin(), size_, v);
+            append_n(n - size_, v);
+        } else {
+            erase_to_end(std::fill_n(begin(), n, v));
+        }
+    }
+
+    void assign(initializer_list<value_type> il) {
+        assign(il.begin(), il.end());
+    }
+
+    allocator_type get_allocator() const noexcept { return alloc_ref(); }
+
+    //--- Iterators ---
+
+    [[nodiscard]] iterator begin() noexcept {
+        auto mp = map_.begin() + start_ / block_size;
+        return iterator(mp, map_.empty() ? nullptr : *mp + start_ % block_size);
+    }
+
+    [[nodiscard]] const_iterator begin() const noexcept {
+        auto mp = map_.begin() + start_ / block_size;
+        return const_iterator(mp, map_.empty() ? nullptr : *mp + start_ % block_size);
+    }
+
+    [[nodiscard]] iterator end() noexcept {
+        size_type p = size_ + start_;
+        auto mp     = map_.begin() + p / block_size;
+        return iterator(mp, map_.empty() ? nullptr : *mp + p % block_size);
+    }
+
+    [[nodiscard]] const_iterator end() const noexcept {
+        size_type p = size_ + start_;
+        auto mp     = map_.begin() + p / block_size;
+        return const_iterator(mp, map_.empty() ? nullptr : *mp + p % block_size);
+    }
+
+    [[nodiscard]] reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
+    [[nodiscard]] const_reverse_iterator rbegin() const noexcept {
+        return const_reverse_iterator(end());
+    }
+    [[nodiscard]] reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
+    [[nodiscard]] const_reverse_iterator rend() const noexcept {
+        return const_reverse_iterator(begin());
+    }
+
+    [[nodiscard]] const_iterator cbegin() const noexcept { return begin(); }
+    [[nodiscard]] const_iterator cend()   const noexcept { return end(); }
+    [[nodiscard]] const_reverse_iterator crbegin() const noexcept {
+        return const_reverse_iterator(end());
+    }
+    [[nodiscard]] const_reverse_iterator crend() const noexcept {
+        return const_reverse_iterator(begin());
+    }
+
+    //--- Capacity ---
+
+    [[nodiscard]] size_type size()     const noexcept { return size_; }
+    [[nodiscard]] bool      empty()    const noexcept { return size_ == 0; }
+
+    [[nodiscard]] size_type max_size() const noexcept {
+        return std::min<size_type>(alloc_traits::max_size(alloc_ref()),
+                                   numeric_limits<difference_type>::max());
+    }
+
+    void resize(size_type n) {
+        if (n > size_) append_n(n - size_);
+        else if (n < size_) erase_to_end(begin() + static_cast<difference_type>(n));
+    }
+
+    void resize(size_type n, const value_type& v) {
+        if (n > size_) append_n(n - size_, v);
+        else if (n < size_) erase_to_end(begin() + static_cast<difference_type>(n));
+    }
+
+    void shrink_to_fit() noexcept {
+        allocator_type& a = alloc_ref();
+        if (empty()) {
+            while (!map_.empty()) {
+                alloc_traits::deallocate(a, map_.back(), block_size);
+                map_.pop_back();
+            }
+            start_ = 0;
+        } else {
+            maybe_remove_front_spare(/*keep_one=*/false);
+            maybe_remove_back_spare(/*keep_one=*/false);
+        }
+        map_.shrink_to_fit();
+    }
+
+    //--- Element access ---
+
+    [[nodiscard]] reference operator[](size_type i) noexcept {
+        size_type p = start_ + i;
+        return *(*(map_.begin() + p / block_size) + p % block_size);
+    }
+
+    [[nodiscard]] const_reference operator[](size_type i) const noexcept {
+        size_type p = start_ + i;
+        return *(*(map_.begin() + p / block_size) + p % block_size);
+    }
+
+    [[nodiscard]] reference at(size_type i) {
+        if (i >= size_) __builtin_trap(); // would throw std::out_of_range
+        size_type p = start_ + i;
+        return *(*(map_.begin() + p / block_size) + p % block_size);
+    }
+
+    [[nodiscard]] const_reference at(size_type i) const {
+        if (i >= size_) __builtin_trap(); // would throw std::out_of_range
+        size_type p = start_ + i;
+        return *(*(map_.begin() + p / block_size) + p % block_size);
+    }
+
+    [[nodiscard]] reference front() noexcept {
+        return *(*(map_.begin() + start_ / block_size) + start_ % block_size);
+    }
+
+    [[nodiscard]] const_reference front() const noexcept {
+        return *(*(map_.begin() + start_ / block_size) + start_ % block_size);
+    }
+
+    [[nodiscard]] reference back() noexcept {
+        size_type p = size_ + start_ - 1;
+        return *(*(map_.begin() + p / block_size) + p % block_size);
+    }
+
+    [[nodiscard]] const_reference back() const noexcept {
+        size_type p = size_ + start_ - 1;
+        return *(*(map_.begin() + p / block_size) + p % block_size);
+    }
+
+    //--- Modifiers ---
+
+    void push_back(const value_type& v) {
+        if (back_spare() == 0) add_back_capacity();
+        alloc_traits::construct(alloc_ref(), addressof(*end()), v);
+        ++size_;
+    }
+
+    void push_back(value_type&& v) {
+        if (back_spare() == 0) add_back_capacity();
+        alloc_traits::construct(alloc_ref(), addressof(*end()), std::move(v));
+        ++size_;
+    }
+
+    template<class... Args>
+    reference emplace_back(Args&&... args) {
+        if (back_spare() == 0) add_back_capacity();
+        alloc_traits::construct(alloc_ref(), addressof(*end()),
+                                std::forward<Args>(args)...);
+        ++size_;
+        return back();
+    }
+
+    void push_front(const value_type& v) {
+        if (front_spare() == 0) add_front_capacity();
+        alloc_traits::construct(alloc_ref(), addressof(*--begin()), v);
+        --start_;
+        ++size_;
+    }
+
+    void push_front(value_type&& v) {
+        if (front_spare() == 0) add_front_capacity();
+        alloc_traits::construct(alloc_ref(), addressof(*--begin()), std::move(v));
+        --start_;
+        ++size_;
+    }
+
+    template<class... Args>
+    reference emplace_front(Args&&... args) {
+        if (front_spare() == 0) add_front_capacity();
+        alloc_traits::construct(alloc_ref(), addressof(*--begin()),
+                                std::forward<Args>(args)...);
+        --start_;
+        ++size_;
+        return front();
+    }
+
+    void pop_back() noexcept {
+        allocator_type& a = alloc_ref();
+        size_type p = size_ + start_ - 1;
+        alloc_traits::destroy(a,
+            addressof(*(*(map_.begin() + p / block_size) + p % block_size)));
+        --size_;
+        maybe_remove_back_spare();
+    }
+
+    void pop_front() noexcept {
+        allocator_type& a = alloc_ref();
+        alloc_traits::destroy(a,
+            addressof(*(*(map_.begin() + start_ / block_size) + start_ % block_size)));
+        --size_;
+        ++start_;
+        maybe_remove_front_spare();
+    }
+
+    template<class... Args>
+    iterator emplace(const_iterator p, Args&&... args) {
+        return emplace_impl(p, std::forward<Args>(args)...);
+    }
+
+    iterator insert(const_iterator p, const value_type& v) {
+        return emplace_impl(p, v);
+    }
+
+    iterator insert(const_iterator p, value_type&& v) {
+        return emplace_impl(p, std::move(v));
+    }
+
+    iterator insert(const_iterator p, size_type n, const value_type& v) {
+        return insert_n(p, n, v);
+    }
+
+    template<class InputIter>
+        requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    iterator insert(const_iterator p, InputIter f, InputIter l) {
+        if constexpr (is_base_of_v<bidirectional_iterator_tag,
+                        typename iterator_traits<InputIter>::iterator_category>)
+            return insert_bidi(p, f, l, static_cast<size_type>(std::distance(f, l)));
+        else if constexpr (is_base_of_v<forward_iterator_tag,
+                        typename iterator_traits<InputIter>::iterator_category>)
+            return insert_fwd(p, f, static_cast<size_type>(std::distance(f, l)));
+        else
+            return insert_input(p, f, l);
+    }
+
+    iterator insert(const_iterator p, initializer_list<value_type> il) {
+        return insert(p, il.begin(), il.end());
+    }
+
+    iterator erase(const_iterator f) {
+        iterator b   = begin();
+        difference_type pos = f - b;
+        iterator    p = b + pos;
+        allocator_type& a = alloc_ref();
+        if (static_cast<size_type>(pos) <= (size_ - 1) / 2) {
+            // erase from front side
+            std::move_backward(b, p, std::next(p));
+            alloc_traits::destroy(a, addressof(*b));
+            --size_;
+            ++start_;
+            maybe_remove_front_spare();
+        } else {
+            // erase from back side
+            iterator i = std::move(std::next(p), end(), p);
+            alloc_traits::destroy(a, addressof(*i));
+            --size_;
+            maybe_remove_back_spare();
+        }
+        return begin() + pos;
+    }
+
+    iterator erase(const_iterator f, const_iterator l) {
+        difference_type n   = l - f;
+        iterator b          = begin();
+        difference_type pos = f - b;
+        iterator p          = b + pos;
+
+        if (n > 0) {
+            allocator_type& a = alloc_ref();
+            if (static_cast<size_type>(pos) <= (size_ - static_cast<size_type>(n)) / 2) {
+                iterator i = std::move_backward(b, p, p + n);
+                for (iterator j = b; j != i; ++j)
+                    alloc_traits::destroy(a, addressof(*j));
+                size_   -= static_cast<size_type>(n);
+                start_  += static_cast<size_type>(n);
+                while (maybe_remove_front_spare()) {}
+            } else {
+                iterator i = std::move(p + n, end(), p);
+                for (iterator j = i; j != end(); ++j)
+                    alloc_traits::destroy(a, addressof(*j));
+                size_ -= static_cast<size_type>(n);
+                while (maybe_remove_back_spare()) {}
+            }
+        }
+        return begin() + pos;
+    }
+
+    void swap(deque& c) noexcept {
+        map_.swap(c.map_);
+        std::swap(start_, c.start_);
+        std::swap(size_,  c.size_);
+        if constexpr (alloc_traits::propagate_on_container_swap::value)
+            std::swap(alloc_, c.alloc_);
+    }
+
+    void clear() noexcept {
+        allocator_type& a = alloc_ref();
+        for (iterator i = begin(), e = end(); i != e; ++i)
+            alloc_traits::destroy(a, addressof(*i));
+        size_ = 0;
+        // Keep at most 2 blocks; release the rest
+        while (map_.size() > 2) {
+            alloc_traits::deallocate(a, map_.front(), block_size);
+            map_.pop_front();
+        }
+        switch (map_.size()) {
+        case 1: start_ = block_size / 2; break;
+        case 2: start_ = block_size;     break;
+        default: start_ = 0;             break;
+        }
+    }
+
+private:
+    //--- emplace_impl ---
+    template<class... Args>
+    iterator emplace_impl(const_iterator cp, Args&&... args) {
+        size_type pos    = cp - begin();
+        size_type to_end = size_ - pos;
+        allocator_type& a = alloc_ref();
+
+        if (pos < to_end) {
+            // shift backward
+            if (front_spare() == 0) add_front_capacity();
+            if (pos == 0) {
+                alloc_traits::construct(a, addressof(*--begin()),
+                                        std::forward<Args>(args)...);
+                --start_;
+                ++size_;
+            } else {
+                // Construct a temp, then shift
+                value_type tmp(std::forward<Args>(args)...);
+                iterator b   = begin();
+                iterator bm1 = std::prev(b);
+                alloc_traits::construct(a, addressof(*bm1), std::move(*b));
+                --start_;
+                ++size_;
+                if (pos > 1)
+                    std::move(std::next(b), b + pos, b);
+                *(begin() + pos) = std::move(tmp);
+            }
+        } else {
+            // shift forward
+            if (back_spare() == 0) add_back_capacity();
+            size_type de = size_ - pos;
+            if (de == 0) {
+                alloc_traits::construct(a, addressof(*end()),
+                                        std::forward<Args>(args)...);
+                ++size_;
+            } else {
+                value_type tmp(std::forward<Args>(args)...);
+                iterator e   = end();
+                iterator em1 = std::prev(e);
+                alloc_traits::construct(a, addressof(*e), std::move(*em1));
+                ++size_;
+                if (de > 1)
+                    std::move_backward(e - de, em1, e);
+                *(begin() + pos) = std::move(tmp);
+            }
+        }
+        return begin() + pos;
+    }
+
+    //--- insert_n: insert n copies of v ---
+    iterator insert_n(const_iterator cp, size_type n, const value_type& v) {
+        size_type pos    = cp - begin();
+        size_type to_end = size_ - pos;
+        allocator_type& a = alloc_ref();
+
+        if (n == 0) return begin() + pos;
+
+        if (pos < to_end) {
+            if (n > front_spare())
+                add_front_capacity(n - front_spare());
+            iterator old_begin = begin();
+            iterator i         = old_begin;
+            if (n > pos) {
+                for (size_type m = n - pos; m; --m, (void)--start_, (void)++size_)
+                    alloc_traits::construct(a, addressof(*--i), v);
+                n = pos;
+            }
+            if (n > 0) {
+                const_pointer vt = pointer_traits<const_pointer>::pointer_to(v);
+                iterator obn     = old_begin + n;
+                move_construct_backward_and_check_impl(old_begin, obn, i, vt);
+                if (n < pos)
+                    old_begin = move_and_check_impl(obn, old_begin + pos, old_begin, vt);
+                std::fill_n(old_begin, n, *vt);
+            }
+        } else {
+            size_type back_cap = back_spare();
+            if (n > back_cap)
+                add_back_capacity(n - back_cap);
+            iterator old_end = end();
+            iterator i       = old_end;
+            size_type de     = size_ - pos;
+            if (n > de) {
+                for (size_type m = n - de; m; --m, (void)++i, (void)++size_)
+                    alloc_traits::construct(a, addressof(*i), v);
+                n = de;
+            }
+            if (n > 0) {
+                const_pointer vt = pointer_traits<const_pointer>::pointer_to(v);
+                iterator oen     = old_end - n;
+                move_construct_and_check_impl(oen, old_end, i, vt);
+                if (n < de)
+                    old_end = move_backward_and_check_impl(old_end - de, oen, old_end, vt);
+                std::fill_n(old_end - n, n, *vt);
+            }
+        }
+        return begin() + pos;
+    }
+
+    // temp_buf — minimal stand-in for libc++'s __split_buffer<value_type,
+    // allocator_type&>: a contiguous scratch buffer drawing from the deque's
+    // own allocator (exact-size when the count is known, geometric growth
+    // otherwise), used to buffer insert sources.
+    struct temp_buf {
+        allocator_type& a;
+        pointer   data = nullptr;
+        size_type cap  = 0;
+        size_type n    = 0;
+
+        explicit temp_buf(allocator_type& a_) : a(a_) {}
+        temp_buf(const temp_buf&) = delete;
+        temp_buf& operator=(const temp_buf&) = delete;
+
+        ~temp_buf() {
+            if (data) {
+                value_type* d = std::to_address(data);
+                for (size_type i = 0; i < n; ++i)
+                    alloc_traits::destroy(a, d + i);
+                alloc_traits::deallocate(a, data, cap);
+            }
+        }
+
+        void reserve_exact(size_type c) {
+            data = alloc_traits::allocate(a, c);
+            cap  = c;
+        }
+
+        template<class... Args>
+        void emplace_back(Args&&... args) {
+            if (n == cap) {
+                size_type nc    = cap == 0 ? 4 : 2 * cap;
+                pointer nd      = alloc_traits::allocate(a, nc);
+                value_type* ndr = std::to_address(nd);
+                if (data) {
+                    value_type* dr = std::to_address(data);
+                    for (size_type i = 0; i < n; ++i) {
+                        alloc_traits::construct(a, ndr + i, std::move(dr[i]));
+                        alloc_traits::destroy(a, dr + i);
+                    }
+                    alloc_traits::deallocate(a, data, cap);
+                }
+                data = nd;
+                cap  = nc;
+            }
+            alloc_traits::construct(a, std::to_address(data) + n,
+                                    std::forward<Args>(args)...);
+            ++n;
+        }
+
+        value_type* begin() noexcept { return std::to_address(data); }
+        value_type* end()   noexcept { return std::to_address(data) + n; }
+    };
+
+    //--- insert_input: input-iterator insert ---
+    template<class InputIter, class Sentinel>
+    iterator insert_input(const_iterator cp, InputIter f, Sentinel l) {
+        // libc++ collects into a __split_buffer, then inserts via move_iterator
+        temp_buf buf(alloc_ref());
+        for (; f != l; ++f)
+            buf.emplace_back(*f);
+        return insert_bidi(cp, std::make_move_iterator(buf.begin()),
+                           std::make_move_iterator(buf.end()),
+                           static_cast<size_type>(buf.n));
+    }
+
+    //--- insert_fwd: forward-iterator insert ---
+    template<class FwdIter>
+    iterator insert_fwd(const_iterator cp, FwdIter f, size_type n) {
+        if (n == 0) return begin() + (cp - begin());
+        // Collect into an exact-size temp buffer, then insert as bidirectional
+        temp_buf buf(alloc_ref());
+        buf.reserve_exact(n);
+        for (size_type i = 0; i < n; ++i, (void)++f)
+            buf.emplace_back(*f);
+        return insert_bidi(cp, std::make_move_iterator(buf.begin()),
+                           std::make_move_iterator(buf.end()), n);
+    }
+
+    //--- insert_bidi: bidirectional-iterator insert (knows n upfront) ---
+    template<class BiIter>
+    iterator insert_bidi(const_iterator cp, BiIter f, BiIter l, size_type n) {
+        size_type pos    = cp - begin();
+        size_type to_end = size_ - pos;
+        allocator_type& a = alloc_ref();
+
+        if (n == 0) return begin() + pos;
+
+        if (pos < to_end) {
+            if (n > front_spare())
+                add_front_capacity(n - front_spare());
+            iterator old_begin = begin();
+            iterator i         = old_begin;
+            BiIter m = f;
+            if (n > pos) {
+                m = (pos < n / 2) ? std::prev(l, pos) : std::next(f, n - pos);
+                for (BiIter j = m; j != f; --start_, (void)++size_)
+                    alloc_traits::construct(a, addressof(*--i), *--j);
+                n = pos;
+            }
+            if (n > 0) {
+                iterator obn = old_begin + n;
+                for (iterator j = obn; j != old_begin;) {
+                    alloc_traits::construct(a, addressof(*--i), std::move(*--j));
+                    --start_; ++size_;
+                }
+                if (n < pos)
+                    old_begin = std::move(obn, old_begin + pos, old_begin);
+                std::copy(m, l, old_begin);
+            }
+        } else {
+            size_type back_cap = back_spare();
+            if (n > back_cap)
+                add_back_capacity(n - back_cap);
+            iterator old_end = end();
+            iterator i       = old_end;
+            BiIter m = l;
+            size_type de = size_ - pos;
+            if (n > de) {
+                m = (de < n / 2) ? std::next(f, de) : std::prev(l, n - de);
+                for (BiIter j = m; j != l; ++i, (void)++j, (void)++size_)
+                    alloc_traits::construct(a, addressof(*i), *j);
+                n = de;
+            }
+            if (n > 0) {
+                iterator oen = old_end - n;
+                for (iterator j = oen; j != old_end; ++i, (void)++j, (void)++size_)
+                    alloc_traits::construct(a, addressof(*i), std::move(*j));
+                if (n < de)
+                    old_end = std::move_backward(old_end - de, oen, old_end);
+                std::copy_backward(f, m, old_end);
+            }
+        }
+        return begin() + pos;
+    }
+};
+
+//--- static member ---
+template<class T, class A>
+const typename deque<T,A>::difference_type deque<T,A>::block_size =
+    deque_block_size<T, typename deque<T,A>::difference_type>::value;
+
+//===----------------------------------------------------------------------===//
+// Deduction guides (C++17)
+//===----------------------------------------------------------------------===//
+
+template<class InputIter,
+         class Alloc = allocator<typename iterator_traits<InputIter>::value_type>>
+    requires requires { typename iterator_traits<InputIter>::iterator_category; } &&
+             detail::container_is_allocator_v<Alloc>
+deque(InputIter, InputIter) -> deque<typename iterator_traits<InputIter>::value_type, Alloc>;
+
+template<class InputIter, class Alloc>
+    requires requires { typename iterator_traits<InputIter>::iterator_category; } &&
+             detail::container_is_allocator_v<Alloc>
+deque(InputIter, InputIter, Alloc) -> deque<typename iterator_traits<InputIter>::value_type, Alloc>;
+
+//===----------------------------------------------------------------------===//
+// Comparison operators
+//===----------------------------------------------------------------------===//
+
+template<class T, class A>
+inline bool operator==(const deque<T,A>& x, const deque<T,A>& y) {
+    return x.size() == y.size() && std::equal(x.begin(), x.end(), y.begin());
+}
+
+template<class T, class A>
+inline detail::synth_three_way_result<T>
+operator<=>(const deque<T,A>& x, const deque<T,A>& y) {
+    return lexicographical_compare_three_way(x.begin(), x.end(),
+                                              y.begin(), y.end(),
+                                              detail::synth_three_way);
+}
+
+//===----------------------------------------------------------------------===//
+// Non-member swap
+//===----------------------------------------------------------------------===//
+
+template<class T, class A>
+inline void swap(deque<T,A>& x, deque<T,A>& y) noexcept(noexcept(x.swap(y))) {
+    x.swap(y);
+}
+
+//===----------------------------------------------------------------------===//
+// erase / erase_if (C++20)
+//===----------------------------------------------------------------------===//
+
+template<class T, class A, class U>
+inline typename deque<T,A>::size_type
+erase(deque<T,A>& c, const U& value) {
+    auto old = c.size();
+    c.erase(std::remove(c.begin(), c.end(), value), c.end());
+    return old - c.size();
+}
+
+template<class T, class A, class Predicate>
+inline typename deque<T,A>::size_type
+erase_if(deque<T,A>& c, Predicate pred) {
+    auto old = c.size();
+    c.erase(std::remove_if(c.begin(), c.end(), pred), c.end());
+    return old - c.size();
+}
+
+
+// [deque.syn] pmr alias (libc++ include/deque)
+namespace pmr {
+template <class ValueT>
+using deque = std::deque<ValueT, polymorphic_allocator<ValueT>>;
+} // namespace pmr
+
+} // namespace std

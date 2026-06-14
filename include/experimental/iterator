@@ -1,0 +1,76 @@
+// <experimental/iterator> — std::experimental::ostream_joiner and make_ostream_joiner
+// Ported from /home/user/llvm-project/libcxx/include/experimental/iterator
+// (LLVM libc++, Apache-2.0 with LLVM exceptions).
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// Mechanical substitutions per CONVENTIONS.md:
+//   _LIBCPP_BEGIN_NAMESPACE_LFTS -> namespace std { namespace experimental { inline namespace fundamentals_v2 {
+//   _LIBCPP_END_NAMESPACE_LFTS   -> }}}
+//   _LIBCPP_HIDE_FROM_ABI        -> (deleted)
+//   _NOEXCEPT                    -> noexcept
+//   __decay_t<T>                 -> std::decay_t<T>
+//   Leading/trailing underscores on private member names stripped.
+//   #include <__config>, pragma system_header, macro guards deleted.
+//   C++14 guard (_LIBCPP_STD_VER >= 14) kept as unconditional (we target C++20).
+#pragma once
+
+#pragma GCC visibility push(hidden)
+
+#include <iterator>  // output_iterator_tag
+#include <ostream>   // basic_ostream
+#include <memory>    // addressof
+#include <utility>   // move, forward
+#include <type_traits> // decay_t
+
+namespace std {
+namespace experimental {
+inline namespace fundamentals_v2 {
+
+template <class Delim, class CharT = char, class Traits = char_traits<CharT>>
+class ostream_joiner {
+public:
+    typedef CharT                            char_type;
+    typedef Traits                           traits_type;
+    typedef basic_ostream<char_type, traits_type> ostream_type;
+    typedef output_iterator_tag              iterator_category;
+    typedef void                             value_type;
+    typedef void                             difference_type;
+    typedef void                             pointer;
+    typedef void                             reference;
+
+    ostream_joiner(ostream_type& os, Delim&& d)
+        : output_iter(std::addressof(os)), delim(std::move(d)), first(true) {}
+
+    ostream_joiner(ostream_type& os, const Delim& d)
+        : output_iter(std::addressof(os)), delim(d), first(true) {}
+
+    template <typename T>
+    ostream_joiner& operator=(const T& v) {
+        if (!first)
+            *output_iter << delim;
+        first = false;
+        *output_iter << v;
+        return *this;
+    }
+
+    ostream_joiner& operator*() noexcept { return *this; }
+    ostream_joiner& operator++() noexcept { return *this; }
+    ostream_joiner& operator++(int) noexcept { return *this; }
+
+private:
+    ostream_type* output_iter;
+    Delim         delim;
+    bool          first;
+};
+
+template <class CharT, class Traits, class Delim>
+ostream_joiner<std::decay_t<Delim>, CharT, Traits>
+make_ostream_joiner(basic_ostream<CharT, Traits>& os, Delim&& d) {
+    return ostream_joiner<std::decay_t<Delim>, CharT, Traits>(os, std::forward<Delim>(d));
+}
+
+} // inline namespace fundamentals_v2
+} // namespace experimental
+} // namespace std
+
+#pragma GCC visibility pop

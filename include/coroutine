@@ -1,0 +1,251 @@
+// <coroutine> — coroutine support types.
+// Mechanically ported from libc++ include/coroutine + include/__coroutine/*.h
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+//
+// GCC-10 caveats:
+// 1. __builtin_coro_noop() is NOT available in gcc-10. We implement
+//    noop_coroutine_handle by constructing a fake coroutine frame manually
+//    (the same GCC fallback path used in libc++).
+//
+// 2. The __builtin_coro_* intrinsics (__builtin_coro_resume, _destroy, _done,
+//    _promise) are only available when -fcoroutines is passed to GCC-10. The
+//    libcis build does NOT enable -fcoroutines, so the *operations* that call
+//    these builtins (resume(), destroy(), done(), promise()) are guarded with
+//    #if __has_builtin(__builtin_coro_resume). The type infrastructure
+//    (coroutine_traits, coroutine_handle layout, suspend_always/never,
+//    noop_coroutine) is always available and can be tested without -fcoroutines.
+//
+// 3. Actual co_await / co_yield / co_return require -fcoroutines. Tests that
+//    only touch library-type static properties and address round-trips do NOT
+//    need -fcoroutines and compile fine.
+#pragma once
+
+#include <type_traits>
+#include <compare>
+#include <functional>  // for std::hash
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// [coroutine.traits]
+//===----------------------------------------------------------------------===//
+namespace detail {
+template<class T, class = void>
+struct coroutine_traits_sfinae {};
+
+template<class T>
+struct coroutine_traits_sfinae<T, void_t<typename T::promise_type>> {
+    using promise_type = typename T::promise_type;
+};
+} // namespace detail
+
+template<class Ret, class... Args>
+struct coroutine_traits : detail::coroutine_traits_sfinae<Ret> {};
+
+//===----------------------------------------------------------------------===//
+// [coroutine.handle] — forward declaration
+//===----------------------------------------------------------------------===//
+template<class Promise = void>
+struct coroutine_handle;
+
+//===----------------------------------------------------------------------===//
+// coroutine_handle<void> (base specialization)
+//===----------------------------------------------------------------------===//
+template<>
+struct coroutine_handle<void> {
+    // construct/reset
+    constexpr coroutine_handle() noexcept = default;
+    constexpr coroutine_handle(nullptr_t) noexcept {}
+
+    coroutine_handle& operator=(nullptr_t) noexcept {
+        handle_ = nullptr;
+        return *this;
+    }
+
+    // export/import
+    [[nodiscard]] constexpr void* address() const noexcept { return handle_; }
+
+    [[nodiscard]] static constexpr coroutine_handle from_address(void* addr) noexcept {
+        coroutine_handle tmp;
+        tmp.handle_ = addr;
+        return tmp;
+    }
+
+    // observers
+    constexpr explicit operator bool() const noexcept { return handle_ != nullptr; }
+
+#if __has_builtin(__builtin_coro_done)
+    [[nodiscard]] bool done() const {
+        return __builtin_coro_done(handle_);
+    }
+    void operator()() const { resume(); }
+    void resume() const {
+        __builtin_coro_resume(handle_);
+    }
+    void destroy() const {
+        __builtin_coro_destroy(handle_);
+    }
+#endif // __has_builtin(__builtin_coro_done)
+
+private:
+    void* handle_ = nullptr;
+};
+
+// [coroutine.handle.compare]
+inline constexpr bool operator==(coroutine_handle<> x, coroutine_handle<> y) noexcept {
+    return x.address() == y.address();
+}
+inline constexpr strong_ordering
+operator<=>(coroutine_handle<> x, coroutine_handle<> y) noexcept {
+    return compare_three_way()(x.address(), y.address());
+}
+
+//===----------------------------------------------------------------------===//
+// coroutine_handle<Promise>
+//===----------------------------------------------------------------------===//
+template<class Promise>
+struct coroutine_handle {
+    // construct/reset
+    constexpr coroutine_handle() noexcept = default;
+    constexpr coroutine_handle(nullptr_t) noexcept {}
+
+#if __has_builtin(__builtin_coro_promise)
+    [[nodiscard]] static coroutine_handle from_promise(Promise& p) {
+        coroutine_handle tmp;
+        tmp.handle_ = __builtin_coro_promise(
+            &const_cast<remove_cv_t<Promise>&>(p),
+            alignof(Promise), /*from_promise=*/true);
+        return tmp;
+    }
+#endif
+
+    coroutine_handle& operator=(nullptr_t) noexcept {
+        handle_ = nullptr;
+        return *this;
+    }
+
+    // export/import
+    [[nodiscard]] constexpr void* address() const noexcept { return handle_; }
+
+    [[nodiscard]] static constexpr coroutine_handle from_address(void* addr) noexcept {
+        coroutine_handle tmp;
+        tmp.handle_ = addr;
+        return tmp;
+    }
+
+    // conversion to base
+    constexpr operator coroutine_handle<>() const noexcept {
+        return coroutine_handle<>::from_address(address());
+    }
+
+    // observers
+    constexpr explicit operator bool() const noexcept { return handle_ != nullptr; }
+
+#if __has_builtin(__builtin_coro_done)
+    [[nodiscard]] bool done() const {
+        return __builtin_coro_done(handle_);
+    }
+    void operator()() const { resume(); }
+    void resume() const {
+        __builtin_coro_resume(handle_);
+    }
+    void destroy() const {
+        __builtin_coro_destroy(handle_);
+    }
+    [[nodiscard]] Promise& promise() const {
+        return *static_cast<Promise*>(
+            __builtin_coro_promise(handle_, alignof(Promise), /*from_promise=*/false));
+    }
+#endif // __has_builtin(__builtin_coro_done)
+
+private:
+    void* handle_ = nullptr;
+};
+
+// [coroutine.handle.hash]
+template<class T>
+struct hash<coroutine_handle<T>> {
+    [[nodiscard]] size_t operator()(const coroutine_handle<T>& v) const noexcept {
+        return hash<void*>()(v.address());
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// [coroutine.noop]
+//===----------------------------------------------------------------------===//
+struct noop_coroutine_promise {};
+
+template<>
+struct coroutine_handle<noop_coroutine_promise> {
+    // [coroutine.handle.noop.conv]
+    constexpr operator coroutine_handle<>() const noexcept {
+        return coroutine_handle<>::from_address(address());
+    }
+
+    // observers
+    constexpr explicit operator bool() const noexcept { return true; }
+    [[nodiscard]] constexpr bool done() const noexcept { return false; }
+
+    // resumption (no-ops for the noop coroutine)
+    constexpr void operator()() const noexcept {}
+    constexpr void resume() const noexcept {}
+    constexpr void destroy() const noexcept {}
+
+#if __has_builtin(__builtin_coro_promise)
+    // promise access
+    [[nodiscard]] noop_coroutine_promise& promise() const noexcept {
+        return *static_cast<noop_coroutine_promise*>(
+            __builtin_coro_promise(handle_, alignof(noop_coroutine_promise),
+                                   /*from_promise=*/false));
+    }
+#endif
+
+    // address
+    [[nodiscard]] constexpr void* address() const noexcept { return handle_; }
+
+private:
+    friend coroutine_handle<noop_coroutine_promise> noop_coroutine() noexcept;
+
+    // GCC doesn't provide __builtin_coro_noop(). Construct a fake coroutine
+    // frame manually — the same approach used in libc++'s GCC fallback path.
+    struct noop_coroutine_frame {
+        static void dummy_resume_destroy() {}
+        void (*resume_)()  = dummy_resume_destroy;
+        void (*destroy_)() = dummy_resume_destroy;
+        noop_coroutine_promise promise_;
+    };
+
+    static noop_coroutine_frame noop_frame_;
+
+    void* handle_ = &noop_frame_;
+
+    coroutine_handle() noexcept = default;
+};
+
+using noop_coroutine_handle = coroutine_handle<noop_coroutine_promise>;
+
+// Out-of-line definition of the static frame (ODR-required)
+inline noop_coroutine_handle::noop_coroutine_frame
+    noop_coroutine_handle::noop_frame_{};
+
+// [coroutine.noop.coroutine]
+[[nodiscard]] inline noop_coroutine_handle noop_coroutine() noexcept {
+    return noop_coroutine_handle();
+}
+
+//===----------------------------------------------------------------------===//
+// [coroutine.trivial.awaitables]
+//===----------------------------------------------------------------------===//
+struct suspend_never {
+    constexpr bool await_ready() const noexcept { return true; }
+    constexpr void await_suspend(coroutine_handle<>) const noexcept {}
+    constexpr void await_resume() const noexcept {}
+};
+
+struct suspend_always {
+    constexpr bool await_ready() const noexcept { return false; }
+    constexpr void await_suspend(coroutine_handle<>) const noexcept {}
+    constexpr void await_resume() const noexcept {}
+};
+
+} // namespace std

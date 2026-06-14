@@ -1,0 +1,61 @@
+// <cstdlib> -- C standard library functions in namespace std.
+// Mechanically ported from libc++ include/cstdlib.
+// Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
+#pragma once
+
+// glibc declarations must keep DEFAULT visibility no matter where this
+// wrapper is first included from: io headers wrap their bodies in
+// `#pragma GCC visibility push(hidden)` (libstdc++-ABI isolation), and a
+// libc prototype first seen inside such a region becomes a hidden symbol
+// the linker then cannot resolve against libc (e.g. strtod via <sstream>).
+#pragma GCC visibility push(default)
+#include <stdlib.h>
+#pragma GCC visibility pop
+#include <bits/fp_abs.h>  // floating std::abs overloads ([c.math.abs] puts them here too)
+
+namespace std {
+
+using ::div_t;
+using ::ldiv_t;
+using ::lldiv_t;
+using ::atof;
+using ::atoi;
+using ::atol;
+using ::atoll;
+using ::strtod;
+using ::strtof;
+using ::strtold;
+using ::strtol;
+using ::strtoll;
+using ::strtoul;
+using ::strtoull;
+using ::rand;
+using ::srand;
+using ::calloc;
+using ::free;
+using ::malloc;
+using ::realloc;
+using ::abort;
+using ::atexit;
+using ::exit;
+using ::_Exit;
+using ::getenv;
+using ::system;
+using ::bsearch;
+using ::qsort;
+using ::abs;
+using ::labs;
+using ::llabs;
+using ::div;   // incl. the C++ long/long long div overloads from <stdlib.h>
+using ::ldiv;
+using ::lldiv;
+using ::mblen;
+using ::mbtowc;
+using ::wctomb;
+using ::mbstowcs;
+using ::wcstombs;
+using ::at_quick_exit;
+using ::quick_exit;
+using ::aligned_alloc;
+
+} // namespace std
