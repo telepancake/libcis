@@ -10,3 +10,4 @@ libstdcxx.??????
 *.dat
 .ninja_deps
 .ninja_log
+bench/*.bin

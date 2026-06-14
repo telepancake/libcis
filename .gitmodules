@@ -1,0 +1,24 @@
+[submodule "bench/projects/fmt"]
+	path = bench/projects/fmt
+	url = https://github.com/fmtlib/fmt.git
+	shallow = true
+[submodule "bench/projects/unordered_dense"]
+	path = bench/projects/unordered_dense
+	url = https://github.com/martinus/unordered_dense.git
+	shallow = true
+[submodule "bench/projects/magic_enum"]
+	path = bench/projects/magic_enum
+	url = https://github.com/Neargye/magic_enum.git
+	shallow = true
+[submodule "bench/projects/json"]
+	path = bench/projects/json
+	url = https://github.com/nlohmann/json.git
+	shallow = true
+[submodule "bench/projects/tomlplusplus"]
+	path = bench/projects/tomlplusplus
+	url = https://github.com/marzer/tomlplusplus.git
+	shallow = true
+[submodule "bench/projects/doctest"]
+	path = bench/projects/doctest
+	url = https://github.com/doctest/doctest.git
+	shallow = true
