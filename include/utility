@@ -213,9 +213,17 @@ template<size_t I, class T> struct tuple_element;
 // protocol (and structured bindings) on pair must work from <utility> alone, so
 // tuple_size<const pair> / tuple_element<I, const pair> have to be visible
 // without <tuple>.  <tuple> includes <utility>, so it inherits them.
-template<class T> struct tuple_size<const T>          : tuple_size<T> {};
-template<class T> struct tuple_size<volatile T>       : tuple_size<T> {};
-template<class T> struct tuple_size<const volatile T> : tuple_size<T> {};
+// [tuple.helper] (LWG2770/3698): the cv-qualified tuple_size specializations
+// apply only when tuple_size<T> is a complete type; otherwise they fall back to
+// the (incomplete) primary so a tuple_size<cv T> query SFINAEs instead of hard-
+// erroring on a non-tuple-like type (e.g. a join_view in subrange's pair-like
+// conversion).
+template<class T> requires requires { tuple_size<T>::value; }
+struct tuple_size<const T>          : tuple_size<T> {};
+template<class T> requires requires { tuple_size<T>::value; }
+struct tuple_size<volatile T>       : tuple_size<T> {};
+template<class T> requires requires { tuple_size<T>::value; }
+struct tuple_size<const volatile T> : tuple_size<T> {};
 template<size_t I, class T> struct tuple_element<I, const T> {
     using type = const typename tuple_element<I, T>::type;
 };
