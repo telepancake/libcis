@@ -133,11 +133,22 @@ for r in tests:
     # Forward the process's real argc/argv to the test's main: lit runs tests as
     # real executables, so tests may legitimately read argv[0] (e.g. the procfs
     # copy_file test compares against argv[0]'s basename).  The manifest entry
-    # bakes in "(0, nullptr)"; rewriting it to "(argc, argv)" gives the faithful
-    # invocation without a per-test hack.
-    entry = r["entry"].replace("(0, nullptr)", "(argc, argv)")
-    open(drv, "w").write(
-        f'#include "{src}"\nint main(int argc, char** argv){{ return {entry}; }}\n')
+    # bakes in "NS::main(0, nullptr)"; route the call through an overloaded shim
+    # so it adapts to either standard main signature -- some tests declare
+    # `int main(int, const char**)`, and char** -> const char** is not an
+    # implicit conversion in C++.
+    entry = r["entry"]
+    if entry.endswith("(0, nullptr)"):
+        fn = entry[: -len("(0, nullptr)")]
+        entry = f"cis_call_main(&{fn}, argc, argv)"
+    drv_src = (
+        f'#include "{src}"\n'
+        "template<class R> R cis_call_main(R(*f)(int, char**), int c, char** v)"
+        "{ return f(c, v); }\n"
+        "template<class R> R cis_call_main(R(*f)(int, const char**), int c, char** v)"
+        "{ return f(c, const_cast<const char**>(v)); }\n"
+        f"int main(int argc, char** argv){{ return {entry}; }}\n")
+    open(drv, "w").write(drv_src)
     exe = f"/tmp/rf_exe_{os.getpid()}"
     xflags, _ = _extra_flags(src)
     try:
