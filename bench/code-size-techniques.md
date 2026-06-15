@@ -23,9 +23,11 @@ If you read nothing else:
 (out-of-line `__throw_*` helpers, bounds-check branches, and — surprisingly —
 `.eh_frame`, which `-fno-exceptions` does *not* remove on its own).
 
-**Three things g++-10 simply cannot do** — don't design around them:
-`-Oz` (GCC 12+), the LLVM MachineOutliner (clang-only), and linker ICF in GNU
-`bfd` ld (only `gold`/`lld` fold identical code).
+**Two things g++-10 simply cannot do** — don't design around them: `-Oz`
+(GCC 12+) and the LLVM MachineOutliner (clang-only). A third lever, **ICF
+(identical-code folding), is missing only from the *default* `bfd` linker** —
+g++-10 drives `gold`/`lld` fine via `-fuse-ld=gold`/`-fuse-ld=lld`, so ICF *is*
+available to libcis, just not by default (E3).
 
 **The five highest-value moves for libcis, in order:**
 
@@ -94,7 +96,7 @@ Three load-bearing facts about the pipeline:
 | ✅ Free | COMDAT folding | ELF + GNU ld ≥ 2.8 dedups vague-linkage copies automatically (E2). |
 | 🚫 Unavailable | `-Oz` | GCC 12.1+. g++-10 has `-Os` only. |
 | 🚫 Unavailable | MachineOutliner | clang/LLVM only; no GCC equivalent. |
-| 🚫 Unavailable (bfd) | Linker ICF | only `gold --icf` / `lld --icf`; GNU `bfd` ld has none (E3). |
+| 🟢 Opt-in | Linker ICF | default `bfd` ld has none; g++-10 drives `gold`/`lld` via `-fuse-ld=` for `--icf=safe` (E3). |
 | 🟢 Available | `support.cpp` | A compiled TU already exists → extern-template instantiation (B1) is on the table without leaving header-only. |
 
 The practical reading: libcis has already paid for the EH/RTTI wins, so the
@@ -280,11 +282,14 @@ Folds byte-identical functions — powerful for template instantiations that com
 to the same code.
 - *Availability:* `gold --icf=safe` (relocation-scan for address-taken) and
   `lld --icf=safe` (precise, via `-faddrsig` address-significance tables) only.
-  **GNU `bfd` ld has none.** Point g++-10 at one with `-fuse-ld=gold`/`-fuse-ld=lld`.
+  The **default `bfd` ld has none** — but g++-10 switches linker with
+  `-fuse-ld=gold`/`-fuse-ld=lld` (both verified working with g++-10 on this
+  toolchain), so this is an opt-in, not a hard limitation.
 - *Measured:* gold "Safe ICF" ~**6%** of text on large Google binaries (safe ≈ as
   good as all); one lld clang-binary datapoint ~**-0.8%** safe / ~**-2%** all.
-- *libcis fit:* optional experiment if `ld.gold`/`ld.lld` is present; don't depend
-  on it.
+- *libcis fit:* a real experiment, not blocked — try
+  `-ffunction-sections -fuse-ld=gold -Wl,--icf=safe` in the bench. Just don't
+  assume the *default* link has it.
 
 **E4. `-Os`, and the levers that don't exist here.** **[flag]**
 - `-Os` = `-O2` minus the size-increasing passes (`-falign-{functions,jumps,labels,
