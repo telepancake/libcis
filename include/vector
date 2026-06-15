@@ -14,6 +14,7 @@
 #include <utility>
 #include <compare>
 #include <cstdlib>
+#include <bits/relocatable.h>
 #include <functional>
 #include <initializer_list>
 #include <limits>
@@ -192,7 +193,7 @@ private:
         // even extend in place and skip the copy.  Not usable in constant
         // evaluation (realloc isn't constexpr) or for over-aligned types.
         if constexpr (is_same_v<allocator_type, allocator<value_type>> &&
-                      is_trivially_copyable_v<value_type> &&
+                      detail::is_trivially_relocatable_v<value_type> &&
                       alignof(value_type) <= alignof(max_align_t)) {
             const size_type n = size();
             void* p = ::realloc(
@@ -661,7 +662,7 @@ public:
             construct_one(end_, std::forward<Args>(args)...);
             ++end_;
         } else if constexpr (is_same_v<allocator_type, allocator<value_type>> &&
-                             is_trivially_copyable_v<value_type> &&
+                             detail::is_trivially_relocatable_v<value_type> &&
                              alignof(value_type) <= alignof(max_align_t)) {
             // std::allocator storage is malloc-backed and a trivially-relocatable
             // element moves by copying bytes, so the grow is a single realloc
