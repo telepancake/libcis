@@ -15,6 +15,7 @@
 #include <compare>
 #include <cstdlib>
 #include <bits/relocatable.h>
+#include <bits/vector_core.h>
 #include <functional>
 #include <initializer_list>
 #include <limits>
@@ -725,6 +726,15 @@ public:
             if (p == end_) {
                 construct_one(end_, std::forward<Args>(args)...);
                 ++end_;
+            } else if constexpr (detail::is_trivially_relocatable_v<value_type>) {
+                // relocatable: memmove the tail up to open a raw gap, then place
+                // the element into it.  Capture args first (it may alias the
+                // buffer, which the shift overwrites).
+                value_type tmp(std::forward<Args>(args)...);
+                detail::vec_open_gap(std::to_address(begin_), size(),
+                                     static_cast<size_type>(off), 1, sizeof(value_type));
+                construct_one(begin_ + off, std::move(tmp));
+                ++end_;
             } else {
                 // construct a temp to avoid aliasing, then move-insert
                 value_type tmp(std::forward<Args>(args)...);
@@ -888,17 +898,36 @@ public:
     constexpr iterator erase(const_iterator position) {
         difference_type off = position - cbegin();
         pointer p = begin_ + off;
-        destruct_at_end(std::move(p + 1, end_, p));
-        return p;
+        if constexpr (detail::is_trivially_relocatable_v<value_type>) {
+            // destroy the erased element, then memmove the tail down one slot
+            alloc_traits::destroy(alloc_, std::to_address(p));
+            detail::vec_close_gap(std::to_address(begin_), size(),
+                                  static_cast<size_type>(off), 1, sizeof(value_type));
+            --end_;
+        } else {
+            destruct_at_end(std::move(p + 1, end_, p));
+        }
+        return begin_ + off;
     }
 
     // erase(first, last)
     constexpr iterator erase(const_iterator first, const_iterator last) {
-        pointer p = begin_ + (first - cbegin());
-        if (first != last) {
-            destruct_at_end(std::move(p + (last - first), end_, p));
+        difference_type off = first - cbegin();
+        difference_type cnt = last - first;
+        pointer p = begin_ + off;
+        if (cnt > 0) {
+            if constexpr (detail::is_trivially_relocatable_v<value_type>) {
+                for (pointer s = p; s != p + cnt; ++s)
+                    alloc_traits::destroy(alloc_, std::to_address(s));
+                detail::vec_close_gap(std::to_address(begin_), size(),
+                                      static_cast<size_type>(off),
+                                      static_cast<size_type>(cnt), sizeof(value_type));
+                end_ -= cnt;
+            } else {
+                destruct_at_end(std::move(p + cnt, end_, p));
+            }
         }
-        return p;
+        return begin_ + off;
     }
 
     constexpr void clear() noexcept {
