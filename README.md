@@ -6,6 +6,25 @@ targeting **gcc-10.2** with `-std=gnu++20 -fno-exceptions -fno-rtti`. It is
 underscore-prefixed names and none of libc++'s portability/ABI macros. See
 [`CONVENTIONS.md`](CONVENTIONS.md) for the coding rules.
 
+## Quick start
+
+A `Makefile` wraps the pipeline so you don't have to memorize the stage order.
+It fails loudly on the first real error (unlike the conformance board, which
+counts missing results as red):
+
+```sh
+make doctor   # toolchain present AND a real smoke build of the library
+make smoke    # just: does the library compile+link+run? (no test corpus needed)
+make support  # build the mandatory libsupport.a on its own
+make test     # full pipeline: transfer -> build groups -> board
+make gate SUBTREE=thread   # per-file CLEAN/NOT-CLEAN check for one subtree
+```
+
+Override the compiler the same way the tools do: `make CXX=g++-13`. The sections
+below document each underlying stage.
+
+---
+
 The test suite is **transferred** from upstream libc++: a libclang-based tool
 (`tools/transfer.py`) rewrites each libc++ test (wraps it in a per-file
 namespace, drops RTTI/exception sites, records its entry point) so the same
