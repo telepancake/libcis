@@ -66,3 +66,9 @@ doctest               163279    +82646     13921     128   10480
 `+base` column is each project's **marginal** code over that baseline — the part
 that actually reflects libcis's STL footprint. (Numbers above are illustrative;
 they move with libcis and the pinned project versions.)
+
+## Journal
+
+`sizes.md` records dated baseline snapshots (commit + compiler + pins + table).
+Append a fresh block after each meaningful change so regressions and wins stay
+visible at a glance.
