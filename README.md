@@ -136,13 +136,13 @@ The PCH is a pure speed optimization: if `$LIBCXX_INCLUDE` is absent or the PCH
 fails to build, `transfer.py` prints a notice and parses each file without it
 (slower, identical output).
 
-`transfer.py` also needs clang's **builtin** headers (`stddef.h` etc.) on the
-parse path — libclang does not always supply them, and libc++'s `stddef.h` does
-`#include_next <stddef.h>`. The dir is autodetected (via `clang
--print-resource-dir`, then the usual install paths); override with
-`$CLANG_BUILTIN_INCLUDE` (point it at a clang resource dir's `include/`). When
-it can't be found, parses fail with `'stddef.h' file not found`, and
-`tools/doctor.py` flags it.
+`transfer.py` also needs clang's **resource dir** (the builtin `stddef.h` etc.)
+— libclang often miscomputes its own, so the parse can't find the builtins.
+The dir is autodetected (via `clang -print-resource-dir`, then the usual install
+paths) and passed to clang as `-resource-dir`, which orders it correctly (libc++
+headers before the C library, as libc++'s `<cstddef>` requires). Override the
+root with `$CLANG_RESOURCE_DIR`. When it can't be found, parses fail with
+`'stddef.h' file not found`, and `tools/doctor.py` flags it.
 
 The transfer also copies the libc++ support headers into `test/std/support/`
 and patches them for gcc-10 (see `patch_support()` in `tools/gen_transfer.py`).

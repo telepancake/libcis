@@ -89,13 +89,15 @@ PARSE_ARGS = [
     "-DTEST_HAS_NO_EXCEPTIONS", "-DTEST_HAS_NO_RTTI",
     "-I", SRC_SUPPORT,
 ]
-# libclang often lacks its own builtin headers on the search path; libc++'s
-# stddef.h does `#include_next <stddef.h>`, so without the clang resource-dir
-# include every parse fails with "'stddef.h' file not found".  Add it when found
-# (overridable via $CLANG_BUILTIN_INCLUDE).
-_BUILTIN_INC = cfg.clang_builtin_include_dir()
-if _BUILTIN_INC:
-    PARSE_ARGS += ["-isystem", _BUILTIN_INC]
+# libclang often miscomputes its own resource dir, so the clang builtin headers
+# (stddef.h, ...) are missing from the parse.  Hand clang the resource-dir ROOT
+# with -resource-dir and let the frontend order it correctly (libc++ first, then
+# builtins, then the C lib) -- forcing it on with -isystem instead shadows
+# libc++'s own <stddef.h> and trips its <cstddef> guard.  Override the dir with
+# $CLANG_RESOURCE_DIR.
+_RESOURCE_DIR = cfg.clang_resource_dir()
+if _RESOURCE_DIR:
+    PARSE_ARGS += ["-resource-dir", _RESOURCE_DIR]
 
 # A PCH of every top-level libc++ header, built once: each of the ~10k test
 # parses (plus its verify re-parse) then skips the std headers entirely

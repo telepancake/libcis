@@ -163,28 +163,29 @@ PCH_PATH = os.path.join(ROOT, "build", "transfer.pch")
 
 
 # ---------------------------------------------------------------------------
-# Clang builtin ("resource dir") headers: stddef.h, stdarg.h, etc.  libclang
-# does not always have these on its default search path, and libc++'s own
-# stddef.h does `#include_next <stddef.h>`, so without them every parse dies
-# with "'stddef.h' file not found".  Find the dir and we feed it to every parse.
+# Clang "resource dir": where clang's builtin headers (stddef.h, stdarg.h, ...)
+# live.  libclang does not always compute this correctly for itself, so the
+# transfer parse dies either with "'stddef.h' file not found" (resource include
+# missing entirely) or, if we naively force it onto the path with -isystem, with
+# libc++'s "<cstddef> didn't find libc++'s <stddef.h>" (builtin shadowing v1).
+# The correct fix is to hand the ROOT to clang via -resource-dir and let the
+# frontend order it properly: libc++ headers first, then the builtins, then the
+# C library -- exactly the order libc++'s #include_next dance requires.
 # ---------------------------------------------------------------------------
 def _has_stddef(d):
     return bool(d) and os.path.isfile(os.path.join(d, "stddef.h"))
 
 
-def clang_builtin_include_dir():
-    """Directory holding clang's builtin headers (stddef.h, ...), or None.
-
-    Honors $CLANG_BUILTIN_INCLUDE; otherwise asks an available clang for its
-    resource dir, then falls back to globbing the usual install locations.
-    """
-    env = os.environ.get("CLANG_BUILTIN_INCLUDE")
+def clang_resource_dir():
+    """Clang resource-dir ROOT (the dir whose `include/` holds stddef.h), or
+    None.  Pass it to libclang via -resource-dir.  Honors $CLANG_RESOURCE_DIR;
+    otherwise asks an available clang, then globs the usual install layouts."""
+    env = os.environ.get("CLANG_RESOURCE_DIR")
     if env:
-        return env if _has_stddef(env) else None
+        return env if _has_stddef(os.path.join(env, "include")) else None
 
     # Ask a clang binary where its resource dir is (most reliable).
-    clangs = [CXX_LIBCXX.split()[0], "clang++", "clang"]
-    for c in clangs:
+    for c in (CXX_LIBCXX.split()[0], "clang++", "clang"):
         if shutil.which(c) is None:
             continue
         try:
@@ -193,14 +194,20 @@ def clang_builtin_include_dir():
                                 timeout=10).stdout.strip()
         except Exception:
             continue
-        inc = os.path.join(rd, "include")
-        if _has_stddef(inc):
-            return inc
+        if _has_stddef(os.path.join(rd, "include")):
+            return rd
 
-    # Glob the conventional install layouts; prefer the highest version.
+    # Glob the conventional install layouts; prefer the highest version.  The
+    # root is the parent of the include/ dir.
     cands = glob.glob("/usr/lib/llvm-*/lib/clang/*/include") \
         + glob.glob("/usr/lib/clang/*/include")
     for inc in sorted(set(cands), reverse=True):
         if _has_stddef(inc):
-            return inc
+            return os.path.dirname(inc)
     return None
+
+
+def clang_builtin_include_dir():
+    """The `include/` under the resource dir (for display/diagnostics)."""
+    rd = clang_resource_dir()
+    return os.path.join(rd, "include") if rd else None
