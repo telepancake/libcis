@@ -19,19 +19,21 @@ import hashlib, json, os, re, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import config as cfg  # noqa: E402
 
 BACKENDS = {
     "libcis": dict(
-        cxx="g++-10",
+        cxx=cfg.CXX_LIBCIS,
         cargs="-std=gnu++20 -fno-exceptions -fno-rtti -nostdinc++ -Iinclude -Itest -Itest/std/support -O0 -g -w",
         link="-nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc",
         support=True),
     "libcxx": dict(
-        cxx="clang++-20",
+        cxx=cfg.CXX_LIBCXX,
         cargs="-std=gnu++2c -stdlib=libc++ -fno-exceptions -fno-rtti -Itest/std/support -O0 -g -w",
         link="-pthread", support=False),
     "libstdcxx": dict(
-        cxx="g++-14",
+        cxx=cfg.CXX_LIBSTDCXX,
         cargs="-std=gnu++26 -fno-exceptions -fno-rtti -Itest/std/support -O0 -g -w",
         link="-pthread", support=False),
 }
@@ -46,6 +48,7 @@ def phony(name, deps):
 
 def gen(backend):
     b = BACKENDS[backend]
+    cfg.require_cxx(b["cxx"], backend)
     man = json.load(open("test/std/manifest.json"))
     seen, tests = set(), []
     for t in man["transferred"]:           # manifest may have appended dups

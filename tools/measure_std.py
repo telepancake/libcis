@@ -32,6 +32,8 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import config as cfg  # noqa: E402
 DST_ROOT = os.path.join(ROOT, "test", "std")
 SUPPORT = os.path.join(DST_ROOT, "support")
 RESULTS = os.path.join(DST_ROOT, "results.json")
@@ -39,8 +41,8 @@ RESULTS = os.path.join(DST_ROOT, "results.json")
 COMMON = ["-fno-exceptions", "-fno-rtti", "-O0", "-w", "-I" + SUPPORT]
 
 VENDORS = {
-    "libcxx": {"cc": ["clang++-20", "-std=gnu++2c", "-stdlib=libc++"], "link": ["-pthread"]},
-    "libstdcxx": {"cc": ["g++-14", "-std=gnu++26"], "link": ["-pthread"]},
+    "libcxx": {"cc": [cfg.CXX_LIBCXX, "-std=gnu++2c", "-stdlib=libc++"], "link": ["-pthread"]},
+    "libstdcxx": {"cc": [cfg.CXX_LIBSTDCXX, "-std=gnu++26"], "link": ["-pthread"]},
 }
 
 

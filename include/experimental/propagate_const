@@ -1,5 +1,5 @@
 // <experimental/propagate_const> — std::experimental::propagate_const
-// Ported from /home/user/llvm-project/libcxx/include/experimental/propagate_const
+// Ported from libcxx/include/experimental/propagate_const
 // (LLVM libc++, Apache-2.0 with LLVM exceptions).
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //

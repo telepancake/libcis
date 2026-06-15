@@ -34,15 +34,35 @@ import re
 import shutil
 import sys
 
-import clang.cindex as ci
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import config as cfg  # noqa: E402
 
-LIBCLANG = "/lib/x86_64-linux-gnu/libclang-20.so.20"
-ci.Config.set_library_file(LIBCLANG)
+try:
+    import clang.cindex as ci
+except ModuleNotFoundError:
+    raise SystemExit(
+        "python libclang bindings not installed (`import clang.cindex` failed).\n"
+        "  Install them to (re-)run the transfer:  pip install libclang\n"
+        "  (only tools/transfer.py needs them; the test gate does not.)")
 
-LIBCXX = "/home/user/llvm-project/libcxx/test"
+# libclang is global state in cindex; bind it lazily (only when we actually
+# parse) so importing this module -- e.g. from tools/gen_transfer.py just to
+# generate the build graph -- does not require libclang to be installed.
+_LIBCLANG_BOUND = False
+
+
+def _ensure_libclang():
+    global _LIBCLANG_BOUND
+    if not _LIBCLANG_BOUND:
+        ci.Config.set_library_file(cfg.find_libclang())
+        _LIBCLANG_BOUND = True
+
+
+ROOT = cfg.ROOT
+# The libc++ test corpus this transfer rewrites from (override with $LIBCXX).
+LIBCXX = cfg.libcxx_test_dir()
 SRC_STD = os.path.join(LIBCXX, "std")
 SRC_SUPPORT = os.path.join(LIBCXX, "support")
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DST_ROOT = os.path.join(ROOT, "test", "std")
 DST_SUPPORT = os.path.join(DST_ROOT, "support")
 
@@ -73,14 +93,16 @@ PARSE_ARGS = [
 # A PCH of every top-level libc++ header, built once: each of the ~10k test
 # parses (plus its verify re-parse) then skips the std headers entirely
 # instead of re-chewing them.
-PCH_PATH = os.path.join(ROOT, "build", "transfer.pch")
+PCH_PATH = cfg.PCH_PATH
 PER_FILE_TIMEOUT = 60  # seconds; a stuck/crashed libclang parse must not stall the suite
 
 
 def build_pch():
-    cand = ["/usr/lib/llvm-20/include/c++/v1", "/usr/include/c++/v1"]
-    inc_dir = next((d for d in cand if os.path.isdir(d)), None)
+    _ensure_libclang()
+    inc_dir = cfg.libcxx_include_dir()
     if inc_dir is None:
+        print("PCH: no libc++ headers found (set LIBCXX_INCLUDE); "
+              "parsing without PCH", flush=True)
         return []
     hdrs = sorted(h for h in os.listdir(inc_dir)
                   if "." not in h and not h.startswith("__")
@@ -581,6 +603,7 @@ def cmd_worker(src, rel, rec_path):
     """One ninja edge's inner work: transform a single file, write the .cpp on
     success, and ALWAYS write its record.  May segfault/hang inside libclang --
     that is why --edge runs this under `timeout` in a child process."""
+    _ensure_libclang()
     write_rec(rec_path, process_one((src, rel)))
 
 

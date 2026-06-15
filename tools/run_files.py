@@ -19,9 +19,12 @@ import collections
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import config as cfg  # noqa: E402
 
 # -fcoroutines: gcc-10 gates the C++20 co_* keywords behind it (later gccs do not)
-CIS = ("g++-10 -std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -nostdinc++ -Iinclude "
+CIS = (cfg.require_cxx(cfg.CXX_LIBCIS, "libcis") +
+       " -std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -nostdinc++ -Iinclude "
        "-Itest/std -Itest/std/support -O0 -w").split()
 LINK = "build/groups/libcis/libsupport.a -nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc".split()
 

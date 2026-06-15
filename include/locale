@@ -77,10 +77,10 @@ template<class CharT> class collate;
 // the global registry.  This preserves the existing classic-locale fast path.
 //
 // Ported semantics from:
-//   /home/user/llvm-project/libcxx/include/__locale  — locale class, template
+//   libcxx/include/__locale  — locale class, template
 //     <class Facet> locale(const locale&, Facet*) [line 171],
 //     combine<Facet> [line 92], has_facet/use_facet [lines 176-183].
-//   /home/user/llvm-project/libcxx/src/locale.cpp   — __install_ctor [line 532],
+//   libcxx/src/locale.cpp   — __install_ctor [line 532],
 //     facet ownership / refcounting [lines 425-452, 561].
 //
 // Ownership: facet::refs_ mirrors libc++'s __shared_count semantics:
@@ -2737,7 +2737,7 @@ private:
 // for strtoX / snprintf / sscanf / toupper / errno.
 //
 // (1) Ported libc++ source line ranges (release/20.x
-//     /home/user/llvm-project/libcxx/include/locale unless noted):
+//     libcxx/include/locale unless noted):
 //       - __scan_keyword                       : lines ~275-370
 //       - __num_get_base                       : lines ~372-381  (+ static data
 //                                                  from src/locale.cpp 4112-4123)
@@ -3853,7 +3853,7 @@ OutputIterator num_put<CharT, OutputIterator>::do_put(iter_type s, ios_base& iob
 // libcis fragment: <locale> money facets — paste INSIDE `namespace std {`.
 //
 // Ported mechanically from libc++ release/20.x:
-//   /home/user/llvm-project/libcxx/include/locale
+//   libcxx/include/locale
 //     money_base                         ~2146-2156
 //     moneypunct<CharT,Intl>             ~2158-2205  (incl. classic do_* defaults)
 //     moneypunct_byname<CharT,Intl>      ~2214-2274
@@ -3861,7 +3861,7 @@ OutputIterator num_put<CharT, OutputIterator>::do_put(iter_type s, ios_base& iob
 //     money_get<CharT,InputIterator>     ~2339-2647  (__do_get / do_get / __double_or_nothing)
 //     __money_put<CharT>                 ~2651-2825  (__gather_info / __format)
 //     money_put<CharT,OutputIterator>    ~2827-2971  (do_put long double / string_type)
-//   /home/user/llvm-project/libcxx/src/locale.cpp
+//   libcxx/src/locale.cpp
 //     __init_pat                         ~5070-5427
 //     moneypunct_byname<...>::init       ~5429-5648  (lconv-driven byname data)
 //     __check_grouping                   ~4125

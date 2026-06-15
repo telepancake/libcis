@@ -1,5 +1,5 @@
 // <experimental/iterator> — std::experimental::ostream_joiner and make_ostream_joiner
-// Ported from /home/user/llvm-project/libcxx/include/experimental/iterator
+// Ported from libcxx/include/experimental/iterator
 // (LLVM libc++, Apache-2.0 with LLVM exceptions).
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //

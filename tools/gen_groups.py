@@ -26,18 +26,20 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import config as cfg  # noqa: E402
 
 MANIFEST = "test/std/manifest.json"
 SRC_DIR = "build/groups/src"
 RUN_TIMEOUT = 120  # seconds per test binary
 
 BACKENDS = {
-    "libcis":    ("g++-10",     "-std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -nostdinc++ -Iinclude -Itest/std -Itest/std/support -O0 -w", True),
-    "libcxx":    ("clang++-20", "-std=gnu++20 -stdlib=libc++ -fno-exceptions -fno-rtti -Itest/std -Itest/std/support -O0 -w", False),
-    "libstdcxx": ("g++-14",     "-std=gnu++20 -fno-exceptions -fno-rtti -Itest/std -Itest/std/support -O0 -w", False),
+    "libcis":    (cfg.CXX_LIBCIS,    "-std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -nostdinc++ -Iinclude -Itest/std -Itest/std/support -O0 -w", True),
+    "libcxx":    (cfg.CXX_LIBCXX,    "-std=gnu++20 -stdlib=libc++ -fno-exceptions -fno-rtti -Itest/std -Itest/std/support -O0 -w", False),
+    "libstdcxx": (cfg.CXX_LIBSTDCXX, "-std=gnu++20 -fno-exceptions -fno-rtti -Itest/std -Itest/std/support -O0 -w", False),
     # discriminator: gcc-10 with its OWN libstdc++.  A test red here and red on
     # libcis is a gcc-10 limitation; red only on libcis is a libcis bug.
-    "gcc10std":  ("g++-10",     "-std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -Itest/std -Itest/std/support -O0 -w", False),
+    "gcc10std":  (cfg.CXX_GCC10STD,  "-std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -Itest/std -Itest/std/support -O0 -w", False),
 }
 
 

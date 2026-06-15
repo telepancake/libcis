@@ -17,12 +17,19 @@
 # All backends: -fno-exceptions -fno-rtti, -I test/std/support for the harness.
 # Per-file ADDITIONAL_COMPILE_FLAGS recorded in manifest.json are applied.
 #
+# Compilers are overridable from the environment (defaults shown above):
+#   CXX (g++-10), CXX_LIBCXX (clang++-20), CXX_LIBSTDCXX (g++-14).
+#
 # Usage: tools/run_std.sh [libcis|libcxx|libstdcxx|all] [N] [path-substr]
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=test/std
 MAN=$ROOT/manifest.json
 mkdir -p build/std
+
+CXX="${CXX:-g++-10}"
+CXX_LIBCXX="${CXX_LIBCXX:-clang++-20}"
+CXX_LIBSTDCXX="${CXX_LIBSTDCXX:-g++-14}"
 
 want="all"; limit=0; filter=""
 for a in "$@"; do
@@ -83,13 +90,13 @@ backend() {
 
 echo "=== AST-transferred libc++ suite: ${#LINES[@]} tests  filter='${filter}' ==="
 if [ "$want" = all ] || [ "$want" = libcxx ]; then
-  backend libcxx "clang++-20 -std=gnu++2c -stdlib=libc++" "-pthread"
+  backend libcxx "$CXX_LIBCXX -std=gnu++2c -stdlib=libc++" "-pthread"
 fi
 if [ "$want" = all ] || [ "$want" = libstdcxx ]; then
-  backend libstdcxx "g++-14 -std=gnu++26" "-pthread"
+  backend libstdcxx "$CXX_LIBSTDCXX -std=gnu++26" "-pthread"
 fi
 if [ "$want" = all ] || [ "$want" = libcis ]; then
-  backend libcis "g++-10 -std=gnu++20 -nostdinc++ -Iinclude" \
+  backend libcis "$CXX -std=gnu++20 -nostdinc++ -Iinclude" \
     "src/support.cpp -nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc"
 fi
 true
