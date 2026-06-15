@@ -110,6 +110,10 @@ PROJECTS_CFG = {
         "dirs": ["doctest"],
         "defines": [],  # driver sets the no-exceptions config itself
     },
+    # Experiments (not in ORDER; measure explicitly). Drivers use relative
+    # #includes into bench/experiments/, so no submodule dirs are needed.
+    "vector_std": {"dirs": [], "defines": []},
+    "vector_erased": {"dirs": [], "defines": []},
 }
 
 ORDER = ["baseline", "fmt", "unordered_dense", "magic_enum",
