@@ -493,7 +493,7 @@ void vec_close_gap(void* base, std::size_t n, std::size_t off, std::size_t gap, 
 #include <bits/type_ops.h>
 namespace std {
 namespace detail {
-void core_relocate(void* dst, void* src, std::size_t n, const type_ops& ops) {
+void core_relocate(void* dst, void* src, std::size_t n, const type_ops& ops, void* ctx) {
     if (ops.move_construct == nullptr) {                 // trivially relocatable
         __builtin_memcpy(dst, src, n * ops.size);
         return;
@@ -501,8 +501,8 @@ void core_relocate(void* dst, void* src, std::size_t n, const type_ops& ops) {
     unsigned char* d = static_cast<unsigned char*>(dst);
     unsigned char* s = static_cast<unsigned char*>(src);
     for (std::size_t i = 0; i < n; ++i, d += ops.size, s += ops.size) {
-        ops.move_construct(d, s);
-        if (ops.destroy) ops.destroy(s);
+        ops.move_construct(ctx, d, s);
+        if (ops.destroy) ops.destroy(ctx, s);
     }
 }
 
@@ -515,8 +515,7 @@ void* core_grow(void* old_base, std::size_t n_live, std::size_t old_cap,
     }
     std::size_t cap;
     void* p = st.allocate(ctx, new_cap, &cap);
-    if (ops.move_construct) core_relocate(p, old_base, n_live, ops);   // move-construct + destroy
-    else __builtin_memcpy(p, old_base, n_live * ops.size);             // trivial, non-realloc storage
+    core_relocate(p, old_base, n_live, ops, ctx);   // memcpy or per-element via allocator
     if (old_base) st.deallocate(ctx, old_base, old_cap);
     *out_cap = cap;
     return p;

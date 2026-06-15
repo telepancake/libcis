@@ -189,14 +189,14 @@ private:
     // offered only when the storage is malloc-backed (std::allocator) and the
     // element isn't over-aligned; otherwise the core uses allocate+relocate+free.
     static void* st_allocate(void* ctx, size_type n, size_type* out_cap) {
-        vector* self = static_cast<vector*>(ctx);
-        auto res = alloc_traits::allocate_at_least(self->alloc_, n);
+        allocator_type& a = *static_cast<allocator_type*>(ctx);
+        auto res = alloc_traits::allocate_at_least(a, n);
         *out_cap = res.count;
         return std::to_address(res.ptr);
     }
     static void st_deallocate(void* ctx, void* p, size_type cap) {
-        vector* self = static_cast<vector*>(ctx);
-        alloc_traits::deallocate(self->alloc_,
+        allocator_type& a = *static_cast<allocator_type*>(ctx);
+        alloc_traits::deallocate(a,
             std::pointer_traits<pointer>::pointer_to(*static_cast<value_type*>(p)), cap);
     }
     static void* st_reallocate(void*, void* p, size_type n) {
@@ -211,6 +211,7 @@ private:
     }
 
     // The one grow path: forward element ops + storage ops to the shared core.
+    // ctx is the allocator (used by both the element leaves and the storage).
     constexpr void reallocate_grow(size_type new_cap) {
         if (new_cap > max_size())
             throw_length_error();
@@ -218,8 +219,8 @@ private:
         size_type cap;
         void* p = detail::core_grow(
             begin_ ? static_cast<void*>(std::to_address(begin_)) : nullptr,
-            n, capacity(), new_cap, detail::ops_for<value_type>, storage(),
-            static_cast<void*>(this), &cap);
+            n, capacity(), new_cap, detail::ops_for<value_type, allocator_type>,
+            storage(), static_cast<void*>(std::addressof(alloc_)), &cap);
         begin_ = std::pointer_traits<pointer>::pointer_to(*static_cast<value_type*>(p));
         end_   = begin_ + n;
         cap_   = begin_ + cap;
