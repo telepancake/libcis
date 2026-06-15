@@ -185,65 +185,44 @@ private:
 
     // Reallocate to at least new_cap, move all elements, return old begin ptr
     // This is the "grow" path used by insert/emplace/push_back
+    // Storage axis bound to this vector's allocator (ctx == this). reallocate is
+    // offered only when the storage is malloc-backed (std::allocator) and the
+    // element isn't over-aligned; otherwise the core uses allocate+relocate+free.
+    static void* st_allocate(void* ctx, size_type n, size_type* out_cap) {
+        vector* self = static_cast<vector*>(ctx);
+        auto res = alloc_traits::allocate_at_least(self->alloc_, n);
+        *out_cap = res.count;
+        return std::to_address(res.ptr);
+    }
+    static void st_deallocate(void* ctx, void* p, size_type cap) {
+        vector* self = static_cast<vector*>(ctx);
+        alloc_traits::deallocate(self->alloc_,
+            std::pointer_traits<pointer>::pointer_to(*static_cast<value_type*>(p)), cap);
+    }
+    static void* st_reallocate(void*, void* p, size_type n) {
+        return ::realloc(p, n * sizeof(value_type));
+    }
+    static const detail::storage_ops& storage() {
+        static constexpr detail::storage_ops s{
+            &st_allocate, &st_deallocate,
+            (is_same_v<allocator_type, allocator<value_type>> &&
+             alignof(value_type) <= alignof(max_align_t)) ? &st_reallocate : nullptr};
+        return s;
+    }
+
+    // The one grow path: forward element ops + storage ops to the shared core.
     constexpr void reallocate_grow(size_type new_cap) {
-        // Allocate new buffer
         if (new_cap > max_size())
             throw_length_error();
-        // Fast path: std::allocator storage is malloc-backed (operator new ->
-        // malloc) and a trivially-relocatable element can be moved by copying
-        // bytes, so the whole grow collapses to a single realloc — which can
-        // even extend in place and skip the copy.  Not usable in constant
-        // evaluation (realloc isn't constexpr) or for over-aligned types.
-        if constexpr (is_same_v<allocator_type, allocator<value_type>> &&
-                      detail::is_trivially_relocatable_v<value_type> &&
-                      alignof(value_type) <= alignof(max_align_t)) {
-            const size_type n = size();
-            void* p = ::realloc(
-                begin_ ? static_cast<void*>(std::to_address(begin_)) : nullptr,
-                new_cap * sizeof(value_type));
-            if (p == nullptr) __builtin_trap();
-            begin_ = static_cast<pointer>(p);
-            end_   = begin_ + n;
-            cap_   = begin_ + new_cap;
-            return;
-        }
-        if constexpr (is_same_v<allocator_type, allocator<value_type>>) {
-            // non-relocatable element, default allocator: relocate the elements
-            // through the shared const type_ops* core (one body for all types).
-            const size_type n = size();
-            auto res = alloc_traits::allocate_at_least(alloc_, new_cap);
-            detail::core_relocate(std::to_address(res.ptr), std::to_address(begin_),
-                                  n, detail::ops_for<value_type>);
-            if (begin_ != nullptr)
-                alloc_traits::deallocate(alloc_, begin_, capacity());
-            begin_ = res.ptr;
-            end_   = res.ptr + n;
-            cap_   = res.ptr + res.count;
-            return;
-        }
-        auto res = alloc_traits::allocate_at_least(alloc_, new_cap);
-        pointer new_begin = res.ptr;
-        pointer new_end   = new_begin;
-        pointer new_cap_ptr = new_begin + res.count;
-
-        // Move-construct all elements into new buffer
-        pointer src = begin_;
-        while (src != end_) {
-            construct_one(new_end, std::move(*src));
-            ++new_end;
-            ++src;
-        }
-        // Destroy old elements and free old buffer
-        while (end_ != begin_) {
-            --end_;
-            alloc_traits::destroy(alloc_, std::to_address(end_));
-        }
-        if (begin_ != nullptr)
-            alloc_traits::deallocate(alloc_, begin_, cap_ - begin_);
-
-        begin_ = new_begin;
-        end_   = new_end;
-        cap_   = new_cap_ptr;
+        const size_type n = size();
+        size_type cap;
+        void* p = detail::core_grow(
+            begin_ ? static_cast<void*>(std::to_address(begin_)) : nullptr,
+            n, capacity(), new_cap, detail::ops_for<value_type>, storage(),
+            static_cast<void*>(this), &cap);
+        begin_ = std::pointer_traits<pointer>::pointer_to(*static_cast<value_type*>(p));
+        end_   = begin_ + n;
+        cap_   = begin_ + cap;
     }
 
     // Grow and insert a gap of 'gap' slots at p, returning pointer to the gap
