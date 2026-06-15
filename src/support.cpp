@@ -471,3 +471,18 @@ void locale::__install_messages(imp* ni, const char* name, bool isC) {
 }
 
 } // namespace std
+
+// --- libcis: shared size-parameterized shift cores for vector (bits/vector_core.h) ---
+#include <cstring>
+namespace std {
+namespace detail {
+void vec_open_gap(void* base, std::size_t n, std::size_t off, std::size_t gap, std::size_t elem) {
+    unsigned char* b = static_cast<unsigned char*>(base);
+    std::memmove(b + (off + gap) * elem, b + off * elem, (n - off) * elem);
+}
+void vec_close_gap(void* base, std::size_t n, std::size_t off, std::size_t gap, std::size_t elem) {
+    unsigned char* b = static_cast<unsigned char*>(base);
+    std::memmove(b + off * elem, b + (off + gap) * elem, (n - off - gap) * elem);
+}
+} // namespace detail
+} // namespace std
