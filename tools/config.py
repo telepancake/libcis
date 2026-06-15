@@ -28,6 +28,7 @@ gate the library.
 import glob
 import os
 import shutil
+import subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -159,3 +160,47 @@ def libcxx_include_dir():
 
 # Where the prebuilt transfer PCH lands.
 PCH_PATH = os.path.join(ROOT, "build", "transfer.pch")
+
+
+# ---------------------------------------------------------------------------
+# Clang builtin ("resource dir") headers: stddef.h, stdarg.h, etc.  libclang
+# does not always have these on its default search path, and libc++'s own
+# stddef.h does `#include_next <stddef.h>`, so without them every parse dies
+# with "'stddef.h' file not found".  Find the dir and we feed it to every parse.
+# ---------------------------------------------------------------------------
+def _has_stddef(d):
+    return bool(d) and os.path.isfile(os.path.join(d, "stddef.h"))
+
+
+def clang_builtin_include_dir():
+    """Directory holding clang's builtin headers (stddef.h, ...), or None.
+
+    Honors $CLANG_BUILTIN_INCLUDE; otherwise asks an available clang for its
+    resource dir, then falls back to globbing the usual install locations.
+    """
+    env = os.environ.get("CLANG_BUILTIN_INCLUDE")
+    if env:
+        return env if _has_stddef(env) else None
+
+    # Ask a clang binary where its resource dir is (most reliable).
+    clangs = [CXX_LIBCXX.split()[0], "clang++", "clang"]
+    for c in clangs:
+        if shutil.which(c) is None:
+            continue
+        try:
+            rd = subprocess.run([c, "-print-resource-dir"],
+                                capture_output=True, text=True,
+                                timeout=10).stdout.strip()
+        except Exception:
+            continue
+        inc = os.path.join(rd, "include")
+        if _has_stddef(inc):
+            return inc
+
+    # Glob the conventional install layouts; prefer the highest version.
+    cands = glob.glob("/usr/lib/llvm-*/lib/clang/*/include") \
+        + glob.glob("/usr/lib/clang/*/include")
+    for inc in sorted(set(cands), reverse=True):
+        if _has_stddef(inc):
+            return inc
+    return None
