@@ -183,9 +183,21 @@ effective.
 - *libcis fit:* cheap to try as a flag; the `abi_tag` half is irrelevant for a
   static single-version freestanding lib, but the visibility half still helps GC.
 
-**B3. `[[gnu::noinline]]` on large, rarely-called bodies.** **[header]**
-Prevents a big body being duplicated into every caller; keeps one shared copy.
-Pairs with `cold` (C2).
+**B3. `[[gnu::noinline]]` — and when it actually helps at `-Os`.** **[header]**
+*Not* a blanket "stop inlining big bodies" tool. At `-Os` GCC's size-aware inliner
+already refuses to duplicate a genuinely large body across many callers (measured:
+identical `.text` with and without `noinline` for an 8-caller heavy function), and
+it deliberately *inlines* single-caller functions (`-finline-functions-called-once`)
+and deletes the standalone copy — where forcing `noinline` makes code *larger*.
+`noinline` earns its place in two narrow cases: **(1)** a body the inliner *scores*
+as cheap on early IR but which *explodes per call site* after
+constant-propagation-driven unrolling / specialization / downstream inlining —
+`noinline` stops that multiplication; **(2)** as *enforcement* that code you
+deliberately outlined (C1/A2) stays outlined when it has few callers (only a win
+when separateness buys something else: `.text.unlikely` placement, cross-TU COMDAT
+sharing, or keeping the hot caller small). For the usual "keep rare error code off
+the hot path" goal the real levers are **outlining** (C1) + **`cold`** (C2), not
+`noinline`.
 
 ### C — Error / precondition / termination paths (the under-appreciated win)
 
