@@ -12,7 +12,9 @@ backends, libclang, and the PCH headers are optional and reported as warnings.
 """
 import os
 import shutil
+import subprocess
 import sys
+import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -20,9 +22,49 @@ import config as cfg  # noqa: E402
 
 OK, WARN, BAD = "ok  ", "WARN", "MISS"
 
+# The libcis backend flags + link tail, kept in sync with tools/gen_groups.py
+# and the README.  Used by the smoke build below.
+_SMOKE_FLAGS = ("-std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti "
+                "-nostdinc++ -Iinclude -O0 -w").split()
+_SMOKE_LINK = "-nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc".split()
+_SMOKE_SRC = ("#include <vector>\n#include <algorithm>\n"
+              "int main(){std::vector<int> v{3,1,2};"
+              "std::sort(v.begin(),v.end());return v[0]!=1;}\n")
+
 
 def _cxx(cxx):
     return shutil.which(cxx.split()[0])
+
+
+def _smoke_build():
+    """Actually compile+link+run a trivial program against the library, so the
+    doctor reports the real build state instead of mere tool presence.  Returns
+    (ok, detail)."""
+    with tempfile.TemporaryDirectory() as td:
+        src = os.path.join(td, "smoke.cpp")
+        exe = os.path.join(td, "smoke")
+        with open(src, "w") as fh:
+            fh.write(_SMOKE_SRC)
+        cmd = (cfg.CXX_LIBCIS.split() + _SMOKE_FLAGS
+               + [src, os.path.join(ROOT, "src", "support.cpp")]
+               + _SMOKE_LINK + ["-o", exe])
+        try:
+            p = subprocess.run(cmd, cwd=ROOT, capture_output=True,
+                               text=True, timeout=180)
+        except Exception as e:
+            return False, f"compile failed to launch: {e}"
+        if p.returncode != 0:
+            err = next((l for l in p.stderr.splitlines() if "error:" in l),
+                       p.stderr.strip().splitlines()[-1] if p.stderr.strip()
+                       else "non-zero exit, no diagnostic")
+            return False, "compile FAILED: " + err[:90]
+        try:
+            r = subprocess.run([exe], capture_output=True, timeout=60)
+        except Exception as e:
+            return False, f"built but failed to run: {e}"
+        if r.returncode != 0:
+            return False, f"built but exited {r.returncode} (runtime broken)"
+        return True, "compiles + links + runs"
 
 
 def main():
@@ -37,6 +79,18 @@ def main():
         required_ok = False
         rows.append((BAD, f"libcis compiler  ($CXX={cfg.CXX_LIBCIS})",
                      "not on PATH -- set CXX=<your gcc-10-compatible g++>"))
+
+    # --- the real check: does the library actually BUILD? -----------------
+    # Presence of a compiler is not the same as a working library, so smoke
+    # compile+link+run a trivial TU against include/ + src/support.cpp.  This
+    # is what makes the doctor's verdict mean "you can build", not "tools exist".
+    if p:
+        ok, detail = _smoke_build()
+        if ok:
+            rows.append((OK, "library smoke build", detail))
+        else:
+            required_ok = False
+            rows.append((BAD, "library smoke build", detail))
 
     # --- the test corpus: required to (re)run the transfer ----------------
     try:
