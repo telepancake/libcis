@@ -251,9 +251,12 @@ A wins on every compiler on all three axes:
   carries a runtime `switch` (confirmed: a `je` ladder in `bop<T>`) that costs more
   code than the table saves. (B's table edge grows with op *count*, so at a very
   large op set it could flip — but the container op set is small.)
-- **Faster** — A is one indirection straight to the op; B is an indirection *plus*
-  the in-dispatcher branch ladder, on every call, and can't be inlined (it's behind
-  the erasure pointer).
+- **Faster / wash** — with both as structs (as measured), they make the same one
+  indirect call (`[ops+offset]` load → call); B then *also* runs the enum `switch`
+  on every call, and can't inline it (it's behind the erasure pointer). A *bare*
+  single dispatcher pointer would save A's struct field-load — but only by forcing
+  the uniform signature below and losing per-op nulling. The struct's field-load is
+  the price of compile-time-known op offset + argument shape.
 - **Saner** — A gives each op its natural signature; B crams them into a uniform
   `int(BinOp,void*,const void*)` (copy-construct returning `int` is nonsense, only
   `cmp` wants it).
