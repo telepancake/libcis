@@ -87,3 +87,11 @@ The append is done under an exclusive file lock, so many agents can record
 concurrently without corrupting the log. A later analysis pass can stream
 `sizes.jsonl` and pick out the heads/tails (smallest/largest `.text` per project,
 deltas between commits, ...).
+
+## Techniques
+
+`code-size-techniques.md` is a cited design memo on how a standard-library
+*implementation* can shrink the `.text` of programs that use it — the catalog the
+"try stuff" agents should draw experiments from. It ends with a ranked, libcis-
+specific action plan (phase 0 = free build flags, then error-path consolidation,
+then instantiation-volume work).
