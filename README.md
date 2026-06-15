@@ -17,17 +17,44 @@ tests can validate libcis. The repo therefore has two halves: the **library**
 
 ## 1. Requirements
 
-| Tool | Used for |
-|------|----------|
-| `g++-10` (10.2) | the one supported compiler for the library and the `libcis` backend |
-| `python3` + `ninja` (≥1.10) | the transfer + test build graph |
-| `libclang` (Python bindings) | `tools/transfer.py` AST rewriting (only needed to **re-run the transfer**) |
-| A checkout of libc++ at `/home/user/llvm-project/libcxx` | the source of the tests (path is set as `LIBCXX` in `tools/transfer.py`) |
-| *(optional)* `clang++-20`, `g++-14` | the discriminator backends (`libcxx`, `libstdcxx`, `gcc10std`) |
+| Tool | Used for | Override |
+|------|----------|----------|
+| `g++-10` (10.2) | the one supported compiler for the library and the `libcis` backend | `$CXX` |
+| `python3` + `ninja` (≥1.10) | the transfer + test build graph | — |
+| a checkout of libc++ `test/` | the source of the tests (the transfer rewrites it) | `$LIBCXX` |
+| *(optional)* `libclang` + Python bindings | `tools/transfer.py` AST rewriting (only to **re-run the transfer**) | `$LIBCLANG` |
+| *(optional)* `clang++-20`, `g++-14` | the reference/discriminator backends (`libcxx`, `libstdcxx`, `gcc10std`) | `$CXX_LIBCXX`, `$CXX_LIBSTDCXX`, `$CXX_GCC10STD` |
+
+Nothing is pinned to an absolute path: every tool reads its toolchain from
+[`tools/config.py`](tools/config.py), which resolves each item from the
+environment variable above (falling back to the default shown and then to
+autodetection). **Run the doctor first** — it reports exactly what is present,
+what is missing, and which variable to set:
+
+```sh
+python3 tools/doctor.py
+```
+
+Only `$CXX` (the library compiler) and the libc++ test corpus are *required*;
+the reference backends, libclang, and the PCH headers are optional and only
+consulted by the tools that use them.
 
 The committed `test/std/` tree and `test/std/manifest.json` are **generated**
 (git-ignored). On a fresh checkout you must run the transfer (section 3) before
 running tests.
+
+### Getting the libc++ test corpus
+
+The transfer rewrites tests from a libc++ `test/` directory (it needs the
+`std/` and `support/` subtrees). Point `$LIBCXX` at one from any LLVM checkout:
+
+```sh
+git clone --depth 1 https://github.com/llvm/llvm-project ~/llvm-project
+export LIBCXX=~/llvm-project/libcxx/test
+```
+
+If unset, `config.py` probes `third_party/llvm-project/libcxx/test`,
+`~/llvm-project/libcxx/test`, then `/home/user/llvm-project/libcxx/test`.
 
 ---
 
@@ -65,7 +92,7 @@ g++-10 -std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -nostdinc++ -Iinclude
 
 ## 3. Running the transfer (generating the tests)
 
-The transfer turns `/home/user/llvm-project/libcxx/test/std/**` into
+The transfer turns `$LIBCXX/std/**` (the libc++ test corpus, section 1) into
 `test/std/**` plus `test/std/manifest.json` (the list of transferred tests with
 their recorded entry points). It is wired as an incremental ninja graph.
 
@@ -91,6 +118,23 @@ What `ninja -f build/build.ninja` does, in order:
 4. **groups** — `tools/gen_groups.py` emits `build/groups.ninja`, which builds
    `build/groups/libcis/libsupport.a`, compiles one consolidated TU per source
    directory (≈7 tests share one header parse), links and runs each.
+
+#### The transfer PCH
+
+Step 1 above is preceded by a `pch` edge that builds `build/transfer.pch` once:
+a precompiled header of every top-level libc++ header, so each of the ~10k test
+parses skips re-chewing the standard headers. The headers come from
+`$LIBCXX_INCLUDE` (autodetected from `/usr/lib/llvm-*/include/c++/v1` or
+`/usr/include/c++/v1`). It is wired into the ninja graph, but you can also build
+it on its own:
+
+```sh
+python3 tools/transfer.py --build-pch        # writes build/transfer.pch
+```
+
+The PCH is a pure speed optimization: if `$LIBCXX_INCLUDE` is absent or the PCH
+fails to build, `transfer.py` prints a notice and parses each file without it
+(slower, identical output).
 
 The transfer also copies the libc++ support headers into `test/std/support/`
 and patches them for gcc-10 (see `patch_support()` in `tools/gen_transfer.py`).
@@ -189,6 +233,8 @@ include/        the library (header-only; user headers + bits/ internals)
 src/support.cpp runtime glue: operator new/delete etc. (linked as libsupport.a)
 test/std/       generated: transferred tests + manifest.json + support/  (git-ignored)
 tools/
+  config.py          single source of truth for toolchain/paths (env-overridable)
+  doctor.py          probe the toolchain; report what's present/missing + the fix
   transfer.py        libclang AST rewrite of one test (the transfer worker)
   gen_transfer.py    emit build/build.ninja + build/transfer.ninja
   gen_groups.py      emit build/groups.ninja (consolidated group TUs, all backends)

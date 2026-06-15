@@ -1,5 +1,5 @@
 // <experimental/simd> — std::experimental::parallelism_v2 simd / simd_mask
-// Ported from /home/user/llvm-project/libcxx/include/experimental/simd and the
+// Ported from libcxx/include/experimental/simd and the
 // experimental/__simd/*.h fragments (LLVM libc++, Apache-2.0 with LLVM exceptions).
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //

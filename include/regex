@@ -1,10 +1,10 @@
 // <regex> — Regular expressions.
 // Mechanically ported from:
-//   /home/user/llvm-project/libcxx/include/regex  (lines 846–1001 for stage 1)
-//   /home/user/llvm-project/libcxx/src/regex.cpp  (lines 16–64 for stage 1)
-//   /home/user/llvm-project/libcxx/include/regex  (lines 1003–1305 for stage 2)
-//   /home/user/llvm-project/libcxx/include/__locale (lines 185–252 for collate)
-//   /home/user/llvm-project/libcxx/src/regex.cpp  (lines 66–354 for stage 2 helpers)
+//   libcxx/include/regex  (lines 846–1001 for stage 1)
+//   libcxx/src/regex.cpp  (lines 16–64 for stage 1)
+//   libcxx/include/regex  (lines 1003–1305 for stage 2)
+//   libcxx/include/__locale (lines 185–252 for collate)
+//   libcxx/src/regex.cpp  (lines 66–354 for stage 2 helpers)
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //
 // Stage 1: regex_constants (syntax_option_type, match_flag_type, error_type)

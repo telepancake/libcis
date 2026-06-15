@@ -7,8 +7,11 @@ and/or run against the two vendor toolchains.
 """
 import json
 import os
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import config as cfg  # noqa: E402
 DST = os.path.join(ROOT, "test", "std")
 
 
@@ -36,8 +39,8 @@ def main():
         "file -- nothing sampled or extrapolated.\n")
     lines.append("- Transfer: `tools/transfer.py` (libclang AST rewrite)")
     lines.append("- Measure : `tools/measure_std.py` -> `results.json`")
-    lines.append("- libcxx  : `clang++-20 -std=gnu++2c -stdlib=libc++`")
-    lines.append("- libstdcxx: `g++-14 -std=gnu++26`")
+    lines.append(f"- libcxx  : `{cfg.CXX_LIBCXX} -std=gnu++2c -stdlib=libc++`")
+    lines.append(f"- libstdcxx: `{cfg.CXX_LIBSTDCXX} -std=gnu++26`")
     lines.append("- Both    : `-fno-exceptions -fno-rtti -I test/std/support`\n")
 
     lines.append("## Totals (transfer stage)\n")
