@@ -266,6 +266,37 @@ A wins on every compiler on all three axes:
 
 So: **struct of typed, individually-nullable function pointers.**
 
+## 6c. Gotcha: restore op-validity with a body `static_assert`, not a `requires`
+
+Type erasure *loses* the compile-time check that an op is valid: the core falls back
+to `memcpy` on a null pointer, and `memcpy` compiles for any type — so a copy of a
+move-only element compiles and **silently corrupts** at runtime where `std::vector`
+would have hard-errored. The check must be restored at the typed wrapper — but **not**
+by adding `requires`-clauses to methods. A signature constraint *removes the method
+from the candidate set* when unsatisfied, and overload resolution then silently
+redirects: a constrained-away member `swap` falls to `std::swap`/ADL (different
+semantics, possible recursion); the container's own detected traits
+(`is_swappable_v<vector<T>>`, `is_copy_constructible_v<vector<T>>`) flip; sibling
+overloads (`insert(pos,count,val)` vs `insert(pos,first,last)`) gain new ambiguities.
+
+Use a `static_assert` in the method **body** instead:
+
+```cpp
+void push_back(const T& x) {
+    static_assert(std::is_copy_constructible_v<T>, "needs a copyable element");
+    ...
+}
+```
+
+It's part of the definition, not the signature: candidate set, trait detection and
+resolution stay byte-identical; it fires only when the method is odr-used (an unused
+copy-method on a `vector<MoveOnly>` stays valid, as with `std::vector`); and it lands
+the diagnostic exactly where the deleted-copy error used to be. This is also how the
+standard handles *CopyInsertable* — `push_back(const T&)` is not a constrained
+signature, it's a body requirement. The only place real constraints belong is the
+container's *own* special members (so `is_copy_constructible_v<vector<T>>` is correct)
+— and there you mirror the standard's set exactly, you don't invent.
+
 ## 7. Conclusion
 
 For a constrained-production, size-focused standard library that is header-only

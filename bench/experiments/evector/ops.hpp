@@ -16,13 +16,18 @@
 //     either. So a set pointer means "non-trivial, call me"; null means "trivial
 //     OR invalid".
 //   * That nullptr is NOT ambiguous in practice, because VALIDITY is enforced at
-//     COMPILE TIME by the typed wrapper, not at runtime by the core. A wrapper
-//     method that needs an op is `requires`-constrained on it (exactly as
-//     std::vector's push_back(const T&) is ill-formed for a move-only type), so
-//     the core is only ever instantiated into a path when that op is valid.
-//     Within the core, then, a null pointer unambiguously means "trivial — handle
-//     inline by size" (memcpy / memmove / skip); the "invalid" case never reaches
-//     the core. No runtime flag is needed to tell them apart.
+//     COMPILE TIME by the typed wrapper, not at runtime by the core. The wrapper
+//     restores the check the erased memcpy-fallback would otherwise swallow with a
+//     `static_assert` in the method BODY (e.g. push_back(const T&) asserts
+//     is_copy_constructible_v<T>) -- NOT a signature `requires`-clause. A body
+//     assert fires only when the method is odr-used, leaves the candidate set /
+//     trait detection / overload resolution byte-identical, and mirrors how the
+//     standard itself handles CopyInsertable. (Slapping `requires` on members
+//     silently redirects overload resolution -- e.g. a constrained-away member
+//     `swap` falls back to std::swap/ADL with different semantics.) So the core is
+//     only ever instantiated into a path when the op is valid, and within it a
+//     null pointer unambiguously means "trivial -- handle inline by size"; the
+//     "invalid" case never reaches the core. No runtime flag is needed.
 //   * The `flags` bitset is therefore DIAGNOSTIC, not load-bearing: it records
 //     triviality for introspection / static_assert / debugging. The core
 //     dispatches on null-vs-set, not on flags. Zero runtime cost.
