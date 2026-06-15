@@ -114,6 +114,7 @@ PROJECTS_CFG = {
     # #includes into bench/experiments/, so no submodule dirs are needed.
     "vector_std": {"dirs": [], "defines": []},
     "vector_erased": {"dirs": [], "defines": []},
+    "vector_dual": {"dirs": [], "defines": []},
 }
 
 ORDER = ["baseline", "fmt", "unordered_dense", "magic_enum",
