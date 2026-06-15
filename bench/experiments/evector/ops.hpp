@@ -145,7 +145,11 @@ inline constexpr type_ops ops_for = make_type_ops<T>();
 // =====================================================================
 // Two-type table: ops between a T and a U
 // =====================================================================
+// Embeds pointers to the single-type tables for T (first) and U (second), so a
+// two-type generic algorithm receives ONE ops pointer instead of three.
 struct cross_ops {
+    const type_ops* first;                       // single-type ops for T
+    const type_ops* second;                      // single-type ops for U
     void (*construct_from)(void*, const void*);  // ::new(T) T(U)   null: not constructible
     void (*assign_from)(void*, const void*);     // T = U           null: not assignable
     int  (*compare)(const void*, const void*);   // T <=> U (3-way) null: not comparable
@@ -173,7 +177,7 @@ template<class T, class U> void cast_op(void* d, const void* s) {
 
 template<class T, class U>
 constexpr cross_ops make_cross_ops() {
-    cross_ops o{nullptr, nullptr, nullptr, nullptr, nullptr};
+    cross_ops o{&ops_for<T>, &ops_for<U>, nullptr, nullptr, nullptr, nullptr, nullptr};
     if constexpr (std::is_constructible_v<T, const U&>)
         o.construct_from = &construct_from_op<T, U>;
     if constexpr (std::is_assignable_v<T&, const U&>)
@@ -189,5 +193,31 @@ constexpr cross_ops make_cross_ops() {
 
 template<class T, class U>
 inline constexpr cross_ops cross_for = make_cross_ops<T, U>();
+
+// =====================================================================
+// Storage management: the third axis
+// =====================================================================
+// insert / erase / grow must (re)allocate without knowing WHERE the storage
+// lives — vector's heap buffer, string's SSO-or-heap, or a caller-supplied buffer
+// in a global algorithm. That policy is erased behind a single realloc-style
+// function + an opaque context pointer (the owner's `this`), typically supplied by
+// the container as an inline friend bound to `this`.
+//
+//   realloc(ctx, cur, count, new_cap, ops, &out_cap):
+//     * ensure room for >= new_cap elements in ctx's storage;
+//     * preserve the first `count` elements, relocating them via `ops`
+//       (ops->move_construct + destroy, or memmove when trivially relocatable);
+//     * free the old storage; return the new base; write achieved cap to out_cap;
+//     * may return `cur` unchanged (in-place grow / SSO / fixed storage).
+//   One call performs ALL allocation work.
+using realloc_fn = void* (*)(void* ctx, void* cur, std::size_t count,
+                             std::size_t new_cap, const type_ops* ops,
+                             std::size_t* out_cap);
+
+// Generic-algorithm calling convention => ONE or THREE extra arguments:
+//   * non-allocating (find / compare / for_each):   (const type_ops*)            1
+//       two-type variant:                           (const cross_ops*)           1   (embeds both)
+//   * allocating    (insert / erase / grow / assign): (ops, realloc_fn, void* ctx) 3
+//   (cross_ops embeds first/second so a two-type op still passes ONE ops pointer.)
 
 } // namespace ev
