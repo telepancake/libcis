@@ -137,6 +137,32 @@ def build_one(name, cfg, workdir, keep):
     return {"name": name, "ok": True, **sizes}
 
 
+def have_compiler():
+    return bool(shutil.which(CXX[0]))
+
+
+def measure(names=None, keep=False):
+    """Build + run + size each project; return a list of result dicts.
+
+    Each dict is {name, ok, ...}: on success also text/rodata/data/bss; on
+    failure also stage ('submodule'|'compile'|'run'|...) and msg.
+    """
+    names = names or ORDER
+    workdir = tempfile.mkdtemp(prefix="codesize_")
+    results = []
+    try:
+        for name in names:
+            cfg = PROJECTS_CFG.get(name)
+            if cfg is None:
+                results.append({"name": name, "ok": False, "stage": "config",
+                                "msg": "unknown"})
+                continue
+            results.append(build_one(name, cfg, workdir, keep))
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+    return results
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("projects", nargs="*", help="subset to build (default: all)")
@@ -145,25 +171,16 @@ def main():
     ap.add_argument("--json", action="store_true", help="emit JSON")
     args = ap.parse_args()
 
-    if not shutil.which(CXX[0]):
+    if not have_compiler():
         print(f"compiler not found: {CXX[0]} (libcis targets g++-10; set $CXX "
               f"to override)", file=sys.stderr)
         return 2
 
     names = args.projects or ORDER
-    workdir = tempfile.mkdtemp(prefix="codesize_")
-    results = []
-    try:
-        for name in names:
-            cfg = PROJECTS_CFG.get(name)
-            if cfg is None:
-                print(f"unknown project: {name}", file=sys.stderr)
-                results.append({"name": name, "ok": False, "stage": "config",
-                                "msg": "unknown"})
-                continue
-            results.append(build_one(name, cfg, workdir, args.keep))
-    finally:
-        shutil.rmtree(workdir, ignore_errors=True)
+    for name in names:
+        if name not in PROJECTS_CFG:
+            print(f"unknown project: {name}", file=sys.stderr)
+    results = measure(names, keep=args.keep)
 
     if args.json:
         print(json.dumps(results, indent=2))

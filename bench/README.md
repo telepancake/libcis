@@ -69,6 +69,21 @@ they move with libcis and the pinned project versions.)
 
 ## Journal
 
-`sizes.md` records dated baseline snapshots (commit + compiler + pins + table).
-Append a fresh block after each meaningful change so regressions and wins stay
-visible at a glance.
+Two journals, by audience:
+
+- **`sizes.md`** — human baseline snapshots (commit + compiler + pins + table).
+- **`sizes.jsonl`** — machine journal, one JSON object per line, appended by
+  `record.py` for the "batch of agents trying stuff" workflow.
+
+After a change, record a parsable entry (the description is mandatory — it's how
+an experiment is found later; git commit + dirty flag are captured automatically):
+
+```sh
+bench/record.py "what I changed / am measuring"
+bench/record.py --print          # index of all journal entries
+```
+
+The append is done under an exclusive file lock, so many agents can record
+concurrently without corrupting the log. A later analysis pass can stream
+`sizes.jsonl` and pick out the heads/tails (smallest/largest `.text` per project,
+deltas between commits, ...).
