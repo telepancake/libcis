@@ -29,12 +29,21 @@ If you read nothing else:
 g++-10 drives `gold`/`lld` fine via `-fuse-ld=gold`/`-fuse-ld=lld`, so ICF *is*
 available to libcis, just not by default (E3).
 
+**The biggest lever is a flag, not a library change: `-flto`.** Measured on this
+bench (g++-10, `-Os`), LTO alone takes **~20–25% off `.text`** for every project
+(e.g. doctest 163279→130371, fmt 132111→106014, baseline 80633→60448). It is now
+**baked into the bench's default baseline** (see §E0 / §6) — so libcis's *library*
+techniques below are measured *on top of* the best flags-only build, which is the
+honest target.
+
 **The five highest-value moves for libcis, in order:**
 
-1. **Free build-flag wins, testable today, zero library change:**
-   `-ffunction-sections -fdata-sections -Wl,--gc-sections`,
-   `-fno-asynchronous-unwind-tables -fno-unwind-tables`,
-   `-fvisibility=hidden -fvisibility-inlines-hidden`.
+1. **Flags-only optimized baseline (already applied; zero library change).**
+   `-flto` (dominant) + `-fmerge-all-constants` + `-ffunction-sections
+   -fdata-sections -Wl,--gc-sections` + `-fno-asynchronous-unwind-tables
+   -fno-unwind-tables`, plus `-fvisibility=hidden` and `-fuse-ld=gold
+   -Wl,--icf=safe` (the latter two ≈inert under whole-program LTO but kept for
+   non-LTO consumers). This is `codesize.py`'s default now.
 2. **One shared `[[noreturn, gnu::cold]]` failure handler** behind every error/
    precondition site (the libc++ `__libcpp_verbose_abort` / MSVC `_Xlength_error`
    pattern).
@@ -94,9 +103,10 @@ Three load-bearing facts about the pipeline:
 | ⚠️ Residual | EH unwind tables | `.eh_frame`/`.eh_frame_hdr` **survive** `-fno-exceptions`; need `-fno-asynchronous-unwind-tables` (C4). |
 | ⚠️ Residual | `__throw_*` helpers | Still real out-of-line calls + message strings + bounds-check branches (C1). |
 | ✅ Free | COMDAT folding | ELF + GNU ld ≥ 2.8 dedups vague-linkage copies automatically (E2). |
+| 🟢 Default | LTO (`-flto`) | **~20–25% off `.text` at `-Os`** (measured); now the bench default; subsumes gc-sections + visibility in a single link unit (E0). |
 | 🚫 Unavailable | `-Oz` | GCC 12.1+. g++-10 has `-Os` only. |
 | 🚫 Unavailable | MachineOutliner | clang/LLVM only; no GCC equivalent. |
-| 🟢 Opt-in | Linker ICF | default `bfd` ld has none; g++-10 drives `gold`/`lld` via `-fuse-ld=` for `--icf=safe` (E3). |
+| 🟢 Opt-in | Linker ICF | default `bfd` ld has none; g++-10 drives `gold` via `-fuse-ld=gold -Wl,--icf=safe` (E3) — but ≈inert under whole-program LTO. |
 | 🟢 Available | `support.cpp` | A compiled TU already exists → extern-template instantiation (B1) is on the table without leaving header-only. |
 
 The practical reading: libcis has already paid for the EH/RTTI wins, so the
@@ -272,6 +282,28 @@ Don't pull a demangler or rich diagnostics into the default terminate path.
 
 ### E — Make the compiler & linker do the work (stages 3–4)
 
+**E0. Link-Time Optimization (`-flto`) — the single biggest lever.** **[flag]**
+Defers codegen to link time so the optimizer sees the *whole* program at once:
+cross-TU inlining, whole-program dead-code elimination at the IR call-graph level
+(not just section GC), constant propagation across TUs, and symbol internalization.
+- *Mechanism vs. the others:* LTO's IR-level DCE **subsumes** most of what
+  `--gc-sections` does, and its internalization subsumes most of what hidden
+  visibility buys — in a single linked unit there is simply nothing left for
+  section-GC, ICF, or visibility to act on.
+- *Measured on this bench (g++-10, `-Os`, `.text`):* **~20–25% off everything** —
+  baseline 80633→60448, fmt 132111→106014, json 123179→98606, doctest
+  163279→130371, tomlplusplus 138599→112463, unordered_dense 85743→64468,
+  magic_enum 81343→60768. For comparison, `--gc-sections` *without* LTO got
+  doctest only to 143403 and fmt to 120229 — i.e. **LTO ≫ gc-sections**, and
+  gc-sections on top of LTO adds essentially nothing.
+- *libcis fit:* already the default in `codesize.py`. The one caveat for real
+  consumers: LTO needs *every* participating TU (the user's code **and**
+  `support.cpp`) compiled with `-flto`; the bench does it in one compile+link
+  command so it's automatic. At `-O2/-O3` LTO can *grow* code (speed-tuned); the
+  win here is specifically LTO **at `-Os`**.
+- *Risk:* slower builds; needs the LTO linker plugin (present with gold/bfd/lld on
+  g++-10); harder to attribute symbols in a profiler.
+
 **E1. `-ffunction-sections -fdata-sections` + `-Wl,--gc-sections`.** **[flag]**
 - *Mechanism:* the linker GCs at *section* granularity; one section per function/
   datum lets it drop the unreferenced ones (mark-and-sweep over relocations from
@@ -357,26 +389,28 @@ only numbers that matter for libcis are the ones `bench/codesize.py` produces.
 Ranked by (expected `.text` win × low effort/risk) for header-only + g++-10 +
 no-EH/RTTI + `-Os`. Each item names the experiment and how to journal it.
 
-### Phase 0 — free build-flag wins (no library change; do first)
-Establishes how much is "shape of the build" vs. "shape of the library" before any
-header work. Add to a throwaway variant of the bench compile line and measure:
+### Phase 0 — flags-only optimized baseline (DONE; now the bench default)
+Measured, so this is settled rather than speculative. The default `codesize.py`
+build is:
+```
+-flto -fmerge-all-constants
+-ffunction-sections -fdata-sections -Wl,--gc-sections
+-fvisibility=hidden -fvisibility-inlines-hidden
+-fno-asynchronous-unwind-tables -fno-unwind-tables
+-fuse-ld=gold -Wl,--icf=safe          # only when ld.gold is present
+```
+Attribution (g++-10, `-Os`, `.text`):
+- **`-flto` is the whole story: ~20–25% off everything.** It was wrong to expect
+  `--gc-sections` to be the big mover — LTO's IR-level DCE subsumes it.
+- `-fmerge-all-constants` ~0.3–0.8% (note: technically lets distinct const objects
+  share an address — acceptable for size, droppable if strict conformance needed).
+- `--gc-sections` ~0.5% *on top of* LTO; **0** for visibility and ICF in a single
+  LTO'd executable (kept only because they help non-LTO consumers, cost nothing).
+- `-fno-*-unwind-tables` shrinks the binary (drops `.eh_frame`) but **not `.text`**,
+  so it doesn't move these numbers.
 
-```
-# in addition to the current -Os -fno-exceptions -fno-rtti line:
--ffunction-sections -fdata-sections -Wl,--gc-sections          # E1
--fno-asynchronous-unwind-tables -fno-unwind-tables             # C4
--fvisibility=hidden -fvisibility-inlines-hidden                # B2
-```
-Record each independently and combined:
-```
-bench/record.py "phase0: +gc-sections"
-bench/record.py "phase0: +no-unwind-tables"
-bench/record.py "phase0: +hidden-visibility"
-bench/record.py "phase0: all three"
-```
-*Expectation:* gc-sections is the big mover (trims the static-libc baseline);
-unwind-tables shrinks binary size off `.text`; visibility is a force-multiplier
-for the other two.
+Recover the plain-`-Os` delta any time with `bench/codesize.py --no-opt`. Every
+library technique below is measured *on top of* this baseline.
 
 ### Phase 1 — error-path consolidation (header-only)
 2. **One `[[noreturn, gnu::cold, gnu::noinline]]` `std::detail::fail(const char*)`**

@@ -38,10 +38,20 @@ bench/codesize.py --json     # machine-readable
 
 Each project's driver (`drivers/<name>.cpp`) is compiled + linked against libcis
 the same way `tools/run_std.sh` links the conformance suite — freestanding,
-`-nostdinc++ -Iinclude`, `support.cpp -nodefaultlibs ...` — but at `-Os`, then
-**run** (a size for a binary that doesn't work is meaningless) and measured with
-`size -A`. Exit status is 0 iff every selected project compiled, linked and ran,
-so the script doubles as a test.
+`-nostdinc++ -Iinclude`, `support.cpp -nodefaultlibs ...` — at `-Os` **plus a
+flags-only optimized baseline** (see below), then **run** (a size for a binary
+that doesn't work is meaningless) and measured with `size -A`. Exit status is 0
+iff every selected project compiled, linked and ran, so the script doubles as a
+test.
+
+**Flags-only optimized baseline.** No one ships a size-sensitive binary at plain
+`-Os`, so the default build adds `-flto` (which alone cuts `.text` ~20–25%),
+`-fmerge-all-constants`, `-ffunction-sections -fdata-sections -Wl,--gc-sections`,
+`-fvisibility=hidden`, `-fno-asynchronous-unwind-tables -fno-unwind-tables`, and
+(when `ld.gold` is present) `-fuse-ld=gold -Wl,--icf=safe`. This is the honest
+baseline that *library* changes are measured on top of (see
+`code-size-techniques.md` §E0/§6). Recover the plain-`-Os` delta with `--no-opt`;
+add one-off flags with `CODESIZE_EXTRA_FLAGS="..."`.
 
 The compiler defaults to `g++-10` (the canonical target; see `CONVENTIONS.md`,
 and `tools/run_std.sh` which hardcodes it). Override with `CXX=...` (the bench
@@ -51,14 +61,15 @@ also builds cleanly on g++-13). The default is pinned rather than probed because
 ## Reading the table
 
 ```
+libcis code size @ -Os +opt(flags)   (CXX=g++-10)
 project                .text     +base   .rodata   .data    .bss
-baseline               80633                2689      16    5184
-fmt                   132111    +51478      8097      24    5328
-unordered_dense        85743     +5110      2721      16    5192
-magic_enum             81343      +710      3201      16    5192
-json                  123179    +42546     27777      16    5200
-tomlplusplus          138599    +57966     12129      16    5296
-doctest               163279    +82646     13921     128   10480
+baseline               59518                2248       8    4952
+fmt                   104510    +44992      7816      16    4992
+unordered_dense        63688     +4170      2280       8    4968
+magic_enum             59788      +270      2360       8    4952
+json                   97518    +38000     30528       8    4920
+tomlplusplus          111399    +51881     11328       8    5048
+doctest               128721    +69203     13344       8   10016
 ```
 
 `.text` is the whole binary's code; `baseline` is an empty `int main(){}`, so its
