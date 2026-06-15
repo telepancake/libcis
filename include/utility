@@ -115,7 +115,7 @@ exchange(T& obj, U&& new_value)
              is_nothrow_assignable_v<T&, U>)
 {
     T old_value = move(obj);
-    obj = forward<U>(new_value);
+    obj = std::forward<U>(new_value);
     return old_value;
 }
 
@@ -312,7 +312,7 @@ struct pair {
     pair(U1&& u1, U2&& u2)
         noexcept(is_nothrow_constructible_v<T1, U1> &&
                  is_nothrow_constructible_v<T2, U2>)
-        : first(forward<U1>(u1)), second(forward<U2>(u2)) {}
+        : first(std::forward<U1>(u1)), second(std::forward<U2>(u2)) {}
 
     // Converting constructor from const pair<U1,U2>&
     template<class U1, class U2,
@@ -330,7 +330,7 @@ struct pair {
     pair(pair<U1, U2>&& p)
         noexcept(is_nothrow_constructible_v<T1, U1&&> &&
                  is_nothrow_constructible_v<T2, U2&&>)
-        : first(forward<U1>(p.first)), second(forward<U2>(p.second)) {}
+        : first(std::forward<U1>(p.first)), second(std::forward<U2>(p.second)) {}
 
     // Piecewise constructor
     template<class... Args1, class... Args2>
@@ -362,8 +362,8 @@ struct pair {
         noexcept(is_nothrow_move_assignable_v<T1> &&
                  is_nothrow_move_assignable_v<T2>)
     {
-        first  = forward<T1>(p.first);
-        second = forward<T2>(p.second);
+        first  = std::forward<T1>(p.first);
+        second = std::forward<T2>(p.second);
         return *this;
     }
 
@@ -382,8 +382,8 @@ struct pair {
              enable_if_t<is_assignable_v<T1&, U1> &&
                          is_assignable_v<T2&, U2>, int> = 0>
     constexpr pair& operator=(pair<U1, U2>&& p) {
-        first  = forward<U1>(p.first);
-        second = forward<U2>(p.second);
+        first  = std::forward<U1>(p.first);
+        second = std::forward<U2>(p.second);
         return *this;
     }
 
@@ -404,8 +404,8 @@ private:
                    tuple<Args2...>& sa,
                    index_sequence<I1...>,
                    index_sequence<I2...>)
-        : first(forward<Args1>(get<I1>(fa))...),
-          second(forward<Args2>(get<I2>(sa))...) {}
+        : first(std::forward<Args1>(get<I1>(fa))...),
+          second(std::forward<Args2>(get<I2>(sa))...) {}
 };
 
 // Deduction guide
@@ -449,7 +449,7 @@ template<class T1, class T2>
 [[nodiscard]] constexpr pair<unwrap_ref_decay_t<T1>, unwrap_ref_decay_t<T2>>
 make_pair(T1&& t1, T2&& t2) {
     return pair<unwrap_ref_decay_t<T1>, unwrap_ref_decay_t<T2>>(
-        forward<T1>(t1), forward<T2>(t2));
+        std::forward<T1>(t1), std::forward<T2>(t2));
 }
 
 //===----------------------------------------------------------------------===//
@@ -483,11 +483,11 @@ namespace detail {
         static constexpr const T1& get(const pair<T1,T2>& p) noexcept { return p.first; }
         template<class T1, class T2>
         static constexpr T1&& get(pair<T1,T2>&& p) noexcept {
-            return forward<T1>(p.first);
+            return std::forward<T1>(p.first);
         }
         template<class T1, class T2>
         static constexpr const T1&& get(const pair<T1,T2>&& p) noexcept {
-            return forward<const T1>(p.first);
+            return std::forward<const T1>(p.first);
         }
     };
 
@@ -499,11 +499,11 @@ namespace detail {
         static constexpr const T2& get(const pair<T1,T2>& p) noexcept { return p.second; }
         template<class T1, class T2>
         static constexpr T2&& get(pair<T1,T2>&& p) noexcept {
-            return forward<T2>(p.second);
+            return std::forward<T2>(p.second);
         }
         template<class T1, class T2>
         static constexpr const T2&& get(const pair<T1,T2>&& p) noexcept {
-            return forward<const T2>(p.second);
+            return std::forward<const T2>(p.second);
         }
     };
 } // namespace detail
@@ -539,11 +539,11 @@ template<class T1, class T2>
 [[nodiscard]] constexpr const T1& get(const pair<T1,T2>& p) noexcept { return p.first; }
 template<class T1, class T2>
 [[nodiscard]] constexpr T1&& get(pair<T1,T2>&& p) noexcept {
-    return forward<T1&&>(p.first);
+    return std::forward<T1&&>(p.first);
 }
 template<class T1, class T2>
 [[nodiscard]] constexpr const T1&& get(const pair<T1,T2>&& p) noexcept {
-    return forward<const T1&&>(p.first);
+    return std::forward<const T1&&>(p.first);
 }
 
 template<class T2, class T1>
@@ -552,11 +552,11 @@ template<class T2, class T1>
 [[nodiscard]] constexpr const T2& get(const pair<T1,T2>& p) noexcept { return p.second; }
 template<class T2, class T1>
 [[nodiscard]] constexpr T2&& get(pair<T1,T2>&& p) noexcept {
-    return forward<T2&&>(p.second);
+    return std::forward<T2&&>(p.second);
 }
 template<class T2, class T1>
 [[nodiscard]] constexpr const T2&& get(const pair<T1,T2>&& p) noexcept {
-    return forward<const T2&&>(p.second);
+    return std::forward<const T2&&>(p.second);
 }
 
 //===----------------------------------------------------------------------===//

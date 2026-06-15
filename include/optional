@@ -176,7 +176,7 @@ namespace detail {
 
         template<class... Args>
         constexpr explicit optional_destruct_base(in_place_t, Args&&... args)
-            : val(forward<Args>(args)...), engaged(true) {}
+            : val(std::forward<Args>(args)...), engaged(true) {}
 
         constexpr void reset() noexcept {
             if (engaged) {
@@ -203,7 +203,7 @@ namespace detail {
 
         template<class... Args>
         constexpr explicit optional_destruct_base(in_place_t, Args&&... args)
-            : val(forward<Args>(args)...), engaged(true) {}
+            : val(std::forward<Args>(args)...), engaged(true) {}
 
         constexpr void reset() noexcept {
             if (engaged)
@@ -234,26 +234,26 @@ namespace detail {
             // literally named std::construct_at.
             std::construct_at(
                 const_cast<remove_cv_t<value_type>*>(__builtin_addressof(this->val)),
-                forward<Args>(args)...);
+                std::forward<Args>(args)...);
             this->engaged = true;
         }
 
         template<class That>
         constexpr void construct_from(That&& opt) {
             if (opt.has_value())
-                construct(forward<That>(opt).get());
+                construct(std::forward<That>(opt).get());
         }
 
         template<class That>
         constexpr void assign_from(That&& opt) {
             if (this->engaged == opt.has_value()) {
                 if (this->engaged)
-                    static_cast<T&>(this->val) = forward<That>(opt).get();
+                    static_cast<T&>(this->val) = std::forward<That>(opt).get();
             } else {
                 if (this->engaged)
                     this->reset();
                 else
-                    construct(forward<That>(opt).get());
+                    construct(std::forward<That>(opt).get());
             }
         }
 
@@ -528,26 +528,26 @@ public:
     template<class... Args>
         requires is_constructible_v<T, Args...>
     constexpr explicit optional(in_place_t, Args&&... args)
-        : base(in_place, forward<Args>(args)...) {}
+        : base(in_place, std::forward<Args>(args)...) {}
 
     template<class U, class... Args>
         requires is_constructible_v<T, initializer_list<U>&, Args...>
     constexpr explicit optional(in_place_t, initializer_list<U> il, Args&&... args)
-        : base(in_place, il, forward<Args>(args)...) {}
+        : base(in_place, il, std::forward<Args>(args)...) {}
 
     // converting ctor from U (implicit)
     template<class U = remove_cv_t<T>>
         requires allow_direct_ctor<U> &&
                  is_constructible_v<T, U&&> && is_convertible_v<U&&, T>
     constexpr optional(U&& v)
-        : base(in_place, forward<U>(v)) {}
+        : base(in_place, std::forward<U>(v)) {}
 
     // converting ctor from U (explicit)
     template<class U = remove_cv_t<T>>
         requires allow_direct_ctor<U> &&
                  is_constructible_v<T, U&&> && (!is_convertible_v<U&&, T>)
     explicit constexpr optional(U&& v)
-        : base(in_place, forward<U>(v)) {}
+        : base(in_place, std::forward<U>(v)) {}
 
     // converting ctor from const optional<U>& (implicit)
     template<class U>
@@ -597,9 +597,9 @@ public:
                  is_object_v<T>
     constexpr optional& operator=(U&& v) {
         if (this->has_value())
-            this->get() = forward<U>(v);
+            this->get() = std::forward<U>(v);
         else
-            this->construct(forward<U>(v));
+            this->construct(std::forward<U>(v));
         return *this;
     }
 
@@ -625,7 +625,7 @@ public:
         requires is_constructible_v<T, Args...>
     constexpr T& emplace(Args&&... args) {
         this->reset();
-        this->construct(forward<Args>(args)...);
+        this->construct(std::forward<Args>(args)...);
         return this->get();
     }
 
@@ -633,7 +633,7 @@ public:
         requires is_constructible_v<T, initializer_list<U>&, Args...>
     constexpr T& emplace(initializer_list<U> il, Args&&... args) {
         this->reset();
-        this->construct(il, forward<Args>(args)...);
+        this->construct(il, std::forward<Args>(args)...);
         return this->get();
     }
 
@@ -662,7 +662,7 @@ public:
         static_assert(is_convertible_v<U, T>,
             "optional<T>::value_or: U must be convertible to T");
         return this->has_value() ? this->get()
-                                 : static_cast<T>(forward<U>(v));
+                                 : static_cast<T>(std::forward<U>(v));
     }
 
     template<class U = remove_cv_t<T>>
@@ -672,7 +672,7 @@ public:
         static_assert(is_convertible_v<U, T>,
             "optional<T>::value_or: U must be convertible to T");
         return this->has_value() ? move(this->get())
-                                 : static_cast<T>(forward<U>(v));
+                                 : static_cast<T>(std::forward<U>(v));
     }
 
     //=== Monadic operations (C++23) ===================================
@@ -684,7 +684,7 @@ public:
         static_assert(detail::is_std_optional<remove_cvref_t<Up>>::value,
             "Result of f(value()) must be a specialization of std::optional");
         if (*this)
-            return detail::invoke_impl(forward<Func>(f), this->get());
+            return detail::invoke_impl(std::forward<Func>(f), this->get());
         return remove_cvref_t<Up>();
     }
 
@@ -695,7 +695,7 @@ public:
         static_assert(detail::is_std_optional<remove_cvref_t<Up>>::value,
             "Result of f(value()) must be a specialization of std::optional");
         if (*this)
-            return detail::invoke_impl(forward<Func>(f), this->get());
+            return detail::invoke_impl(std::forward<Func>(f), this->get());
         return remove_cvref_t<Up>();
     }
 
@@ -706,7 +706,7 @@ public:
         static_assert(detail::is_std_optional<remove_cvref_t<Up>>::value,
             "Result of f(std::move(value())) must be a specialization of std::optional");
         if (*this)
-            return detail::invoke_impl(forward<Func>(f), move(this->get()));
+            return detail::invoke_impl(std::forward<Func>(f), move(this->get()));
         return remove_cvref_t<Up>();
     }
 
@@ -717,7 +717,7 @@ public:
         static_assert(detail::is_std_optional<remove_cvref_t<Up>>::value,
             "Result of f(std::move(value())) must be a specialization of std::optional");
         if (*this)
-            return detail::invoke_impl(forward<Func>(f), move(this->get()));
+            return detail::invoke_impl(std::forward<Func>(f), move(this->get()));
         return remove_cvref_t<Up>();
     }
 
@@ -735,7 +735,7 @@ public:
             "Result of f(value()) should be an object type");
         if (*this)
             return optional<Up>(in_place,
-                detail::invoke_impl(forward<Func>(f), this->get()));
+                detail::invoke_impl(std::forward<Func>(f), this->get()));
         return optional<Up>();
     }
 
@@ -753,7 +753,7 @@ public:
             "Result of f(value()) should be an object type");
         if (*this)
             return optional<Up>(in_place,
-                detail::invoke_impl(forward<Func>(f), this->get()));
+                detail::invoke_impl(std::forward<Func>(f), this->get()));
         return optional<Up>();
     }
 
@@ -771,7 +771,7 @@ public:
             "Result of f(std::move(value())) should be an object type");
         if (*this)
             return optional<Up>(in_place,
-                detail::invoke_impl(forward<Func>(f), move(this->get())));
+                detail::invoke_impl(std::forward<Func>(f), move(this->get())));
         return optional<Up>();
     }
 
@@ -789,7 +789,7 @@ public:
             "Result of f(std::move(value())) should be an object type");
         if (*this)
             return optional<Up>(in_place,
-                detail::invoke_impl(forward<Func>(f), move(this->get())));
+                detail::invoke_impl(std::forward<Func>(f), move(this->get())));
         return optional<Up>();
     }
 
@@ -800,7 +800,7 @@ public:
         static_assert(is_same_v<remove_cvref_t<invoke_result_t<Func>>, optional>,
             "Result of f() should be the same type as this optional");
         if (*this) return *this;
-        return forward<Func>(f)();
+        return std::forward<Func>(f)();
     }
 
     // or_else && (requires move-constructible T)
@@ -810,7 +810,7 @@ public:
         static_assert(is_same_v<remove_cvref_t<invoke_result_t<Func>>, optional>,
             "Result of f() should be the same type as this optional");
         if (*this) return move(*this);
-        return forward<Func>(f)();
+        return std::forward<Func>(f)();
     }
 
     //=== Expose internal get() for converting ctors / assign in other
@@ -997,20 +997,20 @@ constexpr void swap(optional<T>& x, optional<T>& y)
 template<class T>
     requires is_constructible_v<decay_t<T>, T>
 [[nodiscard]] constexpr optional<decay_t<T>> make_optional(T&& v) {
-    return optional<decay_t<T>>(forward<T>(v));
+    return optional<decay_t<T>>(std::forward<T>(v));
 }
 
 template<class T, class... Args>
     requires is_constructible_v<T, Args...>
 [[nodiscard]] constexpr optional<T> make_optional(Args&&... args) {
-    return optional<T>(in_place, forward<Args>(args)...);
+    return optional<T>(in_place, std::forward<Args>(args)...);
 }
 
 template<class T, class U, class... Args>
     requires is_constructible_v<T, initializer_list<U>&, Args...>
 [[nodiscard]] constexpr optional<T>
 make_optional(initializer_list<U> il, Args&&... args) {
-    return optional<T>(in_place, il, forward<Args>(args)...);
+    return optional<T>(in_place, il, std::forward<Args>(args)...);
 }
 
 //===----------------------------------------------------------------------===//

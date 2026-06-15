@@ -63,6 +63,13 @@ terminate_handler set_terminate(terminate_handler) noexcept;
 //===----------------------------------------------------------------------===//
 [[nodiscard]] inline int uncaught_exceptions() noexcept { return 0; }
 
+// uncaught_exception() (singular) was deprecated in C++17 and removed in C++20,
+// but libstdc++ and libc++ both keep it as a deprecated extension for source
+// compatibility with older code (e.g. doctest, Boost).  We mirror that: with
+// -fno-exceptions no exception is ever in flight, so it is always false.
+[[deprecated("use uncaught_exceptions() (plural)")]]
+inline bool uncaught_exception() noexcept { return false; }
+
 //===----------------------------------------------------------------------===//
 // exception_ptr  (__exception/exception_ptr.h)
 //

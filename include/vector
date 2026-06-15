@@ -639,7 +639,7 @@ public:
     template<class... Args>
     constexpr reference emplace_back(Args&&... args) {
         if (end_ < cap_) {
-            construct_one(end_, forward<Args>(args)...);
+            construct_one(end_, std::forward<Args>(args)...);
             ++end_;
         } else {
             // grow path: allocate new buffer, move existing elements, then
@@ -658,7 +658,7 @@ public:
             for (pointer s = begin_; s != end_; ++s, ++new_end)
                 construct_one(new_end, std::move(*s));
             // Construct new element (args may reference old buffer — still alive)
-            construct_one(new_end, forward<Args>(args)...);
+            construct_one(new_end, std::forward<Args>(args)...);
             ++new_end;
             // Destroy and free old buffer
             for (pointer s = begin_; s != end_; ++s)
@@ -684,11 +684,11 @@ public:
         pointer p = begin_ + off;
         if (end_ < cap_) {
             if (p == end_) {
-                construct_one(end_, forward<Args>(args)...);
+                construct_one(end_, std::forward<Args>(args)...);
                 ++end_;
             } else {
                 // construct a temp to avoid aliasing, then move-insert
-                value_type tmp(forward<Args>(args)...);
+                value_type tmp(std::forward<Args>(args)...);
                 move_range(p, end_, p + 1);
                 *p = std::move(tmp);
             }
@@ -713,7 +713,7 @@ public:
             for (pointer s = p; s != end_; ++s, ++ne2)
                 construct_one(ne2, std::move(*s));
             // Construct new element (args may still reference old buffer — still alive)
-            construct_one(np, forward<Args>(args)...);
+            construct_one(np, std::forward<Args>(args)...);
             // Destroy old elements and free old buffer
             for (pointer s = begin_; s != end_; ++s)
                 alloc_traits::destroy(alloc_, std::to_address(s));
@@ -1800,7 +1800,7 @@ public:
 
     template<class... Args>
     constexpr reference emplace_back(Args&&... args) {
-        push_back(value_type(forward<Args>(args)...));
+        push_back(value_type(std::forward<Args>(args)...));
         return back();
     }
 
@@ -1808,7 +1808,7 @@ public:
 
     template<class... Args>
     constexpr iterator emplace(const_iterator position, Args&&... args) {
-        return insert(position, value_type(forward<Args>(args)...));
+        return insert(position, value_type(std::forward<Args>(args)...));
     }
 
     constexpr iterator insert(const_iterator position, const value_type& x) {

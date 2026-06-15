@@ -19,7 +19,7 @@ namespace std {
 struct identity {
     template<class T>
     [[nodiscard]] constexpr T&& operator()(T&& t) const noexcept {
-        return forward<T>(t);
+        return std::forward<T>(t);
     }
     using is_transparent = void;
 };

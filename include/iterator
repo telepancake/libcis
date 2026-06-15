@@ -818,8 +818,8 @@ struct equal_to {
     template<class T, class U>
         requires equality_comparable_with<T, U>
     [[nodiscard]] constexpr bool operator()(T&& t, U&& u) const
-        noexcept(noexcept(bool(forward<T>(t) == forward<U>(u)))) {
-        return forward<T>(t) == forward<U>(u);
+        noexcept(noexcept(bool(std::forward<T>(t) == std::forward<U>(u)))) {
+        return std::forward<T>(t) == std::forward<U>(u);
     }
     using is_transparent = void;
 };
@@ -828,8 +828,8 @@ struct not_equal_to {
     template<class T, class U>
         requires equality_comparable_with<T, U>
     [[nodiscard]] constexpr bool operator()(T&& t, U&& u) const
-        noexcept(noexcept(bool(!(forward<T>(t) == forward<U>(u))))) {
-        return !(forward<T>(t) == forward<U>(u));
+        noexcept(noexcept(bool(!(std::forward<T>(t) == std::forward<U>(u))))) {
+        return !(std::forward<T>(t) == std::forward<U>(u));
     }
     using is_transparent = void;
 };
@@ -838,8 +838,8 @@ struct less {
     template<class T, class U>
         requires totally_ordered_with<T, U>
     [[nodiscard]] constexpr bool operator()(T&& t, U&& u) const
-        noexcept(noexcept(bool(forward<T>(t) < forward<U>(u)))) {
-        return forward<T>(t) < forward<U>(u);
+        noexcept(noexcept(bool(std::forward<T>(t) < std::forward<U>(u)))) {
+        return std::forward<T>(t) < std::forward<U>(u);
     }
     using is_transparent = void;
 };
@@ -848,8 +848,8 @@ struct greater {
     template<class T, class U>
         requires totally_ordered_with<T, U>
     [[nodiscard]] constexpr bool operator()(T&& t, U&& u) const
-        noexcept(noexcept(bool(forward<U>(u) < forward<T>(t)))) {
-        return forward<U>(u) < forward<T>(t);
+        noexcept(noexcept(bool(std::forward<U>(u) < std::forward<T>(t)))) {
+        return std::forward<U>(u) < std::forward<T>(t);
     }
     using is_transparent = void;
 };
@@ -858,8 +858,8 @@ struct less_equal {
     template<class T, class U>
         requires totally_ordered_with<T, U>
     [[nodiscard]] constexpr bool operator()(T&& t, U&& u) const
-        noexcept(noexcept(bool(!(forward<U>(u) < forward<T>(t))))) {
-        return !(forward<U>(u) < forward<T>(t));
+        noexcept(noexcept(bool(!(std::forward<U>(u) < std::forward<T>(t))))) {
+        return !(std::forward<U>(u) < std::forward<T>(t));
     }
     using is_transparent = void;
 };
@@ -868,8 +868,8 @@ struct greater_equal {
     template<class T, class U>
         requires totally_ordered_with<T, U>
     [[nodiscard]] constexpr bool operator()(T&& t, U&& u) const
-        noexcept(noexcept(bool(!(forward<T>(t) < forward<U>(u))))) {
-        return !(forward<T>(t) < forward<U>(u));
+        noexcept(noexcept(bool(!(std::forward<T>(t) < std::forward<U>(u))))) {
+        return !(std::forward<T>(t) < std::forward<U>(u));
     }
     using is_transparent = void;
 };

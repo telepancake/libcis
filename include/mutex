@@ -630,7 +630,7 @@ inline void call_once(once_flag& flag, Callable&& func, Args&&... args) {
     if (__atomic_load_n(&flag.state_, __ATOMIC_ACQUIRE) != once_flag::complete) {
         // Pack callable + args into a tuple, then invoke via index sequence.
         using Tuple = tuple<Callable&&, Args&&...>;
-        Tuple f(forward<Callable>(func), forward<Args>(args)...);
+        Tuple f(std::forward<Callable>(func), std::forward<Args>(args)...);
         auto invoke_all = [&f]() {
             [&f]<size_t... I>(index_sequence<I...>) {
                 // Call: get<0>(f)(get<1>(f), get<2>(f), ...)

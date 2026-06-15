@@ -355,7 +355,7 @@ public:
         unique_lock<mutex> lk(mut_);
         if (has_value_locked())
             throw_future_error(future_errc::promise_already_satisfied);
-        ::new (static_cast<void*>(value_)) R(forward<Arg>(arg));
+        ::new (static_cast<void*>(value_)) R(std::forward<Arg>(arg));
         state_ |= constructed | flag_ready;
         cv_.notify_all();
     }
@@ -366,7 +366,7 @@ public:
             unique_lock<mutex> lk(mut_);
             if (has_value_locked())
                 throw_future_error(future_errc::promise_already_satisfied);
-            ::new (static_cast<void*>(value_)) R(forward<Arg>(arg));
+            ::new (static_cast<void*>(value_)) R(std::forward<Arg>(arg));
             state_ |= constructed;
         }
         this->make_ready_at_thread_exit();
@@ -480,7 +480,7 @@ template<class R, class F>
 class deferred_assoc_state : public assoc_state<R> {
     F func_;
 public:
-    explicit deferred_assoc_state(F&& f) : func_(forward<F>(f)) {
+    explicit deferred_assoc_state(F&& f) : func_(std::forward<F>(f)) {
         this->set_deferred();
     }
     void execute() override {
@@ -492,7 +492,7 @@ template<class F>
 class deferred_assoc_state<void, F> : public assoc_sub_state {
     F func_;
 public:
-    explicit deferred_assoc_state(F&& f) : func_(forward<F>(f)) {
+    explicit deferred_assoc_state(F&& f) : func_(std::forward<F>(f)) {
         this->set_deferred();
     }
     void execute() override {
@@ -511,7 +511,7 @@ class async_assoc_state : public assoc_state<R> {
         assoc_state<R>::on_zero();
     }
 public:
-    explicit async_assoc_state(F&& f) : func_(forward<F>(f)) {}
+    explicit async_assoc_state(F&& f) : func_(std::forward<F>(f)) {}
     void execute() override {
         this->set_value(func_());
     }
@@ -525,7 +525,7 @@ class async_assoc_state<void, F> : public assoc_sub_state {
         delete this;
     }
 public:
-    explicit async_assoc_state(F&& f) : func_(forward<F>(f)) {}
+    explicit async_assoc_state(F&& f) : func_(std::forward<F>(f)) {}
     void execute() override {
         func_();
         this->set_value_void();
@@ -992,20 +992,20 @@ inline shared_future<void> future<void>::share() noexcept { return shared_future
 
 template<class R, class F>
 inline future<R> make_deferred_assoc_state(F&& f) {
-    auto* s = new deferred_assoc_state<R, decay_t<F>>(forward<F>(f));
+    auto* s = new deferred_assoc_state<R, decay_t<F>>(std::forward<F>(f));
     return future<R>(s);
 }
 
 // Specialisation for void
 template<class F>
 inline future<void> make_deferred_assoc_state_void(F&& f) {
-    auto* s = new deferred_assoc_state<void, decay_t<F>>(forward<F>(f));
+    auto* s = new deferred_assoc_state<void, decay_t<F>>(std::forward<F>(f));
     return future<void>(s);
 }
 
 template<class R, class F>
 inline future<R> make_async_assoc_state(F&& f) {
-    auto* s = new async_assoc_state<R, decay_t<F>>(forward<F>(f));
+    auto* s = new async_assoc_state<R, decay_t<F>>(std::forward<F>(f));
     // add_shared so the state stays alive while the thread runs
     s->add_shared();
     thread([s]() mutable {
@@ -1017,7 +1017,7 @@ inline future<R> make_async_assoc_state(F&& f) {
 
 template<class F>
 inline future<void> make_async_assoc_state_void(F&& f) {
-    auto* s = new async_assoc_state<void, decay_t<F>>(forward<F>(f));
+    auto* s = new async_assoc_state<void, decay_t<F>>(std::forward<F>(f));
     s->add_shared();
     thread([s]() mutable {
         s->execute();
@@ -1043,7 +1043,7 @@ class packaged_task<R(Args...)> {
     struct task_impl : task_base {
         F f_;
         explicit task_impl(F&& fn) : f_(move(fn)) {}
-        R call(Args... args) override { return invoke(f_, forward<Args>(args)...); }
+        R call(Args... args) override { return invoke(f_, std::forward<Args>(args)...); }
     };
 
     unique_ptr<task_base> f_;
@@ -1055,7 +1055,7 @@ public:
     template<class F,
              class = enable_if_t<!is_same_v<remove_cvref_t<F>, packaged_task>>>
     explicit packaged_task(F&& fn)
-        : f_(new task_impl<decay_t<F>>(forward<F>(fn)))
+        : f_(new task_impl<decay_t<F>>(std::forward<F>(fn)))
         , p_() {}
 
     packaged_task(const packaged_task&)            = delete;
@@ -1075,12 +1075,12 @@ public:
 
     void operator()(Args... args) {
         if (!f_) throw_future_error(future_errc::no_state);
-        p_.set_value(f_->call(forward<Args>(args)...));
+        p_.set_value(f_->call(std::forward<Args>(args)...));
     }
 
     void make_ready_at_thread_exit(Args... args) {
         if (!f_) throw_future_error(future_errc::no_state);
-        p_.set_value_at_thread_exit(f_->call(forward<Args>(args)...));
+        p_.set_value_at_thread_exit(f_->call(std::forward<Args>(args)...));
     }
 
     void reset() {
@@ -1100,7 +1100,7 @@ class packaged_task<void(Args...)> {
     struct task_impl : task_base {
         F f_;
         explicit task_impl(F&& fn) : f_(move(fn)) {}
-        void call(Args... args) override { invoke(f_, forward<Args>(args)...); }
+        void call(Args... args) override { invoke(f_, std::forward<Args>(args)...); }
     };
 
     unique_ptr<task_base> f_;
@@ -1112,7 +1112,7 @@ public:
     template<class F,
              class = enable_if_t<!is_same_v<remove_cvref_t<F>, packaged_task>>>
     explicit packaged_task(F&& fn)
-        : f_(new task_impl<decay_t<F>>(forward<F>(fn)))
+        : f_(new task_impl<decay_t<F>>(std::forward<F>(fn)))
         , p_() {}
 
     packaged_task(const packaged_task&)            = delete;
@@ -1131,13 +1131,13 @@ public:
 
     void operator()(Args... args) {
         if (!f_) throw_future_error(future_errc::no_state);
-        f_->call(forward<Args>(args)...);
+        f_->call(std::forward<Args>(args)...);
         p_.set_value();
     }
 
     void make_ready_at_thread_exit(Args... args) {
         if (!f_) throw_future_error(future_errc::no_state);
-        f_->call(forward<Args>(args)...);
+        f_->call(std::forward<Args>(args)...);
         p_.set_value_at_thread_exit();
     }
 
@@ -1167,7 +1167,7 @@ public:
 
     template<class G, class... BArgs>
     explicit async_func(G&& g, BArgs&&... ba)
-        : bound_(forward<G>(g), forward<BArgs>(ba)...) {}
+        : bound_(std::forward<G>(g), std::forward<BArgs>(ba)...) {}
 
     async_func(async_func&&) = default;
 
@@ -1191,7 +1191,7 @@ template<class F, class... Args>
     using R  = invoke_result_t<decay_t<F>, decay_t<Args>...>;
     using BF = future_detail::async_func<decay_t<F>, decay_t<Args>...>;
 
-    BF bound(forward<F>(f), forward<Args>(args)...);
+    BF bound(std::forward<F>(f), std::forward<Args>(args)...);
 
     if (future_detail::policy_contains(policy, launch::async)) {
         if constexpr (is_void_v<R>)
@@ -1213,7 +1213,7 @@ template<class F, class... Args>
     -> future<invoke_result_t<decay_t<F>, decay_t<Args>...>>
 {
     return async(launch::async | launch::deferred,
-                 forward<F>(f), forward<Args>(args)...);
+                 std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 } // namespace std

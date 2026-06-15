@@ -242,10 +242,10 @@ public:
     template<class... Args>
     pair<iterator, bool> emplace(Args&&... args) {
         if constexpr (sizeof...(Args) == 1) {
-            auto [it, ok] = emplace_one(forward<Args>(args)...);
+            auto [it, ok] = emplace_one(std::forward<Args>(args)...);
             return {const_iterator(it), ok};
         } else {
-            auto [it, ok] = tree_.emplace_unique(forward<Args>(args)...);
+            auto [it, ok] = tree_.emplace_unique(std::forward<Args>(args)...);
             return {const_iterator(it), ok};
         }
     }
@@ -253,25 +253,25 @@ public:
     template<class... Args>
     iterator emplace_hint(const_iterator hint, Args&&... args) {
         if constexpr (sizeof...(Args) == 1)
-            return emplace_hint_one(hint, forward<Args>(args)...);
+            return emplace_hint_one(hint, std::forward<Args>(args)...);
         else
-            return tree_.emplace_hint_unique(hint, forward<Args>(args)...);
+            return tree_.emplace_hint_unique(hint, std::forward<Args>(args)...);
     }
 
 private:
     template<class A>
     auto emplace_one(A&& a) {
         if constexpr (is_same_v<remove_cvref_t<A>, Key>)
-            return tree_.emplace_unique_key_args(a, forward<A>(a));
+            return tree_.emplace_unique_key_args(a, std::forward<A>(a));
         else
-            return tree_.emplace_unique(forward<A>(a));
+            return tree_.emplace_unique(std::forward<A>(a));
     }
     template<class A>
     auto emplace_hint_one(const_iterator hint, A&& a) {
         if constexpr (is_same_v<remove_cvref_t<A>, Key>)
-            return tree_.emplace_hint_unique_key_args(hint, a, forward<A>(a));
+            return tree_.emplace_hint_unique_key_args(hint, a, std::forward<A>(a));
         else
-            return tree_.emplace_hint_unique(hint, forward<A>(a));
+            return tree_.emplace_hint_unique(hint, std::forward<A>(a));
     }
 
 public:
@@ -568,12 +568,12 @@ public:
     // ---- Modifiers ----
     template<class... Args>
     iterator emplace(Args&&... args) {
-        return tree_.emplace_multi(forward<Args>(args)...);
+        return tree_.emplace_multi(std::forward<Args>(args)...);
     }
 
     template<class... Args>
     iterator emplace_hint(const_iterator hint, Args&&... args) {
-        return tree_.emplace_hint_multi(hint, forward<Args>(args)...);
+        return tree_.emplace_hint_multi(hint, std::forward<Args>(args)...);
     }
 
     iterator insert(const value_type& v)     { return tree_.emplace_multi(v); }

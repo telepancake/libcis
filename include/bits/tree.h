@@ -540,7 +540,7 @@ private:
     node_pointer alloc_node(Args&&... args) {
         node_pointer np = node_alloc_traits::allocate(node_alloc_, 1);
         node_alloc_traits::construct(node_alloc_, addressof(np->get_value()),
-                                     forward<Args>(args)...);
+                                     std::forward<Args>(args)...);
         np->left = nullptr; np->right = nullptr;
         np->parent = nullptr; np->is_black = false;
         return np;
@@ -856,7 +856,7 @@ public:
     // ---- Unique emplace ----
     template<class... Args>
     pair<iterator, bool> emplace_unique(Args&&... args) {
-        node_pointer np = alloc_node(forward<Args>(args)...);
+        node_pointer np = alloc_node(std::forward<Args>(args)...);
         auto [p, cp] = find_unique(np->get_value());
         if (*cp != nullptr) {
             free_node(np);
@@ -868,7 +868,7 @@ public:
 
     template<class... Args>
     iterator emplace_hint_unique(const_iterator hint, Args&&... args) {
-        node_pointer np = alloc_node(forward<Args>(args)...);
+        node_pointer np = alloc_node(std::forward<Args>(args)...);
         auto [p, cp] = find_unique_hint(hint, np->get_value());
         if (*cp != nullptr) {
             free_node(np);
@@ -885,7 +885,7 @@ public:
         auto [p, cp] = find_unique(k);
         if (*cp != nullptr)
             return {iterator(rbtree_cast<node_pointer>(*cp)), false};
-        node_pointer np = alloc_node(forward<Args>(args)...);
+        node_pointer np = alloc_node(std::forward<Args>(args)...);
         do_insert(p, *cp, np);
         return {iterator(np), true};
     }
@@ -895,7 +895,7 @@ public:
         auto [p, cp] = find_unique_hint(hint, k);
         if (*cp != nullptr)
             return iterator(rbtree_cast<node_pointer>(*cp));
-        node_pointer np = alloc_node(forward<Args>(args)...);
+        node_pointer np = alloc_node(std::forward<Args>(args)...);
         do_insert(p, *cp, np);
         return iterator(np);
     }
@@ -906,8 +906,8 @@ public:
         if (*cp != nullptr)
             return {iterator(rbtree_cast<node_pointer>(*cp)), false};
         node_pointer np = alloc_node(piecewise_construct,
-                                     forward_as_tuple(forward<K>(k)),
-                                     forward_as_tuple(forward<Args>(args)...));
+                                     forward_as_tuple(std::forward<K>(k)),
+                                     forward_as_tuple(std::forward<Args>(args)...));
         do_insert(p, *cp, np);
         return {iterator(np), true};
     }
@@ -918,8 +918,8 @@ public:
         if (*cp != nullptr)
             return iterator(rbtree_cast<node_pointer>(*cp));
         node_pointer np = alloc_node(piecewise_construct,
-                                     forward_as_tuple(forward<K>(k)),
-                                     forward_as_tuple(forward<Args>(args)...));
+                                     forward_as_tuple(std::forward<K>(k)),
+                                     forward_as_tuple(std::forward<Args>(args)...));
         do_insert(p, *cp, np);
         return iterator(np);
     }
@@ -929,12 +929,12 @@ public:
         auto [p, cp] = find_unique(k);
         if (*cp != nullptr) {
             node_pointer ex = rbtree_cast<node_pointer>(*cp);
-            ex->get_value().second = forward<M>(obj);
+            ex->get_value().second = std::forward<M>(obj);
             return {iterator(ex), false};
         }
         node_pointer np = alloc_node(piecewise_construct,
-                                     forward_as_tuple(forward<K>(k)),
-                                     forward_as_tuple(forward<M>(obj)));
+                                     forward_as_tuple(std::forward<K>(k)),
+                                     forward_as_tuple(std::forward<M>(obj)));
         do_insert(p, *cp, np);
         return {iterator(np), true};
     }
@@ -944,12 +944,12 @@ public:
         auto [p, cp] = find_unique_hint(hint, k);
         if (*cp != nullptr) {
             node_pointer ex = rbtree_cast<node_pointer>(*cp);
-            ex->get_value().second = forward<M>(obj);
+            ex->get_value().second = std::forward<M>(obj);
             return iterator(ex);
         }
         node_pointer np = alloc_node(piecewise_construct,
-                                     forward_as_tuple(forward<K>(k)),
-                                     forward_as_tuple(forward<M>(obj)));
+                                     forward_as_tuple(std::forward<K>(k)),
+                                     forward_as_tuple(std::forward<M>(obj)));
         do_insert(p, *cp, np);
         return iterator(np);
     }
@@ -957,7 +957,7 @@ public:
     // ---- Multi emplace ----
     template<class... Args>
     iterator emplace_multi(Args&&... args) {
-        node_pointer np = alloc_node(forward<Args>(args)...);
+        node_pointer np = alloc_node(std::forward<Args>(args)...);
         auto [p, cp] = find_multi(np->get_value());
         do_insert(p, *cp, np);
         return iterator(np);
@@ -965,7 +965,7 @@ public:
 
     template<class... Args>
     iterator emplace_hint_multi(const_iterator hint, Args&&... args) {
-        node_pointer np = alloc_node(forward<Args>(args)...);
+        node_pointer np = alloc_node(std::forward<Args>(args)...);
         auto [p, cp] = find_multi_hint(hint, np->get_value());
         do_insert(p, *cp, np);
         return iterator(np);
