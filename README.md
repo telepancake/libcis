@@ -121,12 +121,22 @@ their recorded entry points). It is wired as an incremental ninja graph.
 python3 tools/gen_transfer.py                 # all subtrees
 python3 tools/gen_transfer.py thread time     # just these
 
-# 2. Run it: rewrites the tests, writes the manifest, runs the tripwire,
-#    then builds + runs the consolidated "group" test binaries.
+# 2. Run the transfer: rewrites the tests, writes the manifest, runs tripwire.
 ninja -f build/build.ninja
+
+# 3. Build + run the consolidated "group" binaries.  THIS IS A SEPARATE STEP:
+#    build/build.ninja pulls groups.ninja in via `subninja`, and ninja only
+#    regenerates the TOP-LEVEL -f file, never a subninja'd one -- so the
+#    gengroups edge in build/build.ninja never fires on its own and the groups
+#    stage is silently skipped (you'll see "ninja: no work to do" with no
+#    libsupport.a).  Drive it explicitly:
+python3 tools/gen_groups.py --ninja           # materialize the real groups.ninja
+ninja -f build/groups.ninja libcis            # libsupport.a + every group result
 ```
 
-What `ninja -f build/build.ninja` does, in order:
+> The whole sequence above is what `make test` runs for you.
+
+What the steps do, in order:
 
 1. **transfer** — `tools/transfer.py` rewrites each test directory (one
    libclang+PCH startup per directory) into `test/std/`.

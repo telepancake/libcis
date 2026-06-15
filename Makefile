@@ -51,7 +51,12 @@ $(SUPPORT_A): $(LIB_SRCS)
 
 transfer: ## Run the transfer + build/run all group binaries (needs $$LIBCXX + libclang)
 	python3 tools/gen_transfer.py $(SUBTREE)
-	ninja -f build/build.ninja
+	ninja -f build/build.ninja              # transfer -> manifest -> tripwire
+	# build/build.ninja CANNOT build the groups stage itself: it pulls groups.ninja
+	# in via `subninja`, and ninja only regenerates the top-level -f file, never a
+	# subninja'd one -- so the gengroups edge never fires.  Drive it explicitly:
+	python3 tools/gen_groups.py --ninja    # materialize the real groups.ninja
+	ninja -f build/groups.ninja $(BACKEND) -k0  # libsupport.a + all group results
 
 board: ## Print the conformance board (meaningful only after a build)
 	python3 tools/board.py $(BACKEND)
