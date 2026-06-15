@@ -297,6 +297,38 @@ signature, it's a body requirement. The only place real constraints belong is th
 container's *own* special members (so `is_copy_constructible_v<vector<T>>` is correct)
 — and there you mirror the standard's set exactly, you don't invent.
 
+## 6d. The three ops axes (the full table design)
+
+A type-erased container/algorithm needs three orthogonal things, so the ops header
+(`bench/experiments/evector/ops.hpp`) has three kinds of table:
+
+1. **`type_ops`** — single element type: lifecycle (default/copy/move ctor,
+   copy/move assign, destroy, swap) + ordering/equality/hash. Pointer set iff the
+   op is valid *and* non-trivial (so trivial/invalid leaves are never
+   instantiated); triviality recorded in a diagnostic `flags` field the core
+   doesn't read.
+2. **`cross_ops<T,U>`** — two types: `construct_from` / `assign_from` / `compare` /
+   `equal` / `cast` (`static_cast<T>(u)`), each `requires`-guarded. It **embeds**
+   `const type_ops*` for both T and U, so a two-type algorithm receives **one**
+   ops pointer, not three.
+3. **storage** — a single `realloc_fn` + an opaque `ctx` (the owner's `this`),
+   supplied by the container. `realloc(ctx, cur, count, new_cap, ops, &out_cap)`
+   does *all* allocation in one call (alloc + relocate-existing-via-ops + free;
+   may grow in place / SSO / fixed). This erases *where* storage lives, so one
+   generic `insert`/`erase`/`grow` works for a vector member, a string member, or
+   a global algorithm.
+
+**Calling convention — one or three extra args.** Non-allocating algorithms
+(`find`/`compare`/`for_each`) take just `const type_ops*` (or `const cross_ops*`,
+which embeds both) — **1**. Allocating ones (`insert`/`erase`/`grow`/`assign`)
+take `(ops, realloc_fn, ctx)` — **3**.
+
+Demonstrated end-to-end: a single `generic_push_back(ops, realloc, ctx, buf, elem)`
+(one emitted body) drives both `int` (trivial: memmove+memcpy) and `std::string`
+(non-trivial: move/destroy + copy) via a container-supplied `realloc` — one
+`realloc` body too, shared across element types. Validity is re-checked at the
+typed wrapper with body `static_assert`s (§6c), never signature constraints.
+
 ## 7. Conclusion
 
 For a constrained-production, size-focused standard library that is header-only
