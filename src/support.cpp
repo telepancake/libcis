@@ -505,5 +505,21 @@ void core_relocate(void* dst, void* src, std::size_t n, const type_ops& ops) {
         if (ops.destroy) ops.destroy(s);
     }
 }
+
+void* core_grow(void* old_base, std::size_t n_live, std::size_t old_cap,
+                std::size_t new_cap, const type_ops& ops, const storage_ops& st,
+                void* ctx, std::size_t* out_cap) {
+    if (ops.move_construct == nullptr && st.reallocate) {   // trivially relocatable, reallocable
+        *out_cap = new_cap;
+        return st.reallocate(ctx, old_base, new_cap);
+    }
+    std::size_t cap;
+    void* p = st.allocate(ctx, new_cap, &cap);
+    if (ops.move_construct) core_relocate(p, old_base, n_live, ops);   // move-construct + destroy
+    else __builtin_memcpy(p, old_base, n_live * ops.size);             // trivial, non-realloc storage
+    if (old_base) st.deallocate(ctx, old_base, old_cap);
+    *out_cap = cap;
+    return p;
+}
 } // namespace detail
 } // namespace std

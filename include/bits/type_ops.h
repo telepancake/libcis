@@ -53,5 +53,22 @@ inline constexpr type_ops ops_for = make_type_ops<T>();
 // each then destroy the source. One shared body for every element type.
 void core_relocate(void* dst, void* src, size_t n, const type_ops& ops);
 
+// Storage axis: how a particular allocator (re)allocates, as callbacks bound to
+// an opaque ctx (the owning container's allocator). `reallocate` is null unless
+// the storage is malloc-backed and can grow in place (std::allocator).
+struct storage_ops {
+    void* (*allocate)(void* ctx, size_t n, size_t* out_cap);  // n elems -> base, achieved cap
+    void  (*deallocate)(void* ctx, void* p, size_t cap);
+    void* (*reallocate)(void* ctx, void* p, size_t n);        // null: not supported
+};
+
+// THE one grow core (defined once in src/support.cpp): grow to >= new_cap,
+// preserving the first n_live elements, via the element ops + the storage ops.
+// Returns the new base; writes the achieved capacity (elements) to *out_cap.
+// All four cases (std/custom allocator x relocatable/not) dispatch here.
+void* core_grow(void* old_base, size_t n_live, size_t old_cap, size_t new_cap,
+                const type_ops& ops, const storage_ops& st, void* ctx,
+                size_t* out_cap);
+
 } // namespace detail
 } // namespace std
