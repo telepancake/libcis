@@ -1,12 +1,16 @@
 // evector.hpp — a vector whose heavy logic is type-erased.
 //
 // `core` holds raw byte pointers; the growth/reallocation logic is in
-// non-template `core_*` functions that take a `const type_ops&`. They are marked
-// (noinline, noclone) on purpose: that is what makes them emit ONCE for all
-// element types instead of being inlined/cloned per T (which would silently
-// re-monomorphize them, since `ops_for<T>` is a compile-time constant at each
-// call site — the exact thing this experiment is testing against, especially
-// under LTO's interprocedural constant propagation).
+// non-template `core_*` functions that take a `const type_ops&`, so the
+// orchestration is emitted independent of the element type.
+//
+// NOTE: an earlier version marked these (noinline, noclone) on the theory that
+// the compiler would otherwise clone/inline the core per element type and
+// re-monomorphize it. That theory was tested and is FALSE at -Os: g++-10 and
+// g++-13 emit the core exactly ONCE (shared, out-of-line) and dispatch through
+// the table; clang-18 inlines+devirtualizes+fuses it and comes out smaller.
+// The attributes only fought those optimizations (never smaller, sometimes
+// bigger), so they were removed. (See the cross-compiler measurement.)
 //
 // evector<T> is a thin typed wrapper: each method casts and calls a core
 // function with ops_for<T>. The only per-T code that survives is the tiny
@@ -24,7 +28,8 @@ struct core {
     unsigned char* cap = nullptr;
 };
 
-#define EV_SHARED __attribute__((noinline, noclone))
+// Left as a no-op: the compiler shares/fuses the core correctly on its own.
+#define EV_SHARED
 
 inline EV_SHARED void core_reserve_exact(core& v, std::size_t new_cap_elems,
                                          const type_ops& ops) {
