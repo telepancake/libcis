@@ -232,6 +232,37 @@ mostly reclaimed (the ~75% case). In an exported library: **kept** (+43%).
 
 ---
 
+## 6b. Ops-table shape: struct-of-pointers beats an enum dispatcher
+
+Two ways to encode the table: **(A)** a struct with one function pointer per op
+(`void(*cctor)(void*,const void*); int(*cmp)(...)`), vs **(B)** one dispatcher per
+arity that switches on an enum (`int bop<T>(BinOp, void*, const void*)`). Measured,
+8 non-trivial types, `-Os -flto`, totalling code **and** the function-pointer table
+(`.data.rel.ro`):
+
+| design | g++-10 (text + table) | clang-18 |
+|---|---|---|
+| A struct-of-pointers | 1214 + 256 = **1490** | 1009 + 256 = **1285** |
+| B enum dispatcher | 1364 + 128 = 1512 | 1215 + 128 = 1363 |
+
+A wins on every compiler on all three axes:
+
+- **Smaller** — B's table is half the size (2 pointers/type vs 4), but its dispatcher
+  carries a runtime `switch` (confirmed: a `je` ladder in `bop<T>`) that costs more
+  code than the table saves. (B's table edge grows with op *count*, so at a very
+  large op set it could flip — but the container op set is small.)
+- **Faster** — A is one indirection straight to the op; B is an indirection *plus*
+  the in-dispatcher branch ladder, on every call, and can't be inlined (it's behind
+  the erasure pointer).
+- **Saner** — A gives each op its natural signature; B crams them into a uniform
+  `int(BinOp,void*,const void*)` (copy-construct returning `int` is nonsense, only
+  `cmp` wants it).
+- **Composable** — A can `nullptr` individual ops (the trivial-elision and
+  validity guards of §4), per op. B's monolithic dispatcher can't null one case
+  cleanly, so it fights both optimizations.
+
+So: **struct of typed, individually-nullable function pointers.**
+
 ## 7. Conclusion
 
 For a constrained-production, size-focused standard library that is header-only
