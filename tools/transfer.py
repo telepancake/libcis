@@ -89,6 +89,13 @@ PARSE_ARGS = [
     "-DTEST_HAS_NO_EXCEPTIONS", "-DTEST_HAS_NO_RTTI",
     "-I", SRC_SUPPORT,
 ]
+# libclang often lacks its own builtin headers on the search path; libc++'s
+# stddef.h does `#include_next <stddef.h>`, so without the clang resource-dir
+# include every parse fails with "'stddef.h' file not found".  Add it when found
+# (overridable via $CLANG_BUILTIN_INCLUDE).
+_BUILTIN_INC = cfg.clang_builtin_include_dir()
+if _BUILTIN_INC:
+    PARSE_ARGS += ["-isystem", _BUILTIN_INC]
 
 # A PCH of every top-level libc++ header, built once: each of the ~10k test
 # parses (plus its verify re-parse) then skips the std headers entirely

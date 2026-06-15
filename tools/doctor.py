@@ -75,6 +75,13 @@ def main():
             rows.append((WARN, "libclang ($LIBCLANG)",
                          "not found -- set LIBCLANG=/path/to/libclang.so to re-run transfer"))
 
+    # --- clang builtin headers: needed by every transfer parse ------------
+    if bindings:
+        b = cfg.clang_builtin_include_dir()
+        rows.append((OK if b else WARN, "clang builtins ($CLANG_BUILTIN_INCLUDE)",
+                     b or "not found -- transfer parses will fail on <stddef.h>; "
+                          "set CLANG_BUILTIN_INCLUDE=<clang resource-dir>/include"))
+
     # --- PCH headers: pure optimization for the transfer ------------------
     inc = cfg.libcxx_include_dir()
     rows.append((OK if inc else WARN, "PCH headers ($LIBCXX_INCLUDE)",
