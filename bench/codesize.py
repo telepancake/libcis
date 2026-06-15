@@ -115,6 +115,7 @@ PROJECTS_CFG = {
     "vector_std": {"dirs": [], "defines": []},
     "vector_erased": {"dirs": [], "defines": []},
     "vector_dual": {"dirs": [], "defines": []},
+    "vector_ops": {"dirs": [], "defines": []},
 }
 
 ORDER = ["baseline", "fmt", "unordered_dense", "magic_enum",
