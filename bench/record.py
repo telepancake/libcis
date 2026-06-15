@@ -97,7 +97,7 @@ def build_entry(desc, names):
         **git_state(),
         "cxx": " ".join(codesize.CXX),
         "cxx_version": cxx_version(),
-        "flags": " ".join(codesize.COMPILE),
+        "flags": " ".join(codesize.build_flags()),
         "ok": all(p.get("ok") for p in projects.values()),
         "baseline_text": base,
         "projects": projects,

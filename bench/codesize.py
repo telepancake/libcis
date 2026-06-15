@@ -51,6 +51,37 @@ COMPILE = ["-std=gnu++20", "-nostdinc++", "-I" + os.path.join(ROOT, "include"),
 LINK = [os.path.join(ROOT, "src", "support.cpp"),
         "-nodefaultlibs", "-lpthread", "-lm", "-lc", "-lgcc_s", "-lgcc"]
 
+# The flags-only optimized baseline. No one ships a size-sensitive binary at
+# plain -Os, so this — not bare -Os — is what libcis's *library* changes are
+# measured on top of. Established empirically (see bench/code-size-techniques.md
+# §E0): -flto dominates (~20-25% off .text); -fmerge-all-constants and
+# gc-sections add a little; hidden-visibility and ICF are ~inert in a single
+# LTO'd executable but kept (harmless, and they matter for non-LTO consumers).
+# ICF needs the gold linker, so it's added only when ld.gold is present.
+def _opt_flags():
+    flags = [
+        "-flto",
+        "-fmerge-all-constants",
+        "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections",
+        "-fvisibility=hidden", "-fvisibility-inlines-hidden",
+        "-fno-asynchronous-unwind-tables", "-fno-unwind-tables",
+    ]
+    if shutil.which("ld.gold"):
+        flags += ["-fuse-ld=gold", "-Wl,--icf=safe"]
+    return flags
+
+OPT = _opt_flags()
+APPLY_OPT = True  # flipped off by --no-opt to measure the plain--Os delta
+
+# Extra flags appended to the (single) compile+link command, for experimenting
+# with build-flag variants without editing this file — e.g.
+#   CODESIZE_EXTRA_FLAGS="-fno-stack-protector"
+EXTRA = os.environ.get("CODESIZE_EXTRA_FLAGS", "").split()
+
+
+def build_flags():
+    return COMPILE + (OPT if APPLY_OPT else [])
+
 # Each project: header search dirs (relative to its submodule) and extra defines
 # the driver needs. The driver itself is bench/drivers/<name>.cpp.
 PROJECTS_CFG = {
@@ -120,7 +151,8 @@ def build_one(name, cfg, workdir, keep):
     defines = ["-D" + d for d in cfg["defines"]]
     out = os.path.join(workdir, name)
 
-    cmd = CXX + COMPILE + incs + defines + [driver] + LINK + ["-o", out]
+    opt = OPT if APPLY_OPT else []
+    cmd = CXX + COMPILE + opt + EXTRA + incs + defines + [driver] + LINK + ["-o", out]
     r = run(cmd)
     if r.returncode != 0:
         return {"name": name, "ok": False, "stage": "compile",
@@ -169,7 +201,13 @@ def main():
     ap.add_argument("--keep", action="store_true",
                     help="leave built binaries in bench/")
     ap.add_argument("--json", action="store_true", help="emit JSON")
+    ap.add_argument("--no-opt", action="store_true",
+                    help="drop the flags-only optimized baseline (plain -Os)")
     args = ap.parse_args()
+
+    global APPLY_OPT
+    if args.no_opt:
+        APPLY_OPT = False
 
     if not have_compiler():
         print(f"compiler not found: {CXX[0]} (libcis targets g++-10; set $CXX "
@@ -187,7 +225,8 @@ def main():
     else:
         base = next((r["text"] for r in results
                      if r.get("name") == "baseline" and r["ok"]), 0)
-        print(f"libcis code size @ -Os   (CXX={' '.join(CXX)})")
+        tag = "-Os +opt(flags)" if APPLY_OPT else "-Os plain"
+        print(f"libcis code size @ {tag}   (CXX={' '.join(CXX)})")
         print(f"{'project':<18}{'.text':>10}{'+base':>10}{'.rodata':>10}"
               f"{'.data':>8}{'.bss':>8}")
         print("-" * 64)
