@@ -1,4 +1,5 @@
 build/
+package/
 a.out
 *.out
 __pycache__/
