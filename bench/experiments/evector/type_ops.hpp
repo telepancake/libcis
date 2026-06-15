@@ -45,20 +45,21 @@ void destroy_impl(void* p, std::size_t n) {
 }
 
 // Trivial types get NULL op pointers: the core handles them inline (memmove /
-// memcpy / nothing) using the runtime size. Crucially we use `if constexpr` so
-// `&relocate_impl<T>` etc. are never *named* for trivial T — naming them would
-// ODR-use and instantiate the leaf even though the value is null. So a trivially
-// relocatable type emits ZERO per-type leaf code; only the (constexpr) table.
+// memcpy / nothing) using the runtime size. Non-trivial ops are set ONLY when the
+// operation is actually valid for T — so a single type_ops shape serves every
+// type, and we never instantiate a leaf that would be ill-formed (e.g.
+// copy_one_impl<T> for a move-only T with a deleted copy ctor). `if constexpr`
+// guards both elision (don't name &impl<T> for trivial T) and validity.
 template<class T>
 constexpr type_ops make_ops() {
     type_ops o{sizeof(T), alignof(T), nullptr, nullptr, nullptr};
     if constexpr (!std::is_trivially_copyable_v<T>) {
-        o.relocate = &relocate_impl<T>;
-        o.copy_one = &copy_one_impl<T>;
+        // relocate = move-construct + destroy source; valid iff T is (move-or-copy)
+        // constructible (is_move_constructible_v is true when a copy ctor serves).
+        if constexpr (std::is_move_constructible_v<T>) o.relocate = &relocate_impl<T>;
+        if constexpr (std::is_copy_constructible_v<T>) o.copy_one = &copy_one_impl<T>;
     }
-    if constexpr (!std::is_trivially_destructible_v<T>) {
-        o.destroy = &destroy_impl<T>;
-    }
+    if constexpr (!std::is_trivially_destructible_v<T>) o.destroy = &destroy_impl<T>;
     return o;
 }
 
