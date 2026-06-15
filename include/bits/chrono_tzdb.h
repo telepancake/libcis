@@ -274,7 +274,7 @@ template <class Duration>
   return !(x < y);
 }
 template <class Duration>
-  requires three_way_comparable_with<sys_seconds, sys_time<Duration>>
+  requires three_way_comparable_with<seconds, Duration>
 [[nodiscard]] constexpr auto operator<=>(const leap_second& x, const sys_time<Duration>& y) noexcept {
   return x.date() <=> y;
 }
