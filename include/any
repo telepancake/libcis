@@ -130,7 +130,7 @@ public:
                                  !is_specialization_of_in_place_type<V>::value &&
                                  is_copy_constructible_v<T>>>
     any(V&& v) : h_(nullptr) {
-        any_imp::Handler<T>::create(*this, forward<V>(v));
+        any_imp::Handler<T>::create(*this, std::forward<V>(v));
     }
 
     template<class V, class... Args,
@@ -138,7 +138,7 @@ public:
              class = enable_if_t<is_constructible_v<T, Args...> &&
                                  is_copy_constructible_v<T>>>
     explicit any(in_place_type_t<V>, Args&&... args) : h_(nullptr) {
-        any_imp::Handler<T>::create(*this, forward<Args>(args)...);
+        any_imp::Handler<T>::create(*this, std::forward<Args>(args)...);
     }
 
     template<class V, class U, class... Args,
@@ -146,7 +146,7 @@ public:
              class = enable_if_t<is_constructible_v<T, initializer_list<U>&, Args...> &&
                                  is_copy_constructible_v<T>>>
     explicit any(in_place_type_t<V>, initializer_list<U> il, Args&&... args) : h_(nullptr) {
-        any_imp::Handler<T>::create(*this, il, forward<Args>(args)...);
+        any_imp::Handler<T>::create(*this, il, std::forward<Args>(args)...);
     }
 
     ~any() { reset(); }
@@ -166,7 +166,7 @@ public:
              class T = decay_t<V>,
              class = enable_if_t<!is_same_v<T, any> && is_copy_constructible_v<T>>>
     any& operator=(V&& rhs) {
-        any(forward<V>(rhs)).swap(*this);
+        any(std::forward<V>(rhs)).swap(*this);
         return *this;
     }
 
@@ -177,7 +177,7 @@ public:
                                  is_copy_constructible_v<T>>>
     T& emplace(Args&&... args) {
         reset();
-        return any_imp::Handler<T>::create(*this, forward<Args>(args)...);
+        return any_imp::Handler<T>::create(*this, std::forward<Args>(args)...);
     }
 
     template<class V, class U, class... Args,
@@ -186,7 +186,7 @@ public:
                                  is_copy_constructible_v<T>>>
     T& emplace(initializer_list<U> il, Args&&... args) {
         reset();
-        return any_imp::Handler<T>::create(*this, il, forward<Args>(args)...);
+        return any_imp::Handler<T>::create(*this, il, std::forward<Args>(args)...);
     }
 
     void reset() noexcept {
@@ -267,7 +267,7 @@ struct SmallHandler {
 
     template<class... Args>
     static T& create(any& dest, Args&&... args) {
-        T* p = ::new (static_cast<void*>(&dest.s_.buf)) T(forward<Args>(args)...);
+        T* p = ::new (static_cast<void*>(&dest.s_.buf)) T(std::forward<Args>(args)...);
         dest.h_ = &SmallHandler::handle;
         return *p;
     }
@@ -306,7 +306,7 @@ struct LargeHandler {
 
     template<class... Args>
     static T& create(any& dest, Args&&... args) {
-        T* p = new T(forward<Args>(args)...);
+        T* p = new T(std::forward<Args>(args)...);
         dest.s_.ptr = p;
         dest.h_     = &LargeHandler::handle;
         return *p;
@@ -342,12 +342,12 @@ inline void swap(any& x, any& y) noexcept { x.swap(y); }
 
 template<class T, class... Args>
 [[nodiscard]] inline any make_any(Args&&... args) {
-    return any(in_place_type<T>, forward<Args>(args)...);
+    return any(in_place_type<T>, std::forward<Args>(args)...);
 }
 
 template<class T, class U, class... Args>
 [[nodiscard]] inline any make_any(initializer_list<U> il, Args&&... args) {
-    return any(in_place_type<T>, il, forward<Args>(args)...);
+    return any(in_place_type<T>, il, std::forward<Args>(args)...);
 }
 
 // Pointer forms — return nullptr on type mismatch (no-throw, no RTTI needed).

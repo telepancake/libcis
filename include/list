@@ -504,7 +504,7 @@ public:
 
     template<class... Args>
     reference emplace_front(Args&&... args) {
-        node_pointer node = create_node(nullptr, nullptr, forward<Args>(args)...);
+        node_pointer node = create_node(nullptr, nullptr, std::forward<Args>(args)...);
         base_pointer nl = node->as_link();
         link_at_front(nl, nl);
         ++sz;
@@ -534,7 +534,7 @@ public:
 
     template<class... Args>
     reference emplace_back(Args&&... args) {
-        node_pointer node = create_node(nullptr, nullptr, forward<Args>(args)...);
+        node_pointer node = create_node(nullptr, nullptr, std::forward<Args>(args)...);
         base_pointer nl = node->as_link();
         link_at_back(nl, nl);
         ++sz;
@@ -593,7 +593,7 @@ public:
 
     template<class... Args>
     iterator emplace(const_iterator pos, Args&&... args) {
-        node_pointer node = create_node(nullptr, nullptr, forward<Args>(args)...);
+        node_pointer node = create_node(nullptr, nullptr, std::forward<Args>(args)...);
         base_pointer nl = node->as_link();
         link_nodes(pos.ptr, nl, nl);
         ++sz;

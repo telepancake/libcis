@@ -1048,7 +1048,7 @@ public:
         requires is_constructible_v<T, Args...>
     constexpr explicit movable_box(in_place_t, Args&&... args)
         noexcept(is_nothrow_constructible_v<T, Args...>)
-        : val_(in_place, forward<Args>(args)...) {}
+        : val_(in_place, std::forward<Args>(args)...) {}
 
     constexpr movable_box()
         noexcept(is_nothrow_default_constructible_v<T>)
@@ -1098,7 +1098,7 @@ class non_propagating_cache {
     struct wrapper {
         template<class... Args>
         constexpr explicit wrapper(fwd_tag, Args&&... args)
-            : t_(forward<Args>(args)...) {}
+            : t_(std::forward<Args>(args)...) {}
         template<class Fn>
         constexpr explicit wrapper(from_tag, const Fn& f) : t_(f()) {}
         T t_;
@@ -1126,7 +1126,7 @@ public:
     }
     template<class... Args>
     constexpr T& emplace(Args&&... args) {
-        return val_.emplace(fwd_tag{}, forward<Args>(args)...).t_;
+        return val_.emplace(fwd_tag{}, std::forward<Args>(args)...).t_;
     }
 };
 
@@ -1178,7 +1178,7 @@ public:
     template<class... Args>
         requires constructible_from<T, Args...>
     constexpr explicit single_view(in_place_t, Args&&... args)
-        : value_(in_place, forward<Args>(args)...) {}
+        : value_(in_place, std::forward<Args>(args)...) {}
 
     [[nodiscard]] constexpr T* begin() noexcept { return data(); }
     [[nodiscard]] constexpr const T* begin() const noexcept { return data(); }
@@ -1436,7 +1436,7 @@ public:
                  convertible_to<T, Range&> &&
                  requires { fun(declval<T>()); }
     constexpr ref_view(T&& t)
-        : range_(addressof(static_cast<Range&>(forward<T>(t)))) {}
+        : range_(addressof(static_cast<Range&>(std::forward<T>(t)))) {}
 
     [[nodiscard]] constexpr Range& base() const { return *range_; }
     [[nodiscard]] constexpr iterator_t<Range> begin() const { return ranges::begin(*range_); }
@@ -1547,7 +1547,7 @@ template<ranges::range Range, range_adaptor_closure_type Closure>
 operator|(Range&& range, Closure&& closure)
     noexcept(is_nothrow_invocable_v<Closure, Range>)
 {
-    return invoke(forward<Closure>(closure), forward<Range>(range));
+    return invoke(std::forward<Closure>(closure), std::forward<Range>(range));
 }
 
 // closure1 | closure2  -> composed closure
@@ -1558,9 +1558,9 @@ template<range_adaptor_closure_type C1, range_adaptor_closure_type C2>
              is_nothrow_constructible_v<decay_t<C2>, C2>)
 {
     // return a closure that applies c1 then c2
-    return pipeable([c1_ = forward<C1>(c1), c2_ = forward<C2>(c2)](auto&& range) mutable
+    return pipeable([c1_ = std::forward<C1>(c1), c2_ = std::forward<C2>(c2)](auto&& range) mutable
         -> decltype(auto) {
-        return invoke(c2_, invoke(c1_, forward<decltype(range)>(range)));
+        return invoke(c2_, invoke(c1_, std::forward<decltype(range)>(range)));
     });
 }
 
@@ -1578,19 +1578,19 @@ namespace bind_back_detail {
         template<class Range>
         constexpr decltype(auto) operator()(Range&& range) & {
             return apply([&](auto&... args) -> decltype(auto) {
-                return invoke(fn_, forward<Range>(range), args...);
+                return invoke(fn_, std::forward<Range>(range), args...);
             }, bound_);
         }
         template<class Range>
         constexpr decltype(auto) operator()(Range&& range) const& {
             return apply([&](const auto&... args) -> decltype(auto) {
-                return invoke(fn_, forward<Range>(range), args...);
+                return invoke(fn_, std::forward<Range>(range), args...);
             }, bound_);
         }
         template<class Range>
         constexpr decltype(auto) operator()(Range&& range) && {
             return apply([&](auto&&... args) -> decltype(auto) {
-                return invoke(move(fn_), forward<Range>(range), move(args)...);
+                return invoke(move(fn_), std::forward<Range>(range), move(args)...);
             }, move(bound_));
         }
     };
@@ -1599,8 +1599,8 @@ namespace bind_back_detail {
 template<class Fn, class... Args>
 constexpr auto bind_back(Fn&& fn, Args&&... args) {
     return bind_back_detail::bind_back_fn<decay_t<Fn>, decay_t<Args>...>{
-        decay_t<Fn>(forward<Fn>(fn)),
-        tuple<decay_t<Args>...>(forward<Args>(args)...)
+        decay_t<Fn>(std::forward<Fn>(fn)),
+        tuple<decay_t<Args>...>(std::forward<Args>(args)...)
     };
 }
 
@@ -1620,24 +1620,24 @@ struct all_fn : range_adaptor_closure_base<all_fn> {
         noexcept(is_nothrow_constructible_v<decay_t<T>, T>)
         -> decay_t<T>
     {
-        return forward<T>(t);
+        return std::forward<T>(t);
     }
     template<class T>
         requires (!ranges::view<decay_t<T>>) &&
-                 requires(T&& t) { ranges::ref_view{forward<T>(t)}; }
+                 requires(T&& t) { ranges::ref_view{std::forward<T>(t)}; }
     [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(ranges::ref_view{forward<T>(t)}))
+        noexcept(noexcept(ranges::ref_view{std::forward<T>(t)}))
     {
-        return ranges::ref_view{forward<T>(t)};
+        return ranges::ref_view{std::forward<T>(t)};
     }
     template<class T>
         requires (!ranges::view<decay_t<T>>) &&
-                 (!requires(T&& t) { ranges::ref_view{forward<T>(t)}; }) &&
-                 requires(T&& t) { ranges::owning_view{forward<T>(t)}; }
+                 (!requires(T&& t) { ranges::ref_view{std::forward<T>(t)}; }) &&
+                 requires(T&& t) { ranges::owning_view{std::forward<T>(t)}; }
     [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(ranges::owning_view{forward<T>(t)}))
+        noexcept(noexcept(ranges::owning_view{std::forward<T>(t)}))
     {
-        return ranges::owning_view{forward<T>(t)};
+        return ranges::owning_view{std::forward<T>(t)};
     }
 };
 } // namespace all_detail
@@ -1658,9 +1658,9 @@ namespace single_detail {
 struct single_fn : range_adaptor_closure_base<single_fn> {
     template<class T>
     [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(ranges::single_view<decay_t<T>>(forward<T>(t))))
+        noexcept(noexcept(ranges::single_view<decay_t<T>>(std::forward<T>(t))))
     {
-        return ranges::single_view<decay_t<T>>(forward<T>(t));
+        return ranges::single_view<decay_t<T>>(std::forward<T>(t));
     }
 };
 } // namespace single_detail
@@ -1673,18 +1673,18 @@ inline namespace cpo {
 namespace iota_detail {
 struct iota_fn {
     template<class Start>
-        requires requires(Start s) { ranges::iota_view<decay_t<Start>>(forward<Start>(s)); }
+        requires requires(Start s) { ranges::iota_view<decay_t<Start>>(std::forward<Start>(s)); }
     [[nodiscard]] constexpr auto operator()(Start&& start) const
-        noexcept(noexcept(ranges::iota_view<decay_t<Start>>(forward<Start>(start))))
+        noexcept(noexcept(ranges::iota_view<decay_t<Start>>(std::forward<Start>(start))))
     {
-        return ranges::iota_view<decay_t<Start>>(forward<Start>(start));
+        return ranges::iota_view<decay_t<Start>>(std::forward<Start>(start));
     }
     template<class Start, class Bound>
     [[nodiscard]] constexpr auto operator()(Start&& start, Bound&& bound) const
-        noexcept(noexcept(ranges::iota_view(forward<Start>(start), forward<Bound>(bound))))
-        -> decltype(ranges::iota_view(forward<Start>(start), forward<Bound>(bound)))
+        noexcept(noexcept(ranges::iota_view(std::forward<Start>(start), std::forward<Bound>(bound))))
+        -> decltype(ranges::iota_view(std::forward<Start>(start), std::forward<Bound>(bound)))
     {
-        return ranges::iota_view(forward<Start>(start), forward<Bound>(bound));
+        return ranges::iota_view(std::forward<Start>(start), std::forward<Bound>(bound));
     }
 };
 } // namespace iota_detail
@@ -1699,9 +1699,9 @@ struct counted_fn {
     template<input_or_output_iterator I>
     [[nodiscard]] constexpr auto operator()(I&& i, iter_difference_t<I> n) const {
         if constexpr (random_access_iterator<I>)
-            return ranges::subrange(forward<I>(i), forward<I>(i) + n);
+            return ranges::subrange(std::forward<I>(i), std::forward<I>(i) + n);
         else
-            return ranges::subrange(counted_iterator(forward<I>(i), n), default_sentinel);
+            return ranges::subrange(counted_iterator(std::forward<I>(i), n), default_sentinel);
     }
 };
 } // namespace counted_detail
@@ -1864,17 +1864,17 @@ namespace filter_detail {
 struct filter_fn {
     template<class Range, class Pred>
     [[nodiscard]] constexpr auto operator()(Range&& range, Pred&& pred) const
-        noexcept(noexcept(ranges::filter_view(forward<Range>(range), forward<Pred>(pred))))
-        -> decltype(ranges::filter_view(forward<Range>(range), forward<Pred>(pred)))
+        noexcept(noexcept(ranges::filter_view(std::forward<Range>(range), std::forward<Pred>(pred))))
+        -> decltype(ranges::filter_view(std::forward<Range>(range), std::forward<Pred>(pred)))
     {
-        return ranges::filter_view(forward<Range>(range), forward<Pred>(pred));
+        return ranges::filter_view(std::forward<Range>(range), std::forward<Pred>(pred));
     }
     template<class Pred>
         requires constructible_from<decay_t<Pred>, Pred>
     [[nodiscard]] constexpr auto operator()(Pred&& pred) const
         noexcept(is_nothrow_constructible_v<decay_t<Pred>, Pred>)
     {
-        return ranges::bind_back(*this, forward<Pred>(pred));
+        return ranges::bind_back(*this, std::forward<Pred>(pred));
     }
 };
 } // namespace filter_detail
@@ -2115,14 +2115,14 @@ namespace transform_detail {
 struct transform_fn {
     template<class Range, class Fn>
     [[nodiscard]] constexpr auto operator()(Range&& range, Fn&& f) const
-        noexcept(noexcept(ranges::transform_view(forward<Range>(range), forward<Fn>(f))))
-        -> decltype(ranges::transform_view(forward<Range>(range), forward<Fn>(f)))
-    { return ranges::transform_view(forward<Range>(range), forward<Fn>(f)); }
+        noexcept(noexcept(ranges::transform_view(std::forward<Range>(range), std::forward<Fn>(f))))
+        -> decltype(ranges::transform_view(std::forward<Range>(range), std::forward<Fn>(f)))
+    { return ranges::transform_view(std::forward<Range>(range), std::forward<Fn>(f)); }
     template<class Fn>
         requires constructible_from<decay_t<Fn>, Fn>
     [[nodiscard]] constexpr auto operator()(Fn&& f) const
         noexcept(is_nothrow_constructible_v<decay_t<Fn>, Fn>)
-    { return ranges::bind_back(*this, forward<Fn>(f)); }
+    { return ranges::bind_back(*this, std::forward<Fn>(f)); }
 };
 } // namespace transform_detail
 inline namespace cpo {
@@ -2259,14 +2259,14 @@ namespace take_detail {
 struct take_fn {
     template<class Range>
     [[nodiscard]] constexpr auto operator()(Range&& range, range_difference_t<Range> n) const
-        noexcept(noexcept(ranges::take_view(forward<Range>(range), n)))
-        -> decltype(ranges::take_view(forward<Range>(range), n))
-    { return ranges::take_view(forward<Range>(range), n); }
+        noexcept(noexcept(ranges::take_view(std::forward<Range>(range), n)))
+        -> decltype(ranges::take_view(std::forward<Range>(range), n))
+    { return ranges::take_view(std::forward<Range>(range), n); }
     template<class D>
         requires constructible_from<decay_t<D>, D>
     [[nodiscard]] constexpr auto operator()(D&& n) const
         noexcept(is_nothrow_constructible_v<decay_t<D>, D>)
-    { return ranges::bind_back(*this, forward<D>(n)); }
+    { return ranges::bind_back(*this, std::forward<D>(n)); }
 };
 } // namespace take_detail
 inline namespace cpo {
@@ -2355,14 +2355,14 @@ namespace take_while_detail {
 struct take_while_fn {
     template<class Range, class Pred>
     [[nodiscard]] constexpr auto operator()(Range&& range, Pred&& pred) const
-        noexcept(noexcept(ranges::take_while_view(forward<Range>(range), forward<Pred>(pred))))
-        -> decltype(ranges::take_while_view(forward<Range>(range), forward<Pred>(pred)))
-    { return ranges::take_while_view(forward<Range>(range), forward<Pred>(pred)); }
+        noexcept(noexcept(ranges::take_while_view(std::forward<Range>(range), std::forward<Pred>(pred))))
+        -> decltype(ranges::take_while_view(std::forward<Range>(range), std::forward<Pred>(pred)))
+    { return ranges::take_while_view(std::forward<Range>(range), std::forward<Pred>(pred)); }
     template<class Pred>
         requires constructible_from<decay_t<Pred>, Pred>
     [[nodiscard]] constexpr auto operator()(Pred&& pred) const
         noexcept(is_nothrow_constructible_v<decay_t<Pred>, Pred>)
-    { return ranges::bind_back(*this, forward<Pred>(pred)); }
+    { return ranges::bind_back(*this, std::forward<Pred>(pred)); }
 };
 } // namespace take_while_detail
 inline namespace cpo {
@@ -2450,14 +2450,14 @@ namespace drop_detail {
 struct drop_fn {
     template<class Range>
     [[nodiscard]] constexpr auto operator()(Range&& range, range_difference_t<Range> n) const
-        noexcept(noexcept(ranges::drop_view(forward<Range>(range), n)))
-        -> decltype(ranges::drop_view(forward<Range>(range), n))
-    { return ranges::drop_view(forward<Range>(range), n); }
+        noexcept(noexcept(ranges::drop_view(std::forward<Range>(range), n)))
+        -> decltype(ranges::drop_view(std::forward<Range>(range), n))
+    { return ranges::drop_view(std::forward<Range>(range), n); }
     template<class D>
         requires constructible_from<decay_t<D>, D>
     [[nodiscard]] constexpr auto operator()(D&& n) const
         noexcept(is_nothrow_constructible_v<decay_t<D>, D>)
-    { return ranges::bind_back(*this, forward<D>(n)); }
+    { return ranges::bind_back(*this, std::forward<D>(n)); }
 };
 } // namespace drop_detail
 inline namespace cpo {
@@ -2526,14 +2526,14 @@ namespace drop_while_detail {
 struct drop_while_fn {
     template<class Range, class Pred>
     [[nodiscard]] constexpr auto operator()(Range&& range, Pred&& pred) const
-        noexcept(noexcept(ranges::drop_while_view(forward<Range>(range), forward<Pred>(pred))))
-        -> decltype(ranges::drop_while_view(forward<Range>(range), forward<Pred>(pred)))
-    { return ranges::drop_while_view(forward<Range>(range), forward<Pred>(pred)); }
+        noexcept(noexcept(ranges::drop_while_view(std::forward<Range>(range), std::forward<Pred>(pred))))
+        -> decltype(ranges::drop_while_view(std::forward<Range>(range), std::forward<Pred>(pred)))
+    { return ranges::drop_while_view(std::forward<Range>(range), std::forward<Pred>(pred)); }
     template<class Pred>
         requires constructible_from<decay_t<Pred>, Pred>
     [[nodiscard]] constexpr auto operator()(Pred&& pred) const
         noexcept(is_nothrow_constructible_v<decay_t<Pred>, Pred>)
-    { return ranges::bind_back(*this, forward<Pred>(pred)); }
+    { return ranges::bind_back(*this, std::forward<Pred>(pred)); }
 };
 } // namespace drop_while_detail
 inline namespace cpo {
@@ -2609,9 +2609,9 @@ namespace reverse_detail {
 struct reverse_fn : range_adaptor_closure_base<reverse_fn> {
     template<class Range>
     [[nodiscard]] constexpr auto operator()(Range&& range) const
-        noexcept(noexcept(ranges::reverse_view(forward<Range>(range))))
-        -> decltype(ranges::reverse_view(forward<Range>(range)))
-    { return ranges::reverse_view(forward<Range>(range)); }
+        noexcept(noexcept(ranges::reverse_view(std::forward<Range>(range))))
+        -> decltype(ranges::reverse_view(std::forward<Range>(range)))
+    { return ranges::reverse_view(std::forward<Range>(range)); }
 };
 } // namespace reverse_detail
 inline namespace cpo {
@@ -2926,10 +2926,10 @@ namespace join_detail {
 struct join_fn : range_adaptor_closure_base<join_fn> {
     template<class Range>
     [[nodiscard]] constexpr auto operator()(Range&& range) const
-        noexcept(noexcept(ranges::join_view<all_t<Range&&>>(forward<Range>(range))))
-        -> decltype(ranges::join_view<all_t<Range&&>>(forward<Range>(range)))
+        noexcept(noexcept(ranges::join_view<all_t<Range&&>>(std::forward<Range>(range))))
+        -> decltype(ranges::join_view<all_t<Range&&>>(std::forward<Range>(range)))
     {
-        return ranges::join_view<all_t<Range&&>>(forward<Range>(range));
+        return ranges::join_view<all_t<Range&&>>(std::forward<Range>(range));
     }
 };
 } // namespace join_detail
@@ -2984,7 +2984,7 @@ public:
         requires constructible_from<View, views::all_t<Range>> &&
                  constructible_from<Pattern, single_view<range_value_t<Range>>>
     constexpr lazy_split_view(Range&& r, range_value_t<Range> e)
-        : base_(views::all(forward<Range>(r))),
+        : base_(views::all(std::forward<Range>(r))),
           pattern_(views::single(move(e))) {}
 
     constexpr View base() const& requires copy_constructible<View> { return base_; }
@@ -3257,15 +3257,15 @@ namespace lazy_split_detail {
 struct lazy_split_fn {
     template<class Range, class Pattern>
     [[nodiscard]] constexpr auto operator()(Range&& range, Pattern&& pattern) const
-        noexcept(noexcept(ranges::lazy_split_view(forward<Range>(range), forward<Pattern>(pattern))))
-        -> decltype(ranges::lazy_split_view(forward<Range>(range), forward<Pattern>(pattern)))
-    { return ranges::lazy_split_view(forward<Range>(range), forward<Pattern>(pattern)); }
+        noexcept(noexcept(ranges::lazy_split_view(std::forward<Range>(range), std::forward<Pattern>(pattern))))
+        -> decltype(ranges::lazy_split_view(std::forward<Range>(range), std::forward<Pattern>(pattern)))
+    { return ranges::lazy_split_view(std::forward<Range>(range), std::forward<Pattern>(pattern)); }
 
     template<class Pattern>
         requires constructible_from<decay_t<Pattern>, Pattern>
     [[nodiscard]] constexpr auto operator()(Pattern&& pattern) const
         noexcept(is_nothrow_constructible_v<decay_t<Pattern>, Pattern>)
-    { return ranges::bind_back(*this, forward<Pattern>(pattern)); }
+    { return ranges::bind_back(*this, std::forward<Pattern>(pattern)); }
 };
 } // namespace lazy_split_detail
 inline namespace cpo {
@@ -3329,7 +3329,7 @@ public:
         requires constructible_from<View, views::all_t<Range>> &&
                  constructible_from<Pattern, single_view<range_value_t<Range>>>
     constexpr split_view(Range&& range, range_value_t<Range> elem)
-        : base_(views::all(forward<Range>(range))),
+        : base_(views::all(std::forward<Range>(range))),
           pattern_(views::single(move(elem))) {}
 
     constexpr View base() const& requires copy_constructible<View> { return base_; }
@@ -3452,15 +3452,15 @@ namespace split_detail {
 struct split_fn {
     template<class Range, class Pattern>
     [[nodiscard]] constexpr auto operator()(Range&& range, Pattern&& pattern) const
-        noexcept(noexcept(ranges::split_view(forward<Range>(range), forward<Pattern>(pattern))))
-        -> decltype(ranges::split_view(forward<Range>(range), forward<Pattern>(pattern)))
-    { return ranges::split_view(forward<Range>(range), forward<Pattern>(pattern)); }
+        noexcept(noexcept(ranges::split_view(std::forward<Range>(range), std::forward<Pattern>(pattern))))
+        -> decltype(ranges::split_view(std::forward<Range>(range), std::forward<Pattern>(pattern)))
+    { return ranges::split_view(std::forward<Range>(range), std::forward<Pattern>(pattern)); }
 
     template<class Pattern>
         requires constructible_from<decay_t<Pattern>, Pattern>
     [[nodiscard]] constexpr auto operator()(Pattern&& pattern) const
         noexcept(is_nothrow_constructible_v<decay_t<Pattern>, Pattern>)
-    { return ranges::bind_back(*this, forward<Pattern>(pattern)); }
+    { return ranges::bind_back(*this, std::forward<Pattern>(pattern)); }
 };
 } // namespace split_detail
 inline namespace cpo {
@@ -3744,10 +3744,10 @@ template<size_t N>
 struct elements_fn : range_adaptor_closure_base<elements_fn<N>> {
     template<class Range>
     [[nodiscard]] constexpr auto operator()(Range&& range) const
-        noexcept(noexcept(ranges::elements_view<all_t<Range&&>, N>(forward<Range>(range))))
-        -> decltype(ranges::elements_view<all_t<Range&&>, N>(forward<Range>(range)))
+        noexcept(noexcept(ranges::elements_view<all_t<Range&&>, N>(std::forward<Range>(range))))
+        -> decltype(ranges::elements_view<all_t<Range&&>, N>(std::forward<Range>(range)))
     {
-        return ranges::elements_view<all_t<Range&&>, N>(forward<Range>(range));
+        return ranges::elements_view<all_t<Range&&>, N>(std::forward<Range>(range));
     }
 };
 } // namespace elements_detail
@@ -3831,16 +3831,16 @@ struct common_fn : range_adaptor_closure_base<common_fn> {
     template<class Range>
         requires ranges::common_range<Range>
     [[nodiscard]] constexpr auto operator()(Range&& range) const
-        noexcept(noexcept(views::all(forward<Range>(range))))
-        -> decltype(views::all(forward<Range>(range)))
-    { return views::all(forward<Range>(range)); }
+        noexcept(noexcept(views::all(std::forward<Range>(range))))
+        -> decltype(views::all(std::forward<Range>(range)))
+    { return views::all(std::forward<Range>(range)); }
 
     template<class Range>
         requires (!ranges::common_range<Range>)
     [[nodiscard]] constexpr auto operator()(Range&& range) const
-        noexcept(noexcept(ranges::common_view{forward<Range>(range)}))
-        -> decltype(ranges::common_view{forward<Range>(range)})
-    { return ranges::common_view{forward<Range>(range)}; }
+        noexcept(noexcept(ranges::common_view{std::forward<Range>(range)}))
+        -> decltype(ranges::common_view{std::forward<Range>(range)})
+    { return ranges::common_view{std::forward<Range>(range)}; }
 };
 } // namespace common_detail
 inline namespace cpo {

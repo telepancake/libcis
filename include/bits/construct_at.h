@@ -16,7 +16,7 @@ namespace std {
 template<class T, class... Args>
     requires requires { ::new(declval<void*>()) T(declval<Args>()...); }
 constexpr T* construct_at(T* loc, Args&&... args) {
-    return ::new(static_cast<void*>(loc)) T(forward<Args>(args)...);
+    return ::new(static_cast<void*>(loc)) T(std::forward<Args>(args)...);
 }
 
 } // namespace std

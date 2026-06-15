@@ -309,10 +309,10 @@ private:
     iterator insert_after_n(const_iterator p, size_type n, Args&&... args) {
         begin_node_pointer r = p.get_begin();
         if (n > 0) {
-            node_pointer first = create_node(nullptr, forward<Args>(args)...);
+            node_pointer first = create_node(nullptr, std::forward<Args>(args)...);
             node_pointer last  = first;
             for (--n; n != 0; --n, last = last->next)
-                last->next = create_node(nullptr, forward<Args>(args)...);
+                last->next = create_node(nullptr, std::forward<Args>(args)...);
             last->next = r->next;
             r->next    = first;
             r = node_traits_type::as_iter_node(last);
@@ -500,7 +500,7 @@ public:
     // --- modifiers ---
     template<class... Args>
     reference emplace_front(Args&&... args) {
-        before_begin_node.next = create_node(before_begin_node.next, forward<Args>(args)...);
+        before_begin_node.next = create_node(before_begin_node.next, std::forward<Args>(args)...);
         return before_begin_node.next->get_value();
     }
 
@@ -521,7 +521,7 @@ public:
     template<class... Args>
     iterator emplace_after(const_iterator p, Args&&... args) {
         begin_node_pointer r = p.get_begin();
-        r->next = create_node(r->next, forward<Args>(args)...);
+        r->next = create_node(r->next, std::forward<Args>(args)...);
         return iterator(r->next);
     }
 

@@ -393,15 +393,15 @@ public:
         requires (!is_same_v<remove_cvref_t<T>, tuple_leaf> && is_constructible_v<H, T>)
     constexpr explicit tuple_leaf(T&& t)
         noexcept(is_nothrow_constructible_v<H, T>)
-        : value_(forward<T>(t)) {}
+        : value_(std::forward<T>(t)) {}
 
     template<class T, class Alloc>
     constexpr explicit tuple_leaf(integral_constant<int, 0>, const Alloc&, T&& t)
-        : value_(forward<T>(t)) {}
+        : value_(std::forward<T>(t)) {}
 
     template<class T, class Alloc>
     constexpr explicit tuple_leaf(integral_constant<int, 1>, const Alloc& a, T&& t)
-        : value_(allocator_arg_t(), a, forward<T>(t))
+        : value_(allocator_arg_t(), a, std::forward<T>(t))
     {
         static_assert(!is_reference_v<H>,
             "Attempted to uses-allocator construct a reference element in a tuple");
@@ -409,7 +409,7 @@ public:
 
     template<class T, class Alloc>
     constexpr explicit tuple_leaf(integral_constant<int, 2>, const Alloc& a, T&& t)
-        : value_(forward<T>(t), a)
+        : value_(std::forward<T>(t), a)
     {
         static_assert(!is_reference_v<H>,
             "Attempted to uses-allocator construct a reference element in a tuple");
@@ -446,19 +446,19 @@ public:
         requires (!is_same_v<remove_cvref_t<T>, tuple_leaf> && is_constructible_v<H, T>)
     constexpr explicit tuple_leaf(T&& t)
         noexcept(is_nothrow_constructible_v<H, T>)
-        : remove_cv_t<H>(forward<T>(t)) {}
+        : remove_cv_t<H>(std::forward<T>(t)) {}
 
     template<class T, class Alloc>
     constexpr explicit tuple_leaf(integral_constant<int, 0>, const Alloc&, T&& t)
-        : remove_cv_t<H>(forward<T>(t)) {}
+        : remove_cv_t<H>(std::forward<T>(t)) {}
 
     template<class T, class Alloc>
     constexpr explicit tuple_leaf(integral_constant<int, 1>, const Alloc& a, T&& t)
-        : remove_cv_t<H>(allocator_arg_t(), a, forward<T>(t)) {}
+        : remove_cv_t<H>(allocator_arg_t(), a, std::forward<T>(t)) {}
 
     template<class T, class Alloc>
     constexpr explicit tuple_leaf(integral_constant<int, 2>, const Alloc& a, T&& t)
-        : remove_cv_t<H>(forward<T>(t), a) {}
+        : remove_cv_t<H>(std::forward<T>(t), a) {}
 
     tuple_leaf(const tuple_leaf&) = default;
     tuple_leaf(tuple_leaf&&)      = default;
@@ -491,7 +491,7 @@ struct tuple_impl<index_sequence<Is...>, Ts...>
         Up&&... u)
         noexcept(all_v<is_nothrow_constructible_v<Tf, Up>...> &&
                  all_v<is_nothrow_default_constructible_v<Tl>...>)
-        : tuple_leaf<Uf, Tf>(forward<Up>(u))..., tuple_leaf<Ul, Tl>()... {}
+        : tuple_leaf<Uf, Tf>(std::forward<Up>(u))..., tuple_leaf<Ul, Tl>()... {}
 
     // Allocator-extended variant of the above (uses-allocator construction).
     template<class Alloc, size_t... Uf, class... Tf, size_t... Ul, class... Tl, class... Up>
@@ -500,7 +500,7 @@ struct tuple_impl<index_sequence<Is...>, Ts...>
         index_sequence<Uf...>, tuple_types<Tf...>,
         index_sequence<Ul...>, tuple_types<Tl...>,
         Up&&... u)
-        : tuple_leaf<Uf, Tf>(uses_alloc_ctor<Tf, Alloc, Up>(), a, forward<Up>(u))...,
+        : tuple_leaf<Uf, Tf>(uses_alloc_ctor<Tf, Alloc, Up>(), a, std::forward<Up>(u))...,
           tuple_leaf<Ul, Tl>(uses_alloc_ctor<Tl, Alloc>(), a)... {}
 
     // From-tuple constructor: copy/move from another tuple-like.
@@ -510,7 +510,7 @@ struct tuple_impl<index_sequence<Is...>, Ts...>
         noexcept(all_v<is_nothrow_constructible_v<
             Ts, typename tuple_element<Is, typename make_tuple_types<Tuple>::type>::type>...>)
         : tuple_leaf<Is, Ts>(
-              forward<typename tuple_element<Is, typename make_tuple_types<Tuple>::type>::type>(
+              std::forward<typename tuple_element<Is, typename make_tuple_types<Tuple>::type>::type>(
                   std::get<Is>(t)))... {}
 
     // Allocator-extended from-tuple constructor.
@@ -521,7 +521,7 @@ struct tuple_impl<index_sequence<Is...>, Ts...>
               uses_alloc_ctor<Ts, Alloc,
                   typename tuple_element<Is, typename make_tuple_types<Tuple>::type>::type>(),
               a,
-              forward<typename tuple_element<Is, typename make_tuple_types<Tuple>::type>::type>(
+              std::forward<typename tuple_element<Is, typename make_tuple_types<Tuple>::type>::type>(
                   std::get<Is>(t)))... {}
 
     tuple_impl(const tuple_impl&) = default;
@@ -555,7 +555,7 @@ template<class Dst, class Src, size_t... Ns>
 constexpr void memberwise_forward_assign(Dst& dst, Src&& src, index_sequence<Ns...>) {
     int dummy[] = {(void(
         std::get<Ns>(dst) =
-            forward<typename tuple_element<Ns, remove_cvref_t<Src>>::type>(std::get<Ns>(src))
+            std::forward<typename tuple_element<Ns, remove_cvref_t<Src>>::type>(std::get<Ns>(src))
     ), 0)..., 0};
     (void)dummy;
 }
@@ -681,7 +681,7 @@ public:
                 typename detail::make_tuple_types<tuple, sizeof...(Us)>::type(),
                 detail::make_index_range<sizeof...(Ts), sizeof...(Us)>(),
                 typename detail::make_tuple_types<tuple, sizeof...(Ts), sizeof...(Us)>::type(),
-                forward<Us>(us)...)
+                std::forward<Us>(us)...)
     {}
 
     template<class Alloc, class... Us,
@@ -694,7 +694,7 @@ public:
                 typename detail::make_tuple_types<tuple, sizeof...(Us)>::type(),
                 detail::make_index_range<sizeof...(Ts), sizeof...(Us)>(),
                 typename detail::make_tuple_types<tuple, sizeof...(Ts), sizeof...(Us)>::type(),
-                forward<Us>(us)...)
+                std::forward<Us>(us)...)
     {}
 
     // Copy and move constructors (including the allocator_arg_t variants)
@@ -911,8 +911,8 @@ public:
     constexpr tuple& operator=(pair<U1, U2>&& p)
         noexcept(NothrowAssignFromPair<pair<U1, U2>&&>::value)
     {
-        std::get<0>(*this) = forward<U1>(p.first);
-        std::get<1>(*this) = forward<U2>(p.second);
+        std::get<0>(*this) = std::forward<U1>(p.first);
+        std::get<1>(*this) = std::forward<U2>(p.second);
         return *this;
     }
 
@@ -1088,7 +1088,7 @@ constexpr void swap(tuple<Ts...>& x, tuple<Ts...>& y)
 template<class... Ts>
 [[nodiscard]] constexpr tuple<unwrap_ref_decay_t<Ts>...>
 make_tuple(Ts&&... ts) {
-    return tuple<unwrap_ref_decay_t<Ts>...>(forward<Ts>(ts)...);
+    return tuple<unwrap_ref_decay_t<Ts>...>(std::forward<Ts>(ts)...);
 }
 
 template<class... Ts>
@@ -1100,7 +1100,7 @@ tie(Ts&... ts) noexcept {
 template<class... Ts>
 [[nodiscard]] constexpr tuple<Ts&&...>
 forward_as_tuple(Ts&&... ts) noexcept {
-    return tuple<Ts&&...>(forward<Ts>(ts)...);
+    return tuple<Ts&&...>(std::forward<Ts>(ts)...);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1194,8 +1194,8 @@ struct tuple_cat_impl<tuple<Types...>, index_sequence<I0...>, index_sequence<J0.
     {
         (void)t; // avoid unused parameter warning when I0 is empty
         return std::forward_as_tuple(
-            forward<Types>(std::get<I0>(t))...,
-            std::get<J0>(forward<Tuple0>(t0))...);
+            std::forward<Types>(std::get<I0>(t))...,
+            std::get<J0>(std::forward<Tuple0>(t0))...);
     }
 
     template<class Tuple0, class Tuple1, class... Tuples>
@@ -1211,10 +1211,10 @@ struct tuple_cat_impl<tuple<Types...>, index_sequence<I0...>, index_sequence<J0.
             make_index_range<tuple_size<T1>::value>
         >()(
             std::forward_as_tuple(
-                forward<Types>(std::get<I0>(t))...,
-                std::get<J0>(forward<Tuple0>(t0))...),
-            forward<Tuple1>(t1),
-            forward<Tuples>(tpls)...);
+                std::forward<Types>(std::get<I0>(t))...,
+                std::get<J0>(std::forward<Tuple0>(t0))...),
+            std::forward<Tuple1>(t1),
+            std::forward<Tuples>(tpls)...);
     }
 };
 
@@ -1222,7 +1222,7 @@ template<class TupleDst, class TupleSrc, size_t... Indices>
 constexpr TupleDst tuple_cat_select_element_wise(TupleSrc&& src, index_sequence<Indices...>) {
     static_assert(tuple_size<TupleDst>::value == tuple_size<TupleSrc>::value,
                   "misuse of tuple_cat_select_element_wise with tuples of different sizes");
-    return TupleDst(std::get<Indices>(forward<TupleSrc>(src))...);
+    return TupleDst(std::get<Indices>(std::forward<TupleSrc>(src))...);
 }
 
 } // namespace detail
@@ -1238,7 +1238,7 @@ tuple_cat(Tuple0&& t0, Tuples&&... tpls) {
     using RetIndices  = detail::make_index_range<tuple_size<Ret>::value>;
     return detail::tuple_cat_select_element_wise<Ret>(
         detail::tuple_cat_impl<tuple<>, index_sequence<>, T0Indices>()(
-            tuple<>(), forward<Tuple0>(t0), forward<Tuples>(tpls)...),
+            tuple<>(), std::forward<Tuple0>(t0), std::forward<Tuples>(tpls)...),
         RetIndices());
 }
 
@@ -1260,9 +1260,9 @@ namespace detail {
     template<class Fn, class Tpl, size_t... Is>
     constexpr decltype(auto)
     apply_impl(Fn&& f, Tpl&& t, index_sequence<Is...>)
-        noexcept(noexcept(invoke_impl(forward<Fn>(f), std::get<Is>(forward<Tpl>(t))...)))
+        noexcept(noexcept(invoke_impl(std::forward<Fn>(f), std::get<Is>(std::forward<Tpl>(t))...)))
     {
-        return invoke_impl(forward<Fn>(f), std::get<Is>(forward<Tpl>(t))...);
+        return invoke_impl(std::forward<Fn>(f), std::get<Is>(std::forward<Tpl>(t))...);
     }
 } // namespace detail
 
@@ -1270,11 +1270,11 @@ template<class Fn, class Tpl>
 constexpr decltype(auto)
 apply(Fn&& f, Tpl&& t)
     noexcept(noexcept(detail::apply_impl(
-        forward<Fn>(f), forward<Tpl>(t),
+        std::forward<Fn>(f), std::forward<Tpl>(t),
         make_index_sequence<tuple_size_v<remove_reference_t<Tpl>>>{})))
 {
     return detail::apply_impl(
-        forward<Fn>(f), forward<Tpl>(t),
+        std::forward<Fn>(f), std::forward<Tpl>(t),
         make_index_sequence<tuple_size_v<remove_reference_t<Tpl>>>{});
 }
 
@@ -1285,10 +1285,10 @@ apply(Fn&& f, Tpl&& t)
 namespace detail {
     template<class T, class Tpl, size_t... Is>
     constexpr T make_from_tuple_impl(Tpl&& t, index_sequence<Is...>)
-        noexcept(noexcept(T(std::get<Is>(forward<Tpl>(t))...)))
-        requires is_constructible_v<T, decltype(std::get<Is>(forward<Tpl>(t)))...>
+        noexcept(noexcept(T(std::get<Is>(std::forward<Tpl>(t))...)))
+        requires is_constructible_v<T, decltype(std::get<Is>(std::forward<Tpl>(t)))...>
     {
-        return T(std::get<Is>(forward<Tpl>(t))...);
+        return T(std::get<Is>(std::forward<Tpl>(t))...);
     }
 
     template<class T, class Tpl,
@@ -1305,11 +1305,11 @@ template<class T, class Tpl>
     requires detail::can_make_from_tuple_v<T, Tpl>
 [[nodiscard]] constexpr T make_from_tuple(Tpl&& t)
     noexcept(noexcept(detail::make_from_tuple_impl<T>(
-        forward<Tpl>(t),
+        std::forward<Tpl>(t),
         make_index_sequence<tuple_size_v<remove_reference_t<Tpl>>>{})))
 {
     return detail::make_from_tuple_impl<T>(
-        forward<Tpl>(t),
+        std::forward<Tpl>(t),
         make_index_sequence<tuple_size_v<remove_reference_t<Tpl>>>{});
 }
 
