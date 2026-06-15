@@ -19,6 +19,7 @@
 #include "type_ops.hpp"
 #include <cstddef>
 #include <cstdlib>
+#include <cstring>
 
 namespace ev {
 
@@ -35,7 +36,10 @@ inline EV_SHARED void core_reserve_exact(core& v, std::size_t new_cap_elems,
                                          const type_ops& ops) {
     std::size_t cur = static_cast<std::size_t>(v.end - v.begin) / ops.size;
     unsigned char* nb = static_cast<unsigned char*>(::malloc(new_cap_elems * ops.size));
-    if (cur) ops.relocate(nb, v.begin, cur);
+    if (cur) {
+        if (ops.relocate) ops.relocate(nb, v.begin, cur);          // non-trivial
+        else std::memmove(nb, v.begin, cur * ops.size);            // trivially relocatable
+    }
     if (v.begin) ::free(v.begin);
     v.begin = nb;
     v.end = nb + cur * ops.size;
@@ -47,13 +51,14 @@ inline EV_SHARED void core_push_back(core& v, const void* elem, const type_ops& 
         std::size_t cur = static_cast<std::size_t>(v.end - v.begin) / ops.size;
         core_reserve_exact(v, cur ? cur * 2 : 4, ops);
     }
-    ops.copy_one(v.end, elem);
+    if (ops.copy_one) ops.copy_one(v.end, elem);                   // non-trivial
+    else std::memcpy(v.end, elem, ops.size);                       // trivially copyable
     v.end += ops.size;
 }
 
 inline EV_SHARED void core_destroy_all(core& v, const type_ops& ops) {
     std::size_t cur = static_cast<std::size_t>(v.end - v.begin) / ops.size;
-    if (cur) ops.destroy(v.begin, cur);
+    if (cur && ops.destroy) ops.destroy(v.begin, cur);             // null => trivially destructible
     if (v.begin) ::free(v.begin);
     v.begin = v.end = v.cap = nullptr;
 }

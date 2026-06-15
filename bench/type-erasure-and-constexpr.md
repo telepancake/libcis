@@ -128,6 +128,27 @@ always, plus a thin thunk for *non-trivial* element types only. Trivial element
 types pay essentially nothing — which raises the technique's ceiling well above the
 naïve prototype's 20%.
 
+**Implemented in the prototype (null-sentinel leaf elision).** The ops table stores
+`nullptr` for trivial ops, and the core handles them inline (`memmove`/`memcpy`/
+nothing) using the runtime size. The critical detail is to use `if constexpr` so
+`&relocate_impl<T>` is **never named** for trivial T — otherwise naming it ODR-uses
+and instantiates the leaf even though the stored value is null:
+
+```cpp
+template<class T> constexpr type_ops make_ops() {
+    type_ops o{sizeof(T), alignof(T), nullptr, nullptr, nullptr};
+    if constexpr (!std::is_trivially_copyable_v<T>)   { o.relocate=&relocate_impl<T>; o.copy_one=&copy_one_impl<T>; }
+    if constexpr (!std::is_trivially_destructible_v<T>) { o.destroy=&destroy_impl<T>; }
+    return o;
+}
+```
+
+Measured effect over the 10-type exercise: trivial leaves drop from 21 (7 trivial
+types × 3 ops) to **0**; only the 9 non-trivial leaves remain. `erased` marginal
+`.text` improves +2876→**+2652** (LTO), pushing the win vs `std::vector` from −20%
+to **−26%** on this surface. The saving scales with how many *trivial* element
+types a program instantiates.
+
 ---
 
 ## 5. The generic type-erased core is NOT duplicated per type
