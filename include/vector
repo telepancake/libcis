@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <bits/relocatable.h>
 #include <bits/vector_core.h>
+#include <bits/type_ops.h>
 #include <functional>
 #include <initializer_list>
 #include <limits>
@@ -204,6 +205,20 @@ private:
             begin_ = static_cast<pointer>(p);
             end_   = begin_ + n;
             cap_   = begin_ + new_cap;
+            return;
+        }
+        if constexpr (is_same_v<allocator_type, allocator<value_type>>) {
+            // non-relocatable element, default allocator: relocate the elements
+            // through the shared const type_ops* core (one body for all types).
+            const size_type n = size();
+            auto res = alloc_traits::allocate_at_least(alloc_, new_cap);
+            detail::core_relocate(std::to_address(res.ptr), std::to_address(begin_),
+                                  n, detail::ops_for<value_type>);
+            if (begin_ != nullptr)
+                alloc_traits::deallocate(alloc_, begin_, capacity());
+            begin_ = res.ptr;
+            end_   = res.ptr + n;
+            cap_   = res.ptr + res.count;
             return;
         }
         auto res = alloc_traits::allocate_at_least(alloc_, new_cap);

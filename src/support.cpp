@@ -486,3 +486,24 @@ void vec_close_gap(void* base, std::size_t n, std::size_t off, std::size_t gap, 
 }
 } // namespace detail
 } // namespace std
+
+// libcis: the const type_ops* relocate core (bits/type_ops.h) — one shared body
+// for every element type. memcpy when trivially relocatable; else move-construct
+// each element into the new storage and destroy the source.
+#include <bits/type_ops.h>
+namespace std {
+namespace detail {
+void core_relocate(void* dst, void* src, std::size_t n, const type_ops& ops) {
+    if (ops.move_construct == nullptr) {                 // trivially relocatable
+        __builtin_memcpy(dst, src, n * ops.size);
+        return;
+    }
+    unsigned char* d = static_cast<unsigned char*>(dst);
+    unsigned char* s = static_cast<unsigned char*>(src);
+    for (std::size_t i = 0; i < n; ++i, d += ops.size, s += ops.size) {
+        ops.move_construct(d, s);
+        if (ops.destroy) ops.destroy(s);
+    }
+}
+} // namespace detail
+} // namespace std
