@@ -10,6 +10,7 @@
 #pragma once
 #include <cstddef>
 #include <new>
+#include <type_traits>
 #include <utility>
 
 namespace ev {
@@ -43,10 +44,25 @@ void destroy_impl(void* p, std::size_t n) {
     for (std::size_t i = 0; i < n; ++i) x[i].~T();
 }
 
+// Trivial types get NULL op pointers: the core handles them inline (memmove /
+// memcpy / nothing) using the runtime size. Crucially we use `if constexpr` so
+// `&relocate_impl<T>` etc. are never *named* for trivial T — naming them would
+// ODR-use and instantiate the leaf even though the value is null. So a trivially
+// relocatable type emits ZERO per-type leaf code; only the (constexpr) table.
 template<class T>
-inline constexpr type_ops ops_for = {
-    sizeof(T), alignof(T),
-    &relocate_impl<T>, &copy_one_impl<T>, &destroy_impl<T>,
-};
+constexpr type_ops make_ops() {
+    type_ops o{sizeof(T), alignof(T), nullptr, nullptr, nullptr};
+    if constexpr (!std::is_trivially_copyable_v<T>) {
+        o.relocate = &relocate_impl<T>;
+        o.copy_one = &copy_one_impl<T>;
+    }
+    if constexpr (!std::is_trivially_destructible_v<T>) {
+        o.destroy = &destroy_impl<T>;
+    }
+    return o;
+}
+
+template<class T>
+inline constexpr type_ops ops_for = make_ops<T>();
 
 } // namespace ev
