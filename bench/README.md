@@ -106,3 +106,10 @@ deltas between commits, ...).
 "try stuff" agents should draw experiments from. It ends with a ranked, libcis-
 specific action plan (phase 0 = free build flags, then error-path consolidation,
 then instantiation-volume work).
+
+`type-erasure-and-constexpr.md` is an empirical findings writeup: measured results
+on whether type-erasing a container shrinks `.text`, why LTO doesn't do it for you,
+how trivially-relocatable element ops collapse, whether the shared core gets cloned
+per type (no), and what keeping C++20 `constexpr` actually costs (it conflicts with
+the size-optimal implementation). Several common assumptions are corrected there
+under measurement.
