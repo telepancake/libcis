@@ -149,6 +149,18 @@ types × 3 ops) to **0**; only the 9 non-trivial leaves remain. `erased` margina
 to **−26%** on this surface. The saving scales with how many *trivial* element
 types a program instantiates.
 
+**Validity-guarded, so one `type_ops` shape fits all types.** The same
+`if constexpr` that elides trivial leaves also gates each op on whether it's
+*valid* for `T`. Without this, a move-only element type (deleted copy ctor) would
+instantiate `copy_one_impl<T>` and **hard-error** the build (`error: use of deleted
+function`), even though such a vector is legal. Guarding each op
+(`is_move_constructible_v` for relocate, `is_copy_constructible_v` for copy) means
+an invalid op simply stays `nullptr` — verified: `ops_for<MoveOnly>` compiles with
+`copy_one==nullptr`, `relocate`/`destroy` set. So a single ops-table layout serves
+copyable, move-only, and trivial types alike; capability is encoded as set-or-null,
+and no ill-formed leaf is ever instantiated. (A `requires`-expression on the exact
+leaf expression generalizes this beyond the named traits.)
+
 ---
 
 ## 5. The generic type-erased core is NOT duplicated per type
