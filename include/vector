@@ -194,17 +194,15 @@ private:
         if constexpr (is_same_v<allocator_type, allocator<value_type>> &&
                       is_trivially_copyable_v<value_type> &&
                       alignof(value_type) <= alignof(max_align_t)) {
-            if (!is_constant_evaluated()) {
-                const size_type n = size();
-                void* p = ::realloc(
-                    begin_ ? static_cast<void*>(std::to_address(begin_)) : nullptr,
-                    new_cap * sizeof(value_type));
-                if (p == nullptr) __builtin_trap();
-                begin_ = static_cast<pointer>(p);
-                end_   = begin_ + n;
-                cap_   = begin_ + new_cap;
-                return;
-            }
+            const size_type n = size();
+            void* p = ::realloc(
+                begin_ ? static_cast<void*>(std::to_address(begin_)) : nullptr,
+                new_cap * sizeof(value_type));
+            if (p == nullptr) __builtin_trap();
+            begin_ = static_cast<pointer>(p);
+            end_   = begin_ + n;
+            cap_   = begin_ + new_cap;
+            return;
         }
         auto res = alloc_traits::allocate_at_least(alloc_, new_cap);
         pointer new_begin = res.ptr;
@@ -662,32 +660,26 @@ public:
         if (end_ < cap_) {
             construct_one(end_, std::forward<Args>(args)...);
             ++end_;
-        } else {
+        } else if constexpr (is_same_v<allocator_type, allocator<value_type>> &&
+                             is_trivially_copyable_v<value_type> &&
+                             alignof(value_type) <= alignof(max_align_t)) {
             // std::allocator storage is malloc-backed and a trivially-relocatable
-            // element can be moved by copying bytes, so the grow is a single
-            // realloc (which may extend in place).  Runtime only — realloc isn't
-            // constexpr, so constant evaluation uses the typed path below.
-            if constexpr (is_same_v<allocator_type, allocator<value_type>> &&
-                          is_trivially_copyable_v<value_type> &&
-                          alignof(value_type) <= alignof(max_align_t)) {
-                if (!is_constant_evaluated()) {
-                    // capture the argument first — it may alias the buffer, which
-                    // realloc invalidates (e.g. v.push_back(v[0])).
-                    value_type tmp(std::forward<Args>(args)...);
-                    const size_type n  = size();
-                    const size_type nc = recommend(n + 1);
-                    void* p = ::realloc(
-                        begin_ ? static_cast<void*>(std::to_address(begin_)) : nullptr,
-                        nc * sizeof(value_type));
-                    if (p == nullptr) __builtin_trap();
-                    begin_ = static_cast<pointer>(p);
-                    cap_   = begin_ + nc;
-                    end_   = begin_ + n;
-                    construct_one(end_, std::move(tmp));
-                    ++end_;
-                    return *(end_ - 1);
-                }
-            }
+            // element moves by copying bytes, so the grow is a single realloc
+            // (which may extend in place).  Capture the argument first — realloc
+            // can invalidate an aliasing reference (e.g. v.push_back(v[0])).
+            value_type tmp(std::forward<Args>(args)...);
+            const size_type n  = size();
+            const size_type nc = recommend(n + 1);
+            void* p = ::realloc(
+                begin_ ? static_cast<void*>(std::to_address(begin_)) : nullptr,
+                nc * sizeof(value_type));
+            if (p == nullptr) __builtin_trap();
+            begin_ = static_cast<pointer>(p);
+            cap_   = begin_ + nc;
+            end_   = begin_ + n;
+            construct_one(end_, std::move(tmp));
+            ++end_;
+        } else {
             // typed grow path: allocate new buffer, move existing elements, then
             // construct the new element directly from args (which may alias
             // into old buffer, still alive at construction time).
