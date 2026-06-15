@@ -182,6 +182,44 @@ automatically, so the gate is self-consistent regardless of transfer order.
 
 ---
 
+## 6. Portable test package (`tools/gen_package.py`)
+
+Sometimes you want the suite *without* this repo's ninja graph, manifest, or
+Python tooling — a directory you can hand to another machine and build with
+nothing but a C++ compiler and a path to the standard library under test.
+`tools/gen_package.py` emits exactly that from `test/std/manifest.json`:
+
+```sh
+# Prerequisite: the transfer has run (test/std/manifest.json exists, section 3).
+python3 tools/gen_package.py                  # -> package/  (git-ignored)
+make -C package STDLIB="$PWD/include"         # -> one static ./package/tests
+./package/tests                               # runs the whole suite
+```
+
+`make STDLIB=<dir>` builds a **single statically linked** executable. By
+default it uses the header-only libcis model (`-nostdinc++ -I$(STDLIB)`,
+bundled `support.cpp`, `-static -nodefaultlibs`); `STDLIB` points at the
+library's include directory. The binary forks per test (so one crash is
+contained and attributed), prints `FAIL <slug>` for each failure, and ends
+with `DONE total=N fails=M` (exit non-zero iff any failed).
+
+The package is self-contained: `groups/*.cpp` are the tests, consolidated one
+TU per library feature exactly as the conformance build does (each test in its
+own namespace, `#include`s hoisted and deduped); `include/` carries the support
+harness and sibling test headers; `harness.h`/`main.cpp` are the runner. Per
+test `ADDITIONAL_COMPILE_FLAGS` are baked into the Makefile as target-specific
+variables.
+
+Every flag is an overridable Make variable (`CXX`, `STD`, `LIBCISFLAGS`,
+`LDFLAGS`, `LDLIBS`, `EXTRA`), so the same tree builds against a vendor
+toolchain too — these tests were adapted to compile against both vendor
+libc++/libstdc++ and libcis, which is what makes the package a useful
+cross-check. `--apply-exclusions` drops the `tools/exclusions.json` set
+(the gcc-10-limit / target-impossible tests); the default includes every
+transferred run-test.
+
+---
+
 ## Layout
 
 ```
@@ -194,6 +232,7 @@ tools/
   gen_groups.py      emit build/groups.ninja (consolidated group TUs, all backends)
   gen_ninja.py       emit build/<backend>.ninja (one edge per test)
   run_files.py       per-file CLEAN/NOT-CLEAN gate for a subtree
+  gen_package.py     emit package/ (portable Makefile + tests, one static binary)
   board.py           conformance board for a backend
   exclusions.json    justified test exclusions
   gen_tzdb.py        build-time generator for the compact <chrono> tzdb
