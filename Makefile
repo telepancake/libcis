@@ -43,7 +43,7 @@ SUPPORT_A := build/groups/libcis/libsupport.a
 LIB_SRCS  := $(shell find include src -type f 2>/dev/null)
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor smoke support transfer board test gate clean distclean
+.PHONY: help bootstrap doctor smoke support transfer board test test-single single gate clean distclean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -81,6 +81,21 @@ board: ## Print the conformance board (meaningful only after a build)
 	python3 tools/board.py $(BACKEND)
 
 test: transfer board ## Full pipeline: transfer -> build groups -> board
+
+# Fast path: one ELF with all transferred tests instead of ~200 per-group .exes.
+# Per-group compile edges still run in parallel; only the LINK + RUN stages are
+# consolidated.  The fork-per-test isolation in libcis_run is preserved, so a
+# single test crash is still contained and attributed (LIBCIS-FAIL <slug>).
+single: ## Build + run the single consolidated ELF (build/groups/libcis/all_tests.exe)
+	python3 tools/gen_groups.py --ninja
+	ninja -f build/groups.ninja single
+
+test-single: ## Full pipeline using the single-ELF fast path
+	python3 tools/gen_transfer.py $(SUBTREE)
+	ninja -f build/build.ninja
+	python3 tools/gen_groups.py --ninja
+	ninja -f build/groups.ninja single -k0
+	@echo "single-ELF result: build/groups/libcis/all_tests.result"
 
 gate: support ## Per-file CLEAN/NOT-CLEAN gate, e.g. make gate SUBTREE=thread
 	@test -n "$(SUBTREE)" || { echo "usage: make gate SUBTREE=<name>  (e.g. thread, utilities)"; exit 2; }

@@ -91,7 +91,7 @@ def resolve_quote_include(line, filedir):
     return line
 
 
-def group_source(members):
+def group_source(members, key):
     inc, seen, bodies, calls = [], set(), [], []
     for r in sorted(members, key=lambda r: r["file"]):
         filedir = os.path.dirname(r["file"])
@@ -111,9 +111,17 @@ def group_source(members):
             # and attributed instead of blanking the whole consolidated group,
             # and per-test global state cannot leak between tests.
             calls.append(f'  libcis_run([]() -> int {{ return {r["entry"]}; }}, "{r["slug"]}");')
+    # The harness is TU-local (`static`/anonymous-namespace-equivalent via the
+    # `static` keyword + a TU-private template) so 200 group TUs linked into
+    # one ELF do not collide on these symbols.  The per-group RUN function is
+    # named after the group key (extern "C" so the driver can forward-declare
+    # without name-mangling guesswork), and writes its totals out by reference.
+    # The wrapper `main` calls that same function -- it's only enabled when
+    # LIBCIS_SINGLE_ELF is NOT defined, so the per-group `.exe` and the
+    # single-ELF `.o` come from the same source via different -D flags.
     harness = (
         "#include <cstdio>\n#include <unistd.h>\n#include <sys/wait.h>\n"
-        "static int libcis_total = 0, libcis_fails = 0;\n"
+        "namespace { int libcis_total = 0, libcis_fails = 0; }\n"
         "template<class F> static void libcis_run(F f, const char* name) {\n"
         "  ++libcis_total;\n"
         "  ::pid_t p = ::fork();\n"
@@ -122,12 +130,25 @@ def group_source(members):
         "  bool ok = WIFEXITED(st) && WEXITSTATUS(st) == 0;\n"
         "  if (!ok) { ++libcis_fails; ::fprintf(stderr, \"LIBCIS-FAIL %s (status=%d)\\n\", name, st); }\n"
         "}\n")
+    group_fn = (
+        f'extern "C" void libcis_run_group_{key}(int& out_total, int& out_fails) {{\n'
+        + "\n".join(calls)
+        + "\n  out_total += libcis_total;\n"
+        + "  out_fails += libcis_fails;\n"
+        + "}\n")
     # the trailing LIBCIS-DONE line lets the board count per-TEST and detect
     # groups that crashed/hung before finishing (no DONE line == incomplete).
+    wrapper = (
+        "#ifndef LIBCIS_SINGLE_ELF\n"
+        "int main(){\n"
+        "  int t = 0, f = 0;\n"
+        f"  libcis_run_group_{key}(t, f);\n"
+        '  ::fprintf(stderr, "LIBCIS-DONE total=%d fails=%d\\n", t, f);\n'
+        "  return f ? 1 : 0;\n"
+        "}\n"
+        "#endif\n")
     return ("".join(inc) + "\n" + harness + "".join(bodies)
-            + "\nint main(){\n" + "\n".join(calls)
-            + '\n  ::fprintf(stderr, "LIBCIS-DONE total=%d fails=%d\\n", libcis_total, libcis_fails);\n'
-            + "  return libcis_fails ? 1 : 0;\n}\n")
+            + "\n" + group_fn + "\n" + wrapper)
 
 
 def write_if_changed(path, text):
@@ -141,9 +162,28 @@ def write_if_changed(path, text):
 def emit_one(key, out):
     for d, members in load_groups().items():
         if gkey(d) == key:
-            write_if_changed(out, group_source(members))
+            write_if_changed(out, group_source(members, key))
             return
     sys.exit(f"no group {key} in {MANIFEST}")
+
+
+def emit_driver(out, keys):
+    """The single-ELF driver: forward-declare every group's run function and
+    call them in sorted key order, accumulating totals.  Same LIBCIS-DONE
+    summary the per-group main prints, so the existing log scrapers (board.py
+    via LIBCIS-FAIL <slug>) keep working on the consolidated run too."""
+    decls = "\n".join(f'extern "C" void libcis_run_group_{k}(int&, int&);' for k in keys)
+    calls = "\n".join(f"  libcis_run_group_{k}(t, f);" for k in keys)
+    src = (
+        "#include <cstdio>\n"
+        + decls + "\n"
+        "int main() {\n"
+        "  int t = 0, f = 0;\n"
+        + calls + "\n"
+        '  ::fprintf(stderr, "LIBCIS-DONE total=%d fails=%d\\n", t, f);\n'
+        "  return f ? 1 : 0;\n"
+        "}\n")
+    write_if_changed(out, src)
 
 
 def emit_ninja():
@@ -154,6 +194,10 @@ def emit_ninja():
          "rule gengroup",
          "  command = python3 tools/gen_groups.py --emit $key $out",
          "  description = GROUP $out",
+         "  restat = 1",
+         "rule gendriver",
+         "  command = python3 tools/gen_groups.py --driver $out",
+         "  description = DRIVER $out",
          "  restat = 1",
          "rule run",
          f'  command = ( timeout {RUN_TIMEOUT} "$in" >$out 2>&1; echo exit=$$? >>$out )',
@@ -174,9 +218,21 @@ def emit_ninja():
     # count_new group a duplicate-definition link error.
     sup = "build/groups/libcis/__support.o"
     suplib = "build/groups/libcis/libsupport.a"
+    # Single-ELF mode: per-group .cpp is recompiled to .single.o with
+    # -DLIBCIS_SINGLE_ELF so the wrapper main() drops out, leaving only
+    # libcis_run_group_<key>().  All .single.o files + the driver TU link
+    # into one all_tests.exe.  The per-group .o and .single.o are DIFFERENT
+    # objects from the same .cpp source -- no symbol clashes possible.
     L += ["rule cco",
-          f"  command = $cxx_libcis $cargs_libcis -c $in -o $out -MMD -MF $out.d",
+          "  command = $cxx_libcis $cargs_libcis -c $in -o $out -MMD -MF $out.d",
           "  depfile = $out.d", "  deps = gcc",
+          "rule cco_single",
+          "  command = $cxx_libcis $cargs_libcis -DLIBCIS_SINGLE_ELF $flags -c $in -o $out -MMD -MF $out.d",
+          "  depfile = $out.d", "  deps = gcc",
+          "  description = CXX[single] $out",
+          "rule link_single",
+          f"  command = $cxx_libcis $cargs_libcis $in {suplib} {LINK_CIS} -o $out",
+          "  description = LINK[single] $out",
           "rule ar",
           "  command = rm -f $out && ar rcs $out $in",
           "  description = AR $out",
@@ -186,12 +242,16 @@ def emit_ninja():
           "extra_libcxx =", "extra_libstdcxx = ", "extra_gcc10std =", ""]
 
     results = {be: [] for be in BACKENDS}
+    single_objs = []
+    keys_sorted = []
     for d in sorted(groups):
         key = gkey(d)
+        keys_sorted.append(key)
         src = f"{SRC_DIR}/{key}.cpp"
         recs = " ".join(f"build/recs/{r['file']}.rec.json" for r in groups[d])
         L += [f"build {src}: gengroup {recs} | tools/gen_groups.py {MANIFEST}",
               f"  key = {key}"]
+        # Per-group flow (existing): one edge per backend, compile+link in one.
         for be in BACKENDS:
             dep = f" | {suplib}" if be == "libcis" else ""
             exe, res = f"build/groups/{be}/{key}.exe", f"build/groups/{be}/{key}.result"
@@ -201,13 +261,36 @@ def emit_ninja():
                 L.append(f"  flags = {fl}")
             L.append(f"build {res}: run {exe}")
             results[be].append(res)
+        # Single-ELF flow (libcis only): compile each group .cpp once more with
+        # -DLIBCIS_SINGLE_ELF, drop the wrapper main, keep libcis_run_group_*.
+        sobj = f"build/groups/libcis/{key}.single.o"
+        L.append(f"build {sobj}: cco_single {src}")
+        fl = " ".join(backend_flags(flags[d], "libcis"))
+        if fl:
+            L.append(f"  flags = {fl}")
+        single_objs.append(sobj)
+
+    # The driver TU: forward-declares libcis_run_group_<key> for every key
+    # and provides the single main() that calls them in sorted-key order.
+    driver_src = "build/groups/libcis/__alltests.cpp"
+    driver_obj = "build/groups/libcis/__alltests.o"
+    single_exe = "build/groups/libcis/all_tests.exe"
+    single_res = "build/groups/libcis/all_tests.result"
+    L += [f"build {driver_src}: gendriver | tools/gen_groups.py {MANIFEST}",
+          f"build {driver_obj}: cco {driver_src}",
+          f"build {single_exe}: link_single {' '.join(single_objs)} {driver_obj} | {suplib}",
+          f"build {single_res}: run {single_exe}",
+          f"build single: phony {single_res}",
+          ""]
+
     # a red group = failed link edge = missing .result; run with -k0 and let
     # tools/board.py count the holes -- no edge may swallow a failure.
     for be in BACKENDS:
         L.append(f"build {be}: phony " + " $\n    ".join(results[be]))
     L += ["default libcis", ""]
     write_if_changed("build/groups.ninja", "\n".join(L))
-    print(f"build/groups.ninja: {len(groups)} groups x {len(BACKENDS)} backends")
+    print(f"build/groups.ninja: {len(groups)} groups x {len(BACKENDS)} backends "
+          f"(+ single-ELF: {len(single_objs)} .single.o + 1 driver)")
 
 
 if __name__ == "__main__":
@@ -215,5 +298,7 @@ if __name__ == "__main__":
         emit_ninja()
     elif len(sys.argv) >= 4 and sys.argv[1] == "--emit":
         emit_one(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) >= 3 and sys.argv[1] == "--driver":
+        emit_driver(sys.argv[2], sorted(gkey(d) for d in load_groups()))
     else:
-        sys.exit("usage: gen_groups.py --ninja | --emit KEY OUT")
+        sys.exit("usage: gen_groups.py --ninja | --emit KEY OUT | --driver OUT")
