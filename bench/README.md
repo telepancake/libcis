@@ -146,9 +146,10 @@ once, allocator-aware, and **independent of any particular container**:
     `T` from a `U`, compare/equal across, `cast`), embedding the two single-type
     tables so a two-type algorithm still receives one pointer. `cross_for<T, U>`.
   - `realloc_op` — the storage axis: a single realloc-style function type bound to
-    the *container* via an opaque ctx (allocate + relocate survivors + free in one
-    call, possibly in place / SSO), so a non-template grow core never names the
-    container or allocator type. Its calling convention is documented at the type.
+    the *container* via an opaque ctx that resizes a malloc-backed buffer and
+    preserves its bytes (`(ctx, cur, &size) -> new_base`, size in/out bytes,
+    possibly in place / SSO). Raw storage only — element relocation and capacity
+    are the container's concern, not the allocator's. Convention documented at the type.
 - **`bits/relocatable.h`** — `is_trivially_relocatable_v<T>` (opt-in for the
   library's own movable-by-bytes types), which gates the memcpy/realloc fast paths.
 
