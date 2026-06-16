@@ -126,7 +126,9 @@ _RX_STATIC_MEMBER = re.compile(
     re.MULTILINE)
 _RX_TEST_CONSTEXPR_FN = re.compile(
     r'^(\s*)(TEST_CONSTEXPR_CXX\w+)'
-    r'(\s+(?:bool|int|void|auto|long|unsigned|short|signed)\s+\w+\s*\()',
+    # \w+ misses operator< / operator== etc.; allow operator+sigils too
+    r'(\s+(?:bool|int|void|auto|long|unsigned|short|signed)\s+'
+    r'(?:\w+|operator[<>=!+\-*/]+)\s*\()',
     re.MULTILINE)
 _RX_BARE_FREE_OP = re.compile(
     r'^(?!\s*inline\b)'
