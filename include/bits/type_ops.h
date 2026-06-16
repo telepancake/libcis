@@ -43,9 +43,10 @@ enum ops_flags : unsigned {
     f_triv_destroy = 1u << 3,  // trivially destructible (destroy == nothing)
     // LOAD-BEARING (unlike the f_triv_* above): set iff the allocator is
     // STATEFUL, so the lifecycle leaves need its specific instance as ctx. The
-    // core reads this to decide whether to fetch the allocator (storage_ops::
-    // get_alloc) before relocating; when clear (stateless / type-only), the
-    // leaves synthesize one and run with a null ctx. Independent of lifecycle.
+    // realloc_op / core reads this to decide whether to materialize the allocator
+    // instance (from the container ctx) before relocating; when clear (stateless
+    // / type-only), the leaves synthesize one and run with a null ctx.
+    // Independent of lifecycle.
     f_alloc_ctx    = 1u << 4,
 };
 
@@ -98,10 +99,11 @@ struct type_ops {
 // Lifecycle leaves route through allocator_traits, which itself folds to
 // placement-new / direct destructor when the allocator doesn't customize them.
 // The only thing the leaf decides is WHERE the allocator comes from: a stateless
-// allocator is synthesized on the spot (ctx ignored, the core passes null —
-// f_alloc_ctx clear); a stateful one is read from ctx (its instance, fetched via
-// storage_ops::get_alloc — f_alloc_ctx set). So the common case carries no
-// allocator pointer, while a stateful and/or customizing allocator is honored.
+// allocator is synthesized on the spot (ctx ignored, the caller passes null —
+// f_alloc_ctx clear); a stateful one is read from ctx (its instance, which the
+// realloc_op / core fetches from the container — f_alloc_ctx set). So the common
+// case carries no allocator pointer, while a stateful/customizing allocator is
+// honored.
 template<class T, class A> void default_construct_op(void* ctx, void* p) {
     if constexpr (alloc_stateless<A>) { A a{}; allocator_traits<A>::construct(a, static_cast<T*>(p)); }
     else allocator_traits<A>::construct(*static_cast<A*>(ctx), static_cast<T*>(p));
@@ -258,50 +260,41 @@ template<class T, class U>
 inline constexpr cross_ops cross_for = make_cross_ops<T, U>();
 
 // =====================================================================
-// Storage axis (the realloc op)
+// Storage axis: realloc_op
 // =====================================================================
 // The third axis of erasure, orthogonal to the element ops above: how a
-// container's storage (re)allocates. The four callbacks are bound to the
-// CONTAINER through one opaque `void* ctx` (its `this`), so a non-template core
-// takes a `const storage_ops&` plus that ctx and never names the container or
-// allocator type. All `n`/`cap` arguments are ELEMENT COUNTS, not bytes (each
-// callback knows the element size).
+// container (re)allocates and grows its storage. It is a SINGLE realloc-style
+// function bound to the CONTAINER through one opaque `void* ctx` (its `this`), so
+// a non-template core takes one `realloc_op` + that ctx and never names the
+// container or allocator type. One call performs ALL of the allocation work —
+// allocate, relocate the survivors, free the old buffer — which lets a container
+// fold in policy a separate allocate/free pair can't express (grow in place,
+// small-buffer/SSO, fixed storage).
 //
-// Calling conventions
-// -------------------
-//   allocate(ctx, n, &cap)
-//       Allocate a fresh buffer holding >= n elements. Returns its base; writes
-//       the ACHIEVED capacity (>= n) to *out_cap. Does not construct anything.
+//   realloc_op(ctx, cur, count, new_cap, ops, &out_cap) -> new_base
 //
-//   deallocate(ctx, p, cap)
-//       Release a buffer `p` that was obtained for `cap` elements (the cap the
-//       allocating call reported / the live capacity). Destroys nothing.
-//
-//   reallocate(ctx, p, n)   [the realloc op; may be null]
-//       Resize `p` to hold >= n elements, PRESERVING the existing bytes, and
-//       return the buffer. It may grow in place (returns `p`) or move the block
-//       (returns a new base and the OLD pointer is then invalid — the caller
-//       must NOT deallocate it separately). Because it preserves by copying
-//       BYTES, it is valid only when the storage is malloc-backed AND the element
-//       is trivially relocatable; otherwise it is null and the core must fall
-//       back to allocate + element-wise relocate + deallocate. Unlike allocate,
-//       it reports no achieved capacity: the caller may assume exactly `n`.
-//
-//   get_alloc(ctx)
-//       Yield the container's allocator instance for the lifecycle leaves. The
-//       returned `void*` MUST point to an allocator of the SAME type `A` as the
-//       `ops_for<T, A>` whose leaves will receive it (the container supplies both,
-//       so this holds by construction); it is BORROWED — not owned, and must
-//       outlive the call. A core calls it AT MOST once per operation, and only
-//       when the element ops set f_alloc_ctx (i.e. A is stateful); for a
-//       stateless allocator f_alloc_ctx is clear, the leaves synthesize `A{}`,
-//       and the core passes a null allocator ctx instead of calling get_alloc.
-struct storage_ops {
-    void* (*allocate)(void* ctx, size_t n, size_t* out_cap);
-    void  (*deallocate)(void* ctx, void* p, size_t cap);
-    void* (*reallocate)(void* ctx, void* p, size_t n);        // null: not supported
-    void* (*get_alloc)(void* ctx);                            // container -> &allocator
-};
+// Calling convention (all element-COUNT arguments, never bytes — the element
+// size is `ops.size`):
+//   ctx       the owning container (its `this`); the function reaches the
+//             container's allocator and any inline/SSO buffer through it.
+//   cur       current buffer base, or null if the container has none yet.
+//   count     number of live elements at `cur` to PRESERVE across the grow.
+//   new_cap   requested minimum capacity, in elements (>= count).
+//   ops       the element op table: how to relocate the `count` survivors —
+//             memcpy when `ops.move_construct` is null (trivially relocatable +
+//             default-lifecycle allocator), else move-construct each via the
+//             lifecycle leaf then destroy the source. The function supplies the
+//             allocator instance to those leaves per the f_alloc_ctx convention
+//             (the stateful allocator's address, fetched from ctx; null and an
+//             `A{}` synthesized in the leaf when stateless).
+//   out_cap   written with the ACHIEVED capacity (>= new_cap).
+//   returns   the new buffer base. It MAY equal `cur` (grew in place / SSO /
+//             fixed storage); otherwise the OLD buffer has already been freed by
+//             the function and the caller must NOT free it. The function does not
+//             touch the container's size/iterator state — the caller publishes
+//             the returned base and *out_cap.
+using realloc_op = void* (*)(void* ctx, void* cur, size_t count,
+                             size_t new_cap, const type_ops& ops, size_t* out_cap);
 
 } // namespace detail
 } // namespace std
