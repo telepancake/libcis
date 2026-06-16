@@ -107,9 +107,53 @@ def _patch_count_new(path):
         open(path, "w").write(new)
 
 
+# Generic linkage fix for ALL support headers (broader than count_new):
+# many libc++ test-support headers define free functions and out-of-line static
+# class members at file scope with plain external linkage. Per-test ELFs hide
+# this, but the single-ELF link of the whole suite ODR-collides across TUs that
+# include the same support header. The fix is purely linkage: add `inline` so
+# the definitions COMDAT-fold rather than multi-define. Two patterns:
+#   1. Non-template out-of-line static class members:
+#        `int Foo::counter = 0;` -> `inline int Foo::counter = 0;`
+#   2. Non-template free function definitions at file scope, including those
+#      gated by a TEST_CONSTEXPR_* macro:
+#        `bool operator<(const X&, const X&) { ... }` -> prefix `inline`
+#        `TEST_CONSTEXPR_CXX26 bool operator<(...) { ... }` -> prefix `inline`
+# Template definitions and pre-existing `inline` ones are left untouched.
+_RX_STATIC_MEMBER = re.compile(
+    r'^(?!\s*(?:inline|template)\b)'
+    r'([A-Za-z_][A-Za-z0-9_<>*&:: ]*?\s+[A-Za-z0-9_<>*&:]+::[A-Za-z_][A-Za-z0-9_]+\s*=)',
+    re.MULTILINE)
+_RX_TEST_CONSTEXPR_FN = re.compile(
+    r'^(\s*)(TEST_CONSTEXPR_CXX\w+)'
+    r'(\s+(?:bool|int|void|auto|long|unsigned|short|signed)\s+\w+\s*\()',
+    re.MULTILINE)
+_RX_BARE_FREE_OP = re.compile(
+    r'^(?!\s*inline\b)'
+    r'(\s*(?:bool|int|void|auto|long|unsigned|short|signed)\s+'
+    r'operator[<>=!+\-*/]+\s*\([^)]*\)\s*(?:const\s*)?\{)',
+    re.MULTILINE)
+
+
+def _patch_support_linkage(path):
+    """Add `inline` to non-template file-scope definitions in a support header.
+    Idempotent (skips lines that already begin with `inline` or `template`)."""
+    with open(path) as fh:
+        text = fh.read()
+    orig = text
+    text = _RX_STATIC_MEMBER.sub(lambda m: 'inline ' + m.group(1), text)
+    text = _RX_TEST_CONSTEXPR_FN.sub(
+        lambda m: m.group(1) + 'inline ' + m.group(2) + m.group(3), text)
+    text = _RX_BARE_FREE_OP.sub(lambda m: 'inline' + m.group(1), text)
+    if text != orig:
+        with open(path, 'w') as fh:
+            fh.write(text)
+
+
 def patch_support():
     """Idempotently append the compat block + array-safe DoNotOptimize fix +
-    linkage fixes to count_new.h (inline op-new/op-delete + inline global)."""
+    linkage fixes to count_new.h + bulk inline-fix every support .h so the
+    single-ELF link of the whole transferred test suite is ODR-safe."""
     tm = os.path.join(T.DST_SUPPORT, "test_macros.h")
     if os.path.exists(tm):
         cur = open(tm).read()
@@ -121,6 +165,14 @@ def patch_support():
     cn = os.path.join(T.DST_SUPPORT, "count_new.h")
     if os.path.exists(cn):
         _patch_count_new(cn)
+    # Bulk linkage fix for every other support header (the count_new patch
+    # above handles a specific known shape that this generic pass doesn't
+    # capture: the 16 op-new/op-delete overloads, the MemCounter global, and
+    # the disable_checking static; both can run -- they don't overlap.)
+    for root, _, files in os.walk(T.DST_SUPPORT):
+        for fn in files:
+            if fn.endswith('.h') and fn != 'count_new.h':
+                _patch_support_linkage(os.path.join(root, fn))
 
 
 def copy_support(subtrees):
