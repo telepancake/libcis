@@ -127,10 +127,6 @@ external codebases at once — the canonical way to read a change's size impact:
 specific action plan (phase 0 = free build flags, then error-path consolidation,
 then instantiation-volume work).
 
-`type-erasure-conversion.md` is the component-agnostic doctrine for converting a
-container's heavy methods onto shared non-template cores keyed by the ops tables
-below.
-
 ## Type-erasure primitives (`include/bits/`)
 
 The reusable vocabulary an erased container core is written against — declared
@@ -149,15 +145,16 @@ once, allocator-aware, and **independent of any particular container**:
   - `cross_ops` — ops genuinely between two types `T` and `U` (construct/assign a
     `T` from a `U`, compare/equal across, `cast`), embedding the two single-type
     tables so a two-type algorithm still receives one pointer. `cross_for<T, U>`.
-  - `storage_ops` — the **realloc op** / storage axis: `allocate`/`deallocate`/
-    `reallocate`/`get_alloc` callbacks bound to the *container* via an opaque ctx,
-    so a non-template grow core never names the container or allocator type.
+  - `realloc_op` — the storage axis: a single realloc-style function type bound to
+    the *container* via an opaque ctx (allocate + relocate survivors + free in one
+    call, possibly in place / SSO), so a non-template grow core never names the
+    container or allocator type. Its calling convention is documented at the type.
 - **`bits/relocatable.h`** — `is_trivially_relocatable_v<T>` (opt-in for the
   library's own movable-by-bytes types), which gates the memcpy/realloc fast paths.
 
 These ship as standalone, documented headers. The measured conclusion of wiring
-them into `std::vector` (see the findings doc) was that vector's per-element
-bodies are too small for erasure to pay — the shared core + per-type leaves +
-call marshalling exceed the inlined typed loops they replace — so the vector
-conversion was **not** kept on this branch; the probes and tables remain as the
-tooling to evaluate the technique on better-suited targets.
+them into `std::vector` was that vector's per-element bodies are too small for
+erasure to pay — the shared core + per-type leaves + call marshalling exceed the
+inlined typed loops they replace — so the vector conversion was **not** kept on
+this branch; the probes and tables remain as the tooling to evaluate the
+technique on better-suited targets.

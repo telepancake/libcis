@@ -279,8 +279,8 @@ bench/record.py --diff                           # per-project .text deltas vs t
 
 The reusable type-erasure primitives explored for size work live in
 `include/bits/type_ops.h` (`type_ops` / `cross_ops` single- and two-type op
-tables, and `storage_ops` — the realloc/storage axis) and
-`include/bits/relocatable.h`. See `bench/README.md` for both.
+tables, and `realloc_op` — the storage axis) and `include/bits/relocatable.h`.
+See `bench/README.md` for both.
 
 ## Layout
 
