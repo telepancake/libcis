@@ -235,12 +235,20 @@ private:
         cap_   = begin_ + res.count;
     }
 
-    // No longer constexpr: shares cores in support.cpp that byte-relocate.
+    // Destroy is kept as a TYPED inline loop (not the shared core): going through
+    // ops_table_() here would instantiate ops_for<T,A> for every vector<T> a
+    // program contains — including types like std::chrono::tzdb where the
+    // make_type_ops chain (copy_construct gate -> ::new T(T const&) ->
+    // construct_at) deep-instantiates a leaf body that hard-errors despite
+    // body-level `requires` gating at the outer layer (the inner construct_at
+    // requires-failure propagates as a hard error up through the unguarded
+    // implicit copy ctor of the containing struct). Inline destroy is cheap per
+    // T (often a no-op for trivially-destructible) and decouples ~vector from
+    // the type_ops table entirely.
     void vdeallocate() noexcept {
         if (begin_ != nullptr) {
-            detail::vec_destroy_range(ops_table_(), el_ctx_(),
-                                      std::to_address(begin_),
-                                      std::to_address(end_));
+            for (pointer p = begin_; p != end_; ++p)
+                alloc_traits::destroy(alloc_, std::to_address(p));
             alloc_traits::deallocate(alloc_, begin_, capacity());
             begin_ = end_ = cap_ = nullptr;
         }
@@ -273,10 +281,10 @@ private:
         (void)n;
     }
 
+    // Same rationale as vdeallocate above: typed loop, no ops_table_().
     void destruct_at_end(pointer new_last) noexcept {
-        detail::vec_destroy_range(ops_table_(), el_ctx_(),
-                                  std::to_address(new_last),
-                                  std::to_address(end_));
+        for (pointer p = new_last; p != end_; ++p)
+            alloc_traits::destroy(alloc_, std::to_address(p));
         end_ = new_last;
     }
 
@@ -504,9 +512,12 @@ public:
         }
     }
 
-    // Copy constructor (constrained: see operator=(const&) above for rationale)
+    // Copy constructor — unconstrained: vector<T,A> with non-copyable T can
+    // still appear as a class member (e.g. nlohmann::json contains
+    // vector<basic_json> inside its own class body, where basic_json is
+    // incomplete); a constraint clause would force is_copy_constructible_v
+    // evaluation at the wrong instantiation point.
     constexpr vector(const vector& x)
-        requires is_copy_constructible_v<value_type>
         : alloc_(alloc_traits::select_on_container_copy_construction(x.alloc_)) {
         if (x.size() > 0) {
             vallocate(x.size());
@@ -517,7 +528,6 @@ public:
     // type_identity_t: keep the allocator parameter a non-deduced context so
     // CTAD vector(source, ConvertibleToAlloc) works (libc++ __type_identity_t).
     constexpr vector(const vector& x, const type_identity_t<allocator_type>& a)
-        requires is_copy_constructible_v<value_type>
         : alloc_(a) {
         if (x.size() > 0) {
             vallocate(x.size());
@@ -554,15 +564,7 @@ public:
     // Assignment
     // -----------------------------------------------------------------------
 
-    // Constrained so that is_copy_assignable_v<vector<T,A>> correctly reports
-    // FALSE when T is not copy-constructible (the assign(it,it) body would be
-    // ill-formed).  Without this, a struct containing a vector<MoveOnly> has a
-    // declared-but-body-ill-formed implicit copy-assign, which trips type_ops
-    // leaf instantiation (see comment in bits/type_ops.h).
-    constexpr vector& operator=(const vector& x)
-        requires is_copy_constructible_v<value_type> &&
-                 is_copy_assignable_v<value_type>
-    {
+    constexpr vector& operator=(const vector& x) {
         if (this != addressof(x)) {
             copy_assign_alloc(x);
             assign(x.begin_, x.end_);
