@@ -6,21 +6,17 @@
 //   cross_ops       — ops genuinely between two types T and U (construct/assign
 //                     a T from a U, compare/equal a T against a U, cast U->T).
 //
-// A set function pointer means "non-trivial / customized — call me"; a null
-// pointer means "trivial OR invalid", and the core handles the trivial case
-// inline (memcpy / memmove / nothing). The `flags` bitset records *why* a
-// pointer is null (which triviality), for introspection and asserts.
+// Each function pointer is set when the operation is non-trivial (or allocator-
+// customized) for the type, and null when the operation is trivial or ill-formed
+// for it. The `flags` bitset records which triviality made a pointer null.
 //
-// Allocator-awareness: the lifecycle leaves (default/copy/move construct,
-// destroy) take the owning container's allocator as `ctx` and route through
-// allocator_traits::construct/destroy, so a custom allocator's construct()/
-// destroy() is honored (for std::allocator they fold to placement-new / direct
-// destructor, no overhead). The trivial-relocate sentinel (null move_construct)
-// is therefore DOUBLY gated: it fires only when the element is trivially
-// relocatable AND the allocator has a default lifecycle, so a counting/
-// instrumenting allocator is never bypassed by a memcpy. The value ops
-// (assign/swap/compare/equal/hash) act on already-constructed objects and are
-// not allocator-mediated, so they take no ctx.
+// The lifecycle leaves (default/copy/move construct, destroy) take an allocator
+// as `ctx` and route through allocator_traits::construct/destroy, so a custom
+// allocator's construct()/destroy() is honored (for std::allocator these fold to
+// placement-new / direct destructor). Null move_construct is doubly gated:
+// present only when the element is trivially relocatable AND the allocator has a
+// default lifecycle. The value ops (assign/swap/compare/equal/hash) act on
+// already-constructed objects, are not allocator-mediated, and take no ctx.
 #pragma once
 #include <cstddef>
 #include <new>             // placement new (default-lifecycle leaves)
@@ -34,24 +30,24 @@ namespace std {
 namespace detail {
 
 // ------------------------------------------------ triviality (diagnostic only)
-// Records why an op pointer is null. The core dispatches on null-vs-set, not on
-// these; they are for introspection / static_assert / debugging, zero runtime.
+// Record which triviality made an op pointer null. Diagnostic only, not part of
+// the dispatch (that is null-vs-set on the pointer itself); for introspection /
+// static_assert / debugging.
 enum ops_flags : unsigned {
     f_triv_default = 1u << 0,  // trivially default-constructible
     f_triv_copy    = 1u << 1,  // trivially copyable (copy/move/assign == memcpy)
     f_triv_reloc   = 1u << 2,  // trivially relocatable (grow == memmove)
     f_triv_destroy = 1u << 3,  // trivially destructible (destroy == nothing)
-    // LOAD-BEARING (unlike the f_triv_* above): set iff the allocator is
-    // STATEFUL, so the lifecycle leaves need its specific instance as ctx. The
-    // realloc_op / core reads this to decide whether to materialize the allocator
-    // instance (from the container ctx) before relocating; when clear (stateless
-    // / type-only), the leaves synthesize one and run with a null ctx.
-    // Independent of lifecycle.
+    // LOAD-BEARING (unlike the f_triv_* above): set iff the allocator is STATEFUL
+    // — i.e. the lifecycle leaves require its specific instance as their ctx. When
+    // clear (stateless / type-only), the leaves synthesize an allocator and ignore
+    // ctx. Independent of lifecycle customization.
     f_alloc_ctx    = 1u << 4,
 };
 
-// Does the allocator customize construct/destroy for T? If so, the core must not
-// bypass it with memcpy, even for a trivially-relocatable T.
+// Whether the allocator customizes construct/destroy for T. When it does,
+// alloc_default_lifecycle is false and make_type_ops leaves the lifecycle leaves
+// set (non-null) even for a trivially-relocatable T.
 template<class A, class T>
 constexpr bool alloc_has_construct =
     requires(A& a, T* p) { a.construct(p, std::declval<T>()); };
@@ -62,11 +58,10 @@ template<class A, class T>
 constexpr bool alloc_default_lifecycle =
     !alloc_has_construct<A, T> && !alloc_has_destroy<A, T>;
 
-// Is the allocator type-only (stateless), so a leaf can make one on the spot and
-// the core need not pass an instance pointer? True iff all instances are
-// interchangeable (is_always_equal) AND one can be default-constructed. A
-// stateful allocator (false) must have its specific instance handed to the
-// leaves. This is orthogonal to lifecycle customization above.
+// Whether the allocator is stateless (type-only): true iff all instances are
+// interchangeable (is_always_equal) AND one is default-constructible. When true,
+// a leaf default-constructs an allocator rather than reading an instance from
+// ctx. Orthogonal to lifecycle customization above.
 template<class A> using alloc_always_equal_t = typename allocator_traits<A>::is_always_equal;
 template<class A>
 constexpr bool alloc_stateless =
@@ -96,14 +91,11 @@ struct type_ops {
 };
 
 // ---- single-type leaf ops (instantiated only when named in make_type_ops) ----
-// Lifecycle leaves route through allocator_traits, which itself folds to
-// placement-new / direct destructor when the allocator doesn't customize them.
-// The only thing the leaf decides is WHERE the allocator comes from: a stateless
-// allocator is synthesized on the spot (ctx ignored, the caller passes null —
-// f_alloc_ctx clear); a stateful one is read from ctx (its instance, which the
-// realloc_op / core fetches from the container — f_alloc_ctx set). So the common
-// case carries no allocator pointer, while a stateful/customizing allocator is
-// honored.
+// Lifecycle leaves route through allocator_traits (which folds to placement-new /
+// direct destructor when the allocator doesn't customize them). For a stateless
+// allocator the leaf default-constructs one and ignores ctx; for a stateful
+// allocator it reads the instance from ctx. (Which case applies is recorded in
+// f_alloc_ctx.)
 template<class T, class A> void default_construct_op(void* ctx, void* p) {
     if constexpr (alloc_stateless<A>) { A a{}; allocator_traits<A>::construct(a, static_cast<T*>(p)); }
     else allocator_traits<A>::construct(*static_cast<A*>(ctx), static_cast<T*>(p));
@@ -163,10 +155,9 @@ constexpr type_ops make_type_ops() {
     // lifecycle/sentinel decision below.
     if constexpr (!alloc_stateless<A>)                     o.flags |= f_alloc_ctx;
 
-    // Allocator-mediated lifecycle: a leaf is needed when the op is non-trivial
-    // OR the allocator customizes it. Null only when trivial AND default
-    // lifecycle, so the core's memcpy/skip path can never bypass a custom
-    // construct()/destroy().
+    // Allocator-mediated lifecycle: the leaf is set when the op is non-trivial OR
+    // the allocator customizes it; left null only when the op is trivial AND the
+    // allocator has a default lifecycle.
     if constexpr (is_default_constructible_v<T>)
         if constexpr (!(is_trivially_default_constructible_v<T> && default_life))
             o.default_construct = &default_construct_op<T, A>;
@@ -179,8 +170,8 @@ constexpr type_ops make_type_ops() {
         if constexpr (!(is_trivially_relocatable_v<T> && default_life))
             o.move_construct = &move_construct_op<T, A>;
 
-    // Value ops: not allocator-mediated; null when trivial (the core does the
-    // memcpy/nop inline) or when the operation is ill-formed for T.
+    // Value ops: not allocator-mediated; left null when the op is trivial, or
+    // when it is ill-formed for T.
     if constexpr (is_copy_assignable_v<T> && !is_trivially_copyable_v<T>)
         o.copy_assign = &copy_assign_op<T>;
     if constexpr (is_move_assignable_v<T> && !is_trivially_copyable_v<T>)
@@ -204,11 +195,8 @@ inline constexpr type_ops ops_for = make_type_ops<T, A>();
 // Two-type table: ops between a T and a U
 // =====================================================================
 // Embeds pointers to the single-type tables for T (first) and U (second), so a
-// two-type generic algorithm receives ONE ops pointer instead of three. The
-// cross construct/assign leaves use placement-new / direct assignment (they are
-// for algorithm-level cross-type work); a container that needs an
-// allocator-mediated cross-construct routes through its own single-type
-// construct leaf instead.
+// two-type table is one pointer rather than three. The cross construct/assign
+// leaves use placement-new / direct assignment; they are not allocator-mediated.
 struct cross_ops {
     const type_ops* first;                       // single-type ops for T
     const type_ops* second;                      // single-type ops for U
