@@ -267,27 +267,27 @@ inline constexpr cross_ops cross_for = make_cross_ops<T, U>();
 // through one opaque `void* ctx` (its `this`), so a non-template core takes one
 // `realloc_op` + that ctx and never names the container or allocator type. It
 // resizes a malloc-backed buffer and PRESERVES its bytes — nothing more. It is
-// not the allocator's business to know the element type, to construct/move/
-// destroy elements, or to decide capacity policy, so it takes no `type_ops` and
-// reports no capacity.
+// not the allocator's business to know the element type or to construct/move/
+// destroy elements, so it takes no `type_ops`.
 //
-//   realloc_op(ctx, cur, new_size) -> new_base
+//   realloc_op(ctx, cur, &size) -> new_base
 //
-//   ctx       the owning container (its `this`), so the function can grow in
-//             place, use an inline/small-buffer, or reach its allocator.
-//   cur       current buffer base, or null if there is none yet.
-//   new_size  requested size in BYTES (the container converts element count *
-//             element size itself; the allocator works in bytes).
-//   returns   the (possibly moved) base, with the first min(old,new) bytes
-//             preserved. MAY equal `cur` (grew in place / SSO); if it moved, the
-//             OLD buffer has already been freed and the caller must NOT free it.
-//             Allocation failure does not return null — it traps (no exceptions).
+//   ctx     the owning container (its `this`), so the function can grow in place,
+//           use an inline/small-buffer, or reach its allocator.
+//   cur     current buffer base, or null if there is none yet.
+//   size    in/out, in BYTES: on entry the requested size; on return the actual
+//           size of the (possibly larger) buffer. The container converts element
+//           count * element size itself — the allocator works in bytes.
+//   returns the (possibly moved) base, first min(old,new) bytes preserved. MAY
+//           equal `cur` (grew in place / SSO); if it moved, the OLD buffer is
+//           already freed and the caller must NOT free it. Allocation failure
+//           does not return null — it traps (no exceptions).
 //
 // Because it only copies BYTES, a container uses it solely for the trivially-
 // relocatable grow fast path. For non-relocatable elements the container does
 // its own allocate + element-wise relocate (via the element ops) + free; that
 // relocation is the container's concern, not the allocator's.
-using realloc_op = void* (*)(void* ctx, void* cur, size_t new_size);
+using realloc_op = void* (*)(void* ctx, void* cur, size_t* size);
 
 } // namespace detail
 } // namespace std
