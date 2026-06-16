@@ -271,16 +271,17 @@ inline constexpr cross_ops cross_for = make_cross_ops<T, U>();
 // fold in policy a separate allocate/free pair can't express (grow in place,
 // small-buffer/SSO, fixed storage).
 //
-//   realloc_op(ctx, cur, count, new_cap, ops, &out_cap) -> new_base
+//   realloc_op(ctx, cur, new_cap, ops, &out_cap) -> new_base
 //
 // Calling convention (all element-COUNT arguments, never bytes — the element
 // size is `ops.size`):
 //   ctx       the owning container (its `this`); the function reaches the
-//             container's allocator and any inline/SSO buffer through it.
+//             container's allocator and any inline/SSO buffer through it, AND
+//             the number of live elements to preserve (the container's current
+//             size) — so that count is not passed separately.
 //   cur       current buffer base, or null if the container has none yet.
-//   count     number of live elements at `cur` to PRESERVE across the grow.
-//   new_cap   requested minimum capacity, in elements (>= count).
-//   ops       the element op table: how to relocate the `count` survivors —
+//   new_cap   requested minimum capacity, in elements.
+//   ops       the element op table: how to relocate the live survivors —
 //             memcpy when `ops.move_construct` is null (trivially relocatable +
 //             default-lifecycle allocator), else move-construct each via the
 //             lifecycle leaf then destroy the source. The function supplies the
@@ -293,8 +294,8 @@ inline constexpr cross_ops cross_for = make_cross_ops<T, U>();
 //             the function and the caller must NOT free it. The function does not
 //             touch the container's size/iterator state — the caller publishes
 //             the returned base and *out_cap.
-using realloc_op = void* (*)(void* ctx, void* cur, size_t count,
-                             size_t new_cap, const type_ops& ops, size_t* out_cap);
+using realloc_op = void* (*)(void* ctx, void* cur, size_t new_cap,
+                             const type_ops& ops, size_t* out_cap);
 
 } // namespace detail
 } // namespace std
