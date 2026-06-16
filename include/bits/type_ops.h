@@ -171,12 +171,19 @@ constexpr type_ops make_type_ops() {
             o.move_construct = &move_construct_op<T, A>;
 
     // Value ops: not allocator-mediated; left null when the op is trivial, or
-    // when it is ill-formed for T.
-    if constexpr (is_copy_assignable_v<T> && !is_trivially_copyable_v<T>)
+    // when it is ill-formed for T. We use `requires` over the actual
+    // expression (not is_*_assignable_v) so that a type whose operator= is
+    // DECLARED but ill-formed in its body (e.g. vector<MoveOnly> with an
+    // unconstrained copy-assign) does not eagerly instantiate the body when
+    // this table is built — only types whose copy_assign would compile reach
+    // the leaf assignment expression in copy_assign_op below.
+    if constexpr (!is_trivially_copyable_v<T>
+                  && requires(T& d, const T& s) { d = s; })
         o.copy_assign = &copy_assign_op<T>;
-    if constexpr (is_move_assignable_v<T> && !is_trivially_copyable_v<T>)
+    if constexpr (!is_trivially_copyable_v<T>
+                  && requires(T& d, T&& s) { d = std::move(s); })
         o.move_assign = &move_assign_op<T>;
-    if constexpr (is_swappable_v<T> && !is_trivially_copyable_v<T>)
+    if constexpr (!is_trivially_copyable_v<T> && is_swappable_v<T>)
         o.swap = &swap_op<T>;
     if constexpr (requires(const T& a, const T& b) { a < b; })
         o.compare = &compare_op<T>;

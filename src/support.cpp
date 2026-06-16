@@ -14,9 +14,160 @@
 #include <new>         // nothrow_t, align_val_t, new_handler declarations
 #include <exception>   // exception, bad_exception, terminate_handler declarations
 #include <stdlib.h>    // malloc, free, abort, aligned_alloc / posix_memalign
-#include <string.h>    // (not strictly needed but keeps things clean)
+#include <string.h>    // memcpy / memmove for the trivial-relocation cores
 #include <stdint.h>    // int64_t, uint8_t
 #include <sched.h>     // sched_yield — for guard spin loop
+#include <bits/vector_cores.h>
+
+// ---------------------------------------------------------------------------
+// <vector> cores — non-template bodies that the template forwards into.
+// One shape per kind of work; each is keyed by a const type_ops* (element
+// leaves) plus, for the grow cores, a realloc_op (raw byte storage).
+// ---------------------------------------------------------------------------
+namespace std {
+namespace detail {
+
+void vec_destroy_range(const type_ops* ops, void* el_ctx, void* begin, void* end) {
+    if (ops->destroy == nullptr) return;
+    const size_t sz = ops->size;
+    auto p = static_cast<unsigned char*>(end);
+    auto q = static_cast<unsigned char*>(begin);
+    // destroy in reverse construction order
+    while (p != q) {
+        p -= sz;
+        ops->destroy(el_ctx, p);
+    }
+}
+
+void vec_construct_default_n(const type_ops* ops, void* el_ctx, void* dst, size_t n) {
+    // Null leaf == trivially default-constructible AND default lifecycle:
+    // nothing to do; raw storage is already a valid T (the spec says default-
+    // initialize, which for trivially-default-constructible T leaves bytes
+    // indeterminate, but vector's contract is value-init on count ctor and
+    // default-init otherwise — we follow the leaf).
+    if (ops->default_construct == nullptr) {
+        // value-initialize trivially-default-constructible T == zero-fill
+        ::memset(dst, 0, n * ops->size);
+        return;
+    }
+    const size_t sz = ops->size;
+    auto p = static_cast<unsigned char*>(dst);
+    for (size_t i = 0; i < n; ++i, p += sz)
+        ops->default_construct(el_ctx, p);
+}
+
+void vec_construct_copy_one_n(const type_ops* ops, void* el_ctx,
+                              void* dst, const void* src, size_t n) {
+    const size_t sz = ops->size;
+    auto p = static_cast<unsigned char*>(dst);
+    if (ops->copy_construct == nullptr) {
+        // trivial copy + default lifecycle: memcpy the one element n times
+        for (size_t i = 0; i < n; ++i, p += sz)
+            ::memcpy(p, src, sz);
+        return;
+    }
+    for (size_t i = 0; i < n; ++i, p += sz)
+        ops->copy_construct(el_ctx, p, src);
+}
+
+// Relocate every element of [src, src+size_bytes) into [dst, ...). Used by
+// both grow cores when realloc could not (or must not, due to non-default
+// lifecycle) be used. Source elements are destroyed once moved.
+static void vec_relocate_block(const type_ops* ops, void* el_ctx,
+                               void* dst, void* src, size_t size_bytes) {
+    if (ops->move_construct == nullptr) {
+        // triv-reloc + default lifecycle: a single memcpy IS the relocation.
+        ::memcpy(dst, src, size_bytes);
+        return;
+    }
+    const size_t sz = ops->size;
+    auto* d = static_cast<unsigned char*>(dst);
+    auto* s = static_cast<unsigned char*>(src);
+    const size_t n = size_bytes / sz;
+    for (size_t i = 0; i < n; ++i, d += sz, s += sz) {
+        ops->move_construct(el_ctx, d, s);
+        if (ops->destroy) ops->destroy(el_ctx, s);
+    }
+}
+
+void vec_grow(const type_ops* ops, realloc_op realloc, void* st_ctx,
+              void* el_ctx, vec_buf* buf, size_t min_cap_bytes) {
+    auto cur_begin = static_cast<unsigned char*>(buf->begin);
+    auto cur_end   = static_cast<unsigned char*>(buf->end);
+    const size_t live_bytes = static_cast<size_t>(cur_end - cur_begin);
+
+    // Fast path: when the move_construct leaf is null (trivially relocatable
+    // + default-lifecycle), realloc preserves bytes — equivalent to memcpy.
+    if (ops->move_construct == nullptr) {
+        size_t want = min_cap_bytes;
+        void* nb = realloc(st_ctx, cur_begin, &want);
+        buf->begin = nb;
+        buf->end   = static_cast<unsigned char*>(nb) + live_bytes;
+        buf->cap   = static_cast<unsigned char*>(nb) + want;
+        return;
+    }
+
+    // Lifecycle path: allocate a fresh buffer (via realloc with cur=nullptr),
+    // element-relocate, then free the old via realloc with size=0.
+    size_t want = min_cap_bytes;
+    void* nb = realloc(st_ctx, nullptr, &want);
+    vec_relocate_block(ops, el_ctx, nb, cur_begin, live_bytes);
+    // Free the old buffer: cur_begin may be null (no prior storage).
+    if (cur_begin) {
+        size_t zero = 0;
+        realloc(st_ctx, cur_begin, &zero);
+    }
+    buf->begin = nb;
+    buf->end   = static_cast<unsigned char*>(nb) + live_bytes;
+    buf->cap   = static_cast<unsigned char*>(nb) + want;
+}
+
+void* vec_grow_with_gap(const type_ops* ops, realloc_op realloc, void* st_ctx,
+                        void* el_ctx, vec_buf* buf,
+                        size_t gap_off_bytes, size_t gap_bytes,
+                        size_t min_cap_bytes) {
+    auto cur_begin = static_cast<unsigned char*>(buf->begin);
+    auto cur_end   = static_cast<unsigned char*>(buf->end);
+    const size_t live_bytes = static_cast<size_t>(cur_end - cur_begin);
+    const size_t tail_bytes = live_bytes - gap_off_bytes;
+
+    // Always element-relocate (cannot realloc-in-place because the layout
+    // changes — there is a hole). Allocate fresh, relocate the two halves
+    // around the gap, free the old.
+    size_t want = min_cap_bytes;
+    void* nb = realloc(st_ctx, nullptr, &want);
+    auto nb_b = static_cast<unsigned char*>(nb);
+    if (ops->move_construct == nullptr) {
+        // triv-reloc + default-life: memcpy both halves.
+        if (gap_off_bytes)
+            ::memcpy(nb_b, cur_begin, gap_off_bytes);
+        if (tail_bytes)
+            ::memcpy(nb_b + gap_off_bytes + gap_bytes,
+                     cur_begin + gap_off_bytes, tail_bytes);
+    } else {
+        vec_relocate_block(ops, el_ctx, nb_b, cur_begin, gap_off_bytes);
+        vec_relocate_block(ops, el_ctx, nb_b + gap_off_bytes + gap_bytes,
+                           cur_begin + gap_off_bytes, tail_bytes);
+    }
+    if (cur_begin) {
+        size_t zero = 0;
+        realloc(st_ctx, cur_begin, &zero);
+    }
+    buf->begin = nb;
+    // end_ does NOT yet include the gap slots (caller fills them then advances).
+    buf->end   = nb_b + gap_off_bytes + gap_bytes + tail_bytes;
+    buf->cap   = nb_b + want;
+    return nb_b + gap_off_bytes;
+}
+
+void vec_open_gap(void* base, size_t end_bytes, size_t off_bytes, size_t gap_bytes) {
+    // Move [off, end) to [off+gap, end+gap); overlapping so memmove.
+    auto p = static_cast<unsigned char*>(base);
+    ::memmove(p + off_bytes + gap_bytes, p + off_bytes, end_bytes - off_bytes);
+}
+
+} // namespace detail
+} // namespace std
 
 // ---------------------------------------------------------------------------
 // std::nothrow

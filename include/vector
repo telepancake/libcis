@@ -18,6 +18,8 @@
 #include <limits>
 #include <climits>
 #include <cstddef>
+#include <bits/type_ops.h>
+#include <bits/vector_cores.h>
 
 namespace std {
 
@@ -128,6 +130,122 @@ private:
         return std::max<size_type>(2 * cap, new_size);
     }
 
+    // -----------------------------------------------------------------------
+    // Type-erasure plumbing for the shared cores in src/support.cpp.
+    //
+    // The cores in <bits/vector_cores.h> work on raw byte pointers + a
+    // const type_ops* (element leaves) + a realloc_op (raw byte storage). The
+    // per-instantiation glue is two static helpers below: ops_table_ identifies
+    // the element T,A pair; realloc_shim_ allocates/frees via the allocator.
+    // No constexpr is offered for these: the cores byte-relocate at runtime.
+    // -----------------------------------------------------------------------
+    // Build a per-(T,A) type_ops table covering only the leaves vector's
+    // cores actually consume — the four lifecycle leaves plus size/align/
+    // flags. We do NOT delegate to detail::ops_for here: that variable
+    // populates every value op (copy_assign, swap, compare, equal, hash,
+    // move_assign) and taking the address of e.g. &copy_assign_op<T>
+    // instantiates its body (`*dst = *src`). For T whose copy-assign is
+    // declared but ill-formed at body time (e.g. tzdb, which contains a
+    // vector<time_zone> where time_zone is move-only — the inherited
+    // implicit operator= has a valid declaration but an invalid body),
+    // that body would be instantiated here and the build dies. The cores
+    // never call those leaves, so we never need to risk that instantiation.
+    static const detail::type_ops* ops_table_() noexcept {
+        static const detail::type_ops table = []{
+            constexpr bool dl = detail::alloc_default_lifecycle<allocator_type, value_type>;
+            detail::type_ops o{sizeof(value_type), alignof(value_type), 0u,
+                               nullptr, nullptr, nullptr, nullptr,
+                               nullptr, nullptr, nullptr,
+                               nullptr, nullptr, nullptr};
+            if constexpr (is_trivially_default_constructible_v<value_type>) o.flags |= detail::f_triv_default;
+            if constexpr (is_trivially_copyable_v<value_type>)               o.flags |= detail::f_triv_copy;
+            if constexpr (detail::is_trivially_relocatable_v<value_type>)            o.flags |= detail::f_triv_reloc;
+            if constexpr (is_trivially_destructible_v<value_type>)           o.flags |= detail::f_triv_destroy;
+            if constexpr (!detail::alloc_stateless<allocator_type>)          o.flags |= detail::f_alloc_ctx;
+
+            if constexpr (is_default_constructible_v<value_type>)
+                if constexpr (!(is_trivially_default_constructible_v<value_type> && dl))
+                    o.default_construct = &detail::default_construct_op<value_type, allocator_type>;
+            if constexpr (!(is_trivially_destructible_v<value_type> && dl))
+                o.destroy = &detail::destroy_op<value_type, allocator_type>;
+            if constexpr (is_copy_constructible_v<value_type>)
+                if constexpr (!(is_trivially_copyable_v<value_type> && dl))
+                    o.copy_construct = &detail::copy_construct_op<value_type, allocator_type>;
+            if constexpr (is_move_constructible_v<value_type>)
+                if constexpr (!(detail::is_trivially_relocatable_v<value_type> && dl))
+                    o.move_construct = &detail::move_construct_op<value_type, allocator_type>;
+            return o;
+        }();
+        return &table;
+    }
+
+    // realloc_op shim. ctx is the vector's `this`; size is in BYTES in/out.
+    // On entry: cur is the current base (or null), *size is the requested
+    // BYTE size. On return: returns the new base (with up to min(old,new)
+    // bytes preserved), *size is the actual byte capacity (>= requested),
+    // and the old buffer is freed if the base changes. Allocation failure
+    // traps.
+    static void* realloc_shim_(void* ctx, void* cur, size_t* size) noexcept {
+        auto* self = static_cast<vector*>(ctx);
+        const size_t es = sizeof(value_type);
+        size_t bytes = *size;
+        if (bytes == 0) {
+            // pure free
+            if (cur) {
+                // best effort: we do not know the old element-count past the
+                // header pointers; let the allocator deduce — caller passes
+                // the byte count that was current; we round up to elements.
+                // In our use sites (vec_grow), the cur buffer is the vector's
+                // old begin_, whose byte length is (cap_-begin_)*sizeof(T).
+                alloc_traits::deallocate(self->alloc_,
+                    static_cast<pointer>(cur),
+                    static_cast<size_type>((static_cast<unsigned char*>(self->cap_unsafe_()) -
+                                            static_cast<unsigned char*>(cur)) / es));
+            }
+            *size = 0;
+            return nullptr;
+        }
+        // Round up byte count to element count.
+        size_type want_el = static_cast<size_type>((bytes + es - 1) / es);
+        if (want_el > self->max_size())
+            __builtin_trap();
+        auto res = alloc_traits::allocate_at_least(self->alloc_, want_el);
+        if (cur) {
+            // Copy bytes from cur to res.ptr is unnecessary here: vec_grow
+            // only calls realloc with cur=nullptr (it does its own typed
+            // relocation), and the trivial fast path uses raw realloc only
+            // when ops->move_construct is null — but we still allocate fresh
+            // and free old, because allocator_traits has no in-place resize.
+            // We DO need to memcpy the live bytes for the trivial fast path.
+            // The core supplies *size=requested; we copy min(old,new) bytes.
+            // The old byte count is (self->cap_ - cur) in element units.
+            const size_t old_bytes =
+                static_cast<size_t>(static_cast<unsigned char*>(self->cap_unsafe_()) -
+                                    static_cast<unsigned char*>(cur));
+            const size_t copy_bytes = old_bytes < bytes ? old_bytes : bytes;
+            __builtin_memcpy(res.ptr, cur, copy_bytes);
+            alloc_traits::deallocate(self->alloc_,
+                static_cast<pointer>(cur),
+                static_cast<size_type>(old_bytes / es));
+        }
+        *size = static_cast<size_t>(res.count) * es;
+        return res.ptr;
+    }
+
+    // cap_ exposed as a void* for the realloc shim (cap_ is the byte-after the
+    // last allocated slot; subtracting from cur gives the old byte size).
+    void* cap_unsafe_() noexcept { return std::to_address(cap_); }
+
+    // el_ctx_(): allocator ctx for the element leaves. The leaves synthesize
+    // a stateless allocator when f_alloc_ctx is clear; pass null in that case
+    // to keep the bit-pattern of the call uniform.
+    void* el_ctx_() noexcept {
+        if constexpr (!detail::alloc_stateless<allocator_type>)
+            return &alloc_;
+        else
+            return nullptr;
+    }
+
     // Allocate n elements; precondition: begin_ == nullptr, n > 0
     constexpr void vallocate(size_type n) {
         if (n > max_size())
@@ -138,33 +256,36 @@ private:
         cap_   = begin_ + res.count;
     }
 
-    constexpr void vdeallocate() noexcept {
+    // No longer constexpr: shares cores in support.cpp that byte-relocate.
+    void vdeallocate() noexcept {
         if (begin_ != nullptr) {
-            clear();
+            detail::vec_destroy_range(ops_table_(), el_ctx_(),
+                                      std::to_address(begin_),
+                                      std::to_address(end_));
             alloc_traits::deallocate(alloc_, begin_, capacity());
             begin_ = end_ = cap_ = nullptr;
         }
     }
 
     // Construct n default elements at end_
-    constexpr void construct_at_end(size_type n) {
-        for (size_type i = 0; i < n; ++i) {
-            construct_one(end_);
-            ++end_;
-        }
+    void construct_at_end(size_type n) {
+        detail::vec_construct_default_n(ops_table_(), el_ctx_(),
+                                        std::to_address(end_), n);
+        end_ += n;
     }
 
     // Construct n copies of x at end_
-    constexpr void construct_at_end(size_type n, const_reference x) {
-        for (size_type i = 0; i < n; ++i) {
-            construct_one(end_, x);
-            ++end_;
-        }
+    void construct_at_end(size_type n, const_reference x) {
+        detail::vec_construct_copy_one_n(ops_table_(), el_ctx_(),
+                                         std::to_address(end_),
+                                         std::addressof(x), n);
+        end_ += n;
     }
 
     // Construct from iterator range [first, last) of known size n at end_
+    // Stays a template (per-iter): the body is small and iterator-dependent.
     template<class InputIter, class Sentinel>
-    constexpr void construct_at_end(InputIter first, Sentinel last, size_type n) {
+    void construct_at_end(InputIter first, Sentinel last, size_type n) {
         for (; first != last; ++first) {
             construct_one(end_, *first);
             ++end_;
@@ -172,77 +293,47 @@ private:
         (void)n;
     }
 
-    constexpr void destruct_at_end(pointer new_last) noexcept {
-        while (end_ != new_last) {
-            --end_;
-            alloc_traits::destroy(alloc_, std::to_address(end_));
-        }
+    void destruct_at_end(pointer new_last) noexcept {
+        detail::vec_destroy_range(ops_table_(), el_ctx_(),
+                                  std::to_address(new_last),
+                                  std::to_address(end_));
+        end_ = new_last;
     }
 
-    // Reallocate to at least new_cap, move all elements, return old begin ptr
-    // This is the "grow" path used by insert/emplace/push_back
-    constexpr void reallocate_grow(size_type new_cap) {
-        // Allocate new buffer
+    // Reallocate to at least new_cap, move all elements; updates begin_/end_/cap_.
+    void reallocate_grow(size_type new_cap) {
         if (new_cap > max_size())
             throw_length_error();
-        auto res = alloc_traits::allocate_at_least(alloc_, new_cap);
-        pointer new_begin = res.ptr;
-        pointer new_end   = new_begin;
-        pointer new_cap_ptr = new_begin + res.count;
-
-        // Move-construct all elements into new buffer
-        pointer src = begin_;
-        while (src != end_) {
-            construct_one(new_end, std::move(*src));
-            ++new_end;
-            ++src;
-        }
-        // Destroy old elements and free old buffer
-        while (end_ != begin_) {
-            --end_;
-            alloc_traits::destroy(alloc_, std::to_address(end_));
-        }
-        if (begin_ != nullptr)
-            alloc_traits::deallocate(alloc_, begin_, cap_ - begin_);
-
-        begin_ = new_begin;
-        end_   = new_end;
-        cap_   = new_cap_ptr;
+        detail::vec_buf buf{std::to_address(begin_),
+                            std::to_address(end_),
+                            std::to_address(cap_)};
+        detail::vec_grow(ops_table_(), &realloc_shim_, this, el_ctx_(),
+                         &buf, new_cap * sizeof(value_type));
+        begin_ = static_cast<pointer>(buf.begin);
+        end_   = static_cast<pointer>(buf.end);
+        cap_   = static_cast<pointer>(buf.cap);
     }
 
     // Grow and insert a gap of 'gap' slots at p, returning pointer to the gap
-    // start in the new buffer.  end_ is updated to include moved elements but
-    // NOT the gap slots (callers fill the gap and bump end_ themselves).
-    constexpr pointer reallocate_and_insert_gap(pointer p, size_type gap) {
+    // start in the new buffer. end_ is updated to past moved tail (NOT the
+    // gap; callers fill the gap then advance end_).
+    pointer reallocate_and_insert_gap(pointer p, size_type gap) {
         size_type new_cap = recommend(size() + gap);
         if (new_cap > max_size())
             throw_length_error();
-        auto res = alloc_traits::allocate_at_least(alloc_, new_cap);
-        pointer nb  = res.ptr;
-        pointer ncp = nb + res.count;
-
-        // Move [begin_, p) into front of new buffer
-        pointer ne = nb;
-        for (pointer s = begin_; s != p; ++s, ++ne) {
-            construct_one(ne, std::move(*s));
-        }
-        pointer ret = ne;
-
-        // Move [p, end_) to after the gap
-        pointer ne2 = ne + gap;
-        for (pointer s = p; s != end_; ++s, ++ne2) {
-            construct_one(ne2, std::move(*s));
-        }
-        // Destroy old elements
-        for (pointer s = begin_; s != end_; ++s)
-            alloc_traits::destroy(alloc_, std::to_address(s));
-        if (begin_ != nullptr)
-            alloc_traits::deallocate(alloc_, begin_, cap_ - begin_);
-        begin_ = nb;
-        // end_ points past moved tail (gap slots are NOT yet constructed)
-        end_   = ne2;
-        cap_   = ncp;
-        return ret;
+        const size_t off_bytes =
+            static_cast<size_t>(p - begin_) * sizeof(value_type);
+        detail::vec_buf buf{std::to_address(begin_),
+                            std::to_address(end_),
+                            std::to_address(cap_)};
+        void* gap_p = detail::vec_grow_with_gap(
+            ops_table_(), &realloc_shim_, this, el_ctx_(), &buf,
+            off_bytes, gap * sizeof(value_type),
+            new_cap * sizeof(value_type));
+        begin_ = static_cast<pointer>(buf.begin);
+        end_   = static_cast<pointer>(buf.end);
+        cap_   = static_cast<pointer>(buf.cap);
+        return static_cast<pointer>(gap_p);
     }
 
     // Move [from_s, from_e) one position forward to [from_s+1, from_e+1)
