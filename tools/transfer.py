@@ -515,11 +515,7 @@ def transform(text: str, tu, path: str, slug: str):
 
 
 def parse_args():
-    # An empty PCH file is a sentinel that the PCH stage produced no usable
-    # precompiled header (no libc++ headers found); fall back to plain parsing.
-    extra = (["-include-pch", PCH_PATH]
-             if os.path.exists(PCH_PATH) and os.path.getsize(PCH_PATH) > 0
-             else [])
+    extra = ["-include-pch", PCH_PATH] if os.path.exists(PCH_PATH) else []
     return PARSE_ARGS + extra
 
 
@@ -704,11 +700,8 @@ def main():
     # (a per-command timeout, handled by --edge).
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
     if mode == "--build-pch":
-        # build_pch returns [] when no libc++ headers are available; transfer
-        # falls back to parsing without PCH, which is fine for the test gate.
-        # Always touch the output so ninja's PCH edge is satisfied.
-        build_pch()
-        with open(cfg.PCH_PATH, "ab") as fh: pass
+        if not build_pch():
+            sys.exit("PCH build failed")
     elif mode == "--worker":
         cmd_worker(sys.argv[2], sys.argv[3], sys.argv[4])
     elif mode == "--edge":
