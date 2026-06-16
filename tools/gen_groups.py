@@ -111,7 +111,7 @@ def load_groups():
                 if not k.startswith("_")}
     except FileNotFoundError:
         excl = set()
-    seen, rows, skipped = set(), [], 0
+    seen, rows, skipped, compile_only = set(), [], 0, 0
     for r in man["transferred"]:
         if r["file"] in seen:
             continue
@@ -119,10 +119,23 @@ def load_groups():
         if r["file"] in excl:
             skipped += 1
             continue
+        # `.compile.pass.cpp` tests (kind="compile") are *compile-only* in the
+        # libcxx lit model: they verify that the code compiles, never linked
+        # or run. Their bodies often have declared-but-undefined ctors etc.
+        # (e.g. cnstr_with_any.compile.pass.cpp), so including them in a
+        # linked group TU drags those into the binary as undefined references.
+        # Keep them out of the linked groups; they're already verified by the
+        # standalone transfer/parse stage (manifest "kind": "compile" entries).
+        if r.get("kind") == "compile":
+            compile_only += 1
+            continue
         rows.append(r)
     if skipped:
         print(f"  ({skipped} tests excluded per tools/exclusions.json)",
               file=sys.stderr)
+    if compile_only:
+        print(f"  ({compile_only} compile-only .compile.pass.cpp tests not "
+              "linked into the run groups)", file=sys.stderr)
 
     # Start at depth 2 (feature: utilities/optional, containers/sequences).
     # If a group trips either threshold, deepen JUST THAT GROUP by one level
