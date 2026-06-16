@@ -261,18 +261,41 @@ inline constexpr cross_ops cross_for = make_cross_ops<T, U>();
 // Storage axis (the realloc op)
 // =====================================================================
 // The third axis of erasure, orthogonal to the element ops above: how a
-// container's storage (re)allocates, as callbacks bound to the CONTAINER via an
-// opaque ctx (so they can reach its allocator, and an inline/SSO buffer). A
-// non-template container core takes a `const storage_ops&` plus the container
-// ctx and never names the container or allocator type.
+// container's storage (re)allocates. The four callbacks are bound to the
+// CONTAINER through one opaque `void* ctx` (its `this`), so a non-template core
+// takes a `const storage_ops&` plus that ctx and never names the container or
+// allocator type. All `n`/`cap` arguments are ELEMENT COUNTS, not bytes (each
+// callback knows the element size).
 //
-//   allocate(ctx, n, &cap)   -> new buffer for >= n elements; writes achieved cap
-//   deallocate(ctx, p, cap)  -> release a buffer of `cap` elements
-//   reallocate(ctx, p, n)    -> grow in place if possible; null unless the storage
-//                               is malloc-backed and trivially relocatable
-//   get_alloc(ctx)           -> &allocator, for the lifecycle leaves; a core calls
-//                               it only when the element ops set f_alloc_ctx, so a
-//                               stateless allocator never materializes a pointer
+// Calling conventions
+// -------------------
+//   allocate(ctx, n, &cap)
+//       Allocate a fresh buffer holding >= n elements. Returns its base; writes
+//       the ACHIEVED capacity (>= n) to *out_cap. Does not construct anything.
+//
+//   deallocate(ctx, p, cap)
+//       Release a buffer `p` that was obtained for `cap` elements (the cap the
+//       allocating call reported / the live capacity). Destroys nothing.
+//
+//   reallocate(ctx, p, n)   [the realloc op; may be null]
+//       Resize `p` to hold >= n elements, PRESERVING the existing bytes, and
+//       return the buffer. It may grow in place (returns `p`) or move the block
+//       (returns a new base and the OLD pointer is then invalid — the caller
+//       must NOT deallocate it separately). Because it preserves by copying
+//       BYTES, it is valid only when the storage is malloc-backed AND the element
+//       is trivially relocatable; otherwise it is null and the core must fall
+//       back to allocate + element-wise relocate + deallocate. Unlike allocate,
+//       it reports no achieved capacity: the caller may assume exactly `n`.
+//
+//   get_alloc(ctx)
+//       Yield the container's allocator instance for the lifecycle leaves. The
+//       returned `void*` MUST point to an allocator of the SAME type `A` as the
+//       `ops_for<T, A>` whose leaves will receive it (the container supplies both,
+//       so this holds by construction); it is BORROWED — not owned, and must
+//       outlive the call. A core calls it AT MOST once per operation, and only
+//       when the element ops set f_alloc_ctx (i.e. A is stateful); for a
+//       stateless allocator f_alloc_ctx is clear, the leaves synthesize `A{}`,
+//       and the core passes a null allocator ctx instead of calling get_alloc.
 struct storage_ops {
     void* (*allocate)(void* ctx, size_t n, size_t* out_cap);
     void  (*deallocate)(void* ctx, void* p, size_t cap);
