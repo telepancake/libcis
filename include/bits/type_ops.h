@@ -158,15 +158,25 @@ constexpr type_ops make_type_ops() {
     // Allocator-mediated lifecycle: the leaf is set when the op is non-trivial OR
     // the allocator customizes it; left null only when the op is trivial AND the
     // allocator has a default lifecycle.
-    if constexpr (is_default_constructible_v<T>)
+    //
+    // For lifecycle gates we use body-level `requires` (the actual constructor
+    // expression we will form in the leaf) rather than is_*_constructible_v.
+    // Reason: gcc's special-member traits only check the implicit declaration,
+    // not body-instantiability — e.g. a struct containing vector<MoveOnly> is
+    // is_copy_constructible_v == true, but ::new(d) T(*s) instantiates the
+    // implicit copy ctor body which then tries to copy MoveOnly elements and
+    // is ill-formed.  The requires gate forces the same expression to be
+    // evaluated here, so the leaf address is only taken when the body would
+    // compile.  (Same reasoning as the value-op gates below.)
+    if constexpr (requires(T* p) { ::new (p) T(); })
         if constexpr (!(is_trivially_default_constructible_v<T> && default_life))
             o.default_construct = &default_construct_op<T, A>;
     if constexpr (!(is_trivially_destructible_v<T> && default_life))
         o.destroy = &destroy_op<T, A>;
-    if constexpr (is_copy_constructible_v<T>)
+    if constexpr (requires(T* p, const T& s) { ::new (p) T(s); })
         if constexpr (!(is_trivially_copyable_v<T> && default_life))
             o.copy_construct = &copy_construct_op<T, A>;
-    if constexpr (is_move_constructible_v<T>)
+    if constexpr (requires(T* p, T&& s) { ::new (p) T(static_cast<T&&>(s)); })
         if constexpr (!(is_trivially_relocatable_v<T> && default_life))
             o.move_construct = &move_construct_op<T, A>;
 
@@ -238,9 +248,14 @@ template<class T, class U>
 constexpr cross_ops make_cross_ops() {
     cross_ops o{&ops_for<T, allocator<T>>, &ops_for<U, allocator<U>>,
                 nullptr, nullptr, nullptr, nullptr, nullptr};
-    if constexpr (is_constructible_v<T, const U&>)
+    // Body-level requires (same reasoning as make_type_ops): the trait
+    // is_*_v says yes whenever the signature exists, but our leaf forms the
+    // expression and must body-instantiate it. Using the same expression in
+    // the gate prevents taking the leaf address for a T/U whose construction
+    // signature is declared-but-body-ill-formed.
+    if constexpr (requires(T* d, const U& s) { ::new (d) T(s); })
         o.construct_from = &construct_from_op<T, U>;
-    if constexpr (is_assignable_v<T&, const U&>)
+    if constexpr (requires(T& d, const U& s) { d = s; })
         o.assign_from = &assign_from_op<T, U>;
     if constexpr (requires(const T& t, const U& u) { t < u; u < t; })
         o.compare = &compare_cross_op<T, U>;

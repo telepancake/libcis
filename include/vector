@@ -134,50 +134,14 @@ private:
     // Type-erasure plumbing for the shared cores in src/support.cpp.
     //
     // The cores in <bits/vector_cores.h> work on raw byte pointers + a
-    // const type_ops* (element leaves) + a realloc_op (raw byte storage). The
-    // per-instantiation glue is two static helpers below: ops_table_ identifies
-    // the element T,A pair; realloc_shim_ allocates/frees via the allocator.
-    // No constexpr is offered for these: the cores byte-relocate at runtime.
+    // const type_ops* (element leaves) + a realloc_op (raw byte storage).
+    // The per-instantiation glue is realloc_shim_ (allocates/frees via the
+    // allocator) and to_pointer_ (raw -> fancy).  The element ops table is
+    // the shared detail::ops_for<T,A> — ONE ops vocabulary across containers.
+    // No constexpr: the cores byte-relocate at runtime.
     // -----------------------------------------------------------------------
-    // Build a per-(T,A) type_ops table covering only the leaves vector's
-    // cores actually consume — the four lifecycle leaves plus size/align/
-    // flags. We do NOT delegate to detail::ops_for here: that variable
-    // populates every value op (copy_assign, swap, compare, equal, hash,
-    // move_assign) and taking the address of e.g. &copy_assign_op<T>
-    // instantiates its body (`*dst = *src`). For T whose copy-assign is
-    // declared but ill-formed at body time (e.g. tzdb, which contains a
-    // vector<time_zone> where time_zone is move-only — the inherited
-    // implicit operator= has a valid declaration but an invalid body),
-    // that body would be instantiated here and the build dies. The cores
-    // never call those leaves, so we never need to risk that instantiation.
     static const detail::type_ops* ops_table_() noexcept {
-        static const detail::type_ops table = []{
-            constexpr bool dl = detail::alloc_default_lifecycle<allocator_type, value_type>;
-            detail::type_ops o{sizeof(value_type), alignof(value_type), 0u,
-                               nullptr, nullptr, nullptr, nullptr,
-                               nullptr, nullptr, nullptr,
-                               nullptr, nullptr, nullptr};
-            if constexpr (is_trivially_default_constructible_v<value_type>) o.flags |= detail::f_triv_default;
-            if constexpr (is_trivially_copyable_v<value_type>)               o.flags |= detail::f_triv_copy;
-            if constexpr (detail::is_trivially_relocatable_v<value_type>)   o.flags |= detail::f_triv_reloc;
-            if constexpr (is_trivially_destructible_v<value_type>)          o.flags |= detail::f_triv_destroy;
-            if constexpr (!detail::alloc_stateless<allocator_type>)         o.flags |= detail::f_alloc_ctx;
-
-            // The cores consume only destroy and move_construct (the relocate
-            // path). copy_construct / default_construct are NOT installed:
-            // taking their address would force body instantiation for T whose
-            // copy/default ctor is declared but ill-formed (e.g. a wrapper
-            // around a move-only type whose copy ctor is implicit-but-broken
-            // — vector<tzdb> in <chrono>). Vector's typed construct_at_end
-            // path inlines those calls per-T instead.
-            if constexpr (!(is_trivially_destructible_v<value_type> && dl))
-                o.destroy = &detail::destroy_op<value_type, allocator_type>;
-            if constexpr (is_move_constructible_v<value_type>)
-                if constexpr (!(detail::is_trivially_relocatable_v<value_type> && dl))
-                    o.move_construct = &detail::move_construct_op<value_type, allocator_type>;
-            return o;
-        }();
-        return &table;
+        return &detail::ops_for<value_type, allocator_type>;
     }
 
     // realloc_op shim. ctx is the vector's `this`; size is in BYTES in/out.
@@ -540,8 +504,9 @@ public:
         }
     }
 
-    // Copy constructor
+    // Copy constructor (constrained: see operator=(const&) above for rationale)
     constexpr vector(const vector& x)
+        requires is_copy_constructible_v<value_type>
         : alloc_(alloc_traits::select_on_container_copy_construction(x.alloc_)) {
         if (x.size() > 0) {
             vallocate(x.size());
@@ -552,6 +517,7 @@ public:
     // type_identity_t: keep the allocator parameter a non-deduced context so
     // CTAD vector(source, ConvertibleToAlloc) works (libc++ __type_identity_t).
     constexpr vector(const vector& x, const type_identity_t<allocator_type>& a)
+        requires is_copy_constructible_v<value_type>
         : alloc_(a) {
         if (x.size() > 0) {
             vallocate(x.size());
@@ -588,7 +554,15 @@ public:
     // Assignment
     // -----------------------------------------------------------------------
 
-    constexpr vector& operator=(const vector& x) {
+    // Constrained so that is_copy_assignable_v<vector<T,A>> correctly reports
+    // FALSE when T is not copy-constructible (the assign(it,it) body would be
+    // ill-formed).  Without this, a struct containing a vector<MoveOnly> has a
+    // declared-but-body-ill-formed implicit copy-assign, which trips type_ops
+    // leaf instantiation (see comment in bits/type_ops.h).
+    constexpr vector& operator=(const vector& x)
+        requires is_copy_constructible_v<value_type> &&
+                 is_copy_assignable_v<value_type>
+    {
         if (this != addressof(x)) {
             copy_assign_alloc(x);
             assign(x.begin_, x.end_);
