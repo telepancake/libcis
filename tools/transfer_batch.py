@@ -30,6 +30,10 @@ def rec_path(rel):
 def run_batch_child(pairs):
     """Child: process files sequentially, write each rec immediately (so a
     crash loses only the file it crashed on), echo progress on stdout."""
+    # Bind libclang once for this child (mirrors cmd_worker/cmd_edge). Without
+    # this, idx.parse silently fails with TranslationUnitLoadError because the
+    # cindex Config has no library path set.
+    T._ensure_libclang()
     for src, rel in pairs:
         print(rel, flush=True)
         T.write_rec(rec_path(rel), T.process_one((src, rel)))

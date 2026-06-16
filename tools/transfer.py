@@ -528,6 +528,42 @@ def parse_args():
     return PARSE_ARGS + extra
 
 
+# Match a file-scope `static_assert(IDENT());` or
+# `static_assert(IDENT(), "literal");` on its own line. Used only when
+# LIBCIS_SKIP_CONSTEXPR=1: the round-2 vector deliberately drops constexpr,
+# so the constexpr arm of libc++'s standard test pattern
+#     int main(){ tests(); static_assert(tests()); return 0; }
+# stops compiling and the whole TU (including the perfectly valid runtime
+# arm) is lost. Deleting this exact form lets the runtime arm survive.
+#
+# We INTENTIONALLY restrict to `static_assert(IDENT())` (a simple call,
+# no arguments, optional string message) — trait-style assertions like
+# `static_assert(is_same_v<T,U>);` MUST stay.
+_SKIP_CONSTEXPR_RE = re.compile(
+    r'^[ \t]*static_assert\([ \t]*'
+    r'([A-Za-z_][A-Za-z_0-9]*)'              # IDENT
+    r'\([ \t]*\)'                            # ()
+    r'[ \t]*(?:,[ \t]*"[^"\\]*(?:\\.[^"\\]*)*"[ \t]*)?'  # optional , "msg"
+    r'\)[ \t]*;[ \t]*\r?\n',
+    re.MULTILINE)
+
+
+def _skip_constexpr_enabled() -> bool:
+    return os.environ.get("LIBCIS_SKIP_CONSTEXPR", "") not in ("", "0")
+
+
+def _strip_constexpr_asserts(text: str):
+    """Delete file-scope `static_assert(IDENT());` lines. Returns
+    (new_text, count). Idempotent."""
+    n = 0
+    def sub(_m):
+        nonlocal n
+        n += 1
+        return ""
+    new = _SKIP_CONSTEXPR_RE.sub(sub, text)
+    return new, n
+
+
 STRUCTURAL_ERRORS = ("file not found",)
 
 
@@ -600,6 +636,9 @@ def process_one(args):
             return {"status": "error", "file": rel, "stage": "parse",
                     "diag": str(structural[0])}
         out, entry, counts = transform(text, tu, src, slug)
+        skipped_ce = 0
+        if _skip_constexpr_enabled():
+            out, skipped_ce = _strip_constexpr_asserts(out)
         bad = verify(out, src, hard)
         if bad:
             return {"status": "error", "file": rel, "stage": "verify",
@@ -610,9 +649,12 @@ def process_one(args):
         return {"status": "error", "file": rel, "stage": "exc", "diag": repr(ex)}
 
     kind = "run" if (entry and not rel.endswith(".compile.pass.cpp")) else "compile"
-    return {"status": "ok", "file": rel, "slug": slug, "kind": kind,
-            "entry": entry, "flags": flags, "adapted": counts,
-            "soft_errors": len(hard), "_text": out}
+    rec = {"status": "ok", "file": rel, "slug": slug, "kind": kind,
+           "entry": entry, "flags": flags, "adapted": counts,
+           "soft_errors": len(hard), "_text": out}
+    if skipped_ce:
+        rec["skipped_constexpr_asserts"] = skipped_ce
+    return rec
 
 
 def copy_sibling_headers(sub):

@@ -134,10 +134,27 @@ def copy_support(subtrees):
 
 
 def main():
-    subtrees = sys.argv[1:] or sorted(
+    # CLI: subtrees come positional; flags can appear anywhere. We avoid argparse
+    # to keep the existing "subtree-as-positional" contract intact.
+    args = list(sys.argv[1:])
+    skip_constexpr = False
+    if "--skip-constexpr" in args:
+        args.remove("--skip-constexpr")
+        skip_constexpr = True
+    # Env equivalent: LIBCIS_SKIP_CONSTEXPR=1 in the caller's env also enables it.
+    # Either source flips the same switch and is recorded into the ninja rule
+    # commands so the cache-key for re-runs picks up the change.
+    if os.environ.get("LIBCIS_SKIP_CONSTEXPR", "") not in ("", "0"):
+        skip_constexpr = True
+
+    subtrees = args or sorted(
         d for d in os.listdir(T.SRC_STD) if os.path.isdir(os.path.join(T.SRC_STD, d)))
     os.makedirs(T.DST_ROOT, exist_ok=True)
     copy_support(subtrees)
+
+    # Baked into the rule commands so toggling --skip-constexpr invalidates
+    # ninja's command-hash and forces a re-transfer of every file.
+    env_prefix = "LIBCIS_SKIP_CONSTEXPR=1 " if skip_constexpr else ""
 
     tooldir = os.path.relpath(os.path.dirname(os.path.abspath(__file__)), ROOT)
     py = f"{tooldir}/transfer.py"
@@ -147,14 +164,14 @@ def main():
         "ninja_required_version = 1.10",
         "",
         "rule pch",
-        f"  command = python3 {py} --build-pch",
+        f"  command = {env_prefix}python3 {py} --build-pch",
         "  description = PCH $out",
         "rule xferdir",
-        f"  command = python3 {pyb} --edge-dir $out $in",
+        f"  command = {env_prefix}python3 {pyb} --edge-dir $out $in",
         "  description = XFER $dir",
         # 1100+ dirrec paths can exceed ARG_MAX; use a response file
         "rule aggregate",
-        f"  command = python3 {py} --aggregate $out @$out.rsp",
+        f"  command = {env_prefix}python3 {py} --aggregate $out @$out.rsp",
         "  rspfile = $out.rsp",
         "  rspfile_content = $recs",
         "  description = MANIFEST $out",

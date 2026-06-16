@@ -193,13 +193,12 @@ private:
         if (bytes == 0) {
             // pure free
             if (cur) {
-                // best effort: we do not know the old element-count past the
-                // header pointers; let the allocator deduce — caller passes
-                // the byte count that was current; we round up to elements.
-                // In our use sites (vec_grow), the cur buffer is the vector's
-                // old begin_, whose byte length is (cap_-begin_)*sizeof(T).
+                // The cur buffer is always self->begin_ (the vec_grow contract).
+                // We already hold the typed `pointer` in self->begin_, so use
+                // it directly — fancy pointers (e.g. min_pointer) have no
+                // public void* ctor, so static_cast<pointer>(cur) would fail.
                 alloc_traits::deallocate(self->alloc_,
-                    static_cast<pointer>(cur),
+                    self->begin_,
                     static_cast<size_type>((static_cast<unsigned char*>(self->cap_unsafe_()) -
                                             static_cast<unsigned char*>(cur)) / es));
             }
@@ -224,18 +223,33 @@ private:
                 static_cast<size_t>(static_cast<unsigned char*>(self->cap_unsafe_()) -
                                     static_cast<unsigned char*>(cur));
             const size_t copy_bytes = old_bytes < bytes ? old_bytes : bytes;
-            __builtin_memcpy(res.ptr, cur, copy_bytes);
+            // res.ptr is `pointer` (possibly fancy); memcpy needs void*.
+            __builtin_memcpy(std::to_address(res.ptr), cur, copy_bytes);
+            // Same reasoning as the pure-free path above: cur == self->begin_,
+            // so deallocate via the typed begin_ rather than casting void*.
             alloc_traits::deallocate(self->alloc_,
-                static_cast<pointer>(cur),
+                self->begin_,
                 static_cast<size_type>(old_bytes / es));
         }
         *size = static_cast<size_t>(res.count) * es;
-        return res.ptr;
+        return std::to_address(res.ptr);
     }
 
     // cap_ exposed as a void* for the realloc shim (cap_ is the byte-after the
     // last allocated slot; subtracting from cur gives the old byte size).
     void* cap_unsafe_() noexcept { return std::to_address(cap_); }
+
+    // Convert a raw byte pointer (returned from a core through void*) back to
+    // the allocator's fancy `pointer`. For raw-pointer allocators this is a
+    // plain reinterpret; for fancy pointers (e.g. min_pointer) we go through
+    // pointer_traits::pointer_to.  Null in -> null out (avoids UB of
+    // dereferencing a null value_type*).
+    static pointer to_pointer_(void* raw) noexcept {
+        if (raw == nullptr)
+            return pointer{};
+        return std::pointer_traits<pointer>::pointer_to(
+            *static_cast<value_type*>(raw));
+    }
 
     // el_ctx_(): allocator ctx for the element leaves. The leaves synthesize
     // a stateless allocator when f_alloc_ctx is clear; pass null in that case
@@ -311,9 +325,9 @@ private:
                             std::to_address(cap_)};
         detail::vec_grow(ops_table_(), &realloc_shim_, this, el_ctx_(),
                          &buf, new_cap * sizeof(value_type));
-        begin_ = static_cast<pointer>(buf.begin);
-        end_   = static_cast<pointer>(buf.end);
-        cap_   = static_cast<pointer>(buf.cap);
+        begin_ = to_pointer_(buf.begin);
+        end_   = to_pointer_(buf.end);
+        cap_   = to_pointer_(buf.cap);
     }
 
     // Grow and insert a gap of 'gap' slots at p, returning pointer to the gap
@@ -332,10 +346,10 @@ private:
             ops_table_(), &realloc_shim_, this, el_ctx_(), &buf,
             off_bytes, gap * sizeof(value_type),
             new_cap * sizeof(value_type));
-        begin_ = static_cast<pointer>(buf.begin);
-        end_   = static_cast<pointer>(buf.end);
-        cap_   = static_cast<pointer>(buf.cap);
-        return static_cast<pointer>(gap_p);
+        begin_ = to_pointer_(buf.begin);
+        end_   = to_pointer_(buf.end);
+        cap_   = to_pointer_(buf.cap);
+        return to_pointer_(gap_p);
     }
 
     // Move [from_s, from_e) one position forward to [from_s+1, from_e+1)
@@ -564,7 +578,9 @@ public:
         }
     }
 
-    constexpr ~vector() {
+    // Not constexpr: calls vdeallocate(), which delegates to the byte-level
+    // cores in support.cpp (see comment on vdeallocate at line ~260).
+    ~vector() {
         vdeallocate();
     }
 
