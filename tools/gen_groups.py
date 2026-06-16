@@ -74,7 +74,7 @@ def gkey(d):
 # slices so cc1plus never has to instantiate the whole pile in one TU.
 SPLIT_TEST_COUNT = 25
 SPLIT_SRC_BYTES  = 80 * 1024
-CHUNK_TESTS      = 10
+CHUNK_TESTS      = 5
 
 
 def _feature_key(path):
