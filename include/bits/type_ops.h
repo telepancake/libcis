@@ -287,5 +287,36 @@ void* core_grow(void* old_base, size_t n_live, size_t old_cap, size_t new_cap,
                 const type_ops& ops, const storage_ops& st, void* ctx,
                 size_t* out_cap);
 
+// Grow with a hole at an offset (insert/emplace that must reallocate). This is a
+// DIFFERENT relocate from core_grow: it cannot fuse destroy-on-move, and it does
+// NOT allocate or free — because the caller must, BEFORE any survivor is moved,
+// construct the new element(s) into the gap of the (already-allocated) new buffer
+// from arguments that may ALIAS the old buffer (e.g. v.push_back(v[0])), while the
+// old elements are still alive and un-moved. So the sequence the forwarder runs is:
+//   1. st.allocate the new buffer;
+//   2. construct the new element(s) into dst[pos .. pos+gap)  (old fully intact);
+//   3. core_grow_gap(dst, old_base, ...)  — MOVE-CONSTRUCT survivors around the gap:
+//        [0,pos) -> dst[0,pos),  [pos,n_live) -> dst[pos+gap,...);  old left alive;
+//   4. core_destroy_free(old_base, n_live, ...) — destroy old + deallocate.
+// actx is the ALLOCATOR instance or null (f_alloc_ctx clear), fetched by the
+// forwarder exactly like the other cores.
+void core_grow_gap(void* dst, void* old_base, size_t n_live, size_t pos, size_t gap,
+                   const type_ops& ops, void* actx);
+
+// Teardown half of the grow-with-gap sequence: destroy the n elements of the old
+// buffer (the destroy leaf; a no-op when null, i.e. trivially destructible +
+// default-lifecycle) and deallocate it via the storage ops. ctx is the CONTAINER;
+// allocator derived lazily like the grow cores.
+void core_destroy_free(void* old_base, size_t n, size_t old_cap,
+                       const type_ops& ops, const storage_ops& st, void* ctx);
+
+// Range lifecycle over the element leaves — one shared body per shape instead of
+// a per-T loop. actx is the ALLOCATOR instance, or null when the leaves don't
+// need one (f_alloc_ctx clear); the forwarder fetches it exactly like the grow
+// cores. Each constructs/destroys n contiguous elements starting at p.
+void core_default_fill(void* p, size_t n, const type_ops& ops, void* actx);
+void core_fill(void* p, size_t n, const void* value, const type_ops& ops, void* actx);
+void core_destroy_range(void* p, size_t n, const type_ops& ops, void* actx);
+
 } // namespace detail
 } // namespace std
