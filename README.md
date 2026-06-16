@@ -263,11 +263,31 @@ automatically, so the gate is self-consistent regardless of transfer order.
 
 ---
 
+## Compiled code-size benchmark
+
+`bench/` tracks how much `.text` STL-heavy programs pull in against libcis at
+`-Os` (plus a flags-only optimized/LTO baseline). It measures real header-only
+codebases (fmt, json, tomlplusplus, …) *and* two artificial `std::vector`
+probes, and journals results so a change's size impact is read back as a diff:
+
+```sh
+git submodule update --init --depth 1            # pull the benchmark codebases
+bench/codesize.py                                # table for every project + probes
+bench/record.py "what I changed"                 # measure all + append a journal line
+bench/record.py --diff                           # per-project .text deltas vs the prev entry
+```
+
+The reusable type-erasure primitives explored for size work live in
+`include/bits/type_ops.h` (`type_ops` / `cross_ops` single- and two-type op
+tables, and `storage_ops` — the realloc/storage axis) and
+`include/bits/relocatable.h`. See `bench/README.md` for both.
+
 ## Layout
 
 ```
 include/        the library (header-only; user headers + bits/ internals)
 src/support.cpp runtime glue: operator new/delete etc. (linked as libsupport.a)
+bench/          compiled code-size benchmark + size journal (see bench/README.md)
 test/std/       generated: transferred tests + manifest.json + support/  (git-ignored)
 tools/
   config.py          single source of truth for toolchain/paths (env-overridable)

@@ -28,12 +28,28 @@ Pull them in with:
 git submodule update --init --depth 1
 ```
 
+## Artificial probes (no submodule)
+
+Two self-contained drivers stress the *library* directly rather than a real
+codebase — `std::vector` instantiated over many element types, the workload a
+type-erased container aims to shrink:
+
+| probe | what it builds |
+|---|---|
+| `vec_mixed` | `vector<T>` over a few dissimilar types (`int`/`long`/`double`/`string`/a struct) — a typical program's type count |
+| `vec_many` | `vector<T>` over 16 distinct, non-trivially-relocatable, different-sized types (so ICF can't fold the instantiations) — the favorable case for erasure |
+
+Both exercise the full mutating surface (`push_back`/`insert`/`erase`/`resize`/
+copy/assign). They are in the default measured set, so they appear in the table
+and journal next to the external codebases.
+
 ## Running
 
 ```sh
-bench/codesize.py            # table for every project
-bench/codesize.py fmt        # just one
-bench/codesize.py --json     # machine-readable
+bench/codesize.py                  # table for every project + the artificial probes
+bench/codesize.py fmt              # just one
+bench/codesize.py vec_mixed vec_many   # just the artificial probes
+bench/codesize.py --json           # machine-readable
 ```
 
 Each project's driver (`drivers/<name>.cpp`) is compiled + linked against libcis
@@ -90,14 +106,18 @@ After a change, record a parsable entry (the description is mandatory — it's h
 an experiment is found later; git commit + dirty flag are captured automatically):
 
 ```sh
-bench/record.py "what I changed / am measuring"
-bench/record.py --print          # index of all journal entries
+bench/record.py "what I changed / am measuring"   # measure all + append a journal line
+bench/record.py --print                           # index of all journal entries
+bench/record.py --diff                            # .text deltas: previous entry -> latest
+bench/record.py --diff abc491e                    # ...vs a specific commit prefix
+bench/record.py --diff "null-sentinel"            # ...vs an entry by desc substring
 ```
 
 The append is done under an exclusive file lock, so many agents can record
-concurrently without corrupting the log. A later analysis pass can stream
-`sizes.jsonl` and pick out the heads/tails (smallest/largest `.text` per project,
-deltas between commits, ...).
+concurrently without corrupting the log. `--diff` prints a per-project
+`old / new / delta` table of `.text` across the artificial probes *and* the
+external codebases at once — the canonical way to read a change's size impact:
+`record` before, `record` after, `--diff`.
 
 ## Techniques
 
@@ -113,3 +133,38 @@ how trivially-relocatable element ops collapse, whether the shared core gets clo
 per type (no), and what keeping C++20 `constexpr` actually costs (it conflicts with
 the size-optimal implementation). Several common assumptions are corrected there
 under measurement.
+
+`type-erasure-conversion.md` is the component-agnostic doctrine for converting a
+container's heavy methods onto shared non-template cores keyed by the ops tables
+below.
+
+## Type-erasure primitives (`include/bits/`)
+
+The reusable vocabulary an erased container core is written against — declared
+once, allocator-aware, and **independent of any particular container**:
+
+- **`bits/type_ops.h`** — the operation tables.
+  - `type_ops` — single element type `T` (under allocator `A`): `size`/`align`/
+    `flags` plus function-pointer leaves for the lifecycle (default/copy/move
+    construct, destroy) and the value ops (copy/move assign, swap, 3-way compare,
+    equal, hash). `ops_for<T, A>` is the constant instance. A null leaf is the
+    "trivial or invalid" sentinel — the core handles that case inline
+    (memcpy/memmove/nothing). Lifecycle leaves route through `allocator_traits`,
+    so a custom `construct`/`destroy` is honored; the allocator instance is passed
+    only when it is *stateful* (the `f_alloc_ctx` flag), so the common case carries
+    no allocator pointer.
+  - `cross_ops` — ops genuinely between two types `T` and `U` (construct/assign a
+    `T` from a `U`, compare/equal across, `cast`), embedding the two single-type
+    tables so a two-type algorithm still receives one pointer. `cross_for<T, U>`.
+  - `storage_ops` — the **realloc op** / storage axis: `allocate`/`deallocate`/
+    `reallocate`/`get_alloc` callbacks bound to the *container* via an opaque ctx,
+    so a non-template grow core never names the container or allocator type.
+- **`bits/relocatable.h`** — `is_trivially_relocatable_v<T>` (opt-in for the
+  library's own movable-by-bytes types), which gates the memcpy/realloc fast paths.
+
+These ship as standalone, documented headers. The measured conclusion of wiring
+them into `std::vector` (see the findings doc) was that vector's per-element
+bodies are too small for erasure to pay — the shared core + per-type leaves +
+call marshalling exceed the inlined typed loops they replace — so the vector
+conversion was **not** kept on this branch; the probes and tables remain as the
+tooling to evaluate the technique on better-suited targets.
