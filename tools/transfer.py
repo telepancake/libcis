@@ -127,9 +127,14 @@ def build_pch():
     _ensure_libclang()
     inc_dir = cfg.libcxx_include_dir()
     if inc_dir is None:
-        print("PCH: no libc++ headers found (set LIBCXX_INCLUDE); "
-              "parsing without PCH", flush=True)
-        return []
+        tried = cfg._libcxx_include_candidates()
+        sys.exit(
+            "PCH: no libc++ headers found. The transfer parse REQUIRES a libc++\n"
+            "include directory (parsing without PCH is not supported).\n"
+            "  Tried (in order):\n"
+            + "".join(f"    {c}\n" for c in tried) +
+            "  Install libc++ headers (e.g. `apt install libc++-20-dev`) or set\n"
+            "  LIBCXX_INCLUDE to point at a libc++ `include/c++/v1` directory.")
     hdrs = sorted(h for h in os.listdir(inc_dir)
                   if "." not in h and not h.startswith("__")
                   and os.path.isfile(os.path.join(inc_dir, h)))
@@ -145,8 +150,12 @@ def build_pch():
                    options=ci.TranslationUnit.PARSE_INCOMPLETE)
     hard = [d for d in tu.diagnostics if d.severity >= ci.Diagnostic.Error]
     if hard:
-        print(f"PCH: build failed ({hard[0]}); parsing without PCH", flush=True)
-        return []
+        sys.exit(
+            f"PCH: build failed parsing libc++ headers at {inc_dir}\n"
+            f"  first error: {hard[0]}\n"
+            "  The transfer parse REQUIRES a working PCH. Check that\n"
+            "  LIBCXX_INCLUDE points at a libc++ header tree the configured\n"
+            f"  clang ({cfg.CXX_LIBCXX}) can parse.")
     tu.save(PCH_PATH)
     return ["-include-pch", PCH_PATH]
 
@@ -700,8 +709,9 @@ def main():
     # (a per-command timeout, handled by --edge).
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
     if mode == "--build-pch":
-        if not build_pch():
-            sys.exit("PCH build failed")
+        # build_pch sys.exit's with an actionable message on any failure
+        # (missing headers, parse errors); no fallback — PCH is required.
+        build_pch()
     elif mode == "--worker":
         cmd_worker(sys.argv[2], sys.argv[3], sys.argv[4])
     elif mode == "--edge":

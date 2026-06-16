@@ -182,8 +182,9 @@ def _libcxx_include_candidates():
 
 
 def libcxx_include_dir():
-    """libc++ header dir for the PCH, or None (PCH is optional; transfer falls
-    back to parsing without it)."""
+    """libc++ header dir for the PCH, or None.  The transfer parse REQUIRES a
+    PCH; callers that get None must sys.exit with an actionable message
+    rather than fall back to parsing without it."""
     env = os.environ.get("LIBCXX_INCLUDE")
     cands = [env] if env else _libcxx_include_candidates()
     for c in cands:
