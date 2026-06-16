@@ -159,18 +159,19 @@ private:
                                nullptr, nullptr, nullptr};
             if constexpr (is_trivially_default_constructible_v<value_type>) o.flags |= detail::f_triv_default;
             if constexpr (is_trivially_copyable_v<value_type>)               o.flags |= detail::f_triv_copy;
-            if constexpr (detail::is_trivially_relocatable_v<value_type>)            o.flags |= detail::f_triv_reloc;
-            if constexpr (is_trivially_destructible_v<value_type>)           o.flags |= detail::f_triv_destroy;
-            if constexpr (!detail::alloc_stateless<allocator_type>)          o.flags |= detail::f_alloc_ctx;
+            if constexpr (detail::is_trivially_relocatable_v<value_type>)   o.flags |= detail::f_triv_reloc;
+            if constexpr (is_trivially_destructible_v<value_type>)          o.flags |= detail::f_triv_destroy;
+            if constexpr (!detail::alloc_stateless<allocator_type>)         o.flags |= detail::f_alloc_ctx;
 
-            if constexpr (is_default_constructible_v<value_type>)
-                if constexpr (!(is_trivially_default_constructible_v<value_type> && dl))
-                    o.default_construct = &detail::default_construct_op<value_type, allocator_type>;
+            // The cores consume only destroy and move_construct (the relocate
+            // path). copy_construct / default_construct are NOT installed:
+            // taking their address would force body instantiation for T whose
+            // copy/default ctor is declared but ill-formed (e.g. a wrapper
+            // around a move-only type whose copy ctor is implicit-but-broken
+            // — vector<tzdb> in <chrono>). Vector's typed construct_at_end
+            // path inlines those calls per-T instead.
             if constexpr (!(is_trivially_destructible_v<value_type> && dl))
                 o.destroy = &detail::destroy_op<value_type, allocator_type>;
-            if constexpr (is_copy_constructible_v<value_type>)
-                if constexpr (!(is_trivially_copyable_v<value_type> && dl))
-                    o.copy_construct = &detail::copy_construct_op<value_type, allocator_type>;
             if constexpr (is_move_constructible_v<value_type>)
                 if constexpr (!(detail::is_trivially_relocatable_v<value_type> && dl))
                     o.move_construct = &detail::move_construct_op<value_type, allocator_type>;
@@ -268,18 +269,19 @@ private:
     }
 
     // Construct n default elements at end_
-    void construct_at_end(size_type n) {
-        detail::vec_construct_default_n(ops_table_(), el_ctx_(),
-                                        std::to_address(end_), n);
-        end_ += n;
+    constexpr void construct_at_end(size_type n) {
+        for (size_type i = 0; i < n; ++i) {
+            construct_one(end_);
+            ++end_;
+        }
     }
 
     // Construct n copies of x at end_
-    void construct_at_end(size_type n, const_reference x) {
-        detail::vec_construct_copy_one_n(ops_table_(), el_ctx_(),
-                                         std::to_address(end_),
-                                         std::addressof(x), n);
-        end_ += n;
+    constexpr void construct_at_end(size_type n, const_reference x) {
+        for (size_type i = 0; i < n; ++i) {
+            construct_one(end_, x);
+            ++end_;
+        }
     }
 
     // Construct from iterator range [first, last) of known size n at end_
