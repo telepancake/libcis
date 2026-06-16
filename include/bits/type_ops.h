@@ -23,6 +23,7 @@
 // not allocator-mediated, so they take no ctx.
 #pragma once
 #include <cstddef>
+#include <new>             // placement new (default-lifecycle leaves)
 #include <memory>          // allocator_traits
 #include <type_traits>
 #include <utility>         // declval, swap
@@ -40,6 +41,12 @@ enum ops_flags : unsigned {
     f_triv_copy    = 1u << 1,  // trivially copyable (copy/move/assign == memcpy)
     f_triv_reloc   = 1u << 2,  // trivially relocatable (grow == memmove)
     f_triv_destroy = 1u << 3,  // trivially destructible (destroy == nothing)
+    // LOAD-BEARING (unlike the f_triv_* above): set iff the allocator is
+    // STATEFUL, so the lifecycle leaves need its specific instance as ctx. The
+    // core reads this to decide whether to fetch the allocator (storage_ops::
+    // get_alloc) before relocating; when clear (stateless / type-only), the
+    // leaves synthesize one and run with a null ctx. Independent of lifecycle.
+    f_alloc_ctx    = 1u << 4,
 };
 
 // Does the allocator customize construct/destroy for T? If so, the core must not
@@ -53,6 +60,16 @@ constexpr bool alloc_has_destroy =
 template<class A, class T>
 constexpr bool alloc_default_lifecycle =
     !alloc_has_construct<A, T> && !alloc_has_destroy<A, T>;
+
+// Is the allocator type-only (stateless), so a leaf can make one on the spot and
+// the core need not pass an instance pointer? True iff all instances are
+// interchangeable (is_always_equal) AND one can be default-constructed. A
+// stateful allocator (false) must have its specific instance handed to the
+// leaves. This is orthogonal to lifecycle customization above.
+template<class A> using alloc_always_equal_t = typename allocator_traits<A>::is_always_equal;
+template<class A>
+constexpr bool alloc_stateless =
+    alloc_always_equal_t<A>::value && is_default_constructible_v<A>;
 
 // =====================================================================
 // Single-type table
@@ -78,20 +95,30 @@ struct type_ops {
 };
 
 // ---- single-type leaf ops (instantiated only when named in make_type_ops) ----
-// allocator-mediated:
+// Lifecycle leaves route through allocator_traits, which itself folds to
+// placement-new / direct destructor when the allocator doesn't customize them.
+// The only thing the leaf decides is WHERE the allocator comes from: a stateless
+// allocator is synthesized on the spot (ctx ignored, the core passes null —
+// f_alloc_ctx clear); a stateful one is read from ctx (its instance, fetched via
+// storage_ops::get_alloc — f_alloc_ctx set). So the common case carries no
+// allocator pointer, while a stateful and/or customizing allocator is honored.
 template<class T, class A> void default_construct_op(void* ctx, void* p) {
-    allocator_traits<A>::construct(*static_cast<A*>(ctx), static_cast<T*>(p));
+    if constexpr (alloc_stateless<A>) { A a{}; allocator_traits<A>::construct(a, static_cast<T*>(p)); }
+    else allocator_traits<A>::construct(*static_cast<A*>(ctx), static_cast<T*>(p));
 }
 template<class T, class A> void destroy_op(void* ctx, void* p) {
-    allocator_traits<A>::destroy(*static_cast<A*>(ctx), static_cast<T*>(p));
+    if constexpr (alloc_stateless<A>) { A a{}; allocator_traits<A>::destroy(a, static_cast<T*>(p)); }
+    else allocator_traits<A>::destroy(*static_cast<A*>(ctx), static_cast<T*>(p));
 }
 template<class T, class A> void copy_construct_op(void* ctx, void* d, const void* s) {
-    allocator_traits<A>::construct(*static_cast<A*>(ctx), static_cast<T*>(d),
-                                   *static_cast<const T*>(s));
+    if constexpr (alloc_stateless<A>) { A a{}; allocator_traits<A>::construct(a, static_cast<T*>(d), *static_cast<const T*>(s)); }
+    else allocator_traits<A>::construct(*static_cast<A*>(ctx), static_cast<T*>(d),
+                                        *static_cast<const T*>(s));
 }
 template<class T, class A> void move_construct_op(void* ctx, void* d, void* s) {
-    allocator_traits<A>::construct(*static_cast<A*>(ctx), static_cast<T*>(d),
-                                   static_cast<T&&>(*static_cast<T*>(s)));
+    if constexpr (alloc_stateless<A>) { A a{}; allocator_traits<A>::construct(a, static_cast<T*>(d), static_cast<T&&>(*static_cast<T*>(s))); }
+    else allocator_traits<A>::construct(*static_cast<A*>(ctx), static_cast<T*>(d),
+                                        static_cast<T&&>(*static_cast<T*>(s)));
 }
 // value ops:
 template<class T> void copy_assign_op(void* d, const void* s) {
@@ -129,6 +156,10 @@ constexpr type_ops make_type_ops() {
     if constexpr (is_trivially_copyable_v<T>)              o.flags |= f_triv_copy;
     if constexpr (is_trivially_relocatable_v<T>)           o.flags |= f_triv_reloc;
     if constexpr (is_trivially_destructible_v<T>)          o.flags |= f_triv_destroy;
+    // the only load-bearing flag: leaves need the allocator instance iff it is
+    // stateful (a stateless one is synthesized in the leaf). Independent of the
+    // lifecycle/sentinel decision below.
+    if constexpr (!alloc_stateless<A>)                     o.flags |= f_alloc_ctx;
 
     // Allocator-mediated lifecycle: a leaf is needed when the op is non-trivial
     // OR the allocator customizes it. Null only when trivial AND default
@@ -231,22 +262,27 @@ inline constexpr cross_ops cross_for = make_cross_ops<T, U>();
 // =====================================================================
 // Relocate n elements from src to fresh dst — memcpy when the sentinel allows
 // (null move_construct: trivially relocatable + default-lifecycle allocator),
-// else move-construct each (via the allocator) then destroy the source. `ctx`
-// is the allocator.
-void core_relocate(void* dst, void* src, size_t n, const type_ops& ops, void* ctx);
+// else move-construct each then destroy the source. `actx` is the ALLOCATOR
+// instance, or null when the leaves don't need one (f_alloc_ctx clear).
+void core_relocate(void* dst, void* src, size_t n, const type_ops& ops, void* actx);
 
-// Storage axis: how a particular allocator (re)allocates, as callbacks bound to
-// the allocator via ctx. `reallocate` is null unless the storage is malloc-backed
-// and can grow in place (std::allocator).
+// Storage axis: how a container's storage (re)allocates. The callbacks are bound
+// to the CONTAINER via ctx (so they can reach its allocator and, later, its
+// inline/SSO storage). `reallocate` is null unless the storage is malloc-backed
+// and can grow in place (std::allocator). `get_alloc` yields the allocator
+// instance for the lifecycle leaves; the core calls it only when f_alloc_ctx is
+// set, so the common case never materializes an allocator pointer.
 struct storage_ops {
     void* (*allocate)(void* ctx, size_t n, size_t* out_cap);
     void  (*deallocate)(void* ctx, void* p, size_t cap);
     void* (*reallocate)(void* ctx, void* p, size_t n);        // null: not supported
+    void* (*get_alloc)(void* ctx);                            // container -> &allocator
 };
 
 // Grow to >= new_cap, preserving the first n_live elements, via the element ops
 // + the storage ops. Returns the new base; writes the achieved capacity to
-// *out_cap. ctx is the allocator (used by both the element leaves and storage).
+// *out_cap. ctx is the CONTAINER; the core derives the allocator from it (via
+// st.get_alloc) only when the element ops require it.
 void* core_grow(void* old_base, size_t n_live, size_t old_cap, size_t new_cap,
                 const type_ops& ops, const storage_ops& st, void* ctx,
                 size_t* out_cap);

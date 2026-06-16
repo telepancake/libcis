@@ -509,13 +509,17 @@ void core_relocate(void* dst, void* src, std::size_t n, const type_ops& ops, voi
 void* core_grow(void* old_base, std::size_t n_live, std::size_t old_cap,
                 std::size_t new_cap, const type_ops& ops, const storage_ops& st,
                 void* ctx, std::size_t* out_cap) {
+    // ctx is the container; storage callbacks are bound to it.
     if (ops.move_construct == nullptr && st.reallocate) {   // trivially relocatable, reallocable
         *out_cap = new_cap;
         return st.reallocate(ctx, old_base, new_cap);
     }
     std::size_t cap;
     void* p = st.allocate(ctx, new_cap, &cap);
-    core_relocate(p, old_base, n_live, ops, ctx);   // memcpy or per-element via allocator
+    // Materialize the allocator instance only when the element leaves customize
+    // construct/destroy; otherwise the leaves run with a null allocator ctx.
+    void* actx = (ops.flags & f_alloc_ctx) ? st.get_alloc(ctx) : nullptr;
+    core_relocate(p, old_base, n_live, ops, actx);   // memcpy, or per-element move
     if (old_base) st.deallocate(ctx, old_base, old_cap);
     *out_cap = cap;
     return p;
