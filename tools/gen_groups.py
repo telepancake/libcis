@@ -64,17 +64,88 @@ def gkey(d):
     return re.sub(r"[^0-9A-Za-z]+", "_", d) + "_" + hashlib.sha1(d.encode()).hexdigest()[:8]
 
 
+# Adaptive split thresholds (see load_groups).  Whole-feature consolidation is
+# right for most features (~10-30 tests, <100 KiB collated source); the same TU
+# for utilities/tuple instantiates a peak of 14.8 GB RSS in cc1plus on g++-13.
+# When a feature trips either threshold, we drop one level deeper (sub-feature
+# per TU) just for that feature.  Some sub-features bottom out before becoming
+# small enough -- utilities/tuple/tuple.tuple/tuple.cnstr is 28 files / 86 KiB
+# in one flat directory -- and CHUNK_TESTS then partitions them into N-test
+# slices so cc1plus never has to instantiate the whole pile in one TU.
+SPLIT_TEST_COUNT = 25
+SPLIT_SRC_BYTES  = 80 * 1024
+CHUNK_TESTS      = 10
+
+
+def _feature_key(path):
+    """Top-2 path components, e.g. utilities/tuple."""
+    return "/".join(os.path.dirname(path).split("/")[:2])
+
+
+def _key_at_depth(path, depth):
+    """First `depth` components of the file's directory, or all if fewer."""
+    parts = os.path.dirname(path).split("/")
+    return "/".join(parts[: max(depth, 1)])
+
+
+def _src_bytes(members):
+    """Sum of test source bytes for a group's members; 0 on read error."""
+    n = 0
+    for r in members:
+        try:
+            n += os.path.getsize(os.path.join("test/std", r["file"]))
+        except OSError:
+            pass
+    return n
+
+
 def load_groups():
     man = json.load(open(MANIFEST))
-    seen, groups = set(), {}
+    seen, rows = set(), []
     for r in man["transferred"]:
         if r["file"] in seen:
             continue
         seen.add(r["file"])
-        # one TU per lib FEATURE (e.g. utilities/optional, containers/sequences),
-        # not per leaf clause-directory: ~200 executables instead of ~1300.
-        d = "/".join(os.path.dirname(r["file"]).split("/")[:2])
-        groups.setdefault(d, []).append(r)
+        rows.append(r)
+
+    # Start at depth 2 (feature: utilities/optional, containers/sequences).
+    # If a group trips either threshold, deepen JUST THAT GROUP by one level
+    # until the threshold is satisfied or the directory bottoms out.  This
+    # keeps tuple split deeply (utilities/tuple -> tuple.tuple -> tuple.rel/
+    # tuple.apply/...) while leaving e.g. utilities/optional whole.
+    pending = {}  # key -> (depth, members)
+    for r in rows:
+        k = _key_at_depth(r["file"], 2)
+        pending.setdefault(k, [2, []])[1].append(r)
+    # Rewrite shape to (k -> [depth, members])
+    work = list(pending.items())
+
+    groups = {}
+    while work:
+        k, (depth, members) = work.pop()
+        too_big = (len(members) > SPLIT_TEST_COUNT or
+                   _src_bytes(members) > SPLIT_SRC_BYTES)
+        # See if a deeper split is even possible: at least two distinct
+        # next-level subdirs (otherwise deepening just renames the group).
+        next_keys = {_key_at_depth(r["file"], depth + 1) for r in members}
+        if too_big and len(next_keys) >= 2:
+            # Regroup members by next depth and re-enqueue.
+            by_sub = {}
+            for r in members:
+                by_sub.setdefault(_key_at_depth(r["file"], depth + 1), []).append(r)
+            for nk, sub in by_sub.items():
+                work.append((nk, [depth + 1, sub]))
+        elif too_big:
+            # Flat-bottomed: can't deepen further (one subdir or already at
+            # a leaf).  Slice into CHUNK_TESTS-sized windows over the
+            # filename-sorted members.  The sort is what makes the chunks
+            # deterministic across re-runs; chunk keys append `_chunk_<i>`
+            # to the unsplittable directory key so they're stable too.
+            members_sorted = sorted(members, key=lambda r: r["file"])
+            for i in range(0, len(members_sorted), CHUNK_TESTS):
+                groups[f"{k}_chunk_{i // CHUNK_TESTS}"] = members_sorted[i:i + CHUNK_TESTS]
+        else:
+            groups[k] = members
     return groups
 
 
