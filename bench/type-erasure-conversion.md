@@ -65,6 +65,46 @@ Add a new core only when a genuinely new shape appears; otherwise reuse one.
 `erase` is not `core_grow`; `assign` is not a single call; each lands on the
 core that matches it.
 
+## Extending the ops table (adding a new element leaf)
+
+A core can only call the element operations that `detail::type_ops`
+(`include/bits/type_ops.h`) actually carries. Today that is `size`,
+`move_construct`, `copy_construct`, `destroy`. When a heavy method needs an
+element operation that is **not yet a member** — e.g. value/default-construct
+(`resize(n)`, `construct_at_end(n)`), copy-/move-assign (`assign`, in-place
+`insert`/`emplace` that overwrites a live slot), swap, equality/less, hash —
+do **not** reach for the static type inside the core or invent a parallel
+table. Add the leaf to the one `type_ops`:
+
+1. **Add the function pointer** to `struct type_ops`. Keep the signature
+   uniform: `void (*op)(void* ctx, void* dst, …)` with the element(s) passed as
+   `void*`/`const void*`, `ctx` first. Add it after the existing members so the
+   aggregate layout only grows.
+2. **Update every brace-initializer** of a `type_ops`. They are aggregate
+   literals (`make_type_ops` starts `type_ops o{sizeof(T), nullptr, …}`), so a
+   new member must be added to each initializer — the compiler will not warn if
+   you forget and leave it value-initialized to a confusing `nullptr`.
+3. **Write the leaf template** `<op>_op<T, A>`. Lifecycle operations
+   (construct/destroy/assign of elements) route through `allocator_traits<A>`
+   via `ctx` exactly as the existing leaves do; pure value operations
+   (comparison, hash, swap) act on the `T`s directly. Keep it tiny — leaves are
+   shared program-wide by LTO/ICF, so one good leaf serves every container and
+   algorithm.
+4. **Wire it into `make_type_ops<T, A>`** under the matching `if constexpr`
+   validity guard (`is_default_constructible_v`, `is_copy_assignable_v`, …) so
+   the pointer is null when the operation is ill-formed for `T`, and **define
+   that null's meaning**: either "operation unavailable for this `T`" (the core
+   must not be asked to perform it) or a trivial-sentinel "the core may inline
+   the builtin" — pick the one the doctrine's fast-path rule (invariant 2)
+   already uses for relocation, and apply it consistently.
+5. A leaf that participates in the **trivial fast path** must be gated the same
+   doubly-conditional way as relocation: null only when the element is trivial
+   for that operation **and** the allocator has a default lifecycle, so a
+   customizing allocator is never bypassed.
+
+The table is the single extension point; growing it is preferred to adding a
+core argument or a second table.
+
 ## Invariants every core and forwarder MUST preserve
 
 1. **Allocator-aware lifecycle.** Element construct/move/copy/destroy go
