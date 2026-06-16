@@ -524,5 +524,71 @@ void* core_grow(void* old_base, std::size_t n_live, std::size_t old_cap,
     *out_cap = cap;
     return p;
 }
+
+// Grow with a hole at `pos` of width `gap`. Unlike core_grow this NEVER fuses
+// destroy onto the move and does NOT allocate or free: the caller has already
+// allocated `dst` and constructed the new element(s) into the gap from
+// possibly-aliasing args while the old elements were still alive and un-moved.
+// We only MOVE-CONSTRUCT the survivors around the gap, leaving the old buffer
+// alive for the caller to tear down via core_destroy_free. No realloc fast path:
+// realloc would shift bytes and clobber the source.
+void core_grow_gap(void* dst, void* old_base, std::size_t n_live, std::size_t pos,
+                   std::size_t gap, const type_ops& ops, void* actx) {
+    unsigned char* d = static_cast<unsigned char*>(dst);
+    unsigned char* s = static_cast<unsigned char*>(old_base);
+    const std::size_t es = ops.size;
+    if (ops.move_construct == nullptr) {            // trivially relocatable: memcpy halves
+        if (pos)            __builtin_memcpy(d, s, pos * es);
+        if (n_live - pos)   __builtin_memcpy(d + (pos + gap) * es, s + pos * es,
+                                             (n_live - pos) * es);
+        return;
+    }
+    // [0,pos) -> new [0,pos)  (move-construct only; old left alive)
+    for (std::size_t i = 0; i < pos; ++i)
+        ops.move_construct(actx, d + i * es, s + i * es);
+    // [pos,n_live) -> new [pos+gap,...)
+    for (std::size_t i = pos; i < n_live; ++i)
+        ops.move_construct(actx, d + (i + gap) * es, s + i * es);
+}
+
+void core_destroy_free(void* old_base, std::size_t n, std::size_t old_cap,
+                       const type_ops& ops, const storage_ops& st, void* ctx) {
+    if (old_base == nullptr) return;
+    if (ops.destroy) {
+        void* actx = (ops.flags & f_alloc_ctx) ? st.get_alloc(ctx) : nullptr;
+        unsigned char* b = static_cast<unsigned char*>(old_base);
+        for (std::size_t i = 0; i < n; ++i)
+            ops.destroy(actx, b + i * ops.size);
+    }
+    st.deallocate(ctx, old_base, old_cap);
+}
+
+void core_default_fill(void* p, std::size_t n, const type_ops& ops, void* actx) {
+    if (ops.default_construct == nullptr) {         // trivial default + default life
+        __builtin_memset(p, 0, n * ops.size);
+        return;
+    }
+    unsigned char* d = static_cast<unsigned char*>(p);
+    for (std::size_t i = 0; i < n; ++i)
+        ops.default_construct(actx, d + i * ops.size);
+}
+
+void core_fill(void* p, std::size_t n, const void* value, const type_ops& ops, void* actx) {
+    unsigned char* d = static_cast<unsigned char*>(p);
+    if (ops.copy_construct == nullptr) {            // trivially copyable + default life
+        for (std::size_t i = 0; i < n; ++i)
+            __builtin_memcpy(d + i * ops.size, value, ops.size);
+        return;
+    }
+    for (std::size_t i = 0; i < n; ++i)
+        ops.copy_construct(actx, d + i * ops.size, value);
+}
+
+void core_destroy_range(void* p, std::size_t n, const type_ops& ops, void* actx) {
+    if (ops.destroy == nullptr) return;             // trivially destructible + default life
+    unsigned char* d = static_cast<unsigned char*>(p);
+    for (std::size_t i = 0; i < n; ++i)
+        ops.destroy(actx, d + i * ops.size);
+}
 } // namespace detail
 } // namespace std
