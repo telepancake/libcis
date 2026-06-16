@@ -262,40 +262,32 @@ inline constexpr cross_ops cross_for = make_cross_ops<T, U>();
 // =====================================================================
 // Storage axis: realloc_op
 // =====================================================================
-// The third axis of erasure, orthogonal to the element ops above: how a
-// container (re)allocates and grows its storage. It is a SINGLE realloc-style
-// function bound to the CONTAINER through one opaque `void* ctx` (its `this`), so
-// a non-template core takes one `realloc_op` + that ctx and never names the
-// container or allocator type. One call performs ALL of the allocation work —
-// allocate, relocate the survivors, free the old buffer — which lets a container
-// fold in policy a separate allocate/free pair can't express (grow in place,
-// small-buffer/SSO, fixed storage).
+// The third axis, orthogonal to the element ops above and deliberately ignorant
+// of them: raw STORAGE only. A realloc-style function bound to the CONTAINER
+// through one opaque `void* ctx` (its `this`), so a non-template core takes one
+// `realloc_op` + that ctx and never names the container or allocator type. It
+// resizes a malloc-backed buffer and PRESERVES its bytes — nothing more. It is
+// not the allocator's business to know the element type, to construct/move/
+// destroy elements, or to decide capacity policy, so it takes no `type_ops` and
+// reports no capacity.
 //
-//   realloc_op(ctx, cur, new_cap, ops, &out_cap) -> new_base
+//   realloc_op(ctx, cur, new_size) -> new_base
 //
-// Calling convention (all element-COUNT arguments, never bytes — the element
-// size is `ops.size`):
-//   ctx       the owning container (its `this`); the function reaches the
-//             container's allocator and any inline/SSO buffer through it, AND
-//             the number of live elements to preserve (the container's current
-//             size) — so that count is not passed separately.
-//   cur       current buffer base, or null if the container has none yet.
-//   new_cap   requested minimum capacity, in elements.
-//   ops       the element op table: how to relocate the live survivors —
-//             memcpy when `ops.move_construct` is null (trivially relocatable +
-//             default-lifecycle allocator), else move-construct each via the
-//             lifecycle leaf then destroy the source. The function supplies the
-//             allocator instance to those leaves per the f_alloc_ctx convention
-//             (the stateful allocator's address, fetched from ctx; null and an
-//             `A{}` synthesized in the leaf when stateless).
-//   out_cap   written with the ACHIEVED capacity (>= new_cap).
-//   returns   the new buffer base. It MAY equal `cur` (grew in place / SSO /
-//             fixed storage); otherwise the OLD buffer has already been freed by
-//             the function and the caller must NOT free it. The function does not
-//             touch the container's size/iterator state — the caller publishes
-//             the returned base and *out_cap.
-using realloc_op = void* (*)(void* ctx, void* cur, size_t new_cap,
-                             const type_ops& ops, size_t* out_cap);
+//   ctx       the owning container (its `this`), so the function can grow in
+//             place, use an inline/small-buffer, or reach its allocator.
+//   cur       current buffer base, or null if there is none yet.
+//   new_size  requested size in BYTES (the container converts element count *
+//             element size itself; the allocator works in bytes).
+//   returns   the (possibly moved) base, with the first min(old,new) bytes
+//             preserved. MAY equal `cur` (grew in place / SSO); if it moved, the
+//             OLD buffer has already been freed and the caller must NOT free it.
+//             Allocation failure does not return null — it traps (no exceptions).
+//
+// Because it only copies BYTES, a container uses it solely for the trivially-
+// relocatable grow fast path. For non-relocatable elements the container does
+// its own allocate + element-wise relocate (via the element ops) + free; that
+// relocation is the container's concern, not the allocator's.
+using realloc_op = void* (*)(void* ctx, void* cur, size_t new_size);
 
 } // namespace detail
 } // namespace std
