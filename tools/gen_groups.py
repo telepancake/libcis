@@ -101,12 +101,28 @@ def _src_bytes(members):
 
 def load_groups():
     man = json.load(open(MANIFEST))
-    seen, rows = set(), []
+    # exclusions.json: tests removed from the binary CLEAN/NOT-CLEAN verdict
+    # (each with a written justification). Honor it here too — including these
+    # in a group's TU would bring back the compiler limitation the exclusion
+    # is documenting (e.g. recursion_depth.pass.cpp OOMs cc1plus on both
+    # g++-10 and g++-13).
+    try:
+        excl = {k for k, v in json.load(open("tools/exclusions.json")).items()
+                if not k.startswith("_")}
+    except FileNotFoundError:
+        excl = set()
+    seen, rows, skipped = set(), [], 0
     for r in man["transferred"]:
         if r["file"] in seen:
             continue
         seen.add(r["file"])
+        if r["file"] in excl:
+            skipped += 1
+            continue
         rows.append(r)
+    if skipped:
+        print(f"  ({skipped} tests excluded per tools/exclusions.json)",
+              file=sys.stderr)
 
     # Start at depth 2 (feature: utilities/optional, containers/sequences).
     # If a group trips either threshold, deepen JUST THAT GROUP by one level
