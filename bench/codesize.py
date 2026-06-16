@@ -110,16 +110,17 @@ PROJECTS_CFG = {
         "dirs": ["doctest"],
         "defines": [],  # driver sets the no-exceptions config itself
     },
-    # Experiments (not in ORDER; measure explicitly). Drivers use relative
-    # #includes into bench/experiments/, so no submodule dirs are needed.
-    "vector_std": {"dirs": [], "defines": []},
-    "vector_erased": {"dirs": [], "defines": []},
-    "vector_dual": {"dirs": [], "defines": []},
-    "vector_ops": {"dirs": [], "defines": []},
+    # Artificial probes: std::vector instantiated over many element types — the
+    # workload a type-erased container aims to shrink. Self-contained drivers
+    # (just <vector>/<string>), so no submodule dirs are needed.
+    "vec_mixed": {"dirs": [], "defines": []},
+    "vec_many": {"dirs": [], "defines": []},
 }
 
+# Measured by default: the empty-program baseline, the external header-only
+# codebases (real STL users), then the two artificial vector probes.
 ORDER = ["baseline", "fmt", "unordered_dense", "magic_enum",
-         "json", "tomlplusplus", "doctest"]
+         "json", "tomlplusplus", "doctest", "vec_mixed", "vec_many"]
 
 
 def run(cmd, **kw):

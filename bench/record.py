@@ -117,17 +117,61 @@ def append_entry(entry):
         os.close(fd)
 
 
-def print_journal():
+def _load_journal():
     if not os.path.exists(JOURNAL):
+        return []
+    with open(JOURNAL) as fh:
+        return [json.loads(ln) for ln in fh if ln.strip()]
+
+
+def print_journal():
+    rows = _load_journal()
+    if not rows:
         print("(no journal yet)")
         return
-    with open(JOURNAL) as fh:
-        rows = [json.loads(ln) for ln in fh if ln.strip()]
     print(f"{'ts':<22}{'commit':<9}{'D':<2}{'ok':<3}{'desc'}")
     for r in rows:
         print(f"{r['ts']:<22}{r.get('commit', '?'):<9}"
               f"{'*' if r.get('dirty') else ' ':<2}"
               f"{'Y' if r.get('ok') else 'N':<3}{r.get('desc', '')}")
+
+
+def print_diff(ref):
+    """Per-project .text difference between two journal entries.
+
+    The 'new' side is the most recent entry; the 'old' side is the entry whose
+    commit starts with REF (or whose desc contains REF), or — with no REF — the
+    immediately preceding entry. Usage: record before a change, record after,
+    then --diff to read the size impact across every project at once.
+    """
+    rows = _load_journal()
+    if len(rows) < 2:
+        print("(need at least two journal entries to diff)")
+        return
+    new = rows[-1]
+    if ref:
+        cand = [r for r in rows[:-1]
+                if r.get("commit", "").startswith(ref) or ref in r.get("desc", "")]
+        if not cand:
+            print(f"(no earlier journal entry matching '{ref}')")
+            return
+        old = cand[-1]
+    else:
+        old = rows[-2]
+    print(f"size diff (.text):  {old.get('commit', '?')} -> {new.get('commit', '?')}")
+    print(f"  old: {old.get('desc', '')}")
+    print(f"  new: {new.get('desc', '')}")
+    print(f"{'project':<18}{'old':>10}{'new':>10}{'delta':>10}")
+    print("-" * 48)
+    names = sorted(set(old.get("projects", {})) | set(new.get("projects", {})))
+    for n in names:
+        o, m = old["projects"].get(n, {}), new["projects"].get(n, {})
+        ot = o.get("text") if o.get("ok") else None
+        mt = m.get("text") if m.get("ok") else None
+        os_ = str(ot) if ot is not None else "FAIL"
+        ms = str(mt) if mt is not None else "FAIL"
+        delta = f"{mt - ot:+d}" if (ot is not None and mt is not None) else ""
+        print(f"{n:<18}{os_:>10}{ms:>10}{delta:>10}")
 
 
 def main():
@@ -138,10 +182,18 @@ def main():
     ap.add_argument("projects", nargs="*", help="subset (default: all)")
     ap.add_argument("--print", action="store_true", dest="print_only",
                     help="print the journal index and exit")
+    ap.add_argument("--diff", nargs="?", const="", default=None, metavar="REF",
+                    help="print per-project .text deltas between the latest journal "
+                         "entry and REF (a commit prefix or desc substring; default: "
+                         "the previous entry), then exit")
     args = ap.parse_args()
 
     if args.print_only:
         print_journal()
+        return 0
+
+    if args.diff is not None:
+        print_diff(args.diff)
         return 0
 
     if not args.description:
