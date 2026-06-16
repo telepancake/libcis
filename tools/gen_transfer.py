@@ -25,6 +25,7 @@ green recs of unmodified files.
 Usage: tools/gen_transfer.py [SUBTREE ...]   (default: every std/ subtree)
 """
 import os
+import re
 import shutil
 import sys
 
@@ -75,9 +76,40 @@ DNO_FIX = ('  { const volatile void* __cis_p = __builtin_addressof(value);\n'
 CISO646_BAD = '__has_include("<version>")'
 CISO646_FIX = '__has_include(<version>)'
 
+# count_new.h defines 16 file-scope `operator new`/`operator delete` overloads,
+# a `MemCounter& globalMemCounter = ...` global, and a `MemCounter::disable_checking`
+# static-member definition -- all with plain external linkage. Per-test ELFs
+# hide this; a single-ELF link of the whole suite hits ODR. The fix is
+# linkage-only: turn every file-scope op-new/op-delete defn into an inline
+# definition (one `inline` token prefix), make globalMemCounter a C++17 inline
+# variable, and inline the static-member defn. getGlobalMemCounter() is already
+# inline upstream so its function-local static is naturally shared across TUs.
+CNEW_OPNEW_RE = re.compile(
+    r'^(void\*? operator (?:new|delete)(?:\[\])?\([^)]*\)[^{;]*\{)',
+    re.MULTILINE)
+CNEW_DISABLE_RE = re.compile(
+    r'^(\s*)(?!inline )(const bool MemCounter::disable_checking)',
+    re.MULTILINE)
+CNEW_GLOBAL_OLD = "MemCounter &globalMemCounter = *getGlobalMemCounter();"
+CNEW_GLOBAL_NEW = "inline MemCounter &globalMemCounter = *getGlobalMemCounter();"
+
+
+def _patch_count_new(path):
+    """Prefix every file-scope op-new/op-delete defn with `inline`, inline the
+    `MemCounter::disable_checking` static-member defn, and make
+    globalMemCounter an inline variable. Idempotent."""
+    cur = open(path).read()
+    new = CNEW_OPNEW_RE.sub(lambda m: "inline " + m.group(1), cur)
+    new = CNEW_DISABLE_RE.sub(r'\1inline \2', new)
+    if CNEW_GLOBAL_NEW not in new:
+        new = new.replace(CNEW_GLOBAL_OLD, CNEW_GLOBAL_NEW)
+    if new != cur:
+        open(path, "w").write(new)
+
 
 def patch_support():
-    """Idempotently append the compat block + array-safe DoNotOptimize fix."""
+    """Idempotently append the compat block + array-safe DoNotOptimize fix +
+    linkage fixes to count_new.h (inline op-new/op-delete + inline global)."""
     tm = os.path.join(T.DST_SUPPORT, "test_macros.h")
     if os.path.exists(tm):
         cur = open(tm).read()
@@ -86,6 +118,9 @@ def patch_support():
             open(tm, "w").write(cur)
         if "libcis compatibility" not in cur:
             open(tm, "a").write(SUPPORT_COMPAT)
+    cn = os.path.join(T.DST_SUPPORT, "count_new.h")
+    if os.path.exists(cn):
+        _patch_count_new(cn)
 
 
 def copy_support(subtrees):
