@@ -184,34 +184,41 @@ private:
     }
 
     // Reallocate to at least new_cap, move all elements, return old begin ptr
-    // This is the "grow" path used by insert/emplace/push_back
-    // Storage axis bound to this vector's allocator (ctx == this). reallocate is
-    // offered only when the storage is malloc-backed (std::allocator) and the
+    // This is the "grow" path used by insert/emplace/push_back. The storage
+    // callbacks are bound to the CONTAINER (ctx == this): they reach the
+    // allocator through it, and get_alloc yields the allocator instance for the
+    // lifecycle leaves only when those customize construct/destroy. reallocate
+    // is offered only when the storage is malloc-backed (std::allocator) and the
     // element isn't over-aligned; otherwise the core uses allocate+relocate+free.
     static void* st_allocate(void* ctx, size_type n, size_type* out_cap) {
-        allocator_type& a = *static_cast<allocator_type*>(ctx);
+        allocator_type& a = static_cast<vector*>(ctx)->alloc_;
         auto res = alloc_traits::allocate_at_least(a, n);
         *out_cap = res.count;
         return std::to_address(res.ptr);
     }
     static void st_deallocate(void* ctx, void* p, size_type cap) {
-        allocator_type& a = *static_cast<allocator_type*>(ctx);
+        allocator_type& a = static_cast<vector*>(ctx)->alloc_;
         alloc_traits::deallocate(a,
             std::pointer_traits<pointer>::pointer_to(*static_cast<value_type*>(p)), cap);
     }
     static void* st_reallocate(void*, void* p, size_type n) {
         return ::realloc(p, n * sizeof(value_type));
     }
+    static void* st_get_alloc(void* ctx) {
+        return static_cast<void*>(std::addressof(static_cast<vector*>(ctx)->alloc_));
+    }
     static const detail::storage_ops& storage() {
         static constexpr detail::storage_ops s{
             &st_allocate, &st_deallocate,
             (is_same_v<allocator_type, allocator<value_type>> &&
-             alignof(value_type) <= alignof(max_align_t)) ? &st_reallocate : nullptr};
+             alignof(value_type) <= alignof(max_align_t)) ? &st_reallocate : nullptr,
+            &st_get_alloc};
         return s;
     }
 
     // The one grow path: forward element ops + storage ops to the shared core.
-    // ctx is the allocator (used by both the element leaves and the storage).
+    // ctx is the container (this); the core derives the allocator from it only
+    // when the element leaves customize construct/destroy.
     constexpr void reallocate_grow(size_type new_cap) {
         if (new_cap > max_size())
             throw_length_error();
@@ -220,7 +227,7 @@ private:
         void* p = detail::core_grow(
             begin_ ? static_cast<void*>(std::to_address(begin_)) : nullptr,
             n, capacity(), new_cap, detail::ops_for<value_type, allocator_type>,
-            storage(), static_cast<void*>(std::addressof(alloc_)), &cap);
+            storage(), static_cast<void*>(this), &cap);
         begin_ = std::pointer_traits<pointer>::pointer_to(*static_cast<value_type*>(p));
         end_   = begin_ + n;
         cap_   = begin_ + cap;
