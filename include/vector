@@ -13,10 +13,6 @@
 #include <algorithm>
 #include <utility>
 #include <compare>
-#include <cstdlib>
-#include <bits/relocatable.h>
-#include <bits/vector_core.h>
-#include <bits/type_ops.h>
 #include <functional>
 #include <initializer_list>
 #include <limits>
@@ -150,47 +146,23 @@ private:
         }
     }
 
-    // The element ops table for (value_type, allocator_type), and the allocator
-    // instance the lifecycle leaves need — only materialized when the allocator
-    // is stateful (f_alloc_ctx), matching the cores' lazy ctx discipline.
-    static constexpr const detail::type_ops& ops() {
-        return detail::ops_for<value_type, allocator_type>;
-    }
-    void* alloc_ctx() {
-        return (ops().flags & detail::f_alloc_ctx)
-                   ? static_cast<void*>(std::addressof(alloc_)) : nullptr;
-    }
-
-    // Construct n default elements at end_ — forwards to the shared range core
-    // (default_construct leaf; memset when trivial + default-lifecycle). The
-    // core is a runtime-only extern (byte work via function pointers), so in a
-    // constant evaluation we run the equivalent typed loop — this keeps the
-    // constexpr tests green without reintroducing constexpr to the core.
+    // Construct n default elements at end_
     constexpr void construct_at_end(size_type n) {
-        if (is_constant_evaluated()) {
-            for (size_type i = 0; i < n; ++i) { construct_one(end_); ++end_; }
-            return;
+        for (size_type i = 0; i < n; ++i) {
+            construct_one(end_);
+            ++end_;
         }
-        detail::core_default_fill(std::to_address(end_), n, ops(), alloc_ctx());
-        end_ += n;
     }
 
-    // Construct n copies of x at end_ — forwards to the shared fill core
-    // (copy_construct leaf; per-element memcpy when trivially copyable).
+    // Construct n copies of x at end_
     constexpr void construct_at_end(size_type n, const_reference x) {
-        if (is_constant_evaluated()) {
-            for (size_type i = 0; i < n; ++i) { construct_one(end_, x); ++end_; }
-            return;
+        for (size_type i = 0; i < n; ++i) {
+            construct_one(end_, x);
+            ++end_;
         }
-        detail::core_fill(std::to_address(end_), n,
-                          static_cast<const void*>(std::addressof(x)), ops(), alloc_ctx());
-        end_ += n;
     }
 
-    // Construct from iterator range [first, last) of known size n at end_.
-    // Stays templated: the per-element read *first is inherently iterator-typed,
-    // so there is no non-template core to forward to (the work is the iterator
-    // traversal, not an element-storage loop).
+    // Construct from iterator range [first, last) of known size n at end_
     template<class InputIter, class Sentinel>
     constexpr void construct_at_end(InputIter first, Sentinel last, size_type n) {
         for (; first != last; ++first) {
@@ -200,138 +172,77 @@ private:
         (void)n;
     }
 
-    // Destroy [new_last, end_) — forwards to the shared destroy-range core
-    // (destroy leaf; nothing when trivially destructible + default-lifecycle).
-    // Typed loop in constant evaluation (the core is a runtime-only extern).
     constexpr void destruct_at_end(pointer new_last) noexcept {
-        if (is_constant_evaluated()) {
-            while (end_ != new_last) {
-                --end_;
-                alloc_traits::destroy(alloc_, std::to_address(end_));
-            }
-            return;
+        while (end_ != new_last) {
+            --end_;
+            alloc_traits::destroy(alloc_, std::to_address(end_));
         }
-        size_type n = static_cast<size_type>(end_ - new_last);
-        detail::core_destroy_range(std::to_address(new_last), n, ops(), alloc_ctx());
-        end_ = new_last;
     }
 
     // Reallocate to at least new_cap, move all elements, return old begin ptr
-    // This is the "grow" path used by insert/emplace/push_back. The storage
-    // callbacks are bound to the CONTAINER (ctx == this): they reach the
-    // allocator through it, and get_alloc yields the allocator instance for the
-    // lifecycle leaves only when those customize construct/destroy. reallocate
-    // is offered only when the storage is malloc-backed (std::allocator) and the
-    // element isn't over-aligned; otherwise the core uses allocate+relocate+free.
-    // Signatures use std::size_t to match detail::storage_ops exactly (the core's
-    // ABI is size_t-based); the allocator's own size_type (which may be narrower,
-    // e.g. test_allocator's unsigned) is converted at the boundary.
-    static void* st_allocate(void* ctx, std::size_t n, std::size_t* out_cap) {
-        allocator_type& a = static_cast<vector*>(ctx)->alloc_;
-        auto res = alloc_traits::allocate_at_least(a, static_cast<size_type>(n));
-        *out_cap = static_cast<std::size_t>(res.count);
-        return std::to_address(res.ptr);
-    }
-    static void st_deallocate(void* ctx, void* p, std::size_t cap) {
-        allocator_type& a = static_cast<vector*>(ctx)->alloc_;
-        alloc_traits::deallocate(a,
-            std::pointer_traits<pointer>::pointer_to(*static_cast<value_type*>(p)),
-            static_cast<size_type>(cap));
-    }
-    static void* st_reallocate(void*, void* p, std::size_t n) {
-        return ::realloc(p, n * sizeof(value_type));
-    }
-    static void* st_get_alloc(void* ctx) {
-        return static_cast<void*>(std::addressof(static_cast<vector*>(ctx)->alloc_));
-    }
-    static const detail::storage_ops& storage() {
-        static constexpr detail::storage_ops s{
-            &st_allocate, &st_deallocate,
-            (is_same_v<allocator_type, allocator<value_type>> &&
-             alignof(value_type) <= alignof(max_align_t)) ? &st_reallocate : nullptr,
-            &st_get_alloc};
-        return s;
-    }
-
-    // The one grow path: forward element ops + storage ops to the shared core.
-    // ctx is the container (this); the core derives the allocator from it only
-    // when the element leaves customize construct/destroy.
+    // This is the "grow" path used by insert/emplace/push_back
     constexpr void reallocate_grow(size_type new_cap) {
+        // Allocate new buffer
         if (new_cap > max_size())
             throw_length_error();
-        const size_type n = size();
-        std::size_t cap;   // core writes through size_t*; narrow allocator size_type would alias
-        void* p = detail::core_grow(
-            begin_ ? static_cast<void*>(std::to_address(begin_)) : nullptr,
-            n, capacity(), new_cap, detail::ops_for<value_type, allocator_type>,
-            storage(), static_cast<void*>(this), &cap);
-        begin_ = std::pointer_traits<pointer>::pointer_to(*static_cast<value_type*>(p));
-        end_   = begin_ + n;
-        cap_   = begin_ + static_cast<size_type>(cap);
+        auto res = alloc_traits::allocate_at_least(alloc_, new_cap);
+        pointer new_begin = res.ptr;
+        pointer new_end   = new_begin;
+        pointer new_cap_ptr = new_begin + res.count;
+
+        // Move-construct all elements into new buffer
+        pointer src = begin_;
+        while (src != end_) {
+            construct_one(new_end, std::move(*src));
+            ++new_end;
+            ++src;
+        }
+        // Destroy old elements and free old buffer
+        while (end_ != begin_) {
+            --end_;
+            alloc_traits::destroy(alloc_, std::to_address(end_));
+        }
+        if (begin_ != nullptr)
+            alloc_traits::deallocate(alloc_, begin_, cap_ - begin_);
+
+        begin_ = new_begin;
+        end_   = new_end;
+        cap_   = new_cap_ptr;
     }
 
-    // Grow-with-gap, two-phase so the caller can preserve construction order and
-    // aliasing (it fills the gap from possibly-aliasing args BEFORE the old buffer
-    // is moved/torn down).  Phase 1 (gap_grow_alloc): allocate the new buffer and
-    // hand back its base/cap and the gap pointer; the OLD buffer is untouched.
-    // The caller then constructs the new element(s) into the gap.  Phase 2
-    // (gap_grow_finish): MOVE-CONSTRUCT survivors around the gap via core_grow_gap,
-    // then core_destroy_free the old buffer, then publish begin_/end_/cap_.
-    struct gap_grow_state {
-        pointer   new_base;
-        size_type new_cap;
-        pointer   old_base;
-        size_type old_cap;
-        size_type old_size;
-        size_type pos;
-        size_type gap;
-    };
-
-    constexpr gap_grow_state gap_grow_alloc(pointer p, size_type gap) {
+    // Grow and insert a gap of 'gap' slots at p, returning pointer to the gap
+    // start in the new buffer.  end_ is updated to include moved elements but
+    // NOT the gap slots (callers fill the gap and bump end_ themselves).
+    constexpr pointer reallocate_and_insert_gap(pointer p, size_type gap) {
         size_type new_cap = recommend(size() + gap);
         if (new_cap > max_size())
             throw_length_error();
         auto res = alloc_traits::allocate_at_least(alloc_, new_cap);
-        gap_grow_state g;
-        g.new_base = res.ptr;
-        g.new_cap  = res.count;
-        g.old_base = begin_;
-        g.old_cap  = capacity();
-        g.old_size = size();
-        g.pos      = static_cast<size_type>(p - begin_);
-        g.gap      = gap;
-        return g;
-    }
+        pointer nb  = res.ptr;
+        pointer ncp = nb + res.count;
 
-    // Returns the gap start in the new buffer (the caller fills [ret, ret+gap)).
-    static constexpr pointer gap_grow_slot(const gap_grow_state& g) {
-        return g.new_base + g.pos;
-    }
-
-    constexpr void gap_grow_finish(const gap_grow_state& g) {
-        if (is_constant_evaluated()) {
-            // Typed equivalent of core_grow_gap + core_destroy_free for constant
-            // evaluation (the cores are runtime-only externs). The gap slots are
-            // already constructed by the caller; move survivors around them.
-            for (size_type i = 0; i < g.pos; ++i)
-                construct_one(g.new_base + i, std::move(g.old_base[i]));
-            for (size_type i = g.pos; i < g.old_size; ++i)
-                construct_one(g.new_base + i + g.gap, std::move(g.old_base[i]));
-            for (size_type i = 0; i < g.old_size; ++i)
-                alloc_traits::destroy(alloc_, std::to_address(g.old_base + i));
-            if (g.old_base != nullptr)
-                alloc_traits::deallocate(alloc_, g.old_base, g.old_cap);
-        } else {
-            detail::core_grow_gap(std::to_address(g.new_base),
-                                  g.old_base ? std::to_address(g.old_base) : nullptr,
-                                  g.old_size, g.pos, g.gap, ops(), alloc_ctx());
-            detail::core_destroy_free(
-                g.old_base ? static_cast<void*>(std::to_address(g.old_base)) : nullptr,
-                g.old_size, g.old_cap, ops(), storage(), static_cast<void*>(this));
+        // Move [begin_, p) into front of new buffer
+        pointer ne = nb;
+        for (pointer s = begin_; s != p; ++s, ++ne) {
+            construct_one(ne, std::move(*s));
         }
-        begin_ = g.new_base;
-        end_   = g.new_base + (g.old_size + g.gap);
-        cap_   = g.new_base + g.new_cap;
+        pointer ret = ne;
+
+        // Move [p, end_) to after the gap
+        pointer ne2 = ne + gap;
+        for (pointer s = p; s != end_; ++s, ++ne2) {
+            construct_one(ne2, std::move(*s));
+        }
+        // Destroy old elements
+        for (pointer s = begin_; s != end_; ++s)
+            alloc_traits::destroy(alloc_, std::to_address(s));
+        if (begin_ != nullptr)
+            alloc_traits::deallocate(alloc_, begin_, cap_ - begin_);
+        begin_ = nb;
+        // end_ points past moved tail (gap slots are NOT yet constructed)
+        end_   = ne2;
+        cap_   = ncp;
+        return ret;
     }
 
     // Move [from_s, from_e) one position forward to [from_s+1, from_e+1)
@@ -668,15 +579,27 @@ public:
 
     constexpr void shrink_to_fit() noexcept {
         if (capacity() > size()) {
+            // Best-effort: if allocation fails we silently keep old buffer
             size_type sz = size();
             if (sz == 0) {
                 vdeallocate();
                 return;
             }
-            // Relocate into an exact-size buffer: same allocate+relocate+free
-            // shape as growth, so reuse the grow forwarder with new_cap == size()
-            // (allocate_at_least / realloc both yield capacity == size() here).
-            reallocate_grow(sz);
+            pointer nb = nullptr;
+            size_type new_cap = sz;
+            // Use a raw try-style approach — no exceptions, just check
+            nb = alloc_traits::allocate(alloc_, new_cap);
+            pointer ne = nb;
+            for (pointer s = begin_; s != end_; ++s, ++ne) {
+                construct_one(ne, std::move(*s));
+            }
+            // destroy old
+            for (pointer s = begin_; s != end_; ++s)
+                alloc_traits::destroy(alloc_, std::to_address(s));
+            alloc_traits::deallocate(alloc_, begin_, capacity());
+            begin_ = nb;
+            end_   = ne;
+            cap_   = nb + new_cap;
         }
     }
 
@@ -719,14 +642,32 @@ public:
             construct_one(end_, std::forward<Args>(args)...);
             ++end_;
         } else {
-            // Grow-at-end via the shared grow-with-gap core (gap of 1 at the end).
-            // Allocate the new buffer, construct the new element into the gap from
-            // args (the OLD buffer is still fully alive — args may alias it, e.g.
-            // v.push_back(v[0])), then move the survivors around it and tear the
-            // old buffer down.
-            gap_grow_state g = gap_grow_alloc(end_, 1);
-            construct_one(gap_grow_slot(g), std::forward<Args>(args)...);
-            gap_grow_finish(g);
+            // grow path: allocate new buffer, move existing elements, then
+            // construct the new element directly from args (which may alias
+            // into old buffer, still alive at construction time).
+            // Ported from libc++ __vector/vector.h __emplace_back_slow_path:
+            // construct in new buffer BEFORE deallocating old buffer.
+            size_type new_cap_val = recommend(size() + 1);
+            if (new_cap_val > max_size())
+                throw_length_error();
+            auto res = alloc_traits::allocate_at_least(alloc_, new_cap_val);
+            pointer new_begin   = res.ptr;
+            pointer new_end     = new_begin;
+            pointer new_cap_ptr = new_begin + res.count;
+            // Move existing elements
+            for (pointer s = begin_; s != end_; ++s, ++new_end)
+                construct_one(new_end, std::move(*s));
+            // Construct new element (args may reference old buffer — still alive)
+            construct_one(new_end, std::forward<Args>(args)...);
+            ++new_end;
+            // Destroy and free old buffer
+            for (pointer s = begin_; s != end_; ++s)
+                alloc_traits::destroy(alloc_, std::to_address(s));
+            if (begin_ != nullptr)
+                alloc_traits::deallocate(alloc_, begin_, cap_ - begin_);
+            begin_ = new_begin;
+            end_   = new_end;
+            cap_   = new_cap_ptr;
         }
         return *(end_ - 1);
     }
@@ -745,15 +686,6 @@ public:
             if (p == end_) {
                 construct_one(end_, std::forward<Args>(args)...);
                 ++end_;
-            } else if constexpr (detail::is_trivially_relocatable_v<value_type>) {
-                // relocatable: memmove the tail up to open a raw gap, then place
-                // the element into it.  Capture args first (it may alias the
-                // buffer, which the shift overwrites).
-                value_type tmp(std::forward<Args>(args)...);
-                detail::vec_open_gap(std::to_address(begin_), size(),
-                                     static_cast<size_type>(off), 1, sizeof(value_type));
-                construct_one(begin_ + off, std::move(tmp));
-                ++end_;
             } else {
                 // construct a temp to avoid aliasing, then move-insert
                 value_type tmp(std::forward<Args>(args)...);
@@ -761,13 +693,35 @@ public:
                 *p = std::move(tmp);
             }
         } else {
-            // Grow-with-gap via the shared core. Construct the new element into the
-            // gap from args while the old buffer is still alive (args may reference
-            // it, e.g. v.emplace(v.begin(), std::move(v[1]))); then the core moves
-            // the survivors around the gap and the old buffer is torn down.
-            gap_grow_state g = gap_grow_alloc(p, 1);
-            construct_one(gap_grow_slot(g), std::forward<Args>(args)...);
-            gap_grow_finish(g);
+            // Grow path: must construct new element BEFORE deallocating old buffer,
+            // because args may reference elements in the old buffer
+            // (e.g. v.emplace(v.begin(), std::move(v[1]))).
+            // Ported from libc++ __vector/vector.h __emplace_back_slow_path pattern.
+            size_type new_cap_val = recommend(size() + 1);
+            if (new_cap_val > max_size())
+                throw_length_error();
+            auto res = alloc_traits::allocate_at_least(alloc_, new_cap_val);
+            pointer nb  = res.ptr;
+            pointer ncp = nb + res.count;
+            // Move [begin_, p) into new buffer
+            pointer ne = nb;
+            for (pointer s = begin_; s != p; ++s, ++ne)
+                construct_one(ne, std::move(*s));
+            pointer np = ne;  // insertion slot in new buffer
+            // Move [p, end_) into new buffer, leaving gap at np
+            pointer ne2 = ne + 1;
+            for (pointer s = p; s != end_; ++s, ++ne2)
+                construct_one(ne2, std::move(*s));
+            // Construct new element (args may still reference old buffer — still alive)
+            construct_one(np, std::forward<Args>(args)...);
+            // Destroy old elements and free old buffer
+            for (pointer s = begin_; s != end_; ++s)
+                alloc_traits::destroy(alloc_, std::to_address(s));
+            if (begin_ != nullptr)
+                alloc_traits::deallocate(alloc_, begin_, cap_ - begin_);
+            begin_ = nb;
+            end_   = ne2;
+            cap_   = ncp;
         }
         return begin_ + off;
     }
@@ -798,19 +752,11 @@ public:
                     std::fill_n(p, n, xr);
                 }
             } else {
-                // Grow-with-gap: fill the gap with copies of x BEFORE the old
-                // buffer is moved/freed (x may alias an element of *this, which
-                // gap_grow keeps alive until gap_grow_finish).
-                gap_grow_state g = gap_grow_alloc(p, n);
-                pointer slot = gap_grow_slot(g);
-                if (is_constant_evaluated()) {
-                    for (size_type i = 0; i < n; ++i) construct_one(slot + i, x);
-                } else {
-                    detail::core_fill(std::to_address(slot), n,
-                                      static_cast<const void*>(std::addressof(x)),
-                                      ops(), alloc_ctx());
-                }
-                gap_grow_finish(g);
+                pointer np = reallocate_and_insert_gap(p, n);
+                // np points to the gap start in the new buffer
+                for (size_type i = 0; i < n; ++i)
+                    construct_one(np + i, x);
+                // end_ already accounts for gap size from reallocate_and_insert_gap
             }
         }
         return begin_ + off;
@@ -846,14 +792,10 @@ public:
                         *cur = *first;
                 }
             } else {
-                // Grow-with-gap. The gap is filled from the iterator range, so the
-                // fill itself stays templated (the read *first is iterator-typed);
-                // survivor relocation + teardown go through the shared core.
-                gap_grow_state g = gap_grow_alloc(p, static_cast<size_type>(n));
-                pointer np = gap_grow_slot(g);
-                for (size_type i = 0; i < static_cast<size_type>(n); ++i, ++first)
+                pointer np = reallocate_and_insert_gap(p, static_cast<size_type>(n));
+                for (size_type i = 0; i < static_cast<size_type>(n); ++i, ++first) {
                     construct_one(np + i, *first);
-                gap_grow_finish(g);
+                }
             }
         }
         return begin_ + off;
@@ -907,36 +849,17 @@ public:
     constexpr iterator erase(const_iterator position) {
         difference_type off = position - cbegin();
         pointer p = begin_ + off;
-        if constexpr (detail::is_trivially_relocatable_v<value_type>) {
-            // destroy the erased element, then memmove the tail down one slot
-            alloc_traits::destroy(alloc_, std::to_address(p));
-            detail::vec_close_gap(std::to_address(begin_), size(),
-                                  static_cast<size_type>(off), 1, sizeof(value_type));
-            --end_;
-        } else {
-            destruct_at_end(std::move(p + 1, end_, p));
-        }
-        return begin_ + off;
+        destruct_at_end(std::move(p + 1, end_, p));
+        return p;
     }
 
     // erase(first, last)
     constexpr iterator erase(const_iterator first, const_iterator last) {
-        difference_type off = first - cbegin();
-        difference_type cnt = last - first;
-        pointer p = begin_ + off;
-        if (cnt > 0) {
-            if constexpr (detail::is_trivially_relocatable_v<value_type>) {
-                for (pointer s = p; s != p + cnt; ++s)
-                    alloc_traits::destroy(alloc_, std::to_address(s));
-                detail::vec_close_gap(std::to_address(begin_), size(),
-                                      static_cast<size_type>(off),
-                                      static_cast<size_type>(cnt), sizeof(value_type));
-                end_ -= cnt;
-            } else {
-                destruct_at_end(std::move(p + cnt, end_, p));
-            }
+        pointer p = begin_ + (first - cbegin());
+        if (first != last) {
+            destruct_at_end(std::move(p + (last - first), end_, p));
         }
-        return begin_ + off;
+        return p;
     }
 
     constexpr void clear() noexcept {
