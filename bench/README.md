@@ -145,11 +145,10 @@ once, allocator-aware, and **independent of any particular container**:
   - `cross_ops` — ops genuinely between two types `T` and `U` (construct/assign a
     `T` from a `U`, compare/equal across, `cast`), embedding the two single-type
     tables so a two-type algorithm still receives one pointer. `cross_for<T, U>`.
-  - `realloc_op` — the storage axis: a single realloc-style function type bound to
-    the *container* via an opaque ctx that resizes a malloc-backed buffer and
-    preserves its bytes (`(ctx, cur, &size) -> new_base`, size in/out bytes,
-    possibly in place / SSO). Raw storage only — element relocation and capacity
-    are the container's concern, not the allocator's. Convention documented at the type.
+  - `realloc_op` — the storage axis: a realloc-style function type bound to a
+    container via an opaque ctx that resizes a buffer and preserves its bytes
+    (`(ctx, cur, &size) -> new_base`, `size` in/out bytes). It is given no
+    `type_ops` and does not touch elements. Convention documented at the type.
 - **`bits/relocatable.h`** — `is_trivially_relocatable_v<T>` (opt-in for the
   library's own movable-by-bytes types), which gates the memcpy/realloc fast paths.
 
