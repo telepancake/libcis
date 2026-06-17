@@ -727,19 +727,23 @@ public:
     // aliasing-safe. Self-aliasing emplace_back (v.push_back(v[0])) thus
     // works without any tmp-capture dance — placement-new always happens
     // while the source buffer is untouched.
-    void ensure_free_(size_type n = 1) {
-        if (capacity() - size() < n)
-            reallocate_grow(recommend(size() + n));
+    // ensure_free_(n) guarantees at least n free slots at end and returns the
+    // address of the first free slot. The caller can write *p = x directly
+    // without re-reading the (potentially expensive) size()/end_ptr_() chain.
+    pointer ensure_free_(size_type n = 1) {
+        size_type sz = size();
+        if (capacity() - sz < n)
+            reallocate_grow(recommend(sz + n));
+        return this->begin_ + sz;
     }
 
     template<class... Args>
     constexpr reference emplace_back(Args&&... args) {
-        ensure_free_();         // no-op except for empty vector
-        size_type sz = size();
-        construct_one(this->begin_ + sz, std::forward<Args>(args)...);
-        set_size_elems_(sz + 1);
-        ensure_free_();         // restore invariant (args dead, no aliasing)
-        return *(this->begin_ + sz);
+        pointer p = ensure_free_();    // no-op except for empty vector
+        construct_one(p, std::forward<Args>(args)...);
+        set_size_elems_(static_cast<size_type>(p + 1 - this->begin_));
+        ensure_free_();                // restore invariant (args dead, no aliasing)
+        return *p;
     }
 
     constexpr void pop_back() noexcept {
@@ -756,9 +760,11 @@ public:
     constexpr iterator emplace(const_iterator position, Args&&... args) {
         difference_type off = position - cbegin();
         value_type tmp(std::forward<Args>(args)...);
-        emplace_back(std::move(tmp));
-        pointer ep = end_ptr_();
-        rotate_(this->begin_ + off, ep - 1, ep);
+        pointer p = ensure_free_();
+        construct_one(p, std::move(tmp));
+        set_size_elems_(static_cast<size_type>(p + 1 - this->begin_));
+        rotate_(this->begin_ + off, p, p + 1);
+        ensure_free_();
         return this->begin_ + off;
     }
 
@@ -777,15 +783,12 @@ public:
         difference_type off = position - cbegin();
         if (n == 0) return this->begin_ + off;
         value_type x_copy = x;
-        if (capacity() - size() < n)
-            reallocate_grow(recommend(size() + n));
-        size_type sz = size();
+        pointer p = ensure_free_(n);
         detail::construct_copy_one_n(ops_table_(), el_ctx_(),
-                                     std::to_address(this->begin_ + sz),
+                                     std::to_address(p),
                                      std::to_address(&x_copy), n);
-        set_size_elems_(sz + n);
-        pointer ep = end_ptr_();
-        rotate_(this->begin_ + off, ep - n, ep);
+        set_size_elems_(static_cast<size_type>(p + n - this->begin_));
+        rotate_(this->begin_ + off, p, p + n);
         return this->begin_ + off;
     }
 
@@ -799,16 +802,13 @@ public:
         difference_type off = position - cbegin();
         size_type n = static_cast<size_type>(std::distance(first, last));
         if (n == 0) return this->begin_ + off;
-        if (capacity() - size() < n)
-            reallocate_grow(recommend(size() + n));
-        size_type sz = size();
+        pointer p = ensure_free_(n);
         size_type i = 0;
         for (; first != last; ++first, ++i) {
-            construct_one(this->begin_ + sz + i, *first);
+            construct_one(p + i, *first);
         }
-        set_size_elems_(sz + i);
-        pointer ep = end_ptr_();
-        rotate_(this->begin_ + off, ep - n, ep);
+        set_size_elems_(static_cast<size_type>(p + i - this->begin_));
+        rotate_(this->begin_ + off, p, p + n);
         return this->begin_ + off;
     }
 

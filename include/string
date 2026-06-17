@@ -289,11 +289,13 @@ private:
         traits_type::assign(*std::to_address(end_ptr_()), value_type());
     }
 
-    // Make sure capacity() - size() >= n. Internally adds 1 for the spare slot.
-    void ensure_free_(size_type n = 1) {
-        // capacity() excludes the spare slot. Use a + 1 spare slot threshold.
-        if (capacity() - size() < n)
-            reallocate_grow(recommend(size() + n));
+    // Make sure capacity() - size() >= n. Returns the address of the first
+    // free slot so callers can write without re-reading size()/end_ptr_().
+    pointer ensure_free_(size_type n = 1) {
+        size_type sz = size();
+        if (capacity() - sz < n)
+            reallocate_grow(recommend(sz + n));
+        return this->begin_ + sz;
     }
 
     constexpr void copy_assign_alloc(const basic_string& c) {
@@ -733,12 +735,10 @@ public:
     // =========================================================================
 
     constexpr void push_back(value_type c) {
-        ensure_free_();
-        value_type* p = std::to_address(this->begin_);
-        size_type sz = size();
-        traits_type::assign(p[sz], c);
-        set_size_elems_(sz + 1);
-        traits_type::assign(*std::to_address(end_ptr_()), value_type());
+        pointer p = ensure_free_();
+        traits_type::assign(*std::to_address(p), c);
+        set_size_elems_(static_cast<size_type>(p + 1 - this->begin_));
+        traits_type::assign(*std::to_address(p + 1), value_type());
     }
 
     constexpr void pop_back() noexcept {
