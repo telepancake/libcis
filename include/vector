@@ -760,11 +760,9 @@ public:
     constexpr iterator emplace(const_iterator position, Args&&... args) {
         difference_type off = position - cbegin();
         value_type tmp(std::forward<Args>(args)...);
-        pointer p = ensure_free_();
-        construct_one(p, std::move(tmp));
-        set_size_elems_(static_cast<size_type>(p + 1 - this->begin_));
-        rotate_(this->begin_ + off, p, p + 1);
-        ensure_free_();
+        emplace_back(std::move(tmp));   // restores spare-slot invariant
+        pointer ep = end_ptr_();
+        rotate_(this->begin_ + off, ep - 1, ep);
         return this->begin_ + off;
     }
 
