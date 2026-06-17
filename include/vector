@@ -244,9 +244,9 @@ private:
 
     void vdeallocate() noexcept {
         if (begin_ != nullptr) {
-            detail::vec_destroy_range(ops_table_(), el_ctx_(),
-                                      std::to_address(begin_),
-                                      std::to_address(end_));
+            detail::destroy_range(ops_table_(), el_ctx_(),
+                                  std::to_address(begin_),
+                                  std::to_address(end_));
             alloc_traits::deallocate(alloc_, begin_, capacity());
             begin_ = end_ = cap_ = nullptr;
         }
@@ -280,63 +280,35 @@ private:
     }
 
     void destruct_at_end(pointer new_last) noexcept {
-        detail::vec_destroy_range(ops_table_(), el_ctx_(),
-                                  std::to_address(new_last),
-                                  std::to_address(end_));
+        detail::destroy_range(ops_table_(), el_ctx_(),
+                              std::to_address(new_last),
+                              std::to_address(end_));
         end_ = new_last;
     }
 
     // Reallocate to at least new_cap, move all elements; updates begin_/end_/cap_.
+    // Used by reserve / resize-grow / shrink_to_fit / emplace_back's grow path.
     void reallocate_grow(size_type new_cap) {
         if (new_cap > max_size())
             throw_length_error();
-        detail::vec_buf buf{std::to_address(begin_),
-                            std::to_address(end_),
-                            std::to_address(cap_)};
-        detail::vec_grow(ops_table_(), &realloc_shim_, this, el_ctx_(),
-                         &buf, new_cap * sizeof(value_type));
+        detail::byte_buf buf{std::to_address(begin_),
+                             std::to_address(end_),
+                             std::to_address(cap_)};
+        detail::grow(ops_table_(), &realloc_shim_, this, el_ctx_(),
+                     &buf, new_cap * sizeof(value_type));
         begin_ = to_pointer_(buf.begin);
         end_   = to_pointer_(buf.end);
         cap_   = to_pointer_(buf.cap);
     }
 
-    // Grow and insert a gap of 'gap' slots at p, returning pointer to the gap
-    // start in the new buffer. end_ is updated to past moved tail (NOT the
-    // gap; callers fill the gap then advance end_).
-    pointer reallocate_and_insert_gap(pointer p, size_type gap) {
-        size_type new_cap = recommend(size() + gap);
-        if (new_cap > max_size())
-            throw_length_error();
-        const size_t off_bytes =
-            static_cast<size_t>(p - begin_) * sizeof(value_type);
-        detail::vec_buf buf{std::to_address(begin_),
-                            std::to_address(end_),
-                            std::to_address(cap_)};
-        void* gap_p = detail::vec_grow_with_gap(
-            ops_table_(), &realloc_shim_, this, el_ctx_(), &buf,
-            off_bytes, gap * sizeof(value_type),
-            new_cap * sizeof(value_type));
-        begin_ = to_pointer_(buf.begin);
-        end_   = to_pointer_(buf.end);
-        cap_   = to_pointer_(buf.cap);
-        return to_pointer_(gap_p);
-    }
-
-    // Move [from_s, from_e) one position forward to [from_s+1, from_e+1)
-    // (makes room for insertion at from_s)
-    constexpr void move_range(pointer from_s, pointer from_e, pointer to) {
-        // to must be >= from_s+1 (overlap possible)
-        // We need to construct new elements and move existing ones
-        pointer old_last = end_;
-        difference_type n = old_last - to;
-        pointer i = from_s + n;
-        // Construct new trailing elements
-        for (; i < from_e; ++i) {
-            construct_one(end_, std::move(*i));
-            ++end_;
-        }
-        // Move backwards the overlap region
-        std::move_backward(from_s, from_s + n, old_last);
+    // Type-erased rotate over a constructed range. Used by insert/emplace/
+    // erase: insert is `emplace_back(x); rotate(pos, end-1, end)` and erase
+    // is `rotate(pos, pos+1, end); pop_back`.
+    void rotate_(pointer first, pointer middle, pointer last) {
+        detail::rotate(ops_table_(), el_ctx_(),
+                       std::to_address(first),
+                       std::to_address(middle),
+                       std::to_address(last));
     }
 
     constexpr void copy_assign_alloc(const vector& c) {
@@ -719,39 +691,22 @@ public:
     constexpr void push_back(const_reference x) { emplace_back(x); }
     constexpr void push_back(value_type&& x)    { emplace_back(std::move(x)); }
 
+    // emplace_back: fast path is a one-line placement-new + advance. Grow path
+    // captures args into a local tmp first (the per-T cost of aliasing safety;
+    // libc++'s alternative is the explicit construct-relocate-destroy dance,
+    // which inlines ~80 lines of per-T code). One extra move per geometric
+    // growth event in exchange for the entire slow path collapsing into
+    // reallocate_grow (a non-template core).
     template<class... Args>
     constexpr reference emplace_back(Args&&... args) {
-        if (end_ < cap_) {
-            construct_one(end_, std::forward<Args>(args)...);
-            ++end_;
+        if (end_ == cap_) {
+            value_type tmp(std::forward<Args>(args)...);
+            reallocate_grow(recommend(size() + 1));
+            construct_one(end_, std::move(tmp));
         } else {
-            // grow path: allocate new buffer, move existing elements, then
-            // construct the new element directly from args (which may alias
-            // into old buffer, still alive at construction time).
-            // Ported from libc++ __vector/vector.h __emplace_back_slow_path:
-            // construct in new buffer BEFORE deallocating old buffer.
-            size_type new_cap_val = recommend(size() + 1);
-            if (new_cap_val > max_size())
-                throw_length_error();
-            auto res = alloc_traits::allocate_at_least(alloc_, new_cap_val);
-            pointer new_begin   = res.ptr;
-            pointer new_end     = new_begin;
-            pointer new_cap_ptr = new_begin + res.count;
-            // Move existing elements
-            for (pointer s = begin_; s != end_; ++s, ++new_end)
-                construct_one(new_end, std::move(*s));
-            // Construct new element (args may reference old buffer — still alive)
-            construct_one(new_end, std::forward<Args>(args)...);
-            ++new_end;
-            // Destroy and free old buffer
-            for (pointer s = begin_; s != end_; ++s)
-                alloc_traits::destroy(alloc_, std::to_address(s));
-            if (begin_ != nullptr)
-                alloc_traits::deallocate(alloc_, begin_, cap_ - begin_);
-            begin_ = new_begin;
-            end_   = new_end;
-            cap_   = new_cap_ptr;
+            construct_one(end_, std::forward<Args>(args)...);
         }
+        ++end_;
         return *(end_ - 1);
     }
 
@@ -760,52 +715,16 @@ public:
         alloc_traits::destroy(alloc_, std::to_address(end_));
     }
 
-    // emplace at position
+    // emplace(pos, args) — uniform pattern: capture args into a tmp (aliasing-
+    // safe), emplace_back the tmp, then rotate to bring it down to pos. The
+    // capture is also what libc++ pays for emplace's aliasing guarantee; the
+    // rotate replaces the per-T move_range + grow-with-gap dance.
     template<class... Args>
     constexpr iterator emplace(const_iterator position, Args&&... args) {
         difference_type off = position - cbegin();
-        pointer p = begin_ + off;
-        if (end_ < cap_) {
-            if (p == end_) {
-                construct_one(end_, std::forward<Args>(args)...);
-                ++end_;
-            } else {
-                // construct a temp to avoid aliasing, then move-insert
-                value_type tmp(std::forward<Args>(args)...);
-                move_range(p, end_, p + 1);
-                *p = std::move(tmp);
-            }
-        } else {
-            // Grow path: must construct new element BEFORE deallocating old buffer,
-            // because args may reference elements in the old buffer
-            // (e.g. v.emplace(v.begin(), std::move(v[1]))).
-            // Ported from libc++ __vector/vector.h __emplace_back_slow_path pattern.
-            size_type new_cap_val = recommend(size() + 1);
-            if (new_cap_val > max_size())
-                throw_length_error();
-            auto res = alloc_traits::allocate_at_least(alloc_, new_cap_val);
-            pointer nb  = res.ptr;
-            pointer ncp = nb + res.count;
-            // Move [begin_, p) into new buffer
-            pointer ne = nb;
-            for (pointer s = begin_; s != p; ++s, ++ne)
-                construct_one(ne, std::move(*s));
-            pointer np = ne;  // insertion slot in new buffer
-            // Move [p, end_) into new buffer, leaving gap at np
-            pointer ne2 = ne + 1;
-            for (pointer s = p; s != end_; ++s, ++ne2)
-                construct_one(ne2, std::move(*s));
-            // Construct new element (args may still reference old buffer — still alive)
-            construct_one(np, std::forward<Args>(args)...);
-            // Destroy old elements and free old buffer
-            for (pointer s = begin_; s != end_; ++s)
-                alloc_traits::destroy(alloc_, std::to_address(s));
-            if (begin_ != nullptr)
-                alloc_traits::deallocate(alloc_, begin_, cap_ - begin_);
-            begin_ = nb;
-            end_   = ne2;
-            cap_   = ncp;
-        }
+        value_type tmp(std::forward<Args>(args)...);
+        emplace_back(std::move(tmp));
+        rotate_(begin_ + off, end_ - 1, end_);
         return begin_ + off;
     }
 
@@ -817,110 +736,57 @@ public:
         return emplace(position, std::move(x));
     }
 
+    // insert(pos, n, x): capture x_copy (aliasing-safe; covers x = v[i]),
+    // ensure capacity for n more, broadcast n copies at end via the shared
+    // construct_copy_one_n core, rotate the new block down to pos.
     constexpr iterator insert(const_iterator position, size_type n, const_reference x) {
         difference_type off = position - cbegin();
-        pointer p = begin_ + off;
-        if (n > 0) {
-            if (static_cast<size_type>(cap_ - end_) >= n) {
-                size_type old_n = n;
-                pointer old_last = end_;
-                if (n > static_cast<size_type>(end_ - p)) {
-                    size_type cx = n - static_cast<size_type>(end_ - p);
-                    construct_at_end(cx, x);
-                    n -= cx;
-                }
-                if (n > 0) {
-                    move_range(p, old_last, p + old_n);
-                    value_type xr = x; // copy in case x is in [p, end_)
-                    std::fill_n(p, n, xr);
-                }
-            } else {
-                pointer np = reallocate_and_insert_gap(p, n);
-                // np points to the gap start in the new buffer
-                for (size_type i = 0; i < n; ++i)
-                    construct_one(np + i, x);
-                // end_ already accounts for gap size from reallocate_and_insert_gap
-            }
-        }
+        if (n == 0) return begin_ + off;
+        value_type x_copy = x;
+        if (static_cast<size_type>(cap_ - end_) < n)
+            reallocate_grow(recommend(size() + n));
+        detail::construct_copy_one_n(ops_table_(), el_ctx_(),
+                                     std::to_address(end_),
+                                     std::to_address(&x_copy), n);
+        end_ += n;
+        rotate_(begin_ + off, end_ - n, end_);
         return begin_ + off;
     }
 
-    // insert range — forward iterators
+    // insert range — forward iterators. Range self-aliasing is UB per
+    // [sequence.reqmts] (`first`/`last` shall not be iterators into *this),
+    // so the core can assume non-aliasing and just bulk-append + rotate.
     template<class InputIter>
         requires forward_iterator<InputIter> &&
                  is_constructible_v<value_type, typename iterator_traits<InputIter>::reference>
     constexpr iterator insert(const_iterator position, InputIter first, InputIter last) {
         difference_type off = position - cbegin();
-        difference_type n   = std::distance(first, last);
-        pointer p = begin_ + off;
-        if (n > 0) {
-            if (static_cast<difference_type>(cap_ - end_) >= n) {
-                pointer old_last = end_;
-                difference_type dx = end_ - p;
-                // inline copy loops: see comma-guard note in assign_with_size
-                if (n > dx) {
-                    InputIter m = first;
-                    std::advance(m, dx);
-                    construct_at_end(m, last, static_cast<size_type>(n - dx));
-                    if (dx > 0) {
-                        move_range(p, old_last, p + n);
-                        pointer cur = p;
-                        for (difference_type i = 0; i < dx; ++i, (void)++first, (void)++cur)
-                            *cur = *first;
-                    }
-                } else {
-                    move_range(p, old_last, p + n);
-                    pointer cur = p;
-                    for (difference_type i = 0; i < n; ++i, (void)++first, (void)++cur)
-                        *cur = *first;
-                }
-            } else {
-                pointer np = reallocate_and_insert_gap(p, static_cast<size_type>(n));
-                for (size_type i = 0; i < static_cast<size_type>(n); ++i, ++first) {
-                    construct_one(np + i, *first);
-                }
-            }
+        size_type n = static_cast<size_type>(std::distance(first, last));
+        if (n == 0) return begin_ + off;
+        if (static_cast<size_type>(cap_ - end_) < n)
+            reallocate_grow(recommend(size() + n));
+        for (; first != last; ++first) {
+            construct_one(end_, *first);
+            ++end_;
         }
+        rotate_(begin_ + off, end_ - n, end_);
         return begin_ + off;
     }
 
-    // insert range — input-only iterators
+    // insert range — input-only iterators (size not known up front). Same
+    // bulk-append + rotate, but the appends use emplace_back so each one
+    // may grow individually.
     template<class InputIter>
         requires input_iterator<InputIter> && (!forward_iterator<InputIter>) &&
                  is_constructible_v<value_type, typename iterator_traits<InputIter>::reference>
     constexpr iterator insert(const_iterator position, InputIter first, InputIter last) {
         difference_type off = position - cbegin();
-        pointer p = begin_ + off;
-        pointer old_last = end_;
-
-        // Fill any available capacity first
-        for (; end_ != cap_ && first != last; ++first) {
-            construct_one(end_, *first);
-            ++end_;
-        }
-
-        if (first == last) {
-            // rotate [p, old_last) to back
-            std::rotate(p, old_last, end_);
-        } else {
-            // Collect remaining into a temp vector, then insert.
-            // Growth max(2*cap, 8) matches libc++ __split_buffer::
-            // __construct_at_end_with_sentinel (the limited_allocator tests
-            // budget allocations for exactly this pattern).
-            vector tmp(alloc_);
-            for (; first != last; ++first) {
-                if (tmp.end_ == tmp.cap_)
-                    tmp.reallocate_grow(std::max<size_type>(2 * tmp.capacity(), 8));
-                tmp.construct_one(tmp.end_, *first);
-                ++tmp.end_;
-            }
-
-            // Now do a bulk insert of tmp at the right spot
-            // First rotate what we already appended
-            std::rotate(p, old_last, end_);
-            // Then insert tmp's range
-            insert(begin_ + off + (end_ - old_last), tmp.begin(), tmp.end());
-        }
+        size_type old_size = size();
+        for (; first != last; ++first)
+            emplace_back(*first);
+        size_type n = size() - old_size;
+        if (n)
+            rotate_(begin_ + off, end_ - n, end_);
         return begin_ + off;
     }
 
@@ -928,20 +794,23 @@ public:
         return insert(position, il.begin(), il.end());
     }
 
-    // erase(position)
+    // erase(pos): rotate the element at pos to the end, then pop_back.
     constexpr iterator erase(const_iterator position) {
         difference_type off = position - cbegin();
         pointer p = begin_ + off;
-        destruct_at_end(std::move(p + 1, end_, p));
+        rotate_(p, p + 1, end_);
+        pop_back();
         return p;
     }
 
-    // erase(first, last)
+    // erase(first, last): rotate the [first, last) block to the end, then
+    // destroy the now-tail n elements.
     constexpr iterator erase(const_iterator first, const_iterator last) {
         pointer p = begin_ + (first - cbegin());
-        if (first != last) {
-            destruct_at_end(std::move(p + (last - first), end_, p));
-        }
+        size_type n = static_cast<size_type>(last - first);
+        if (n == 0) return p;
+        rotate_(p, p + n, end_);
+        destruct_at_end(end_ - n);
         return p;
     }
 

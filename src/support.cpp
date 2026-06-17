@@ -43,7 +43,7 @@ static inline bool triv_reloc(const type_ops* ops) {
     return (ops->flags & f_triv_reloc) && (ops->flags & f_alloc_default_life);
 }
 
-void vec_destroy_range(const type_ops* ops, void* el_ctx, void* begin, void* end) {
+void destroy_range(const type_ops* ops, void* el_ctx, void* begin, void* end) {
     if (triv_destroy(ops)) return;
     const size_t sz = ops->size;
     auto p = static_cast<unsigned char*>(end);
@@ -57,7 +57,7 @@ void vec_destroy_range(const type_ops* ops, void* el_ctx, void* begin, void* end
     }
 }
 
-void vec_construct_default_n(const type_ops* ops, void* el_ctx, void* dst, size_t n) {
+void construct_default_n(const type_ops* ops, void* el_ctx, void* dst, size_t n) {
     if (triv_default(ops)) {
         // value-initialize trivially-default-constructible T == zero-fill
         ::memset(dst, 0, n * ops->size);
@@ -69,8 +69,8 @@ void vec_construct_default_n(const type_ops* ops, void* el_ctx, void* dst, size_
         ops->default_construct(el_ctx, p);
 }
 
-void vec_construct_copy_one_n(const type_ops* ops, void* el_ctx,
-                              void* dst, const void* src, size_t n) {
+void construct_copy_one_n(const type_ops* ops, void* el_ctx,
+                          void* dst, const void* src, size_t n) {
     const size_t sz = ops->size;
     auto p = static_cast<unsigned char*>(dst);
     if (triv_copy(ops)) {
@@ -83,14 +83,14 @@ void vec_construct_copy_one_n(const type_ops* ops, void* el_ctx,
         ops->copy_construct(el_ctx, p, src);
 }
 
-// Relocate every element of [src, src+size_bytes) into [dst, ...). Used by
-// both grow cores when realloc could not (or must not, due to non-default
-// lifecycle) be used. Source elements are destroyed once moved.
-static void vec_relocate_block(const type_ops* ops, void* el_ctx,
-                               void* dst, void* src, size_t size_bytes) {
+// Relocate every element of [src, src+size_bytes) into [dst, ...). Iterates
+// forward — safe for non-overlapping ranges or for shift-DOWN (dst < src).
+// Source elements are destroyed once moved.
+static void relocate_block(const type_ops* ops, void* el_ctx,
+                           void* dst, void* src, size_t size_bytes) {
     if (triv_reloc(ops)) {
-        // triv-reloc + default lifecycle: a single memcpy IS the relocation.
-        ::memcpy(dst, src, size_bytes);
+        // triv-reloc + default lifecycle: memmove handles both overlap cases.
+        ::memmove(dst, src, size_bytes);
         return;
     }
     const size_t sz = ops->size;
@@ -99,14 +99,32 @@ static void vec_relocate_block(const type_ops* ops, void* el_ctx,
     const size_t n = size_bytes / sz;
     for (size_t i = 0; i < n; ++i, d += sz, s += sz) {
         ops->move_construct(el_ctx, d, s);
-        // destroy may be elided when T is trivially destructible AND default
-        // lifecycle (consumer-side flag check); else leaf must run.
         if (!triv_destroy(ops)) ops->destroy(el_ctx, s);
     }
 }
 
-void vec_grow(const type_ops* ops, realloc_op realloc, void* st_ctx,
-              void* el_ctx, vec_buf* buf, size_t min_cap_bytes) {
+// Same, but iterates BACKWARD — required for the leaf-path shift-UP
+// (dst > src) where the source range overlaps with the destination range
+// from above.
+static void relocate_block_rev(const type_ops* ops, void* el_ctx,
+                               void* dst, void* src, size_t size_bytes) {
+    if (triv_reloc(ops)) {
+        ::memmove(dst, src, size_bytes);
+        return;
+    }
+    const size_t sz = ops->size;
+    auto* d = static_cast<unsigned char*>(dst) + size_bytes;
+    auto* s = static_cast<unsigned char*>(src) + size_bytes;
+    const size_t n = size_bytes / sz;
+    for (size_t i = 0; i < n; ++i) {
+        d -= sz; s -= sz;
+        ops->move_construct(el_ctx, d, s);
+        if (!triv_destroy(ops)) ops->destroy(el_ctx, s);
+    }
+}
+
+void grow(const type_ops* ops, realloc_op realloc, void* st_ctx,
+          void* el_ctx, byte_buf* buf, size_t min_cap_bytes) {
     auto cur_begin = static_cast<unsigned char*>(buf->begin);
     auto cur_end   = static_cast<unsigned char*>(buf->end);
     const size_t live_bytes = static_cast<size_t>(cur_end - cur_begin);
@@ -127,7 +145,7 @@ void vec_grow(const type_ops* ops, realloc_op realloc, void* st_ctx,
     // element-relocate, then free the old via realloc with size=0.
     size_t want = min_cap_bytes;
     void* nb = realloc(st_ctx, nullptr, &want);
-    vec_relocate_block(ops, el_ctx, nb, cur_begin, live_bytes);
+    relocate_block(ops, el_ctx, nb, cur_begin, live_bytes);
     // Free the old buffer: cur_begin may be null (no prior storage).
     if (cur_begin) {
         size_t zero = 0;
@@ -138,10 +156,10 @@ void vec_grow(const type_ops* ops, realloc_op realloc, void* st_ctx,
     buf->cap   = static_cast<unsigned char*>(nb) + want;
 }
 
-void* vec_grow_with_gap(const type_ops* ops, realloc_op realloc, void* st_ctx,
-                        void* el_ctx, vec_buf* buf,
-                        size_t gap_off_bytes, size_t gap_bytes,
-                        size_t min_cap_bytes) {
+void* grow_with_gap(const type_ops* ops, realloc_op realloc, void* st_ctx,
+                    void* el_ctx, byte_buf* buf,
+                    size_t gap_off_bytes, size_t gap_bytes,
+                    size_t min_cap_bytes) {
     auto cur_begin = static_cast<unsigned char*>(buf->begin);
     auto cur_end   = static_cast<unsigned char*>(buf->end);
     const size_t live_bytes = static_cast<size_t>(cur_end - cur_begin);
@@ -161,9 +179,9 @@ void* vec_grow_with_gap(const type_ops* ops, realloc_op realloc, void* st_ctx,
             ::memcpy(nb_b + gap_off_bytes + gap_bytes,
                      cur_begin + gap_off_bytes, tail_bytes);
     } else {
-        vec_relocate_block(ops, el_ctx, nb_b, cur_begin, gap_off_bytes);
-        vec_relocate_block(ops, el_ctx, nb_b + gap_off_bytes + gap_bytes,
-                           cur_begin + gap_off_bytes, tail_bytes);
+        relocate_block(ops, el_ctx, nb_b, cur_begin, gap_off_bytes);
+        relocate_block(ops, el_ctx, nb_b + gap_off_bytes + gap_bytes,
+                       cur_begin + gap_off_bytes, tail_bytes);
     }
     if (cur_begin) {
         size_t zero = 0;
@@ -176,10 +194,73 @@ void* vec_grow_with_gap(const type_ops* ops, realloc_op realloc, void* st_ctx,
     return nb_b + gap_off_bytes;
 }
 
-void vec_open_gap(void* base, size_t end_bytes, size_t off_bytes, size_t gap_bytes) {
+void open_gap(void* base, size_t end_bytes, size_t off_bytes, size_t gap_bytes) {
     // Move [off, end) to [off+gap, end+gap); overlapping so memmove.
     auto p = static_cast<unsigned char*>(base);
     ::memmove(p + off_bytes + gap_bytes, p + off_bytes, end_bytes - off_bytes);
+}
+
+// ---------------------------------------------------------------------------
+// rotate: standard std::rotate semantics, type-erased.
+//
+// Rearranges [first, last) so that *middle becomes the new *first and
+// *(middle - 1) becomes the new *(last - 1). Pre: every slot in [first, last)
+// is constructed.
+//
+// Algorithm: block-swap via scratch. Save the smaller block to scratch,
+// shift the larger block to its new position (memmove or leaf-loop), then
+// restore scratch to the other end.
+//
+// For trivially-relocatable + default-lifecycle T: pure byte ops. Scratch
+// allocation uses ::malloc for blocks > 256 bytes (the common insert-by-one
+// case has a 1-element block so the stack alternative covers it).
+// ---------------------------------------------------------------------------
+void rotate(const type_ops* ops, void* el_ctx,
+            void* first, void* middle, void* last) {
+    auto* f = static_cast<unsigned char*>(first);
+    auto* m = static_cast<unsigned char*>(middle);
+    auto* l = static_cast<unsigned char*>(last);
+    if (f == m || m == l) return;
+    const size_t left  = static_cast<size_t>(m - f);
+    const size_t right = static_cast<size_t>(l - m);
+    const size_t small = left <= right ? left : right;
+
+    // Stack buffer fits common small rotations (insert/erase by one or a few
+    // small elements); else fall back to ::malloc.
+    constexpr size_t kStack = 256;
+    alignas(::max_align_t) unsigned char stack_scratch[kStack];
+    void* scratch = small <= kStack ? static_cast<void*>(stack_scratch)
+                                    : ::malloc(small);
+
+    if (triv_reloc(ops)) {
+        // [f, m=f+left, l=f+left+right) -> [m..l, f..m) at f..l.
+        if (left <= right) {
+            ::memcpy(scratch, f, left);
+            ::memmove(f, m, right);
+            ::memcpy(f + right, scratch, left);
+        } else {
+            ::memcpy(scratch, m, right);
+            ::memmove(f + right, f, left);
+            ::memcpy(f, scratch, right);
+        }
+    } else {
+        // Leaf-driven block-swap. The scratch buffer holds the smaller block
+        // during the shift; the larger block then moves into the freed slots.
+        // Shift direction matters when ranges overlap: the larger-block move
+        // is from middle->first (DOWN, forward iter) when left <= right, or
+        // from first->first+right (UP, backward iter) when right < left.
+        if (left <= right) {
+            relocate_block    (ops, el_ctx, scratch, f, left);   // f..m  -> scratch
+            relocate_block    (ops, el_ctx, f, m, right);        // m..l  -> f..f+right  (fwd, shift DOWN)
+            relocate_block    (ops, el_ctx, f + right, scratch, left); // scratch -> tail
+        } else {
+            relocate_block    (ops, el_ctx, scratch, m, right);  // m..l  -> scratch
+            relocate_block_rev(ops, el_ctx, f + right, f, left); // f..m  -> f+right..l  (rev, shift UP)
+            relocate_block    (ops, el_ctx, f, scratch, right);  // scratch -> head
+        }
+    }
+
+    if (small > kStack) ::free(scratch);
 }
 
 } // namespace detail
