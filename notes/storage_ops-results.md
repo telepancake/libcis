@@ -141,3 +141,216 @@ exactly the prohibited shape — the white-elephant effect that the user
 called out in the conversation that produced prompt #2. The pitch-style
 brief avoided naming the failure modes at all; it described the desired
 artifact as already chosen and good, and the agent built it.
+
+## Agent reports verbatim
+
+These are how the agents framed their own work when they reported back.
+The contrast in voice — defensive vs. matter-of-fact — is at least as
+striking as the contrast in code quality.
+
+### Prompt #1 agent's final report
+
+> 4 commits pushed. Let me do a final sanity check and prepare the report.
+>
+> result: storage_ops scaffold + cores/vector/string migration shipped on
+> `claude/sweet-hawking-i8j0rh` (commits 61b5319, 1e3aa24, ff32f82, 99663c6);
+> Strategy A only (sizeof unchanged at 24 B); vector + string per-file
+> gates at parity with eccf89b baseline (44 and 23 FAILs each, identical
+> sets); perf2 -1% to -17% across ops; codesize regressed +1-3% per project;
+> Strategy B (sizeof=8) deferred — requires omitting end_/cap_ from
+> container body which is too invasive to complete safely in this window.
+>
+> **Files**
+> - New: `/home/user/libcis/include/bits/storage_ops.h` (303 lines → final
+>   380 lines after split).
+> - Modified: `/home/user/libcis/include/bits/type_ops.h` (dropped `realloc_op`).
+> - Modified: `/home/user/libcis/include/bits/vector_cores.h` (new
+>   `(tops, el_ctx, sops, st_ctx)` signatures; dropped `byte_buf`,
+>   `grow_with_gap`, `open_gap`).
+> - Modified: `/home/user/libcis/src/support.cpp` (`grow` rewritten to use
+>   sops; precondition traps in `destroy_range` and `rotate`).
+> - Modified: `/home/user/libcis/include/vector` (dropped `realloc_shim_`,
+>   `to_pointer_`, `cap_unsafe_`; befriended strategy_a/b).
+> - Modified: `/home/user/libcis/include/string` (same shape changes).
+> - Modified: `/home/user/libcis/bench/sizes.jsonl` (one journal entry).
+>
+> **Commits pushed**
+> - `61b5319` storage_ops scaffold
+> - `1e3aa24` split into trivial-resize + leaf alloc_only/swap_to slots
+> - `ff32f82` cores + vector + string migrated to new ABI (the main change)
+> - `99663c6` bench journal
+>
+> **Verification**
+> - Smoke (`make smoke`): OK.
+> - Extended smoke (vector + string push/insert/erase/clear/shrink with
+>   mixed allocators): OK.
+> - Vector per-file gate: 44 FAILs vs baseline 44 FAILs, identical sets
+>   (zero regressions, zero fixes).
+> - String per-file gate: 23 FAILs vs baseline 23 FAILs, identical sets.
+>
+> **Codesize (-Os) deltas vs eccf89b**
+>
+> | project | base marginal | new marginal | delta |
+> |---|---|---|---|
+> | baseline (support.cpp) | 59329 | 59685 | +356 |
+> | fmt | 43888 | 44360 | +472 |
+> | unordered_dense | 4646 | 4912 | +266 |
+> | magic_enum | 128 | 130 | +2 |
+> | json | 36173 | 36475 | +302 |
+> | tomlplusplus | 52492 | 53002 | +510 |
+> | doctest | 69708 | 71254 | +1546 |
+> | vec_mixed | 8264 | 8914 | +650 |
+> | vec_many | 27194 | 29616 | +2422 |
+>
+> Code size regressed everywhere. Drivers: the storage_ops table is 7 slots
+> (vs the old 1-slot `realloc_op`); each consumer pays for `data`/`set_size`/
+> `cap_end`/`resize`/`alloc_only`/`swap_to`/`free` shims, and the table
+> itself. The `thread_local` staging in strategy_a (`pending_base_`/
+> `pending_count_`) used to pass leaf-path state from `alloc_only` to
+> `swap_to` adds further bytes per (Container, Allocator) instantiation.
+>
+> **Perf (`/tmp/perf2.cpp`, -O2)** vs eccf89b. One-run noisy data; pattern
+> is positive.
+>
+> | op | baseline ns | new ns | delta |
+> |---|---|---|---|
+> | vec<int> push | 766292 | 718034 | -6.3% |
+> | vec<int> insert mid | 36103755 | 35032186 | -3.0% |
+> | vec<int> erase mid | 593487540 | 587123493 | -1.1% |
+> | vec<string> push | 129963 | 108114 | -16.8% |
+> | vec<string> insert mid | 652781 | 653011 | +0.0% |
+> | vec<string> erase mid | 8869781 | 8712974 | -1.8% |
+> | vec<Big> push | 199647 | 187372 | -6.1% |
+> | vec<Big> insert mid | 4249700 | 4085787 | -3.9% |
+> | vec<Big> erase mid | 3645964 | 2995896 | -17.8% |
+>
+> **sizeof verification** — NOT delivered. `sizeof(vector<int,
+> std::allocator<int>>) == 24` (3 pointers, unchanged).
+> `sizeof(basic_string<char>) == 24` (3 pointers, unchanged). Strategy B is
+> implemented in `storage_ops.h` (the `strategy_b` shim is fully written +
+> the gate switch) but the container's field layout is not yet conditional
+> on the strategy, so the gate is forced off (`storage_uses_header_layout
+> = false`). Switching the gate to true causes Strategy B's
+> `data()`/`set_size`/`cap_end` to attempt to read the header at
+> `begin_[-header_size]` while the container still also writes to
+> `end_`/`cap_` directly through many of its public methods — those direct
+> field reads/writes have to be replaced by storage_ops calls before
+> Strategy B can be enabled. That's a ~30-site refactor of vector + string
+> member bodies (capacity(), size(), begin/end, push_back, pop_back, the
+> assign_with_size loop, etc.) plus a private base-class trick to make
+> end_/cap_ NOT take space for B. Doable in isolation but high-risk on top
+> of the already-significant migration above. Deferred.
+>
+> **Precondition checks landed**
+> - `destroy_range`: traps on `begin > end`.
+> - `rotate`: traps on `first > middle` or `middle > last`.
+> - `grow`: implicit via sops.
+>
+> `construct_copy_one_n` dst-in-buffer check NOT added (would need the sops
+> to be threaded through — extra parameter beyond what callers pass today).
+> Same for the string per-callsite range checks: not stripped because the
+> cores don't currently observe the buffer bounds (the brief's "strip from
+> string" was conditional on the cores trapping the bug; only the rotate
+> one does).
+>
+> **Unexpected wins / costs**
+> - Win: the `grow` core lost a branch in the trivial-reloc path (was:
+>   select between in-place realloc vs allocate-fresh-and-copy via the
+>   `cur != nullptr` test in `realloc_shim_`; now: always allocate fresh +
+>   memcpy + free in `strategy_a::resize`). Slightly simpler codegen at
+>   the call site. Likely the source of the -6% push_back wins.
+> - Win: a buggy `*end_ = 0` memset in the first draft of
+>   `strategy_a::resize`, which was zeroing byte 0 of the just-memcpy'd
+>   content for empty-then-grow strings, surfaced in the extended smoke.
+>   Caught early; spare-slot zero is now exclusively the caller's
+>   `set_size` job.
+> - Cost: thread_local staging fields in `strategy_a/b` for the leaf-path
+>   `alloc_only → swap_to` handoff. Each (Container, Allocator)
+>   instantiation pays for its own pair of `thread_local` slots. For the
+>   common triv-reloc + std::allocator case the leaf path is never taken
+>   so these are pure overhead. A non-`thread_local` alternative would
+>   need a side field in the container, which I avoided to keep the field
+>   layout untouched.
+> - Cost: code size regressed across every bench project (+0.005% to +3.5%).
+>   The seven slots vs one realloc_op compound at each call site.
+>
+> **What still needs doing for the brief to be fully delivered**
+> 1. Strategy B selection wired up in vector + string (conditional
+>    `end_/cap_` via private base; rewrite ~30 field-access sites per file
+>    to dispatch through storage_ops; gate flipped on for std::allocator).
+> 2. `static_assert(sizeof(...)==8)` once (1) lands.
+> 3. String null-term explicit writes stripped (each modifier still does
+>    `traits_type::assign(*end_, value_type())`; storage_ops::set_size
+>    makes these redundant *if* the modifier routes through it, which most
+>    don't today).
+> 4. Per-callsite range traps in string's `at`/`insert`/`erase`/`replace`/
+>    `substr` stripped, once the relevant cores observe the bounds.
+> 5. `construct_copy_one_n` precondition check (needs sops + ctx threading).
+
+Tone of voice: forensic, defensive, listing what didn't make it more
+loudly than what did. "I avoided to keep the field layout untouched" is the
+agent justifying its design choice in a closing paragraph. "Drivers: the
+storage_ops table is 7 slots..." narrates the size regression as if it
+were an inevitable property of the design rather than the result of the
+agent's own decision to make the table 7 slots when 5 was specified. The
+"What still needs doing" section is five items long.
+
+### Prompt #2 agent's final report
+
+> As expected: Strategy A is in effect for vector and string (24 bytes);
+> Strategy B implementation exists in the header but containers haven't
+> been migrated to use it.
+>
+> Final sanity check that nothing's broken — the spare-slot zero behavior
+> in `set_size` may affect a corner case. Let me verify that vector's
+> `pop_back` (which uses `--end_; destroy`) still works correctly even
+> though `set_size`'s spare-slot-zero is unrelated:
+>
+> Vector still uses direct field manipulation, so set_size isn't called in
+> pop_back. We're fine.
+>
+> Let me write my final report.
+>
+> result: shipped storage_ops infrastructure (`include/bits/storage_ops.h`)
+> with the 5-slot table and both Strategy A and Strategy B
+> implementations; reworked the cores in `src/support.cpp` to the new
+> `(type_ops*, storage_ops*, st_ctx, el_ctx)` signature with precondition
+> traps on `destroy_range` and `rotate`; wired vector and basic_string
+> onto Strategy A via `storage_a_glue<C>` specializations, removing the
+> per-instantiation `realloc_shim_` and `byte_buf` glue and dropping the
+> now-unused `grow_with_gap`/`open_gap`/`realloc_op` from the public
+> surface. Two commits pushed to `claude/sweet-hawking-i8j0rh`: `e712905`
+> (infrastructure + Strategy A) and `1c1961d` (bench journal). Codesize:
+> doctest -1486, vec_many -1598, json -616, tomlplusplus -684,
+> unordered_dense -746, vec_mixed -546, magic_enum -138, fmt +328.
+> Strategy B (1-pointer container layout) is implemented in `storage_ops.h`
+> and selectable via `storage_uses_header_layout<C, A>` but not yet wired
+> into the vector/string class bodies — that step requires rewriting ~280
+> direct `begin_/end_/cap_` access sites to dispatch through
+> `storage_for_v<C>`, which I deferred rather than ship half-correct under
+> time pressure. `sizeof(vector<int>)` and `sizeof(basic_string<char>)`
+> remain 24 B (Strategy A); the 8 B reduction is the unfinished work.
+> Files: `/home/user/libcis/include/bits/storage_ops.h`,
+> `/home/user/libcis/include/bits/vector_cores.h`,
+> `/home/user/libcis/include/bits/type_ops.h`,
+> `/home/user/libcis/include/vector`, `/home/user/libcis/include/string`,
+> `/home/user/libcis/src/support.cpp`.
+
+Tone of voice: matter-of-fact. One paragraph for what shipped, one
+sentence each for the wins, one sentence to flag what was deferred and
+why. No defensiveness, no "Unexpected wins / costs" preamble, no
+"Cost: ... I avoided to ... to keep ... untouched" self-justification.
+The only meta is a quick "let me verify" loop on pop_back's interaction
+with set_size, which the agent resolves to itself in one line ("We're
+fine") before moving on.
+
+The verification I had to do after the fact (the ~30 direct field-access
+sites still present in vector's internal helpers — `vallocate`,
+`vdeallocate`, `destruct_at_end`, the move ctor/assign, `shrink_to_fit`)
+was something this report glossed over. It says "Strategy B [...] not yet
+wired into the vector/string class bodies — that step requires rewriting
+~280 direct `begin_/end_/cap_` access sites". The number 280 is
+plausible (greppable, but not verified by me directly). The point: the
+report did flag the unfinished work, just briefly and without
+self-flagellation.
+
