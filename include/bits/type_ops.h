@@ -32,17 +32,31 @@ namespace detail {
 // ------------------------------------------------ triviality (diagnostic only)
 // Record which triviality made an op pointer null. Diagnostic only, not part of
 // the dispatch (that is null-vs-set on the pointer itself); for introspection /
-// static_assert / debugging.
+// static_assert / debugging — EXCEPT f_alloc_ctx and f_alloc_default_life
+// which the cores REQUIRE for correctness.
+//
+// Consumer-side trivial-fast-path check is `flags & f_triv_X` AND
+// `flags & f_alloc_default_life`: both must hold to memcpy/memset/skip in
+// place of dispatching through the leaf. The leaf pointer being null is NOT
+// a "trivial" signal; it means the leaf was elided by MASK or is ill-formed
+// for T, and calling it when flags say non-trivial is a bug (and crashes
+// diagnostically).
 enum ops_flags : unsigned {
     f_triv_default = 1u << 0,  // trivially default-constructible
     f_triv_copy    = 1u << 1,  // trivially copyable (copy/move/assign == memcpy)
     f_triv_reloc   = 1u << 2,  // trivially relocatable (grow == memmove)
     f_triv_destroy = 1u << 3,  // trivially destructible (destroy == nothing)
-    // LOAD-BEARING (unlike the f_triv_* above): set iff the allocator is STATEFUL
-    // — i.e. the lifecycle leaves require its specific instance as their ctx. When
-    // clear (stateless / type-only), the leaves synthesize an allocator and ignore
-    // ctx. Independent of lifecycle customization.
-    f_alloc_ctx    = 1u << 4,
+    // LOAD-BEARING: set iff the allocator is STATEFUL — i.e. the lifecycle
+    // leaves require its specific instance as their ctx. When clear (stateless
+    // / type-only), the leaves synthesize an allocator and ignore ctx.
+    f_alloc_ctx           = 1u << 4,
+    // LOAD-BEARING: set iff the allocator's construct() and destroy() are the
+    // default delegations to T's own ctors/dtor (so memcpy / memset / skip is
+    // semantically equivalent to running the leaf). Cleared when the allocator
+    // customizes either, in which case the trivial fast path is unsafe and the
+    // core MUST dispatch through the leaf. Together with the matching
+    // f_triv_X flag is the only correct consumer-side trivial check.
+    f_alloc_default_life  = 1u << 5,
 };
 
 // Whether the allocator customizes construct/destroy for T. When it does,
@@ -75,18 +89,25 @@ struct type_ops {
     size_t align;
     unsigned flags;
 
-    // allocator-mediated lifecycle (ctx == the allocator)
-    void (*default_construct)(void* ctx, void* p);              // null: trivial+default-life or invalid
-    void (*destroy)(void* ctx, void* p);                        // null: trivial+default-life
-    void (*copy_construct)(void* ctx, void* dst, const void* s);// null: trivial+default-life or move-only
-    void (*move_construct)(void* ctx, void* dst, void* src);    // null: triv-reloc+default-life or immovable
+    // allocator-mediated lifecycle (ctx == the allocator).
+    // Each leaf is non-null iff:
+    //   (a) the consumer's MASK bit asks for it, AND
+    //   (b) it is installable for T (the body-level `requires` gate passes), AND
+    //   (c) the op is trivial+default-life elision did not kick in.
+    // The consumer is responsible for taking the trivial fast path before
+    // dispatch: check (flags & f_triv_X) & (flags & f_alloc_default_life).
+    // Calling a null leaf is a contract violation and traps.
+    void (*default_construct)(void* ctx, void* p);
+    void (*destroy)(void* ctx, void* p);
+    void (*copy_construct)(void* ctx, void* dst, const void* s);
+    void (*move_construct)(void* ctx, void* dst, void* src);
 
-    // value ops on constructed objects (no allocator)
-    void (*copy_assign)(void* dst, const void* src);            // null: trivial or not copy-assignable
-    void (*move_assign)(void* dst, void* src);                  // null: trivial or not move-assignable
-    void (*swap)(void* a, void* b);                             // null: trivial or not swappable
-    int  (*compare)(const void* a, const void* b);             // 3-way; null: not ordered
-    bool (*equal)(const void* a, const void* b);               // null: not equality-comparable
+    // value ops on constructed objects (no allocator). Same null contract.
+    void (*copy_assign)(void* dst, const void* src);
+    void (*move_assign)(void* dst, void* src);
+    void (*swap)(void* a, void* b);
+    int  (*compare)(const void* a, const void* b);
+    bool (*equal)(const void* a, const void* b);
     size_t (*hash)(const void* p);                              // null: not hashable
 };
 
@@ -169,10 +190,11 @@ constexpr type_ops make_type_ops() {
     if constexpr (is_trivially_copyable_v<T>)              o.flags |= f_triv_copy;
     if constexpr (is_trivially_relocatable_v<T>)           o.flags |= f_triv_reloc;
     if constexpr (is_trivially_destructible_v<T>)          o.flags |= f_triv_destroy;
-    // the only load-bearing flag: leaves need the allocator instance iff it is
-    // stateful (a stateless one is synthesized in the leaf). Independent of the
-    // lifecycle/sentinel decision below.
+    // Load-bearing: the consumer needs both these bits to take the trivial
+    // fast path (memcpy/memset/skip). They are independent of MASK and of the
+    // leaf install decisions below.
     if constexpr (!alloc_stateless<A>)                     o.flags |= f_alloc_ctx;
+    if constexpr (default_life)                            o.flags |= f_alloc_default_life;
 
     // Lifecycle leaves. Each leaf install is doubly gated:
     //   1. MASK bit set (consumer asked for this leaf), AND

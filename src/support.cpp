@@ -27,12 +27,30 @@
 namespace std {
 namespace detail {
 
+// Trivial-fast-path predicates: BOTH the type is trivially X AND the
+// allocator has default lifecycle (so memcpy/memset/skip is semantically
+// equivalent to calling the leaf).
+static inline bool triv_destroy(const type_ops* ops) {
+    return (ops->flags & f_triv_destroy) && (ops->flags & f_alloc_default_life);
+}
+static inline bool triv_default(const type_ops* ops) {
+    return (ops->flags & f_triv_default) && (ops->flags & f_alloc_default_life);
+}
+static inline bool triv_copy(const type_ops* ops) {
+    return (ops->flags & f_triv_copy) && (ops->flags & f_alloc_default_life);
+}
+static inline bool triv_reloc(const type_ops* ops) {
+    return (ops->flags & f_triv_reloc) && (ops->flags & f_alloc_default_life);
+}
+
 void vec_destroy_range(const type_ops* ops, void* el_ctx, void* begin, void* end) {
-    if (ops->destroy == nullptr) return;
+    if (triv_destroy(ops)) return;
     const size_t sz = ops->size;
     auto p = static_cast<unsigned char*>(end);
     auto q = static_cast<unsigned char*>(begin);
-    // destroy in reverse construction order
+    // destroy in reverse construction order; ops->destroy must be non-null
+    // here per the contract (flags say non-trivial, so consumer's mask must
+    // have asked for OP_DESTROY).
     while (p != q) {
         p -= sz;
         ops->destroy(el_ctx, p);
@@ -40,12 +58,7 @@ void vec_destroy_range(const type_ops* ops, void* el_ctx, void* begin, void* end
 }
 
 void vec_construct_default_n(const type_ops* ops, void* el_ctx, void* dst, size_t n) {
-    // Null leaf == trivially default-constructible AND default lifecycle:
-    // nothing to do; raw storage is already a valid T (the spec says default-
-    // initialize, which for trivially-default-constructible T leaves bytes
-    // indeterminate, but vector's contract is value-init on count ctor and
-    // default-init otherwise — we follow the leaf).
-    if (ops->default_construct == nullptr) {
+    if (triv_default(ops)) {
         // value-initialize trivially-default-constructible T == zero-fill
         ::memset(dst, 0, n * ops->size);
         return;
@@ -60,7 +73,7 @@ void vec_construct_copy_one_n(const type_ops* ops, void* el_ctx,
                               void* dst, const void* src, size_t n) {
     const size_t sz = ops->size;
     auto p = static_cast<unsigned char*>(dst);
-    if (ops->copy_construct == nullptr) {
+    if (triv_copy(ops)) {
         // trivial copy + default lifecycle: memcpy the one element n times
         for (size_t i = 0; i < n; ++i, p += sz)
             ::memcpy(p, src, sz);
@@ -75,7 +88,7 @@ void vec_construct_copy_one_n(const type_ops* ops, void* el_ctx,
 // lifecycle) be used. Source elements are destroyed once moved.
 static void vec_relocate_block(const type_ops* ops, void* el_ctx,
                                void* dst, void* src, size_t size_bytes) {
-    if (ops->move_construct == nullptr) {
+    if (triv_reloc(ops)) {
         // triv-reloc + default lifecycle: a single memcpy IS the relocation.
         ::memcpy(dst, src, size_bytes);
         return;
@@ -86,7 +99,9 @@ static void vec_relocate_block(const type_ops* ops, void* el_ctx,
     const size_t n = size_bytes / sz;
     for (size_t i = 0; i < n; ++i, d += sz, s += sz) {
         ops->move_construct(el_ctx, d, s);
-        if (ops->destroy) ops->destroy(el_ctx, s);
+        // destroy may be elided when T is trivially destructible AND default
+        // lifecycle (consumer-side flag check); else leaf must run.
+        if (!triv_destroy(ops)) ops->destroy(el_ctx, s);
     }
 }
 
@@ -96,9 +111,10 @@ void vec_grow(const type_ops* ops, realloc_op realloc, void* st_ctx,
     auto cur_end   = static_cast<unsigned char*>(buf->end);
     const size_t live_bytes = static_cast<size_t>(cur_end - cur_begin);
 
-    // Fast path: when the move_construct leaf is null (trivially relocatable
-    // + default-lifecycle), realloc preserves bytes — equivalent to memcpy.
-    if (ops->move_construct == nullptr) {
+    // Fast path: trivially-relocatable + default-lifecycle T. realloc
+    // preserves bytes — equivalent to memcpy. Triviality is read off the
+    // flags (not the leaf pointer).
+    if (triv_reloc(ops)) {
         size_t want = min_cap_bytes;
         void* nb = realloc(st_ctx, cur_begin, &want);
         buf->begin = nb;
@@ -137,7 +153,7 @@ void* vec_grow_with_gap(const type_ops* ops, realloc_op realloc, void* st_ctx,
     size_t want = min_cap_bytes;
     void* nb = realloc(st_ctx, nullptr, &want);
     auto nb_b = static_cast<unsigned char*>(nb);
-    if (ops->move_construct == nullptr) {
+    if (triv_reloc(ops)) {
         // triv-reloc + default-life: memcpy both halves.
         if (gap_off_bytes)
             ::memcpy(nb_b, cur_begin, gap_off_bytes);
