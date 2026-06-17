@@ -53,18 +53,24 @@ struct log2_imp<unsigned long long, 0, Rp> {
     static const size_t value = Rp + 1;
 };
 
+#if defined(__SIZEOF_INT128__)
 template <__uint128_t Xp, size_t Rp>
 struct log2_imp<__uint128_t, Xp, Rp> {
     static const size_t value =
         (Xp >> 64) ? (64 + log2_imp<unsigned long long, (Xp >> 64), 63>::value)
                    : log2_imp<unsigned long long, Xp, 63>::value;
 };
+#endif
 
 template <class UIntType, UIntType Xp>
 struct rand_log2 {
     static const size_t value = log2_imp<
+#if defined(__SIZEOF_INT128__)
         conditional_t<sizeof(UIntType) <= sizeof(unsigned long long),
                       unsigned long long, __uint128_t>,
+#else
+        unsigned long long,
+#endif
         Xp, sizeof(UIntType) * __CHAR_BIT__ - 1>::value;
 };
 
@@ -95,8 +101,10 @@ template <> struct rand_is_valid_inttype<unsigned short>     : true_type {};
 template <> struct rand_is_valid_inttype<unsigned int>       : true_type {};
 template <> struct rand_is_valid_inttype<unsigned long>      : true_type {};
 template <> struct rand_is_valid_inttype<unsigned long long> : true_type {};
+#if defined(__SIZEOF_INT128__)
 template <> struct rand_is_valid_inttype<__int128_t>          : true_type {}; // extension
 template <> struct rand_is_valid_inttype<__uint128_t>         : true_type {}; // extension
+#endif
 
 template <class, class = void>
 struct rand_is_valid_urng : false_type {};
@@ -169,10 +177,17 @@ template <unsigned long long a, unsigned long long c, unsigned long long m>
 struct lce_ta<a, c, m, (unsigned long long)(-1), LCE_Promote> {
     typedef unsigned long long result_type;
     static result_type next(result_type xp) {
+#if defined(__SIZEOF_INT128__)
         // promote: use 128-bit via __extension__
         __extension__ using calc_type = unsigned __int128;
         return static_cast<result_type>(
             (static_cast<calc_type>(a) * xp + c) % m);
+#else
+        // No __int128 on this target; LCE_Promote is only selected for
+        // engines that don't fit Full/Part/Schrage. Trap if reached.
+        (void)xp;
+        __builtin_trap();
+#endif
     }
 };
 

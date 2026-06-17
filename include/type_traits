@@ -254,8 +254,10 @@ namespace detail {
     template<> inline constexpr bool is_integral_base<unsigned long>      = true;
     template<> inline constexpr bool is_integral_base<long long>          = true;
     template<> inline constexpr bool is_integral_base<unsigned long long> = true;
+#if defined(__SIZEOF_INT128__)
     template<> inline constexpr bool is_integral_base<__int128>           = true;
     template<> inline constexpr bool is_integral_base<unsigned __int128>  = true;
+#endif
 }
 template<class T>
 inline constexpr bool is_integral_v = detail::is_integral_base<remove_cv_t<T>>;
@@ -981,9 +983,15 @@ namespace detail {
 // __make_signed, __make_unsigned NOT in gcc-10.2.
 //===----------------------------------------------------------------------===//
 namespace detail {
+#if defined(__SIZEOF_INT128__)
     using signed_types   = type_list<signed char, short, int, long, long long, __int128>;
     using unsigned_types = type_list<unsigned char, unsigned short, unsigned int,
                                      unsigned long, unsigned long long, unsigned __int128>;
+#else
+    using signed_types   = type_list<signed char, short, int, long, long long>;
+    using unsigned_types = type_list<unsigned char, unsigned short, unsigned int,
+                                     unsigned long, unsigned long long>;
+#endif
 
     template<class T, bool = is_integral_v<T> || is_enum_v<T>>
     struct make_signed_base {};
@@ -1000,8 +1008,10 @@ namespace detail {
     template<> struct make_signed_base<unsigned long, true>      { using type = long; };
     template<> struct make_signed_base<signed long long, true>   { using type = long long; };
     template<> struct make_signed_base<unsigned long long, true> { using type = long long; };
+#if defined(__SIZEOF_INT128__)
     template<> struct make_signed_base<__int128, true>           { using type = __int128; };
     template<> struct make_signed_base<unsigned __int128, true>  { using type = __int128; };
+#endif
 
     template<class T, bool = is_integral_v<T> || is_enum_v<T>>
     struct make_unsigned_base {};
@@ -1018,8 +1028,10 @@ namespace detail {
     template<> struct make_unsigned_base<unsigned long, true>      { using type = unsigned long; };
     template<> struct make_unsigned_base<signed long long, true>   { using type = unsigned long long; };
     template<> struct make_unsigned_base<unsigned long long, true> { using type = unsigned long long; };
+#if defined(__SIZEOF_INT128__)
     template<> struct make_unsigned_base<__int128, true>           { using type = unsigned __int128; };
     template<> struct make_unsigned_base<unsigned __int128, true>  { using type = unsigned __int128; };
+#endif
 }
 
 template<class T>

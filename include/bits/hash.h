@@ -325,8 +325,10 @@ template<> struct hash<long>               : detail::hash_integral<long> {};
 template<> struct hash<unsigned long>      : detail::hash_integral<unsigned long> {};
 template<> struct hash<long long>          : detail::hash_integral<long long> {};
 template<> struct hash<unsigned long long> : detail::hash_integral<unsigned long long> {};
+#if defined(__SIZEOF_INT128__)
 template<> struct hash<__int128>           : detail::hash_integral<__int128> {};
 template<> struct hash<unsigned __int128>  : detail::hash_integral<unsigned __int128> {};
+#endif
 
 // hash for floating point
 template<> struct hash<float>       : detail::hash_floating<float> {};

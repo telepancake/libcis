@@ -178,6 +178,7 @@ inline constexpr const uint64_t pow10_64[20] = {
     UINT64_C(10000000000000000000)
 };
 
+#if defined(__SIZEOF_INT128__)
 // pow10_128 (tables.h — __pow10_128, offset 0, 40 entries)
 inline constexpr int pow10_128_offset = 0;
 inline constexpr unsigned __int128 pow10_128[40] = {
@@ -222,6 +223,7 @@ inline constexpr unsigned __int128 pow10_128[40] = {
     (unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(10000000000000000000),
     ((unsigned __int128)(UINT64_C(10000000000000000000)) * UINT64_C(10000000000000000000)) * 10
 };
+#endif // __SIZEOF_INT128__
 
 inline constexpr const char digits_base_10[200] = {
     '0','0', '0','1', '0','2', '0','3', '0','4', '0','5', '0','6', '0','7', '0','8', '0','9',
@@ -316,6 +318,7 @@ inline char* base_10_u64(char* p, uint64_t v) noexcept {
     return append10(p, v);
 }
 
+#if defined(__SIZEOF_INT128__)
 // 10^exp; exp in [19, 39] suffices for base_10_u128 (to_chars_base_10.h __pow_10)
 inline unsigned __int128 pow_10_128(int exp) noexcept {
     return pow10_128[exp - pow10_128_offset];
@@ -346,6 +349,7 @@ inline char* base_10_u128(char* buffer, unsigned __int128 value) noexcept {
     buffer = append10(buffer, static_cast<uint64_t>(value % 10000000000));
     return buffer;
 }
+#endif // __SIZEOF_INT128__
 
 //===----------------------------------------------------------------------===//
 // __traits_base / __traits (traits.h — width estimation + digit reading)
@@ -395,6 +399,7 @@ struct traits_base<T, enable_if_t<sizeof(T) == sizeof(uint64_t)>> {
     static constexpr const uint64_t* pow() noexcept { return pow10_64; }
 };
 
+#if defined(__SIZEOF_INT128__)
 // For types == 128 bits: __uint128_t arithmetic (traits.h __traits_base 128 path)
 template<class T>
 struct traits_base<T, enable_if_t<sizeof(T) == sizeof(unsigned __int128)>> {
@@ -415,6 +420,7 @@ struct traits_base<T, enable_if_t<sizeof(T) == sizeof(unsigned __int128)>> {
 
     static constexpr const unsigned __int128* pow() noexcept { return pow10_128; }
 };
+#endif // __SIZEOF_INT128__
 
 template<class T>
 struct traits : traits_base<T> {
@@ -616,6 +622,7 @@ to_chars_result to_chars_itoa(char* first, char* last, T value) {
     return {last, errc::value_too_large};
 }
 
+#if defined(__SIZEOF_INT128__)
 // 128-bit base-10 itoa overload (to_chars_integral.h __to_chars_itoa<__uint128_t>).
 // When the value fits in 64 bits use the 64-bit code path; this reduces the
 // number of expensive 128-bit calculations.  NOTE the 128-bit code path
@@ -630,6 +637,7 @@ inline to_chars_result to_chars_itoa(char* first, char* last, unsigned __int128 
         return {tx::convert(first, value), errc{}};
     return {last, errc::value_too_large};
 }
+#endif // __SIZEOF_INT128__
 
 // Base-10 itoa (signed) — prepend '-', recurse on unsigned
 template<class T>
@@ -677,9 +685,17 @@ template<class T>
 struct make_32_64_bit {
     using type = conditional_t<is_signed_v<T>,
         conditional_t<(sizeof(T) <= 4), int32_t,
+#if defined(__SIZEOF_INT128__)
             conditional_t<(sizeof(T) <= 8), int64_t, __int128>>,
+#else
+            int64_t>,
+#endif
         conditional_t<(sizeof(T) <= 4), uint32_t,
+#if defined(__SIZEOF_INT128__)
             conditional_t<(sizeof(T) <= 8), uint64_t, unsigned __int128>>>;
+#else
+            uint64_t>>;
+#endif
 };
 template<class T>
 using make_32_64_bit_t = typename make_32_64_bit<T>::type;

@@ -57,8 +57,10 @@ namespace detail {
     inline constexpr unsigned long      convert_to_integral(unsigned long v)      { return v; }
     inline constexpr long long          convert_to_integral(long long v)          { return v; }
     inline constexpr unsigned long long convert_to_integral(unsigned long long v) { return v; }
+#if defined(__SIZEOF_INT128__)
     inline constexpr __int128_t         convert_to_integral(__int128_t v)         { return v; }
     inline constexpr __uint128_t        convert_to_integral(__uint128_t v)        { return v; }
+#endif
 
     template<class Fp, enable_if_t<is_floating_point_v<Fp>, int> = 0>
     constexpr long long convert_to_integral(Fp v) { return static_cast<long long>(v); }
