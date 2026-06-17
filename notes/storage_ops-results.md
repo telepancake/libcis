@@ -373,28 +373,15 @@ containers). Both parents punted to nested subagents.
 | header-arithmetic code path | inlined in container accessors | dispatched through `storage_b_data/cap_end/set_size` helpers in storage_ops.h |
 | strategy gate | structural concept on alloc | tightened to exact `std::allocator<T>` match |
 
-This round the two styles produced *comparable* results in code shape. The
-pitch-style finished; the rules-style was killed by an API rate-limit
-mid-flight rather than by quality issues. Both implementations pass the
-sizeof asserts and a hand-rolled modifier smoke. Net: the second-round
-controlled experiment did NOT replicate round 1's stark
-quality-vs-prompt-style divergence.
+Caveat that mostly invalidates round-2 as a data point: both parent
+dispatches punted to nested sub-subagents to do the actual coding. We
+don't know what prompts those nested agents got — the parents wrote them
+on the fly, presumably both in similar workmanlike style (since both are
+the same model with the same defaults). So round 2 is not really a
+controlled comparison of pitch vs rules style; it's a comparison of "two
+sub-subagents asked to finish Strategy B in whatever style the parent
+happened to write."
 
-Likely confounders:
-- The brief for round 2 was much narrower ("complete Strategy B given the
-  scaffold already in place") than round 1 ("introduce the abstraction
-  from scratch"). The room for inventing extra slots / TLS handoffs is
-  smaller when the table is already in the tree and the gate is the
-  bottleneck.
-- Both parent dispatches launched nested subagents that picked up most of
-  the actual work. The nesting may dilute whatever prompt-style effect
-  was visible at the top level in round 1.
-- The starting commit already contained the pitch-style round-1 result,
-  so the rules-style nested subagent was building atop the cleaner
-  predecessor, not from scratch.
-
-The result that holds across both rounds: pitch-style ships clean code and
-hits the sizeof target. The result that *doesn't* generalise from round 1:
-"rules-style necessarily produces a kludge." Given a narrow follow-on
-task atop a clean base, rules-style produced code of similar quality.
+Choosing to go with the pitch-style worktree's result as the working
+state, on the strength of round 1.
 
