@@ -46,6 +46,8 @@ extern "C" {
 // Declare malloc_usable_size as the glibc symbol. Pulling <malloc.h> into
 // libcis headers is awkward; we only need this one extern.
 size_t malloc_usable_size(void* ptr) noexcept;
+void*  malloc(size_t size) noexcept;
+void   free(void* ptr) noexcept;
 }
 
 namespace std {
@@ -187,13 +189,20 @@ inline constexpr storage_ops storage_ops_a{
 //     [header: size_t live_bytes][value_type buffer ...]
 //   header_size = max(sizeof(size_t), alignof(value_type))
 //
-// Concept: stateless + raw-pointer + malloc_usable_size available.
+// Concept: must be the system `std::allocator<T>` exactly. Generic stateless
+// raw-pointer allocators that *happen* to expose value_type* (e.g.
+// libcxx-test's min_allocator) are NOT allowed: their allocate/deallocate
+// must round-trip the same pointer, but Strategy B stores `begin_` offset
+// from the allocation base (after the header). std::allocator on glibc is
+// the only allocator we know we can bypass via raw ::malloc/::free.
+template<class T> class allocator;
+
 template<class Alloc>
-concept allocator_with_usable_size = requires(typename Alloc::value_type* p) {
-    { ::malloc_usable_size(p) } -> std::convertible_to<std::size_t>;
-} && alloc_stateless<Alloc>
-  && is_same_v<typename Alloc::value_type*,
-               typename allocator_traits<Alloc>::pointer>;
+concept allocator_with_usable_size =
+    requires(typename Alloc::value_type* p) {
+        { ::malloc_usable_size(p) } -> std::convertible_to<std::size_t>;
+    }
+    && is_same_v<Alloc, ::std::allocator<typename Alloc::value_type>>;
 
 template<class C>
 struct storage_b_glue;
@@ -307,10 +316,52 @@ template<class C, class A>
 inline constexpr bool storage_uses_header_layout = allocator_with_usable_size<A>;
 
 template<class C>
-inline constexpr const storage_ops& storage_for_v =
-    storage_uses_header_layout<C, typename C::allocator_type>
-        ? storage_ops_b<C>
-        : storage_ops_a<C>;
+constexpr const storage_ops& pick_storage_for() noexcept {
+    if constexpr (storage_uses_header_layout<C, typename C::allocator_type>) {
+        return storage_ops_b<C>;
+    } else {
+        return storage_ops_a<C>;
+    }
+}
+
+template<class C>
+inline constexpr const storage_ops& storage_for_v = pick_storage_for<C>();
+
+// ============================================================================
+// Layout bases — the container inherits these privately. Strategy A holds
+// three pointers; Strategy B holds only `begin_` (size + cap recovered from
+// a header + ::malloc_usable_size). Two specializations so that sizeof for
+// the Strategy-B inheritor is exactly one pointer.
+// ============================================================================
+template<class Pointer, bool UsesHeaderLayout>
+struct vector_layout;
+
+template<class Pointer>
+struct vector_layout<Pointer, false> {
+    Pointer begin_ = Pointer{};
+    Pointer end_   = Pointer{};
+    Pointer cap_   = Pointer{};
+};
+
+template<class Pointer>
+struct vector_layout<Pointer, true> {
+    Pointer begin_ = Pointer{};
+};
+
+template<class Pointer, bool UsesHeaderLayout>
+struct string_layout;
+
+template<class Pointer>
+struct string_layout<Pointer, false> {
+    Pointer begin_ = Pointer{};
+    Pointer end_   = Pointer{};
+    Pointer cap_   = Pointer{};
+};
+
+template<class Pointer>
+struct string_layout<Pointer, true> {
+    Pointer begin_ = Pointer{};
+};
 
 } // namespace detail
 } // namespace std

@@ -47,7 +47,10 @@ struct vector_enable_alloc_traits { using type = allocator_traits<Alloc>; };
 //===----------------------------------------------------------------------===//
 
 template<class T, class Allocator>
-class vector {
+class vector
+    : private detail::vector_layout<
+          typename allocator_traits<Allocator>::pointer,
+          detail::storage_uses_header_layout<vector<T, Allocator>, Allocator>> {
 public:
     using value_type             = T;
     using allocator_type         = Allocator;
@@ -68,16 +71,82 @@ public:
         "Allocator::value_type must be same as value_type");
 
 private:
-    // alloc_ is declared before the pointers (libc++ declares it last): with
-    // [[no_unique_address]] g++-10's constexpr evaluator loses track of
-    // pointers written in a ctor body when a later-declared no_unique_address
-    // member is initialized in the member-init-list ("modification of '*0'");
-    // g++-13 accepts the libc++ order.  Layout is unchanged for the (empty)
-    // default allocator.
+    // Strategy B (1-pointer layout) is selected when the allocator is system
+    // malloc-equivalent (std::allocator on glibc): the buffer carries a small
+    // header with the live size, capacity comes from ::malloc_usable_size.
+    // Strategy A keeps begin_/end_/cap_ in the layout base.
+    static constexpr bool uses_header_layout_ =
+        detail::storage_uses_header_layout<vector, allocator_type>;
+    using layout_base_ = detail::vector_layout<pointer, uses_header_layout_>;
+
+    // alloc_ is declared FIRST as a member; the layout base subobject is
+    // initialized before any member (default-init: all pointers nullptr),
+    // before alloc_'s ctor runs. With [[no_unique_address]] the empty
+    // allocator collapses; Strategy A = 24 B, Strategy B = 8 B.
     [[no_unique_address]] allocator_type alloc_;
-    pointer        begin_  = nullptr;
-    pointer        end_    = nullptr;
-    pointer        cap_    = nullptr;
+
+    // Strategy-uniform accessors. begin_ is inherited from the layout base;
+    // refer to it through this->begin_ (dependent base). end_/cap_ only exist
+    // as data members in Strategy A; the accessors below read/write through
+    // storage_ops in Strategy B.
+    constexpr pointer end_ptr_() const noexcept {
+        if constexpr (!uses_header_layout_) {
+            return this->end_;
+        } else {
+            if (this->begin_ == nullptr) return pointer{};
+            auto sp = detail::storage_b_data<vector>(const_cast<vector*>(this));
+            return this->begin_ + (sp.size / sizeof(value_type));
+        }
+    }
+    constexpr pointer cap_ptr_() const noexcept {
+        if constexpr (!uses_header_layout_) {
+            return this->cap_;
+        } else {
+            if (this->begin_ == nullptr) return pointer{};
+            void* e = detail::storage_b_cap_end<vector>(const_cast<vector*>(this));
+            const size_t total_b = static_cast<unsigned char*>(e)
+                                 - reinterpret_cast<unsigned char*>(std::to_address(this->begin_));
+            return this->begin_ + (total_b / sizeof(value_type));
+        }
+    }
+    constexpr void set_size_elems_(size_type n) noexcept {
+        if constexpr (!uses_header_layout_) {
+            this->end_ = this->begin_ + n;
+        } else {
+            detail::storage_b_set_size<vector>(this, n * sizeof(value_type));
+        }
+    }
+    constexpr void set_capacity_elems_(size_type n) noexcept {
+        if constexpr (!uses_header_layout_) {
+            this->cap_ = this->begin_ + n;
+        }
+        (void)n;
+    }
+    constexpr void clear_storage_() noexcept {
+        this->begin_ = pointer{};
+        if constexpr (!uses_header_layout_) {
+            this->end_ = pointer{};
+            this->cap_ = pointer{};
+        }
+    }
+    constexpr void transfer_storage_from_(vector& other) noexcept {
+        this->begin_ = other.begin_;
+        other.begin_ = pointer{};
+        if constexpr (!uses_header_layout_) {
+            this->end_ = other.end_;
+            this->cap_ = other.cap_;
+            other.end_ = pointer{};
+            other.cap_ = pointer{};
+        }
+    }
+    constexpr void swap_storage_(vector& other) noexcept {
+        using std::swap;
+        swap(this->begin_, other.begin_);
+        if constexpr (!uses_header_layout_) {
+            swap(this->end_, other.end_);
+            swap(this->cap_, other.cap_);
+        }
+    }
 
     // -----------------------------------------------------------------------
     // Internal helpers
@@ -149,12 +218,20 @@ private:
                                 detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>;
     }
 
-    // Friend the storage_a_glue specialization so it can reach our private
-    // begin_/end_/cap_ and alloc_.
+    // Friend the storage glue specializations so they can reach our private
+    // alloc_ and the layout base subobject (private inheritance otherwise
+    // hides the up-cast).
     template<class C2> friend struct detail::storage_a_glue;
+    template<class C2> friend struct detail::storage_b_glue;
+
+    // Layout-base access helpers for the glue friends (private inheritance
+    // means static_cast<base*>(this) is ill-formed from outside, even with
+    // friendship; route through these members).
+    layout_base_* layout_() noexcept { return this; }
+    const layout_base_* layout_() const noexcept { return this; }
 
     static const detail::storage_ops* storage_table_() noexcept {
-        return &detail::storage_ops_a<vector>;
+        return &detail::storage_for_v<vector>;
     }
 
     // Convert a raw byte pointer (returned from a core through void*) back to
@@ -180,60 +257,61 @@ private:
     }
 
     // Allocate space for n elements PLUS the one-slot spare maintained by
-    // the spare-slot invariant. Callers that follow up with
-    // construct_at_end(n) will end with end_ < cap_ — no post-hoc
-    // ensure_free_() needed.
+    // the spare-slot invariant. Routes through storage_ops::resize so both
+    // strategies share the allocation path.
     constexpr void vallocate(size_type n) {
         if (n > max_size())
             throw_length_error();
-        auto res = alloc_traits::allocate_at_least(alloc_, n + 1);
-        begin_ = res.ptr;
-        end_   = res.ptr;
-        cap_   = begin_ + res.count;
+        detail::grow(ops_table_(), storage_table_(), this, el_ctx_(),
+                     (n + 1) * sizeof(value_type));
+        // size remains 0 after vallocate (live bytes carried through resize).
     }
 
     void vdeallocate() noexcept {
-        if (begin_ != nullptr) {
+        if (this->begin_ != nullptr) {
             detail::destroy_range(ops_table_(), el_ctx_(),
-                                  std::to_address(begin_),
-                                  std::to_address(end_));
-            alloc_traits::deallocate(alloc_, begin_, capacity());
-            begin_ = end_ = cap_ = nullptr;
+                                  std::to_address(this->begin_),
+                                  std::to_address(end_ptr_()));
+            // storage_ops::free deallocates and resets begin_ (+ end_/cap_ in A).
+            storage_table_()->free(this);
         }
     }
 
-    // Construct n default elements at end_
+    // Construct n default elements at end
     constexpr void construct_at_end(size_type n) {
+        size_type sz = size();
         for (size_type i = 0; i < n; ++i) {
-            construct_one(end_);
-            ++end_;
+            construct_one(this->begin_ + sz + i);
         }
+        set_size_elems_(sz + n);
     }
 
-    // Construct n copies of x at end_
+    // Construct n copies of x at end
     constexpr void construct_at_end(size_type n, const_reference x) {
+        size_type sz = size();
         for (size_type i = 0; i < n; ++i) {
-            construct_one(end_, x);
-            ++end_;
+            construct_one(this->begin_ + sz + i, x);
         }
+        set_size_elems_(sz + n);
     }
 
-    // Construct from iterator range [first, last) of known size n at end_
-    // Stays a template (per-iter): the body is small and iterator-dependent.
+    // Construct from iterator range [first, last) of known size n at end
     template<class InputIter, class Sentinel>
     void construct_at_end(InputIter first, Sentinel last, size_type n) {
-        for (; first != last; ++first) {
-            construct_one(end_, *first);
-            ++end_;
+        size_type sz = size();
+        size_type i = 0;
+        for (; first != last; ++first, ++i) {
+            construct_one(this->begin_ + sz + i, *first);
         }
+        set_size_elems_(sz + i);
         (void)n;
     }
 
     void destruct_at_end(pointer new_last) noexcept {
         detail::destroy_range(ops_table_(), el_ctx_(),
                               std::to_address(new_last),
-                              std::to_address(end_));
-        end_ = new_last;
+                              std::to_address(end_ptr_()));
+        set_size_elems_(static_cast<size_type>(new_last - this->begin_));
     }
 
     // Reallocate to at least new_cap (PLUS the one-slot spare maintained
@@ -275,10 +353,7 @@ private:
     constexpr void move_assign_impl(vector& c, true_type) noexcept {
         vdeallocate();
         move_assign_alloc(c);
-        begin_ = c.begin_;
-        end_   = c.end_;
-        cap_   = c.cap_;
-        c.begin_ = c.end_ = c.cap_ = nullptr;
+        transfer_storage_from_(c);
     }
 
     constexpr void move_assign_impl(vector& c, false_type) {
@@ -291,12 +366,11 @@ private:
 
     template<class Iterator, class Sentinel>
     constexpr void assign_with_sentinel(Iterator first, Sentinel last) {
-        pointer cur = begin_;
-        // (void): user test iterators delete operator,(T) — match libc++'s
-        // "++__first, (void)++__cur" comma-guard.
-        for (; first != last && cur != end_; ++first, (void)++cur)
+        pointer cur = this->begin_;
+        pointer ep = end_ptr_();
+        for (; first != last && cur != ep; ++first, (void)++cur)
             *cur = *first;
-        if (cur != end_) {
+        if (cur != ep) {
             destruct_at_end(cur);
         } else {
             for (; first != last; ++first)
@@ -306,20 +380,16 @@ private:
 
     template<class Iterator, class Sentinel>
     constexpr void assign_with_size(Iterator first, Sentinel last, size_type new_size) {
-        // NOTE: std::copy/copy_n in include/algorithm lack libc++'s
-        // "(void)" comma-guards in their for-loop increments, so user
-        // iterators with a deleted operator,() reject them.  algorithm is a
-        // shared header (off-limits here), so copy inline with guarded loops.
         if (new_size <= capacity()) {
             size_type sz = size();
             if (new_size > sz) {
                 Iterator mid = first;
-                pointer cur = begin_;
+                pointer cur = this->begin_;
                 for (size_type i = 0; i < sz; ++i, (void)++mid, (void)++cur)
                     *cur = *mid;
                 construct_at_end(mid, last, new_size - sz);
             } else {
-                pointer m = begin_;
+                pointer m = this->begin_;
                 for (; first != last; ++first, (void)++m)
                     *m = *first;
                 destruct_at_end(m);
@@ -437,7 +507,7 @@ public:
         : alloc_(alloc_traits::select_on_container_copy_construction(x.alloc_)) {
         if (x.size() > 0) {
             vallocate(x.size());
-            construct_at_end(x.begin_, x.end_, x.size());
+            construct_at_end(x.begin(), x.end(), x.size());
         }
     }
 
@@ -447,24 +517,20 @@ public:
         : alloc_(a) {
         if (x.size() > 0) {
             vallocate(x.size());
-            construct_at_end(x.begin_, x.end_, x.size());
+            construct_at_end(x.begin(), x.end(), x.size());
         }
     }
 
     // Move constructor
     constexpr vector(vector&& x) noexcept
-        : begin_(x.begin_), end_(x.end_), cap_(x.cap_),
-          alloc_(std::move(x.alloc_)) {
-        x.begin_ = x.end_ = x.cap_ = nullptr;
+        : alloc_(std::move(x.alloc_)) {
+        transfer_storage_from_(x);
     }
 
     constexpr vector(vector&& x, const type_identity_t<allocator_type>& a)
         : alloc_(a) {
         if (a == x.alloc_) {
-            begin_ = x.begin_;
-            end_   = x.end_;
-            cap_   = x.cap_;
-            x.begin_ = x.end_ = x.cap_ = nullptr;
+            transfer_storage_from_(x);
         } else {
             assign(make_move_iterator(x.begin()), make_move_iterator(x.end()));
         }
@@ -483,7 +549,7 @@ public:
     constexpr vector& operator=(const vector& x) {
         if (this != addressof(x)) {
             copy_assign_alloc(x);
-            assign(x.begin_, x.end_);
+            assign(x.begin(), x.end());
         }
         return *this;
     }
@@ -504,11 +570,11 @@ public:
     constexpr void assign(size_type n, const_reference u) {
         if (n <= capacity()) {
             size_type s = size();
-            std::fill_n(begin_, std::min(n, s), u);
+            std::fill_n(this->begin_, std::min(n, s), u);
             if (n > s)
                 construct_at_end(n - s, u);
             else
-                destruct_at_end(begin_ + n);
+                destruct_at_end(this->begin_ + n);
         } else {
             vdeallocate();
             vallocate(recommend(n));
@@ -545,10 +611,10 @@ public:
     // Iterators
     // -----------------------------------------------------------------------
 
-    [[nodiscard]] constexpr iterator               begin()  noexcept       { return begin_; }
-    [[nodiscard]] constexpr const_iterator         begin()  const noexcept { return begin_; }
-    [[nodiscard]] constexpr iterator               end()    noexcept       { return end_; }
-    [[nodiscard]] constexpr const_iterator         end()    const noexcept { return end_; }
+    [[nodiscard]] constexpr iterator               begin()  noexcept       { return this->begin_; }
+    [[nodiscard]] constexpr const_iterator         begin()  const noexcept { return this->begin_; }
+    [[nodiscard]] constexpr iterator               end()    noexcept       { return end_ptr_(); }
+    [[nodiscard]] constexpr const_iterator         end()    const noexcept { return end_ptr_(); }
     [[nodiscard]] constexpr reverse_iterator       rbegin() noexcept       { return reverse_iterator(end()); }
     [[nodiscard]] constexpr const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
     [[nodiscard]] constexpr reverse_iterator       rend()   noexcept       { return reverse_iterator(begin()); }
@@ -562,9 +628,27 @@ public:
     // Capacity
     // -----------------------------------------------------------------------
 
-    [[nodiscard]] constexpr size_type size()     const noexcept { return static_cast<size_type>(end_ - begin_); }
-    [[nodiscard]] constexpr size_type capacity() const noexcept { return static_cast<size_type>(cap_ - begin_); }
-    [[nodiscard]] constexpr bool      empty()    const noexcept { return begin_ == end_; }
+    [[nodiscard]] constexpr size_type size() const noexcept {
+        if constexpr (!uses_header_layout_) {
+            return static_cast<size_type>(this->end_ - this->begin_);
+        } else {
+            if (this->begin_ == nullptr) return 0;
+            auto sp = detail::storage_b_data<vector>(const_cast<vector*>(this));
+            return static_cast<size_type>(sp.size / sizeof(value_type));
+        }
+    }
+    [[nodiscard]] constexpr size_type capacity() const noexcept {
+        if constexpr (!uses_header_layout_) {
+            return static_cast<size_type>(this->cap_ - this->begin_);
+        } else {
+            if (this->begin_ == nullptr) return 0;
+            void* e = detail::storage_b_cap_end<vector>(const_cast<vector*>(this));
+            const size_t total_b = static_cast<unsigned char*>(e)
+                                 - reinterpret_cast<unsigned char*>(std::to_address(this->begin_));
+            return static_cast<size_type>(total_b / sizeof(value_type));
+        }
+    }
+    [[nodiscard]] constexpr bool empty() const noexcept { return size() == 0; }
     [[nodiscard]] constexpr size_type max_size() const noexcept {
         return std::min<size_type>(alloc_traits::max_size(alloc_),
                                    numeric_limits<difference_type>::max());
@@ -579,7 +663,8 @@ public:
     }
 
     // Shrink to size+1 directly (the spare slot is part of the invariant).
-    // Single allocation, no follow-up ensure_free_.
+    // For Strategy B the simplest correct path is: grow into a fresh
+    // allocation of the desired size via the storage_ops resize slot.
     constexpr void shrink_to_fit() noexcept {
         size_type sz = size();
         if (sz == 0) {
@@ -588,43 +673,38 @@ public:
         }
         const size_type want = sz + 1;
         if (capacity() <= want) return;  // already tight enough
-        pointer nb = alloc_traits::allocate(alloc_, want);
-        pointer ne = nb;
-        for (pointer s = begin_; s != end_; ++s, ++ne)
-            construct_one(ne, std::move(*s));
-        for (pointer s = begin_; s != end_; ++s)
-            alloc_traits::destroy(alloc_, std::to_address(s));
-        alloc_traits::deallocate(alloc_, begin_, capacity());
-        begin_ = nb;
-        end_   = ne;
-        cap_   = nb + want;
+        // Route through grow so both strategies share the path. grow will
+        // allocate exactly want elements (Strategy A) or want bytes (B),
+        // then relocate live bytes and free the old.
+        detail::grow(ops_table_(), storage_table_(), this, el_ctx_(),
+                     want * sizeof(value_type));
     }
 
     // -----------------------------------------------------------------------
     // Element access
     // -----------------------------------------------------------------------
 
-    [[nodiscard]] constexpr reference       operator[](size_type n)       noexcept { return begin_[n]; }
-    [[nodiscard]] constexpr const_reference operator[](size_type n) const noexcept { return begin_[n]; }
+    [[nodiscard]] constexpr reference       operator[](size_type n)       noexcept { return this->begin_[n]; }
+    [[nodiscard]] constexpr const_reference operator[](size_type n) const noexcept { return this->begin_[n]; }
 
     [[nodiscard]] constexpr reference at(size_type n) {
         if (n >= size())
             throw_out_of_range(); // would be out_of_range
-        return begin_[n];
+        return this->begin_[n];
     }
     [[nodiscard]] constexpr const_reference at(size_type n) const {
         if (n >= size())
             throw_out_of_range(); // would be out_of_range
-        return begin_[n];
+        return this->begin_[n];
     }
 
-    [[nodiscard]] constexpr reference       front()       noexcept { return *begin_; }
-    [[nodiscard]] constexpr const_reference front() const noexcept { return *begin_; }
-    [[nodiscard]] constexpr reference       back()        noexcept { return *(end_ - 1); }
-    [[nodiscard]] constexpr const_reference back()  const noexcept { return *(end_ - 1); }
+    [[nodiscard]] constexpr reference       front()       noexcept { return *this->begin_; }
+    [[nodiscard]] constexpr const_reference front() const noexcept { return *this->begin_; }
+    [[nodiscard]] constexpr reference       back()        noexcept { return *(end_ptr_() - 1); }
+    [[nodiscard]] constexpr const_reference back()  const noexcept { return *(end_ptr_() - 1); }
 
-    [[nodiscard]] constexpr value_type*       data()       noexcept { return std::to_address(begin_); }
-    [[nodiscard]] constexpr const value_type* data() const noexcept { return std::to_address(begin_); }
+    [[nodiscard]] constexpr value_type*       data()       noexcept { return std::to_address(this->begin_); }
+    [[nodiscard]] constexpr const value_type* data() const noexcept { return std::to_address(this->begin_); }
 
     // -----------------------------------------------------------------------
     // Modifiers
@@ -648,22 +728,24 @@ public:
     // works without any tmp-capture dance — placement-new always happens
     // while the source buffer is untouched.
     void ensure_free_(size_type n = 1) {
-        if (static_cast<size_type>(cap_ - end_) < n)
+        if (capacity() - size() < n)
             reallocate_grow(recommend(size() + n));
     }
 
     template<class... Args>
     constexpr reference emplace_back(Args&&... args) {
         ensure_free_();         // no-op except for empty vector
-        construct_one(end_, std::forward<Args>(args)...);
-        ++end_;
+        size_type sz = size();
+        construct_one(this->begin_ + sz, std::forward<Args>(args)...);
+        set_size_elems_(sz + 1);
         ensure_free_();         // restore invariant (args dead, no aliasing)
-        return *(end_ - 1);
+        return *(this->begin_ + sz);
     }
 
     constexpr void pop_back() noexcept {
-        --end_;
-        alloc_traits::destroy(alloc_, std::to_address(end_));
+        size_type sz = size();
+        alloc_traits::destroy(alloc_, std::to_address(this->begin_ + sz - 1));
+        set_size_elems_(sz - 1);
     }
 
     // emplace(pos, args) — uniform pattern: capture args into a tmp (aliasing-
@@ -675,8 +757,9 @@ public:
         difference_type off = position - cbegin();
         value_type tmp(std::forward<Args>(args)...);
         emplace_back(std::move(tmp));
-        rotate_(begin_ + off, end_ - 1, end_);
-        return begin_ + off;
+        pointer ep = end_ptr_();
+        rotate_(this->begin_ + off, ep - 1, ep);
+        return this->begin_ + off;
     }
 
     constexpr iterator insert(const_iterator position, const_reference x) {
@@ -692,16 +775,18 @@ public:
     // construct_copy_one_n core, rotate the new block down to pos.
     constexpr iterator insert(const_iterator position, size_type n, const_reference x) {
         difference_type off = position - cbegin();
-        if (n == 0) return begin_ + off;
+        if (n == 0) return this->begin_ + off;
         value_type x_copy = x;
-        if (static_cast<size_type>(cap_ - end_) < n)
+        if (capacity() - size() < n)
             reallocate_grow(recommend(size() + n));
+        size_type sz = size();
         detail::construct_copy_one_n(ops_table_(), el_ctx_(),
-                                     std::to_address(end_),
+                                     std::to_address(this->begin_ + sz),
                                      std::to_address(&x_copy), n);
-        end_ += n;
-        rotate_(begin_ + off, end_ - n, end_);
-        return begin_ + off;
+        set_size_elems_(sz + n);
+        pointer ep = end_ptr_();
+        rotate_(this->begin_ + off, ep - n, ep);
+        return this->begin_ + off;
     }
 
     // insert range — forward iterators. Range self-aliasing is UB per
@@ -713,15 +798,18 @@ public:
     constexpr iterator insert(const_iterator position, InputIter first, InputIter last) {
         difference_type off = position - cbegin();
         size_type n = static_cast<size_type>(std::distance(first, last));
-        if (n == 0) return begin_ + off;
-        if (static_cast<size_type>(cap_ - end_) < n)
+        if (n == 0) return this->begin_ + off;
+        if (capacity() - size() < n)
             reallocate_grow(recommend(size() + n));
-        for (; first != last; ++first) {
-            construct_one(end_, *first);
-            ++end_;
+        size_type sz = size();
+        size_type i = 0;
+        for (; first != last; ++first, ++i) {
+            construct_one(this->begin_ + sz + i, *first);
         }
-        rotate_(begin_ + off, end_ - n, end_);
-        return begin_ + off;
+        set_size_elems_(sz + i);
+        pointer ep = end_ptr_();
+        rotate_(this->begin_ + off, ep - n, ep);
+        return this->begin_ + off;
     }
 
     // insert range — input-only iterators (size not known up front). Same
@@ -736,9 +824,11 @@ public:
         for (; first != last; ++first)
             emplace_back(*first);
         size_type n = size() - old_size;
-        if (n)
-            rotate_(begin_ + off, end_ - n, end_);
-        return begin_ + off;
+        if (n) {
+            pointer ep = end_ptr_();
+            rotate_(this->begin_ + off, ep - n, ep);
+        }
+        return this->begin_ + off;
     }
 
     constexpr iterator insert(const_iterator position, initializer_list<value_type> il) {
@@ -748,8 +838,8 @@ public:
     // erase(pos): rotate the element at pos to the end, then pop_back.
     constexpr iterator erase(const_iterator position) {
         difference_type off = position - cbegin();
-        pointer p = begin_ + off;
-        rotate_(p, p + 1, end_);
+        pointer p = this->begin_ + off;
+        rotate_(p, p + 1, end_ptr_());
         pop_back();
         return p;
     }
@@ -757,16 +847,17 @@ public:
     // erase(first, last): rotate the [first, last) block to the end, then
     // destroy the now-tail n elements.
     constexpr iterator erase(const_iterator first, const_iterator last) {
-        pointer p = begin_ + (first - cbegin());
+        pointer p = this->begin_ + (first - cbegin());
         size_type n = static_cast<size_type>(last - first);
         if (n == 0) return p;
-        rotate_(p, p + n, end_);
-        destruct_at_end(end_ - n);
+        pointer ep = end_ptr_();
+        rotate_(p, p + n, ep);
+        destruct_at_end(ep - n);
         return p;
     }
 
     constexpr void clear() noexcept {
-        destruct_at_end(begin_);
+        destruct_at_end(this->begin_);
     }
 
     constexpr void resize(size_type sz) {
@@ -779,7 +870,7 @@ public:
                 construct_at_end(sz - cur);
             }
         } else if (cur > sz) {
-            destruct_at_end(begin_ + sz);
+            destruct_at_end(this->begin_ + sz);
         }
     }
 
@@ -793,14 +884,12 @@ public:
                 construct_at_end(sz - cur, x);
             }
         } else if (cur > sz) {
-            destruct_at_end(begin_ + sz);
+            destruct_at_end(this->begin_ + sz);
         }
     }
 
     constexpr void swap(vector& x) noexcept {
-        std::swap(begin_, x.begin_);
-        std::swap(end_,   x.end_);
-        std::swap(cap_,   x.cap_);
+        swap_storage_(x);
         if constexpr (alloc_traits::propagate_on_container_swap::value) {
             std::swap(alloc_, x.alloc_);
         }
@@ -808,7 +897,8 @@ public:
 };
 
 // Strategy A glue for vector<T, A>: expose begin_/end_/cap_ + the allocator
-// to the type-erased buffer ops as raw byte pointers.
+// to the type-erased buffer ops as raw byte pointers. Only instantiated when
+// the gate selects Strategy A (i.e. !storage_uses_header_layout).
 namespace detail {
 template<class T, class A>
 struct storage_a_glue<vector<T, A>> {
@@ -818,17 +908,25 @@ struct storage_a_glue<vector<T, A>> {
     using pointer      = typename C::pointer;
     using value_type   = T;
 
-    static unsigned char* begin(C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(c->begin_)); }
-    static unsigned char* end  (C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(c->end_));   }
-    static unsigned char* cap  (C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(c->cap_));   }
+    // The layout base holds the fields directly when Strategy A is selected.
+    // Reinterpret to the Strategy-A layout. Storage_for_v only routes through
+    // storage_a_glue when this is the actual layout; for Strategy-B vectors
+    // these methods are instantiated (variable-template population) but never
+    // called.
+    using a_base = vector_layout<pointer, false>;
+    static a_base* lb(C* c) noexcept { return reinterpret_cast<a_base*>(c); }
+
+    static unsigned char* begin(C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(lb(c)->begin_)); }
+    static unsigned char* end  (C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(lb(c)->end_));   }
+    static unsigned char* cap  (C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(lb(c)->cap_));   }
 
     static pointer raw_to_pointer(void* raw) noexcept {
         if (raw == nullptr) return pointer{};
         return std::pointer_traits<pointer>::pointer_to(*static_cast<value_type*>(raw));
     }
-    static void set_begin(C* c, void* p) noexcept { c->begin_ = raw_to_pointer(p); }
-    static void set_end  (C* c, void* p) noexcept { c->end_   = raw_to_pointer(p); }
-    static void set_cap  (C* c, void* p) noexcept { c->cap_   = raw_to_pointer(p); }
+    static void set_begin(C* c, void* p) noexcept { lb(c)->begin_ = raw_to_pointer(p); }
+    static void set_end  (C* c, void* p) noexcept { lb(c)->end_   = raw_to_pointer(p); }
+    static void set_cap  (C* c, void* p) noexcept { lb(c)->cap_   = raw_to_pointer(p); }
 
     static void* allocate(C* c, size_t bytes, size_t* got_bytes) noexcept {
         const size_t es = sizeof(value_type);
@@ -843,8 +941,36 @@ struct storage_a_glue<vector<T, A>> {
         const size_t es = sizeof(value_type);
         // Deallocate through the typed begin_ (fancy pointers e.g. min_pointer
         // have no public void* ctor; we cannot static_cast<pointer>(p)).
-        alloc_traits::deallocate(c->alloc_, c->begin_,
+        alloc_traits::deallocate(c->alloc_, lb(c)->begin_,
                                  static_cast<size_type>(bytes / es));
+    }
+};
+
+// Strategy B glue for vector<T, std::allocator<T>>: 1-pointer layout, raw
+// ::malloc/::free (the strategy gate only enables this for allocators
+// equivalent to system malloc).
+template<class T, class A>
+struct storage_b_glue<vector<T, A>> {
+    using C = vector<T, A>;
+    using pointer    = typename C::pointer;
+    using value_type = T;
+
+    using b_base = vector_layout<pointer, true>;
+    static b_base* lb(C* c) noexcept { return reinterpret_cast<b_base*>(c); }
+
+    static unsigned char* begin(C* c) noexcept {
+        return reinterpret_cast<unsigned char*>(std::to_address(lb(c)->begin_));
+    }
+    static void set_begin(C* c, void* p) noexcept {
+        lb(c)->begin_ = static_cast<pointer>(static_cast<value_type*>(p));
+    }
+    static void* raw_alloc(C* /*c*/, size_t bytes) noexcept {
+        void* p = ::malloc(bytes);
+        if (!p) __builtin_trap();
+        return p;
+    }
+    static void raw_free(C* /*c*/, void* base) noexcept {
+        ::free(base);
     }
 };
 } // namespace detail
@@ -865,6 +991,10 @@ template<class InputIter,
     requires input_iterator<InputIter> &&
              requires(Alloc a) { typename Alloc::value_type; a.allocate(size_t{}); }
 vector(InputIter, InputIter, Alloc) -> vector<typename iterator_traits<InputIter>::value_type, Alloc>;
+
+// Strategy B verification — std::vector<int> must be 1-pointer-sized.
+static_assert(sizeof(vector<int, allocator<int>>) == sizeof(void*),
+              "Strategy B should give 1-pointer vector for std::allocator");
 
 // -----------------------------------------------------------------------
 // Non-member operators and swap
