@@ -232,11 +232,14 @@ private:
             return nullptr;
     }
 
-    // Allocate n elements; precondition: begin_ == nullptr, n > 0
+    // Allocate space for n elements PLUS the one-slot spare maintained by
+    // the spare-slot invariant. Callers that follow up with
+    // construct_at_end(n) will end with end_ < cap_ — no post-hoc
+    // ensure_free_() needed.
     constexpr void vallocate(size_type n) {
         if (n > max_size())
             throw_length_error();
-        auto res = alloc_traits::allocate_at_least(alloc_, n);
+        auto res = alloc_traits::allocate_at_least(alloc_, n + 1);
         begin_ = res.ptr;
         end_   = res.ptr;
         cap_   = begin_ + res.count;
@@ -286,11 +289,13 @@ private:
         end_ = new_last;
     }
 
-    // Reallocate to at least new_cap, move all elements; updates begin_/end_/cap_.
-    // Used by reserve / resize-grow / shrink_to_fit / emplace_back's grow path.
+    // Reallocate to at least new_cap (PLUS the one-slot spare maintained
+    // by the spare-slot invariant); updates begin_/end_/cap_. Used by
+    // reserve / resize-grow / shrink_to_fit / insert grow / ensure_free_.
     void reallocate_grow(size_type new_cap) {
-        if (new_cap > max_size())
+        if (new_cap > max_size() - 1)
             throw_length_error();
+        ++new_cap;  // include the spare slot
         detail::byte_buf buf{std::to_address(begin_),
                              std::to_address(end_),
                              std::to_address(cap_)};
@@ -627,35 +632,31 @@ public:
     constexpr void reserve(size_type n) {
         if (n > capacity()) {
             if (n > max_size())
-                throw_length_error(); // would be length_error
-            reallocate_grow(n);
+                throw_length_error();
+            reallocate_grow(n);  // internally includes the spare slot
         }
     }
 
+    // Shrink to size+1 directly (the spare slot is part of the invariant).
+    // Single allocation, no follow-up ensure_free_.
     constexpr void shrink_to_fit() noexcept {
-        if (capacity() > size()) {
-            // Best-effort: if allocation fails we silently keep old buffer
-            size_type sz = size();
-            if (sz == 0) {
-                vdeallocate();
-                return;
-            }
-            pointer nb = nullptr;
-            size_type new_cap = sz;
-            // Use a raw try-style approach — no exceptions, just check
-            nb = alloc_traits::allocate(alloc_, new_cap);
-            pointer ne = nb;
-            for (pointer s = begin_; s != end_; ++s, ++ne) {
-                construct_one(ne, std::move(*s));
-            }
-            // destroy old
-            for (pointer s = begin_; s != end_; ++s)
-                alloc_traits::destroy(alloc_, std::to_address(s));
-            alloc_traits::deallocate(alloc_, begin_, capacity());
-            begin_ = nb;
-            end_   = ne;
-            cap_   = nb + new_cap;
+        size_type sz = size();
+        if (sz == 0) {
+            vdeallocate();
+            return;
         }
+        const size_type want = sz + 1;
+        if (capacity() <= want) return;  // already tight enough
+        pointer nb = alloc_traits::allocate(alloc_, want);
+        pointer ne = nb;
+        for (pointer s = begin_; s != end_; ++s, ++ne)
+            construct_one(ne, std::move(*s));
+        for (pointer s = begin_; s != end_; ++s)
+            alloc_traits::destroy(alloc_, std::to_address(s));
+        alloc_traits::deallocate(alloc_, begin_, capacity());
+        begin_ = nb;
+        end_   = ne;
+        cap_   = nb + want;
     }
 
     // -----------------------------------------------------------------------
@@ -691,26 +692,31 @@ public:
     constexpr void push_back(const_reference x) { emplace_back(x); }
     constexpr void push_back(value_type&& x)    { emplace_back(std::move(x)); }
 
-    // emplace_back: fast path is a placement-new + advance. Grow path
-    // captures args into a local tmp first (the per-T cost of aliasing
-    // safety; libc++'s alternative is the explicit construct-relocate-
-    // destroy dance, which inlines ~80 lines of per-T code). One extra move
-    // per geometric growth event in exchange for the slow path collapsing
-    // into reallocate_grow (a non-template core).
+    // ensure_free_(n): make sure the vector has at least `n` free slots at
+    // the end. The single non-template "make room" primitive every modifier
+    // calls. Pattern is two calls around a modification:
+    //   ensure_free_(n)                        // no-op when invariant holds
+    //   <construct n elements, advance end_>
+    //   ensure_free_()                         // restore invariant
     //
-    // Slow path is deliberately kept inline despite its size: outlining
-    // measured worse end-to-end under -Os+LTO (sharing across callsites is
-    // lost when each slow path body becomes its own symbol).
+    // The PRE call is a no-op for any non-empty vector (the invariant
+    // "always >= 1 free slot for non-empty" makes it so); it only fires for
+    // an empty vector, where no aliasing is possible. The POST call grows
+    // to refill the spare; args are already consumed, so the relocation is
+    // aliasing-safe. Self-aliasing emplace_back (v.push_back(v[0])) thus
+    // works without any tmp-capture dance — placement-new always happens
+    // while the source buffer is untouched.
+    void ensure_free_(size_type n = 1) {
+        if (static_cast<size_type>(cap_ - end_) < n)
+            reallocate_grow(recommend(size() + n));
+    }
+
     template<class... Args>
     constexpr reference emplace_back(Args&&... args) {
-        if (end_ == cap_) {
-            value_type tmp(std::forward<Args>(args)...);
-            reallocate_grow(recommend(size() + 1));
-            construct_one(end_, std::move(tmp));
-        } else {
-            construct_one(end_, std::forward<Args>(args)...);
-        }
+        ensure_free_();         // no-op except for empty vector
+        construct_one(end_, std::forward<Args>(args)...);
         ++end_;
+        ensure_free_();         // restore invariant (args dead, no aliasing)
         return *(end_ - 1);
     }
 
