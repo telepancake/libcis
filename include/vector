@@ -235,20 +235,11 @@ private:
         cap_   = begin_ + res.count;
     }
 
-    // Destroy is kept as a TYPED inline loop (not the shared core): going through
-    // ops_table_() here would instantiate ops_for<T,A> for every vector<T> a
-    // program contains — including types like std::chrono::tzdb where the
-    // make_type_ops chain (copy_construct gate -> ::new T(T const&) ->
-    // construct_at) deep-instantiates a leaf body that hard-errors despite
-    // body-level `requires` gating at the outer layer (the inner construct_at
-    // requires-failure propagates as a hard error up through the unguarded
-    // implicit copy ctor of the containing struct). Inline destroy is cheap per
-    // T (often a no-op for trivially-destructible) and decouples ~vector from
-    // the type_ops table entirely.
     void vdeallocate() noexcept {
         if (begin_ != nullptr) {
-            for (pointer p = begin_; p != end_; ++p)
-                alloc_traits::destroy(alloc_, std::to_address(p));
+            detail::vec_destroy_range(ops_table_(), el_ctx_(),
+                                      std::to_address(begin_),
+                                      std::to_address(end_));
             alloc_traits::deallocate(alloc_, begin_, capacity());
             begin_ = end_ = cap_ = nullptr;
         }
@@ -281,10 +272,10 @@ private:
         (void)n;
     }
 
-    // Same rationale as vdeallocate above: typed loop, no ops_table_().
     void destruct_at_end(pointer new_last) noexcept {
-        for (pointer p = new_last; p != end_; ++p)
-            alloc_traits::destroy(alloc_, std::to_address(p));
+        detail::vec_destroy_range(ops_table_(), el_ctx_(),
+                                  std::to_address(new_last),
+                                  std::to_address(end_));
         end_ = new_last;
     }
 
