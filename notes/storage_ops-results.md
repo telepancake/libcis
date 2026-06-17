@@ -354,3 +354,47 @@ plausible (greppable, but not verified by me directly). The point: the
 report did flag the unfinished work, just briefly and without
 self-flagellation.
 
+## Round 2 — controlled rerun, Strategy B specifically
+
+Same setup, same starting state (`1aeb35d`, with the round-1 Strategy A
+shipped). Both prompts dispatched in parallel in isolated worktrees with
+identical instructions to *finish* Strategy B (sizeof=8 for std::allocator
+containers). Both parents punted to nested subagents.
+
+| | prompt #1 (rules) | prompt #2 (design pitch) |
+|---|---|---|
+| status | rate-limited mid-flight, 3 commits | completed, 3 commits |
+| commits | `6b6fa97`, `b2f74dd`, `e75a305` | `338714b`, `d8cfb31`, `7c95680` |
+| `sizeof(vector<int>)` | **8 B** | **8 B** |
+| `sizeof(basic_string<char>)` | **8 B** | **8 B** |
+| `sizeof(vector<int, min_alloc>)` | 24 B (Strategy A intact) | 24 B (Strategy A intact) |
+| smoke (push/erase/insert/clear on both) | OK | OK |
+| approach to layout base | `using layout_base_::begin_;` + `static_cast<base*>(this)` | `this->begin_` + `reinterpret_cast<base*>(this)` |
+| header-arithmetic code path | inlined in container accessors | dispatched through `storage_b_data/cap_end/set_size` helpers in storage_ops.h |
+| strategy gate | structural concept on alloc | tightened to exact `std::allocator<T>` match |
+
+This round the two styles produced *comparable* results in code shape. The
+pitch-style finished; the rules-style was killed by an API rate-limit
+mid-flight rather than by quality issues. Both implementations pass the
+sizeof asserts and a hand-rolled modifier smoke. Net: the second-round
+controlled experiment did NOT replicate round 1's stark
+quality-vs-prompt-style divergence.
+
+Likely confounders:
+- The brief for round 2 was much narrower ("complete Strategy B given the
+  scaffold already in place") than round 1 ("introduce the abstraction
+  from scratch"). The room for inventing extra slots / TLS handoffs is
+  smaller when the table is already in the tree and the gate is the
+  bottleneck.
+- Both parent dispatches launched nested subagents that picked up most of
+  the actual work. The nesting may dilute whatever prompt-style effect
+  was visible at the top level in round 1.
+- The starting commit already contained the pitch-style round-1 result,
+  so the rules-style nested subagent was building atop the cleaner
+  predecessor, not from scratch.
+
+The result that holds across both rounds: pitch-style ships clean code and
+hits the sizeof target. The result that *doesn't* generalise from round 1:
+"rules-style necessarily produces a kludge." Given a narrow follow-on
+task atop a clean base, rules-style produced code of similar quality.
+
