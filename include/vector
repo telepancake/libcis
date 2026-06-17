@@ -140,8 +140,15 @@ private:
     // the shared detail::ops_for<T,A> — ONE ops vocabulary across containers.
     // No constexpr: the cores byte-relocate at runtime.
     // -----------------------------------------------------------------------
+    // Vector consumes only `destroy` (from vec_destroy_range, called by
+    // vdeallocate/destruct_at_end) and `move_construct` (from vec_grow's
+    // relocation path). The shared shared core table installs only those
+    // two leaves; for types like std::chrono::tzdb where copy_assign's body
+    // would deep-instantiate to a hard error, the leaf is never named and
+    // never instantiated.
     static const detail::type_ops* ops_table_() noexcept {
-        return &detail::ops_for<value_type, allocator_type>;
+        return &detail::ops_for<value_type, allocator_type,
+                                detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>;
     }
 
     // realloc_op shim. ctx is the vector's `this`; size is in BYTES in/out.

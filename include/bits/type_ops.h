@@ -137,7 +137,26 @@ template<class T> size_t hash_op(const void* p) {
     return std::hash<T>{}(*static_cast<const T*>(p));
 }
 
-template<class T, class A>
+// ------------------------------------------------ leaf mask
+// Per-consumer selection of which leaves get installed. Default OP_ALL
+// preserves the previous behavior; consumers that only call a subset
+// (e.g. vector uses destroy + move_construct only) pass a narrower mask
+// so that taking `&copy_assign_op<T>` (etc.) never happens — the body of
+// an unused leaf is not instantiated, sidestepping the "implicit op= is
+// declared but body-ill-formed" deep-instantiation chain (the tzdb case).
+inline constexpr unsigned OP_DEFAULT_CONSTRUCT = 1u << 0;
+inline constexpr unsigned OP_DESTROY           = 1u << 1;
+inline constexpr unsigned OP_COPY_CONSTRUCT    = 1u << 2;
+inline constexpr unsigned OP_MOVE_CONSTRUCT    = 1u << 3;
+inline constexpr unsigned OP_COPY_ASSIGN       = 1u << 4;
+inline constexpr unsigned OP_MOVE_ASSIGN       = 1u << 5;
+inline constexpr unsigned OP_SWAP              = 1u << 6;
+inline constexpr unsigned OP_COMPARE           = 1u << 7;
+inline constexpr unsigned OP_EQUAL             = 1u << 8;
+inline constexpr unsigned OP_HASH              = 1u << 9;
+inline constexpr unsigned OP_ALL               = ~0u;
+
+template<class T, class A, unsigned MASK = OP_ALL>
 constexpr type_ops make_type_ops() {
     type_ops o{sizeof(T), alignof(T), 0u,
                nullptr, nullptr, nullptr, nullptr,   // default_construct, destroy, copy_construct, move_construct
@@ -155,28 +174,20 @@ constexpr type_ops make_type_ops() {
     // lifecycle/sentinel decision below.
     if constexpr (!alloc_stateless<A>)                     o.flags |= f_alloc_ctx;
 
-    // Allocator-mediated lifecycle: the leaf is set when the op is non-trivial OR
-    // the allocator customizes it; left null only when the op is trivial AND the
-    // allocator has a default lifecycle.
-    //
-    // For lifecycle gates we use body-level `requires` (the actual constructor
-    // expression we will form in the leaf) rather than is_*_constructible_v.
-    // Reason: gcc's special-member traits only check the implicit declaration,
-    // not body-instantiability — e.g. a struct containing vector<MoveOnly> is
-    // is_copy_constructible_v == true, but ::new(d) T(*s) instantiates the
-    // implicit copy ctor body which then tries to copy MoveOnly elements and
-    // is ill-formed.  The requires gate forces the same expression to be
-    // evaluated here, so the leaf address is only taken when the body would
-    // compile.  (Same reasoning as the value-op gates below.)
-    if constexpr (requires(T* p) { ::new (p) T(); })
+    // Lifecycle leaves. Each leaf install is doubly gated:
+    //   1. MASK bit set (consumer asked for this leaf), AND
+    //   2. body-level `requires` on the actual expression the leaf will form,
+    //      so the gate matches what the leaf body does — see comment block
+    //      at the value-op gates below for the rationale.
+    if constexpr ((MASK & OP_DEFAULT_CONSTRUCT) && requires(T* p) { ::new (p) T(); })
         if constexpr (!(is_trivially_default_constructible_v<T> && default_life))
             o.default_construct = &default_construct_op<T, A>;
-    if constexpr (!(is_trivially_destructible_v<T> && default_life))
+    if constexpr ((MASK & OP_DESTROY) && !(is_trivially_destructible_v<T> && default_life))
         o.destroy = &destroy_op<T, A>;
-    if constexpr (requires(T* p, const T& s) { ::new (p) T(s); })
+    if constexpr ((MASK & OP_COPY_CONSTRUCT) && requires(T* p, const T& s) { ::new (p) T(s); })
         if constexpr (!(is_trivially_copyable_v<T> && default_life))
             o.copy_construct = &copy_construct_op<T, A>;
-    if constexpr (requires(T* p, T&& s) { ::new (p) T(static_cast<T&&>(s)); })
+    if constexpr ((MASK & OP_MOVE_CONSTRUCT) && requires(T* p, T&& s) { ::new (p) T(static_cast<T&&>(s)); })
         if constexpr (!(is_trivially_relocatable_v<T> && default_life))
             o.move_construct = &move_construct_op<T, A>;
 
@@ -187,26 +198,26 @@ constexpr type_ops make_type_ops() {
     // unconstrained copy-assign) does not eagerly instantiate the body when
     // this table is built — only types whose copy_assign would compile reach
     // the leaf assignment expression in copy_assign_op below.
-    if constexpr (!is_trivially_copyable_v<T>
+    if constexpr ((MASK & OP_COPY_ASSIGN) && !is_trivially_copyable_v<T>
                   && requires(T& d, const T& s) { d = s; })
         o.copy_assign = &copy_assign_op<T>;
-    if constexpr (!is_trivially_copyable_v<T>
+    if constexpr ((MASK & OP_MOVE_ASSIGN) && !is_trivially_copyable_v<T>
                   && requires(T& d, T&& s) { d = std::move(s); })
         o.move_assign = &move_assign_op<T>;
-    if constexpr (!is_trivially_copyable_v<T> && is_swappable_v<T>)
+    if constexpr ((MASK & OP_SWAP) && !is_trivially_copyable_v<T> && is_swappable_v<T>)
         o.swap = &swap_op<T>;
-    if constexpr (requires(const T& a, const T& b) { a < b; })
+    if constexpr ((MASK & OP_COMPARE) && requires(const T& a, const T& b) { a < b; })
         o.compare = &compare_op<T>;
-    if constexpr (requires(const T& a, const T& b) { a == b; })
+    if constexpr ((MASK & OP_EQUAL) && requires(const T& a, const T& b) { a == b; })
         o.equal = &equal_op<T>;
-    if constexpr (requires(const T& a) { std::hash<T>{}(a); })
+    if constexpr ((MASK & OP_HASH) && requires(const T& a) { std::hash<T>{}(a); })
         o.hash = &hash_op<T>;
 
     return o;
 }
 
-template<class T, class A>
-inline constexpr type_ops ops_for = make_type_ops<T, A>();
+template<class T, class A, unsigned MASK = OP_ALL>
+inline constexpr type_ops ops_for = make_type_ops<T, A, MASK>();
 
 // =====================================================================
 // Two-type table: ops between a T and a U
