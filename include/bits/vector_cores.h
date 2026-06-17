@@ -1,101 +1,80 @@
-// bits/vector_cores.h — non-template shared cores used by <vector> (and other
-// containers / standalone algorithms with the same shape).
+// bits/vector_cores.h — non-template shared cores used by <vector> and
+// <string> (and other contiguous-storage containers with the same shape).
 //
-// These are general-purpose contiguous-storage primitives keyed by a
-// `const detail::type_ops*` (element lifecycle leaves + size/align/flags) and,
-// for the growth cores, a `realloc_op` callback bound to an opaque ctx.
+// These primitives are keyed by:
+//   * a `const detail::type_ops*` (element lifecycle leaves + size/align/flags)
+//   * a `const detail::storage_ops*` (buffer state vocabulary) + void* st_ctx
+//   * a void* el_ctx for the lifecycle leaves (the allocator instance, or
+//     nullptr for stateless allocators).
 //
-// Naming convention: no `vec_` prefix — these are not vector-specific. A
-// future <string> port consumes the same primitives, as do free-function
-// algorithms (rotate, etc.).
+// Storage_ops abstracts away whether the container stores three pointers
+// (begin_/end_/cap_; Strategy A) or one pointer to a header-prefixed
+// allocation (Strategy B); the cores read/write through the table.
 //
 // Conventions:
-//   - Pointers and counts are in BYTES. The forwarder converts
+//   - Pointers and counts are in BYTES at this layer. The forwarder converts
 //     T*/size_type/difference_type to byte pointers/counts at the boundary.
-//   - Trivial-fast-path predicates are read off `ops->flags` (f_triv_X +
-//     f_alloc_default_life). A null leaf pointer is NOT a "trivial" signal;
-//     it means the leaf was elided by MASK or is ill-formed for T, and
-//     calling it is a contract violation (and traps).
+//   - Trivial-fast-path predicates are read off `tops->flags` (f_triv_X +
+//     f_alloc_default_life).
 //
-// No exceptions, no RTTI. Allocation failure traps inside realloc_op.
-// constexpr is deliberately not used here (the cores are runtime-only); the
-// methods that call them therefore lose constexpr too.
+// No exceptions, no RTTI. Allocation failure traps inside storage_ops::resize.
+// constexpr is deliberately not used here (the cores are runtime-only).
 #pragma once
 #include <cstddef>
 #include <bits/type_ops.h>
+#include <bits/storage_ops.h>
 
 namespace std {
 namespace detail {
 
-// State the growth cores mutate: byte pointers to begin/end/cap of the
-// buffer. Packaged so a single forwarder call updates all three at once.
-struct byte_buf {
-    void* begin;
-    void* end;
-    void* cap;
-};
+// ---------------------------------------------------------------------------
+// Storage growth: ensure the buffer can hold at least `min_bytes` live
+// bytes. Updates the storage state in place via storage_ops::resize.
+// Used by reserve / resize-grow / shrink_to_fit / and the "ensure a spare
+// slot" path before emplace_back's placement-new.
+// ---------------------------------------------------------------------------
+void grow(const type_ops* tops, const storage_ops* sops,
+          void* st_ctx, void* el_ctx, size_t min_bytes);
 
 // ---------------------------------------------------------------------------
-// Storage growth (no gap): relocate-all into a buffer of at least
-// `min_cap_bytes`. Used by reserve / resize-grow / shrink_to_fit / and the
-// "ensure a spare slot" path before emplace_back's placement-new.
-// Updates buf->begin / ->end / ->cap to the new buffer (byte pointers).
-// ---------------------------------------------------------------------------
-void grow(const type_ops* ops, realloc_op realloc, void* st_ctx,
-          void* el_ctx, byte_buf* buf, size_t min_cap_bytes);
-
-// ---------------------------------------------------------------------------
-// Storage growth with a gap of `gap_bytes` at offset `gap_off_bytes`. Returns
-// a byte pointer to the gap start in the new buffer; buf->end points PAST the
-// moved tail (the gap slots are uninitialised — callers fill them, then this
-// core does NOT bump end_ by the gap). Used by range-insert paths that grow.
-// ---------------------------------------------------------------------------
-void* grow_with_gap(const type_ops* ops, realloc_op realloc, void* st_ctx,
-                    void* el_ctx, byte_buf* buf,
-                    size_t gap_off_bytes, size_t gap_bytes,
-                    size_t min_cap_bytes);
-
-// ---------------------------------------------------------------------------
-// In-place shift: open a `gap_bytes` hole at byte offset `off_bytes` inside
-// the buffer that ends at `end_bytes`. PRECONDITION: T is trivially
-// relocatable + default lifecycle (the caller dispatches; this core is the
-// memmove specialisation).
-// ---------------------------------------------------------------------------
-void open_gap(void* base, size_t end_bytes, size_t off_bytes, size_t gap_bytes);
-
-// ---------------------------------------------------------------------------
-// Destroy all elements in [begin, end) using ops->destroy (skipped when T is
+// Destroy all elements in [begin, end) using tops->destroy (skipped when T is
 // trivially destructible AND the allocator has default lifecycle).
+// PRECONDITION trap: begin <= end.
 // ---------------------------------------------------------------------------
-void destroy_range(const type_ops* ops, void* el_ctx, void* begin, void* end);
+void destroy_range(const type_ops* tops, void* el_ctx, void* begin, void* end);
 
 // ---------------------------------------------------------------------------
 // Default-construct n elements starting at `dst`. For trivially-default-
 // constructible T + default lifecycle, value-init is a memset(0).
 // ---------------------------------------------------------------------------
-void construct_default_n(const type_ops* ops, void* el_ctx,
+void construct_default_n(const type_ops* tops, void* el_ctx,
                          void* dst, size_t n);
 
 // ---------------------------------------------------------------------------
 // Copy-construct n elements at `dst`, each from `src` (one source object,
 // broadcast). For trivially-copyable T + default lifecycle, this memcpys.
 // ---------------------------------------------------------------------------
-void construct_copy_one_n(const type_ops* ops, void* el_ctx,
+void construct_copy_one_n(const type_ops* tops, void* el_ctx,
                           void* dst, const void* src, size_t n);
 
 // ---------------------------------------------------------------------------
 // Rotate the constructed elements in [first, last) so that *middle becomes
 // the new *first and *(middle - 1) becomes the new *(last - 1). Standard
-// std::rotate semantics; type-erased. For trivially-relocatable T + default
-// lifecycle, uses scratch + two/three memcpys/memmoves; otherwise uses
-// move_construct + destroy via leaves.
-//
-// Used by insert/emplace/erase: insert is `emplace_back; rotate(pos, last-1,
-// last)`; erase is `rotate(pos, pos+1, end); pop_back`. Bulk variants take
-// the analogous (n)-element block in middle position.
+// std::rotate semantics; type-erased.
+// PRECONDITION traps: first <= middle <= last.
 // ---------------------------------------------------------------------------
-void rotate(const type_ops* ops, void* el_ctx,
+void rotate(const type_ops* tops, void* el_ctx,
             void* first, void* middle, void* last);
+
+// ---------------------------------------------------------------------------
+// Byte-level relocation primitive used by storage_ops::resize implementations
+// to move live bytes from an old buffer to a freshly-allocated new one. For
+// trivially-relocatable + default-lifecycle T this is a memcpy; otherwise it
+// walks the elements via tops->move_construct + destroy. Used internally by
+// storage_ops::resize; not normally called by container code directly.
+// ---------------------------------------------------------------------------
+void relocate_live(const type_ops* tops, void* el_ctx,
+                   unsigned char* dst, unsigned char* src, size_t live_bytes);
 
 } // namespace detail
 } // namespace std

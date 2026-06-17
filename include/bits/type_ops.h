@@ -302,27 +302,5 @@ constexpr cross_ops make_cross_ops() {
 template<class T, class U>
 inline constexpr cross_ops cross_for = make_cross_ops<T, U>();
 
-// =====================================================================
-// Storage axis: realloc_op
-// =====================================================================
-// A realloc-style function type for a container's raw storage, separate from the
-// element ops. Bound to a container through one opaque `void* ctx`, so a
-// non-template core takes a `realloc_op` + that ctx without naming the container
-// or allocator type. It resizes a buffer and preserves its bytes; it is given no
-// `type_ops` and does not touch elements.
-//
-//   realloc_op(ctx, cur, &size) -> new_base
-//
-//   ctx     the owning container (its `this`); through it the function reaches
-//           the allocator and any inline/small buffer.
-//   cur     current buffer base, or null if there is none.
-//   size    in/out, in BYTES: on entry the requested size; on return the actual
-//           size of the buffer (>= requested).
-//   returns the buffer base, with the first min(old, new) bytes preserved. It
-//           equals `cur` when the buffer was resized in place; when it differs,
-//           any prior buffer at `cur` has been freed. Allocation failure does not
-//           return null — it traps (no exceptions).
-using realloc_op = void* (*)(void* ctx, void* cur, size_t* size);
-
 } // namespace detail
 } // namespace std

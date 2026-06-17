@@ -19,6 +19,7 @@
 #include <climits>
 #include <cstddef>
 #include <bits/type_ops.h>
+#include <bits/storage_ops.h>
 #include <bits/vector_cores.h>
 
 namespace std {
@@ -133,82 +134,28 @@ private:
     // -----------------------------------------------------------------------
     // Type-erasure plumbing for the shared cores in src/support.cpp.
     //
-    // The cores in <bits/vector_cores.h> work on raw byte pointers + a
-    // const type_ops* (element leaves) + a realloc_op (raw byte storage).
-    // The per-instantiation glue is realloc_shim_ (allocates/frees via the
-    // allocator) and to_pointer_ (raw -> fancy).  The element ops table is
-    // the shared detail::ops_for<T,A> — ONE ops vocabulary across containers.
-    // No constexpr: the cores byte-relocate at runtime.
+    // The cores work through a const type_ops* (element leaves) and a
+    // const storage_ops* (buffer state vocabulary) + opaque st_ctx (= this).
+    // The storage_a_glue<vector> specialization below provides the byte-level
+    // hooks that storage_ops_a<vector> uses.
     // -----------------------------------------------------------------------
-    // Vector consumes only `destroy` (from vec_destroy_range, called by
-    // vdeallocate/destruct_at_end) and `move_construct` (from vec_grow's
-    // relocation path). The shared shared core table installs only those
-    // two leaves; for types like std::chrono::tzdb where copy_assign's body
-    // would deep-instantiate to a hard error, the leaf is never named and
-    // never instantiated.
+    // Vector consumes only `destroy` (from destroy_range, called by
+    // vdeallocate/destruct_at_end) and `move_construct` (from the grow path's
+    // relocation). The shared core table installs only those two leaves; for
+    // types like std::chrono::tzdb where copy_assign's body would deep-
+    // instantiate to a hard error, the leaf is never named.
     static const detail::type_ops* ops_table_() noexcept {
         return &detail::ops_for<value_type, allocator_type,
                                 detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>;
     }
 
-    // realloc_op shim. ctx is the vector's `this`; size is in BYTES in/out.
-    // On entry: cur is the current base (or null), *size is the requested
-    // BYTE size. On return: returns the new base (with up to min(old,new)
-    // bytes preserved), *size is the actual byte capacity (>= requested),
-    // and the old buffer is freed if the base changes. Allocation failure
-    // traps.
-    static void* realloc_shim_(void* ctx, void* cur, size_t* size) noexcept {
-        auto* self = static_cast<vector*>(ctx);
-        const size_t es = sizeof(value_type);
-        size_t bytes = *size;
-        if (bytes == 0) {
-            // pure free
-            if (cur) {
-                // The cur buffer is always self->begin_ (the vec_grow contract).
-                // We already hold the typed `pointer` in self->begin_, so use
-                // it directly — fancy pointers (e.g. min_pointer) have no
-                // public void* ctor, so static_cast<pointer>(cur) would fail.
-                alloc_traits::deallocate(self->alloc_,
-                    self->begin_,
-                    static_cast<size_type>((static_cast<unsigned char*>(self->cap_unsafe_()) -
-                                            static_cast<unsigned char*>(cur)) / es));
-            }
-            *size = 0;
-            return nullptr;
-        }
-        // Round up byte count to element count.
-        size_type want_el = static_cast<size_type>((bytes + es - 1) / es);
-        if (want_el > self->max_size())
-            __builtin_trap();
-        auto res = alloc_traits::allocate_at_least(self->alloc_, want_el);
-        if (cur) {
-            // Copy bytes from cur to res.ptr is unnecessary here: vec_grow
-            // only calls realloc with cur=nullptr (it does its own typed
-            // relocation), and the trivial fast path uses raw realloc only
-            // when ops->move_construct is null — but we still allocate fresh
-            // and free old, because allocator_traits has no in-place resize.
-            // We DO need to memcpy the live bytes for the trivial fast path.
-            // The core supplies *size=requested; we copy min(old,new) bytes.
-            // The old byte count is (self->cap_ - cur) in element units.
-            const size_t old_bytes =
-                static_cast<size_t>(static_cast<unsigned char*>(self->cap_unsafe_()) -
-                                    static_cast<unsigned char*>(cur));
-            const size_t copy_bytes = old_bytes < bytes ? old_bytes : bytes;
-            // res.ptr is `pointer` (possibly fancy); memcpy needs void*.
-            __builtin_memcpy(std::to_address(res.ptr), cur, copy_bytes);
-            // Same reasoning as the pure-free path above: cur == self->begin_,
-            // so deallocate via the typed begin_ rather than casting void*.
-            alloc_traits::deallocate(self->alloc_,
-                self->begin_,
-                static_cast<size_type>(old_bytes / es));
-        }
-        *size = static_cast<size_t>(res.count) * es;
-        return std::to_address(res.ptr);
-    }
+    // Friend the storage_a_glue specialization so it can reach our private
+    // begin_/end_/cap_ and alloc_.
+    template<class C2> friend struct detail::storage_a_glue;
 
-    // cap_ exposed as a void* for the realloc shim (cap_ is the byte-after the
-    // last allocated slot; subtracting from cur gives the old byte size).
-    void* cap_unsafe_() noexcept { return std::to_address(cap_); }
+    static const detail::storage_ops* storage_table_() noexcept {
+        return &detail::storage_ops_a<vector>;
+    }
 
     // Convert a raw byte pointer (returned from a core through void*) back to
     // the allocator's fancy `pointer`. For raw-pointer allocators this is a
@@ -290,20 +237,14 @@ private:
     }
 
     // Reallocate to at least new_cap (PLUS the one-slot spare maintained
-    // by the spare-slot invariant); updates begin_/end_/cap_. Used by
-    // reserve / resize-grow / shrink_to_fit / insert grow / ensure_free_.
+    // by the spare-slot invariant); updates begin_/end_/cap_ via the
+    // storage_ops::resize slot.
     void reallocate_grow(size_type new_cap) {
         if (new_cap > max_size() - 1)
             throw_length_error();
         ++new_cap;  // include the spare slot
-        detail::byte_buf buf{std::to_address(begin_),
-                             std::to_address(end_),
-                             std::to_address(cap_)};
-        detail::grow(ops_table_(), &realloc_shim_, this, el_ctx_(),
-                     &buf, new_cap * sizeof(value_type));
-        begin_ = to_pointer_(buf.begin);
-        end_   = to_pointer_(buf.end);
-        cap_   = to_pointer_(buf.cap);
+        detail::grow(ops_table_(), storage_table_(), this, el_ctx_(),
+                     new_cap * sizeof(value_type));
     }
 
     // Type-erased rotate over a constructed range. Used by insert/emplace/
@@ -865,6 +806,48 @@ public:
         }
     }
 };
+
+// Strategy A glue for vector<T, A>: expose begin_/end_/cap_ + the allocator
+// to the type-erased buffer ops as raw byte pointers.
+namespace detail {
+template<class T, class A>
+struct storage_a_glue<vector<T, A>> {
+    using C = vector<T, A>;
+    using alloc_traits = typename C::alloc_traits;
+    using size_type    = typename C::size_type;
+    using pointer      = typename C::pointer;
+    using value_type   = T;
+
+    static unsigned char* begin(C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(c->begin_)); }
+    static unsigned char* end  (C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(c->end_));   }
+    static unsigned char* cap  (C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(c->cap_));   }
+
+    static pointer raw_to_pointer(void* raw) noexcept {
+        if (raw == nullptr) return pointer{};
+        return std::pointer_traits<pointer>::pointer_to(*static_cast<value_type*>(raw));
+    }
+    static void set_begin(C* c, void* p) noexcept { c->begin_ = raw_to_pointer(p); }
+    static void set_end  (C* c, void* p) noexcept { c->end_   = raw_to_pointer(p); }
+    static void set_cap  (C* c, void* p) noexcept { c->cap_   = raw_to_pointer(p); }
+
+    static void* allocate(C* c, size_t bytes, size_t* got_bytes) noexcept {
+        const size_t es = sizeof(value_type);
+        size_type want_el = static_cast<size_type>((bytes + es - 1) / es);
+        if (want_el > c->max_size()) __builtin_trap();
+        auto res = alloc_traits::allocate_at_least(c->alloc_, want_el);
+        *got_bytes = static_cast<size_t>(res.count) * es;
+        return std::to_address(res.ptr);
+    }
+
+    static void deallocate(C* c, void* /*p*/, size_t bytes) noexcept {
+        const size_t es = sizeof(value_type);
+        // Deallocate through the typed begin_ (fancy pointers e.g. min_pointer
+        // have no public void* ctor; we cannot static_cast<pointer>(p)).
+        alloc_traits::deallocate(c->alloc_, c->begin_,
+                                 static_cast<size_type>(bytes / es));
+    }
+};
+} // namespace detail
 
 // -----------------------------------------------------------------------
 // Deduction guides

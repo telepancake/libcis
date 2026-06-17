@@ -46,6 +46,7 @@
 #include <memory_resource>  // pmr::polymorphic_allocator (pmr aliases below)
 #include <climits>        // CHAR_BIT
 #include <bits/type_ops.h>
+#include <bits/storage_ops.h>
 #include <bits/vector_cores.h>
 
 namespace std {
@@ -183,44 +184,12 @@ private:
                                 detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>;
     }
 
-    // realloc_op shim. ctx is the string's `this`; size is in BYTES in/out.
-    // Mirrors vector::realloc_shim_.
-    static void* realloc_shim_(void* ctx, void* cur, size_t* size) noexcept {
-        auto* self = static_cast<basic_string*>(ctx);
-        const size_t es = sizeof(value_type);
-        size_t bytes = *size;
-        if (bytes == 0) {
-            if (cur) {
-                alloc_traits::deallocate(self->alloc_, self->begin_,
-                    static_cast<size_type>((static_cast<unsigned char*>(self->cap_unsafe_()) -
-                                            static_cast<unsigned char*>(cur)) / es));
-            }
-            *size = 0;
-            return nullptr;
-        }
-        size_type want_el = static_cast<size_type>((bytes + es - 1) / es);
-        if (want_el > self->max_size() + 1)  // +1: spare slot
-            __builtin_trap();
-        auto res = alloc_traits::allocate_at_least(self->alloc_, want_el);
-        if (cur) {
-            const size_t old_bytes =
-                static_cast<size_t>(static_cast<unsigned char*>(self->cap_unsafe_()) -
-                                    static_cast<unsigned char*>(cur));
-            const size_t copy_bytes = old_bytes < bytes ? old_bytes : bytes;
-            __builtin_memcpy(std::to_address(res.ptr), cur, copy_bytes);
-            alloc_traits::deallocate(self->alloc_, self->begin_,
-                static_cast<size_type>(old_bytes / es));
-        }
-        *size = static_cast<size_t>(res.count) * es;
-        return std::to_address(res.ptr);
-    }
+    // Friend the storage_a_glue specialization so it can reach our private
+    // begin_/end_/cap_ and alloc_.
+    template<class C2> friend struct detail::storage_a_glue;
 
-    void* cap_unsafe_() noexcept { return std::to_address(cap_); }
-
-    static pointer to_pointer_(void* raw) noexcept {
-        if (raw == nullptr) return pointer{};
-        return std::pointer_traits<pointer>::pointer_to(
-            *static_cast<value_type*>(raw));
+    static const detail::storage_ops* storage_table_() noexcept {
+        return &detail::storage_ops_a<basic_string>;
     }
 
     void* el_ctx_() noexcept {
@@ -255,18 +224,12 @@ private:
     }
 
     // Reallocate to at least new_cap usable chars (+ the spare slot) via the
-    // shared grow core. Preserves the current live characters; the spare
-    // slot at the new *end_ must be re-terminated after the call.
+    // storage_ops::resize slot. The spare slot at the new *end_ holds the
+    // null terminator (zeroed automatically by resize).
     void reallocate_grow(size_type new_cap) {
         if (new_cap > max_size()) throw_length_error();
-        detail::byte_buf buf{std::to_address(begin_),
-                             std::to_address(end_),
-                             std::to_address(cap_)};
-        detail::grow(ops_table_(), &realloc_shim_, this, el_ctx_(),
-                     &buf, (new_cap + 1) * sizeof(value_type));
-        begin_ = to_pointer_(buf.begin);
-        end_   = to_pointer_(buf.end);
-        cap_   = to_pointer_(buf.cap);
+        detail::grow(ops_table_(), storage_table_(), this, el_ctx_(),
+                     (new_cap + 1) * sizeof(value_type));
         traits_type::assign(*std::to_address(end_), value_type());
     }
 
@@ -1365,6 +1328,46 @@ public:
         return find(s) != npos;
     }
 }; // class basic_string
+
+// Strategy A glue for basic_string<CharT, Traits, Alloc>: expose
+// begin_/end_/cap_ + the allocator to the type-erased buffer ops.
+namespace detail {
+template<class CharT, class Traits, class A>
+struct storage_a_glue<basic_string<CharT, Traits, A>> {
+    using C = basic_string<CharT, Traits, A>;
+    using alloc_traits = typename C::alloc_traits;
+    using size_type    = typename C::size_type;
+    using pointer      = typename C::pointer;
+    using value_type   = CharT;
+
+    static unsigned char* begin(C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(c->begin_)); }
+    static unsigned char* end  (C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(c->end_));   }
+    static unsigned char* cap  (C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(c->cap_));   }
+
+    static pointer raw_to_pointer(void* raw) noexcept {
+        if (raw == nullptr) return pointer{};
+        return std::pointer_traits<pointer>::pointer_to(*static_cast<value_type*>(raw));
+    }
+    static void set_begin(C* c, void* p) noexcept { c->begin_ = raw_to_pointer(p); }
+    static void set_end  (C* c, void* p) noexcept { c->end_   = raw_to_pointer(p); }
+    static void set_cap  (C* c, void* p) noexcept { c->cap_   = raw_to_pointer(p); }
+
+    static void* allocate(C* c, size_t bytes, size_t* got_bytes) noexcept {
+        const size_t es = sizeof(value_type);
+        size_type want_el = static_cast<size_type>((bytes + es - 1) / es);
+        if (want_el > c->max_size() + 1) __builtin_trap();
+        auto res = alloc_traits::allocate_at_least(c->alloc_, want_el);
+        *got_bytes = static_cast<size_t>(res.count) * es;
+        return std::to_address(res.ptr);
+    }
+
+    static void deallocate(C* c, void* /*p*/, size_t bytes) noexcept {
+        const size_t es = sizeof(value_type);
+        alloc_traits::deallocate(c->alloc_, c->begin_,
+                                 static_cast<size_type>(bytes / es));
+    }
+};
+} // namespace detail
 
 //=============================================================================
 // Deduction guides

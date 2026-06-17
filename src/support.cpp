@@ -20,9 +20,9 @@
 #include <bits/vector_cores.h>
 
 // ---------------------------------------------------------------------------
-// <vector> cores — non-template bodies that the template forwards into.
-// One shape per kind of work; each is keyed by a const type_ops* (element
-// leaves) plus, for the grow cores, a realloc_op (raw byte storage).
+// Container cores — non-template bodies that vector/string/etc. forward into.
+// Each is keyed by a const type_ops* (element leaves) and, for grow, a
+// const storage_ops* (buffer state vocabulary) + void* st_ctx + void* el_ctx.
 // ---------------------------------------------------------------------------
 namespace std {
 namespace detail {
@@ -44,6 +44,8 @@ static inline bool triv_reloc(const type_ops* ops) {
 }
 
 void destroy_range(const type_ops* ops, void* el_ctx, void* begin, void* end) {
+    // PRECONDITION trap: begin <= end.
+    if (begin > end) __builtin_trap();
     if (triv_destroy(ops)) return;
     const size_t sz = ops->size;
     auto p = static_cast<unsigned char*>(end);
@@ -123,81 +125,19 @@ static void relocate_block_rev(const type_ops* ops, void* el_ctx,
     }
 }
 
-void grow(const type_ops* ops, realloc_op realloc, void* st_ctx,
-          void* el_ctx, byte_buf* buf, size_t min_cap_bytes) {
-    auto cur_begin = static_cast<unsigned char*>(buf->begin);
-    auto cur_end   = static_cast<unsigned char*>(buf->end);
-    const size_t live_bytes = static_cast<size_t>(cur_end - cur_begin);
-
-    // Fast path: trivially-relocatable + default-lifecycle T. realloc
-    // preserves bytes — equivalent to memcpy. Triviality is read off the
-    // flags (not the leaf pointer).
-    if (triv_reloc(ops)) {
-        size_t want = min_cap_bytes;
-        void* nb = realloc(st_ctx, cur_begin, &want);
-        buf->begin = nb;
-        buf->end   = static_cast<unsigned char*>(nb) + live_bytes;
-        buf->cap   = static_cast<unsigned char*>(nb) + want;
-        return;
-    }
-
-    // Lifecycle path: allocate a fresh buffer (via realloc with cur=nullptr),
-    // element-relocate, then free the old via realloc with size=0.
-    size_t want = min_cap_bytes;
-    void* nb = realloc(st_ctx, nullptr, &want);
-    relocate_block(ops, el_ctx, nb, cur_begin, live_bytes);
-    // Free the old buffer: cur_begin may be null (no prior storage).
-    if (cur_begin) {
-        size_t zero = 0;
-        realloc(st_ctx, cur_begin, &zero);
-    }
-    buf->begin = nb;
-    buf->end   = static_cast<unsigned char*>(nb) + live_bytes;
-    buf->cap   = static_cast<unsigned char*>(nb) + want;
+// Public wrapper: storage_ops::resize implementations call this to relocate
+// live bytes from an old buffer to a freshly-allocated new one.
+void relocate_live(const type_ops* ops, void* el_ctx,
+                   unsigned char* dst, unsigned char* src, size_t live_bytes) {
+    relocate_block(ops, el_ctx, dst, src, live_bytes);
 }
 
-void* grow_with_gap(const type_ops* ops, realloc_op realloc, void* st_ctx,
-                    void* el_ctx, byte_buf* buf,
-                    size_t gap_off_bytes, size_t gap_bytes,
-                    size_t min_cap_bytes) {
-    auto cur_begin = static_cast<unsigned char*>(buf->begin);
-    auto cur_end   = static_cast<unsigned char*>(buf->end);
-    const size_t live_bytes = static_cast<size_t>(cur_end - cur_begin);
-    const size_t tail_bytes = live_bytes - gap_off_bytes;
-
-    // Always element-relocate (cannot realloc-in-place because the layout
-    // changes — there is a hole). Allocate fresh, relocate the two halves
-    // around the gap, free the old.
-    size_t want = min_cap_bytes;
-    void* nb = realloc(st_ctx, nullptr, &want);
-    auto nb_b = static_cast<unsigned char*>(nb);
-    if (triv_reloc(ops)) {
-        // triv-reloc + default-life: memcpy both halves.
-        if (gap_off_bytes)
-            __builtin_memcpy(nb_b, cur_begin, gap_off_bytes);
-        if (tail_bytes)
-            __builtin_memcpy(nb_b + gap_off_bytes + gap_bytes,
-                     cur_begin + gap_off_bytes, tail_bytes);
-    } else {
-        relocate_block(ops, el_ctx, nb_b, cur_begin, gap_off_bytes);
-        relocate_block(ops, el_ctx, nb_b + gap_off_bytes + gap_bytes,
-                       cur_begin + gap_off_bytes, tail_bytes);
-    }
-    if (cur_begin) {
-        size_t zero = 0;
-        realloc(st_ctx, cur_begin, &zero);
-    }
-    buf->begin = nb;
-    // end_ does NOT yet include the gap slots (caller fills them then advances).
-    buf->end   = nb_b + gap_off_bytes + gap_bytes + tail_bytes;
-    buf->cap   = nb_b + want;
-    return nb_b + gap_off_bytes;
-}
-
-void open_gap(void* base, size_t end_bytes, size_t off_bytes, size_t gap_bytes) {
-    // Move [off, end) to [off+gap, end+gap); overlapping so memmove.
-    auto p = static_cast<unsigned char*>(base);
-    __builtin_memmove(p + off_bytes + gap_bytes, p + off_bytes, end_bytes - off_bytes);
+void grow(const type_ops* tops, const storage_ops* sops,
+          void* st_ctx, void* el_ctx, size_t min_bytes) {
+    // Dispatch to the storage_ops::resize slot. The implementation handles
+    // allocation, element relocation (via relocate_live), and updating the
+    // container's state.
+    sops->resize(tops, st_ctx, el_ctx, min_bytes);
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +160,8 @@ void rotate(const type_ops* ops, void* el_ctx,
     auto* f = static_cast<unsigned char*>(first);
     auto* m = static_cast<unsigned char*>(middle);
     auto* l = static_cast<unsigned char*>(last);
+    // PRECONDITION trap: first <= middle <= last.
+    if (f > m || m > l) __builtin_trap();
     if (f == m || m == l) return;
     const size_t left  = static_cast<size_t>(m - f);
     const size_t right = static_cast<size_t>(l - m);
