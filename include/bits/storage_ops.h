@@ -42,13 +42,17 @@
 #include <cstdint>
 #include <bits/type_ops.h>
 
-extern "C" {
 // Declare malloc_usable_size as the glibc symbol. Pulling <malloc.h> into
-// libcis headers is awkward; we only need this one extern.
+// libcis headers is awkward; we only need this one extern. Force default
+// visibility so that #pragma GCC visibility push(hidden) in scope (e.g.
+// inside <istream> includes) doesn't render the symbol hidden at link.
+#pragma GCC visibility push(default)
+extern "C" {
 size_t malloc_usable_size(void* ptr) noexcept;
 void*  malloc(size_t size) noexcept;
 void   free(void* ptr) noexcept;
 }
+#pragma GCC visibility pop
 
 namespace std {
 namespace detail {
