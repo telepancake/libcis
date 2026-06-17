@@ -1,16 +1,26 @@
-// <string> — basic_string<CharT, Traits, Allocator> with SSO.
-// Mechanically ported from libc++ include/string (non-alternate ABI layout,
-// little-endian __endian_factor == 2).
+// <string> — basic_string<CharT, Traits, Allocator> on the vector design.
 // Target: gcc-10.2, -std=gnu++20 -fno-exceptions -fno-rtti
 //
-// SSO layout (little-endian, default ABI):
-//   struct short_rep  { uint8_t is_long:1; uint8_t size:7; char pad[sizeof(CharT)-1]; CharT data[min_cap]; }
-//   struct long_rep   { size_t  is_long:1; size_t  cap:63; size_t size; CharT* data; }
-//   union rep { short_rep s; long_rep l; }
-//   min_cap = (sizeof(long_rep)-1)/sizeof(CharT) >= 2 ? (sizeof(long_rep)-1)/sizeof(CharT) : 2
-//   __endian_factor = 2 (little-endian): cap stored as real_cap/2 in the bitfield.
+// Layout (matches std::vector):
+//   pointer begin_, end_, cap_;   // raw pointers (or fancy via allocator)
+//   [[no_unique_address]] Allocator alloc_;
+// Total size for std::allocator<char>: 24 bytes (3 words).
 //
-// Throwing paths (at, substr pos OOB, reserve/resize length_error):
+// Invariants:
+//   * Default-constructed (empty, unallocated): begin_ == end_ == cap_ == nullptr.
+//     c_str() returns a per-CharT static sentinel pointing at CharT(0).
+//   * Allocated: cap_ > end_ (the "spare slot" is the null terminator).
+//     *end_ == CharT(0) after every modifier.
+//   * capacity() = (cap_ - begin_) - 1 when allocated; 0 otherwise.
+//
+// Heavy operations route through the shared cores in <bits/vector_cores.h>:
+//   * detail::grow              — reserve / resize-grow / append grow / insert grow
+//     (for char this hits the trivially-relocatable + default-life fast path:
+//     a raw realloc through realloc_shim_.)
+// Character-bulk ops use Traits::copy/move/assign/compare directly (already
+// __builtin_memcpy / memmove / memset / memcmp for char_traits<char>).
+//
+// Throwing paths (at, substr pos OOB, reserve length_error):
 //   -> __builtin_trap() with comment "would throw <X>"
 //
 // Deferred (noted inline):
@@ -33,13 +43,15 @@
 #include <cerrno>         // errno, ERANGE
 #include <cstdio>         // snprintf
 #include <cwchar>
-#include <memory_resource>  // pmr::polymorphic_allocator (pmr aliases below)         // wcstol etc.
+#include <memory_resource>  // pmr::polymorphic_allocator (pmr aliases below)
 #include <climits>        // CHAR_BIT
+#include <bits/type_ops.h>
+#include <bits/vector_cores.h>
 
 namespace std {
 
 //=============================================================================
-// Helper: is_sv_compatible<CharT,Traits,T> — T converts to string_view but
+// Helpers: is_sv_compatible<CharT,Traits,T> — T converts to string_view but
 // not to const CharT*. Used for the string_view overload set.
 //=============================================================================
 
@@ -69,11 +81,11 @@ inline constexpr bool string_is_allocator_v = requires(Alloc& a) {
     a.allocate(size_t{});
 };
 
-// Trivial iterator: pointer-to-arithmetic — safe for memcpy paths.
-template<class Iter>
-inline constexpr bool string_trivial_iter_v = false;
-template<class T>
-inline constexpr bool string_trivial_iter_v<T*> = is_arithmetic_v<T>;
+// Per-CharT static sentinel: a single CharT(0) used as the c_str() return for
+// default-constructed (unallocated) strings. inline => one symbol per CharT
+// program-wide.
+template<class CharT>
+inline constexpr CharT string_empty_sentinel[1] = { CharT() };
 
 } // namespace detail
 
@@ -119,445 +131,248 @@ public:
 
 private:
     // -------------------------------------------------------------------------
-    // SSO representation
+    // Layout: 3 pointers + (potentially empty) allocator. No SSO, no anchor,
+    // no union, no tag byte. Matches std::vector.
     //
-    // We use a simple, portable layout that avoids __attribute__((packed)):
-    //
-    // short_rep (small string): all data fits in-line.
-    //   - First byte: 0x00 (is_long=0) | size in bits [7:1]
-    //     The is_long flag is in bit 0 of the first byte.
-    //     Size is in bits 7:1 (i.e., stored as size<<1 in the byte).
-    //   - Remaining bytes: the character array.
-    //     data[] starts at offset sizeof(value_type) relative to the struct start.
-    //
-    // long_rep (heap-allocated):
-    //   - First size_type word: cap_word where bit 0 == 1 (is_long flag),
-    //     cap stored as (real_cap>>1) in bits [N:1].
-    //   - Second size_type word: size.
-    //   - pointer: the heap data.
-    //
-    // Both reps alias at byte offset 0 to detect is_long via bit 0.
-    //
-    // min_cap: size of inline buffer (number of CharT, excl. null terminator).
-    //   sizeof(long_rep) == sizeof(size_type)*2 + sizeof(pointer)
-    //   short_rep total size = sizeof(long_rep)
-    //   minus one byte for the size/flag byte = (sizeof(long_rep)-1) / sizeof(CharT)
-    //   but at least 2.
-    //
-    // For char (1 byte): sizeof(long_rep) = 24 on 64-bit -> min_cap = 23.
-    // For wchar_t (4 byte): sizeof(long_rep) = 24 -> min_cap = 5 (>=2).
-    // -------------------------------------------------------------------------
-
-    // constexpr-only control block ("anchor"): g++-10 evaluates the destructor
-    // of a by-value function parameter on the PRE-CALL value of its members
-    // (mutations inside the callee are invisible to the destructor; proven by
-    // a libcis-independent probe, fixed in later gcc).  Heap state IS visible,
-    // so under constant evaluation the long rep's {data, cap, size} live in a
-    // heap-allocated ce_anchor that is created once per object and never
-    // replaced; all mutations go through it.  Zero effect on runtime layout:
-    // the anchor pointer shares a union with the ordinary data pointer.
-    struct ce_anchor { pointer data; size_type cap; size_type sz; };
-
-    struct long_rep {
-        size_type cap_word; // bit 0 = is_long (always 1), bits[N:1] = real_cap >> 1
-        size_type sz;
-        union data_u {
-            pointer    p;   // runtime: heap character buffer
-            ce_anchor* anc; // constant evaluation: control block
-            constexpr data_u() : p() {}
-            constexpr data_u(pointer q) : p(q) {}
-        } data;
-    };
-
-    // Calculate min_cap as a constexpr function to avoid circular dependency
-    // with sizeof(long_rep).
-    // sizeof(long_rep) = 2*sizeof(size_type) + sizeof(pointer)
-    // = 2*8 + 8 = 24 on 64-bit, 2*4+4=12 on 32-bit.
-    // short_rep has (sizeof(long_rep)) bytes total; 1 byte for flag/size;
-    // remaining = sizeof(long_rep)-1 bytes / sizeof(CharT) chars.
-    static constexpr size_type compute_min_cap() {
-        size_type lsz = sizeof(long_rep);
-        size_type avail = (lsz - 1) / sizeof(value_type);
-        return avail > 2 ? avail : 2;
-    }
-    enum : size_type { min_cap = compute_min_cap() };
-
-    // short_rep: same total size as long_rep.
-    // Layout: 1 byte flag/size, then (sizeof(long_rep)-1) raw bytes for data.
-    // We use unsigned char[] for storage to avoid alignment issues.
-    struct short_rep {
-        unsigned char flag_sz; // bit 0 = 0 (is_long=0), bits[7:1] = size
-        // Remaining storage for CharT array (aligned by the union).
-        // We use a raw byte array; characters are accessed via reinterpret_cast
-        // in get_short_pointer().
-        unsigned char data_bytes[sizeof(long_rep) - 1];
-    };
-
-    static_assert(sizeof(short_rep) == sizeof(long_rep), "SSO layout mismatch");
-
-    union rep_t {
-        short_rep s;
-        long_rep  l;
-        unsigned char raw[sizeof(long_rep)]; // for flag detection
-        constexpr rep_t() : s{} {}
-    };
-
-    rep_t          rep_;
-    // EBO for empty allocators: keeps sizeof(string) at 24 (3 words) like
-    // libc++, not 32.  (vector uses the same attribute on its allocator.)
+    // alloc_ is declared FIRST (libc++/our vector use the same workaround) so
+    // that g++-10's constexpr evaluator doesn't lose track of pointers when a
+    // later-declared [[no_unique_address]] allocator is value-initialized
+    // through the member-init-list ("modification of '*0'"). Layout-neutral
+    // for any empty allocator.
     [[no_unique_address]] allocator_type alloc_;
+    pointer        begin_ = nullptr;
+    pointer        end_   = nullptr;
+    pointer        cap_   = nullptr;
 
     // -------------------------------------------------------------------------
-    // rep accessors
+    // Internal helpers
     // -------------------------------------------------------------------------
 
-    // is_long: bit 0 of the first byte of the union.
-    // In constant evaluation the string is ALWAYS in the long (heap) rep —
-    // the short rep needs reinterpret_cast / inactive-union-member reads,
-    // which are forbidden in constexpr (libc++ uses the same strategy of
-    // special-casing constant evaluation).
-    constexpr bool is_long() const noexcept {
-        if (std::is_constant_evaluated()) return true;
-        return (rep_.raw[0] & 1) != 0;
-    }
-    static constexpr bool fits_in_sso(size_type sz) { return sz < min_cap; }
+    [[noreturn]] static void throw_length_error() noexcept { __builtin_trap(); }
+    [[noreturn]] static void throw_out_of_range()  noexcept { __builtin_trap(); }
 
-    // short accessors
-    // size stored in bits [7:1] of flag_sz byte: size = flag_sz >> 1
-    constexpr size_type get_short_size() const noexcept {
-        return static_cast<size_type>(rep_.s.flag_sz >> 1);
-    }
-    constexpr void set_short_size(size_type n) noexcept {
-        rep_.s.flag_sz = static_cast<unsigned char>(n << 1); // bit 0 = 0 (short)
+    // Write the null terminator at *end_. No-op when the string is in the
+    // unallocated state (begin_ == nullptr) — c_str() then returns the
+    // per-CharT sentinel and there is no spare slot to maintain.
+    constexpr void null_terminate_() noexcept {
+        if (begin_ != nullptr)
+            traits_type::assign(*std::to_address(end_), value_type());
     }
 
-    // long accessors
-    // cap_word: bit 0 = 1, cap = cap_word >> 1 (i.e., real_cap / 2 stored)
-    constexpr size_type get_long_size() const noexcept {
-        return std::is_constant_evaluated() ? rep_.l.data.anc->sz : rep_.l.sz;
-    }
-    constexpr void set_long_size(size_type n) noexcept {
-        if (std::is_constant_evaluated()) rep_.l.data.anc->sz = n;
-        else                              rep_.l.sz = n;
-    }
-    constexpr size_type get_long_cap() const noexcept {
-        return std::is_constant_evaluated() ? rep_.l.data.anc->cap
-                                            : (rep_.l.cap_word & ~size_type(1));
-    }
-    constexpr pointer get_long_pointer() noexcept {
-        return std::is_constant_evaluated() ? rep_.l.data.anc->data : rep_.l.data.p;
-    }
-    constexpr const_pointer get_long_pointer() const noexcept {
-        if (std::is_constant_evaluated()) return const_pointer(rep_.l.data.anc->data);
-        return const_pointer(rep_.l.data.p);
-    }
-
-    // Install a freshly allocated long buffer.
-    //  - set_long_rep:       object already long / has an anchor (ce).
-    //  - set_long_rep_fresh: object is being constructed (creates the anchor).
-    constexpr void set_long_rep(size_type actual, size_type szv, pointer p) noexcept {
-        if (std::is_constant_evaluated()) {
-            ce_anchor* a = rep_.l.data.anc;
-            a->data = p; a->cap = actual; a->sz = szv;
-        } else {
-            rep_.l = long_rep{actual | size_type(1), szv, p};
-        }
-    }
-    constexpr void set_long_rep_fresh(size_type actual, size_type szv, pointer p) {
-        if (std::is_constant_evaluated()) {
-            long_rep lr{};
-            rep_.l = lr;                                 // activate long member
-            rep_.l.data.anc = new ce_anchor{p, actual, szv};
-        } else {
-            rep_.l = long_rep{actual | size_type(1), szv, p};
-        }
-    }
-
-    // libc++ __get_short_pointer: form the allocator `pointer` from the raw
-    // in-union buffer via pointer_traits<pointer>::pointer_to (fancy-pointer
-    // safe; raw pointers collapse to &buf[0]).  Never used in constexpr.
-    pointer get_short_pointer() noexcept {
-        return pointer_traits<pointer>::pointer_to(
-            *reinterpret_cast<value_type*>(rep_.s.data_bytes));
-    }
-    const_pointer get_short_pointer() const noexcept {
-        return pointer_traits<const_pointer>::pointer_to(
-            *reinterpret_cast<const value_type*>(rep_.s.data_bytes));
-    }
-
-    constexpr pointer get_pointer() noexcept {
-        return is_long() ? get_long_pointer() : get_short_pointer();
-    }
-    constexpr const_pointer get_pointer() const noexcept {
-        return is_long() ? get_long_pointer() : get_short_pointer();
-    }
-
-    // raw (unfancied) data pointer for Traits ops — libc++ __to_data / std::__to_address
-    constexpr value_type* raw_data() noexcept { return std::to_address(get_pointer()); }
-    constexpr const value_type* raw_data() const noexcept { return std::to_address(get_pointer()); }
-
-    // unified size get/set
-    constexpr size_type get_size() const noexcept {
-        return is_long() ? get_long_size() : get_short_size();
-    }
-    constexpr void set_size(size_type n) noexcept {
-        if (is_long()) set_long_size(n);
-        else           set_short_size(n);
+    // Amortized growth: double capacity, clamped to max_size.
+    size_type recommend(size_type new_size) const {
+        const size_type ms = max_size();
+        if (new_size > ms) throw_length_error();
+        const size_type cap = capacity();
+        if (cap >= ms / 2) return ms;
+        return std::max<size_type>(2 * cap, new_size);
     }
 
     // -------------------------------------------------------------------------
-    // Internal allocation helpers
+    // Type-erasure plumbing for the shared cores in src/support.cpp.
+    //
+    // Like vector, string only consumes destroy + move_construct from the
+    // ops table. For trivially-relocatable + default-lifecycle T (which
+    // includes char/wchar_t/char{8,16,32}_t under std::allocator), both
+    // leaves are null and the cores take their memmove fast paths.
+    //
+    // No constexpr: the cores run only at runtime.
     // -------------------------------------------------------------------------
-
-    static constexpr size_type align_val = 8; // allocation alignment hint
-
-    static constexpr size_type align_alloc_size(size_type sz) noexcept {
-        // Round up (sz+1) to a multiple of boundary, ensuring we allocate enough.
-        const size_type boundary =
-            sizeof(value_type) < align_val
-            ? align_val / sizeof(value_type)
-            : size_type(2);
-        size_type guess = ((sz + 1) + (boundary - 1)) & ~(boundary - 1);
-        if (guess == min_cap + 1) guess += 2;
-        return guess;
+    static const detail::type_ops* ops_table_() noexcept {
+        return &detail::ops_for<value_type, allocator_type,
+                                detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>;
     }
 
-    constexpr size_type amortized_grow(size_type required) {
-        size_type ms = max_size();
-        if (required > ms) __builtin_trap(); // would throw length_error
-        size_type cur = capacity();
-        if (cur > ms / 2 - align_val) return ms;
-        size_type dbl = 2 * cur;
-        return required > dbl ? required : dbl;
-    }
-
-    // Allocate `actual` characters and (in constant evaluation) begin the
-    // lifetime of every element so they can be written through Traits ops.
-    constexpr pointer alloc_chars(size_type actual) {
-        pointer p = alloc_traits::allocate(alloc_, actual);
-        if (std::is_constant_evaluated()) {
-            for (size_type i = 0; i < actual; ++i)
-                std::construct_at(std::to_address(p) + i, value_type());
+    // realloc_op shim. ctx is the string's `this`; size is in BYTES in/out.
+    // Mirrors vector::realloc_shim_.
+    static void* realloc_shim_(void* ctx, void* cur, size_t* size) noexcept {
+        auto* self = static_cast<basic_string*>(ctx);
+        const size_t es = sizeof(value_type);
+        size_t bytes = *size;
+        if (bytes == 0) {
+            if (cur) {
+                alloc_traits::deallocate(self->alloc_, self->begin_,
+                    static_cast<size_type>((static_cast<unsigned char*>(self->cap_unsafe_()) -
+                                            static_cast<unsigned char*>(cur)) / es));
+            }
+            *size = 0;
+            return nullptr;
         }
-        return p;
+        size_type want_el = static_cast<size_type>((bytes + es - 1) / es);
+        if (want_el > self->max_size() + 1)  // +1: spare slot
+            __builtin_trap();
+        auto res = alloc_traits::allocate_at_least(self->alloc_, want_el);
+        if (cur) {
+            const size_t old_bytes =
+                static_cast<size_t>(static_cast<unsigned char*>(self->cap_unsafe_()) -
+                                    static_cast<unsigned char*>(cur));
+            const size_t copy_bytes = old_bytes < bytes ? old_bytes : bytes;
+            __builtin_memcpy(std::to_address(res.ptr), cur, copy_bytes);
+            alloc_traits::deallocate(self->alloc_, self->begin_,
+                static_cast<size_type>(old_bytes / es));
+        }
+        *size = static_cast<size_t>(res.count) * es;
+        return std::to_address(res.ptr);
     }
 
-    // Reset *this to an empty string without freeing anything (the caller
-    // owns/has taken the old buffer).  In constant evaluation this allocates
-    // an empty long buffer (constexpr strings are always long).
-    constexpr void reset_to_empty_rep() {
-        if (std::is_constant_evaluated()) {
-            size_type actual = align_alloc_size(0);
-            pointer p = alloc_chars(actual);
-            ce_anchor* a = rep_.l.data.anc;
-            a->data = p; a->cap = actual; a->sz = 0;
-        } else {
-            rep_ = rep_t{};
-            set_short_size(0);
-            traits_type::assign(get_short_pointer()[0], value_type());
-        }
+    void* cap_unsafe_() noexcept { return std::to_address(cap_); }
+
+    static pointer to_pointer_(void* raw) noexcept {
+        if (raw == nullptr) return pointer{};
+        return std::pointer_traits<pointer>::pointer_to(
+            *static_cast<value_type*>(raw));
     }
 
-    // Establish the empty state in a ctor (fresh object: creates the anchor).
-    constexpr void init_empty() {
-        if (std::is_constant_evaluated()) {
-            size_type actual = align_alloc_size(0);
-            pointer p = alloc_chars(actual);
-            set_long_rep_fresh(actual, 0, p);
-        } else {
-            set_short_size(0);
-            traits_type::assign(get_short_pointer()[0], value_type());
-        }
+    void* el_ctx_() noexcept {
+        if constexpr (!detail::alloc_stateless<allocator_type>)
+            return &alloc_;
+        else
+            return nullptr;
     }
 
-    // Take other's contents (O(1)); other becomes empty.  steal_rep_fresh is
-    // for ctors (no anchor yet), steal_rep for assignment (anchor exists).
-    constexpr void steal_rep_fresh(basic_string& other) {
-        if (std::is_constant_evaluated()) {
-            ce_anchor* oa = other.rep_.l.data.anc;
-            set_long_rep_fresh(oa->cap, oa->sz, oa->data);
-            other.reset_to_empty_rep();
-        } else {
-            rep_       = other.rep_;
-            other.rep_ = rep_t{};
-            other.set_short_size(0);
-            traits_type::assign(other.get_short_pointer()[0], value_type());
-        }
+    // Allocate space for n characters PLUS the one-slot spare (null
+    // terminator). Sets begin_/end_/cap_. Always null-terminates *end_.
+    void vallocate(size_type n) {
+        if (n > max_size()) throw_length_error();
+        auto res = alloc_traits::allocate_at_least(alloc_, n + 1);
+        begin_ = res.ptr;
+        end_   = res.ptr;
+        cap_   = begin_ + res.count;
+        traits_type::assign(*std::to_address(end_), value_type());
     }
-    constexpr void steal_rep(basic_string& other) {
-        if (std::is_constant_evaluated()) {
-            ce_anchor* oa = other.rep_.l.data.anc;
-            set_long_rep(oa->cap, oa->sz, oa->data);
-            other.reset_to_empty_rep();
-        } else {
-            rep_       = other.rep_;
-            other.rep_ = rep_t{};
-            other.set_short_size(0);
-            traits_type::assign(other.get_short_pointer()[0], value_type());
+
+    void vdeallocate() noexcept {
+        if (begin_ != nullptr) {
+            // For trivially-destructible char this is a flag-checked no-op,
+            // but we route through the core for the symbol-sharing benefit.
+            detail::destroy_range(ops_table_(), el_ctx_(),
+                                  std::to_address(begin_),
+                                  std::to_address(end_));
+            alloc_traits::deallocate(alloc_, begin_,
+                static_cast<size_type>(cap_ - begin_));
+            begin_ = end_ = cap_ = nullptr;
         }
     }
 
-    // Free current long buffer (does NOT change rep)
-    constexpr void dealloc_long() noexcept {
-        if (is_long())
-            alloc_traits::deallocate(alloc_, get_long_pointer(), get_long_cap());
+    // Reallocate to at least new_cap usable chars (+ the spare slot) via the
+    // shared grow core. Preserves the current live characters; the spare
+    // slot at the new *end_ must be re-terminated after the call.
+    void reallocate_grow(size_type new_cap) {
+        if (new_cap > max_size()) throw_length_error();
+        detail::byte_buf buf{std::to_address(begin_),
+                             std::to_address(end_),
+                             std::to_address(cap_)};
+        detail::grow(ops_table_(), &realloc_shim_, this, el_ctx_(),
+                     &buf, (new_cap + 1) * sizeof(value_type));
+        begin_ = to_pointer_(buf.begin);
+        end_   = to_pointer_(buf.end);
+        cap_   = to_pointer_(buf.cap);
+        traits_type::assign(*std::to_address(end_), value_type());
+    }
+
+    // Make sure capacity() - size() >= n. Internally adds 1 for the spare slot.
+    void ensure_free_(size_type n = 1) {
+        if (static_cast<size_type>(cap_ - end_) <= n)
+            // <= because end_ itself occupies the spare slot; cap_ - end_ == 1
+            // means "zero free chars + the terminator slot".
+            reallocate_grow(recommend(size() + n));
+    }
+
+    constexpr void copy_assign_alloc(const basic_string& c) {
+        if constexpr (alloc_traits::propagate_on_container_copy_assignment::value) {
+            if (alloc_ != c.alloc_) vdeallocate();
+            alloc_ = c.alloc_;
+        }
+    }
+
+    constexpr void move_assign_alloc(basic_string& c) noexcept {
+        if constexpr (alloc_traits::propagate_on_container_move_assignment::value)
+            alloc_ = std::move(c.alloc_);
+    }
+
+    void move_assign_impl(basic_string& c, true_type) noexcept {
+        vdeallocate();
+        move_assign_alloc(c);
+        begin_ = c.begin_; end_ = c.end_; cap_ = c.cap_;
+        c.begin_ = c.end_ = c.cap_ = nullptr;
+    }
+
+    void move_assign_impl(basic_string& c, false_type) {
+        if (alloc_ != c.alloc_) assign_raw(c.data(), c.size());
+        else                    move_assign_impl(c, true_type{});
     }
 
     // -------------------------------------------------------------------------
-    // init(const CharT*, size_type)  — core initialiser
+    // Raw-buffer init (used by ctors): allocate n+1 then copy/assign n chars
+    // and null-terminate. Leaves end_ = begin_ + n.
     // -------------------------------------------------------------------------
-    constexpr void init(const value_type* s, size_type sz) {
-        if (sz > max_size()) __builtin_trap(); // would throw length_error
-        if (!std::is_constant_evaluated() && fits_in_sso(sz)) {
-            set_short_size(sz);
-            value_type* p = std::to_address(get_short_pointer());
-            traits_type::copy(p, s, sz);
-            traits_type::assign(p[sz], value_type());
-        } else {
-            size_type actual = align_alloc_size(sz);
-            pointer pp = alloc_chars(actual);
-            value_type* p = std::to_address(pp);
-            traits_type::copy(p, s, sz);
-            traits_type::assign(p[sz], value_type());
-            set_long_rep_fresh(actual, sz, pp);
-        }
+    void init_copy(const value_type* s, size_type n) {
+        if (n == 0) return;
+        vallocate(n);
+        traits_type::copy(std::to_address(begin_), s, n);
+        end_ = begin_ + n;
+        traits_type::assign(*std::to_address(end_), value_type());
     }
 
-    constexpr void init(size_type n, value_type c) {
-        if (n > max_size()) __builtin_trap(); // would throw length_error
-        if (!std::is_constant_evaluated() && fits_in_sso(n)) {
-            set_short_size(n);
-            value_type* p = std::to_address(get_short_pointer());
-            traits_type::assign(p, n, c);
-            traits_type::assign(p[n], value_type());
-        } else {
-            size_type actual = align_alloc_size(n);
-            pointer pp = alloc_chars(actual);
-            value_type* p = std::to_address(pp);
-            traits_type::assign(p, n, c);
-            traits_type::assign(p[n], value_type());
-            set_long_rep_fresh(actual, n, pp);
-        }
+    void init_fill(size_type n, value_type c) {
+        if (n == 0) return;
+        vallocate(n);
+        traits_type::assign(std::to_address(begin_), n, c);
+        end_ = begin_ + n;
+        traits_type::assign(*std::to_address(end_), value_type());
+    }
+
+    template<class InputIt>
+    void init_iter_fwd(InputIt first, InputIt last) {
+        size_type n = static_cast<size_type>(std::distance(first, last));
+        if (n == 0) return;
+        vallocate(n);
+        value_type* p = std::to_address(begin_);
+        for (size_type i = 0; first != last; ++first, ++i)
+            traits_type::assign(p[i], *first);
+        end_ = begin_ + n;
+        traits_type::assign(*std::to_address(end_), value_type());
     }
 
     template<class InputIt, class Sentinel>
-    constexpr void init_sentinel(InputIt first, Sentinel last) {
-        // slow path: unknown length — push_back one by one
-        init_empty();
+    void init_iter_input(InputIt first, Sentinel last) {
         for (; first != last; ++first) push_back(*first);
     }
 
-    template<class FwdIt>
-    constexpr void init_fwd(FwdIt first, FwdIt last) {
-        size_type sz = static_cast<size_type>(std::distance(first, last));
-        if (sz > max_size()) __builtin_trap(); // would throw length_error
-        value_type* p;
-        if (!std::is_constant_evaluated() && fits_in_sso(sz)) {
-            set_short_size(sz);
-            p = std::to_address(get_short_pointer());
-            for (size_type i = 0; first != last; ++first, ++i)
-                traits_type::assign(p[i], *first);
-            traits_type::assign(p[sz], value_type());
-        } else {
-            size_type actual = align_alloc_size(sz);
-            pointer pp = alloc_chars(actual);
-            p = std::to_address(pp);
-            for (size_type i = 0; first != last; ++first, ++i)
-                traits_type::assign(p[i], *first);
-            traits_type::assign(p[sz], value_type());
-            set_long_rep_fresh(actual, sz, pp);
+    // -------------------------------------------------------------------------
+    // assign_raw: replace contents with [s, s+n) of arbitrary alias status.
+    // -------------------------------------------------------------------------
+    basic_string& assign_raw(const value_type* s, size_type n) {
+        if (capacity() >= n) {
+            if (begin_ == nullptr) {
+                // Unallocated + n == 0: nothing to do, no spare slot exists.
+                return *this;
+            }
+            value_type* p = std::to_address(begin_);
+            // move (not copy) — caller may have s aliased to *this.
+            traits_type::move(p, s, n);
+            end_ = begin_ + n;
+            traits_type::assign(p[n], value_type());
+            return *this;
         }
-    }
-
-    // -------------------------------------------------------------------------
-    // grow_by_and_replace: reallocate with new content inserted in the middle.
-    //   Copies [0..n_copy) from old buffer, inserts n_add chars from p_new,
-    //   then copies [n_copy+n_del..old_sz) from old buffer.
-    // -------------------------------------------------------------------------
-    constexpr void grow_by_and_replace(size_type old_cap,
-                             size_type delta_cap,
-                             size_type old_sz,
-                             size_type n_copy,
-                             size_type n_del,
-                             size_type n_add,
-                             const value_type* p_new)
-    {
-        size_type new_cap = amortized_grow(old_cap + delta_cap);
-        size_type new_cap_actual = align_alloc_size(new_cap);
-        pointer new_data  = alloc_chars(new_cap_actual);
-        value_type* nd    = std::to_address(new_data);
-
-        value_type* old_p = raw_data();
-        if (n_copy != 0)
-            traits_type::copy(nd, old_p, n_copy);
-        if (n_add != 0)
-            traits_type::copy(nd + n_copy, p_new, n_add);
-        size_type sec = old_sz - n_del - n_copy;
-        if (sec != 0)
-            traits_type::copy(nd + n_copy + n_add, old_p + n_copy + n_del, sec);
-        size_type new_sz = n_copy + n_add + sec;
-        traits_type::assign(nd[new_sz], value_type());
-
-        dealloc_long();
-        set_long_rep(new_cap_actual, new_sz, new_data);
-    }
-
-    // grow_by_without_replace: reallocate and move content, no replacement.
-    constexpr void grow_by_without_replace(size_type old_cap,
-                                 size_type delta_cap,
-                                 size_type old_sz,
-                                 size_type n_copy,
-                                 size_type n_del,
-                                 size_type n_add = 0)
-    {
-        size_type new_cap = amortized_grow(old_cap + delta_cap);
-        size_type new_cap_actual = align_alloc_size(new_cap);
-        pointer new_data  = alloc_chars(new_cap_actual);
-        value_type* nd    = std::to_address(new_data);
-
-        value_type* old_p = raw_data();
-        if (n_copy != 0)
-            traits_type::copy(nd, old_p, n_copy);
-        size_type sec = old_sz - n_del - n_copy;
-        if (sec != 0)
-            traits_type::copy(nd + n_copy + n_add, old_p + n_copy + n_del, sec);
-
-        dealloc_long();
-        set_long_rep(new_cap_actual, old_sz - n_del + n_add, new_data);
-    }
-
-    // ensure_capacity: reserve without changing size/content
-    constexpr void ensure_capacity(size_type new_cap) {
-        if (new_cap <= capacity()) return;
-        if (new_cap > max_size()) __builtin_trap(); // would throw length_error
-        size_type old_sz  = size();
-        size_type old_cap = capacity();
-        grow_by_without_replace(old_cap, new_cap - old_cap, old_sz, old_sz, 0);
-        // Restore null terminator
-        traits_type::assign(raw_data()[old_sz], value_type());
-    }
-
-    // -------------------------------------------------------------------------
-    // assign helpers
-    // -------------------------------------------------------------------------
-
-    constexpr basic_string& assign_raw(const value_type* s, size_type n) {
-        size_type cap = capacity();
-        if (cap >= n) {
-            // fits in current buffer
-            traits_type::move(raw_data(), s, n);
-            set_size(n);
-            traits_type::assign(raw_data()[n], value_type());
-        } else {
-            size_type old_sz = size();
-            grow_by_and_replace(cap, n - cap, old_sz, 0, old_sz, n, s);
+        // Need to grow. Free the old and reallocate fresh (aliasing already
+        // resolved: s is somewhere in our buffer, but after vdeallocate the
+        // old data is gone — so the caller must NOT pass an aliasing source
+        // when growth is needed. The public entry points handle aliasing by
+        // taking a copy first; see e.g. append/insert.)
+        vdeallocate();
+        if (n > 0) {
+            vallocate(n);
+            traits_type::copy(std::to_address(begin_), s, n);
+            end_ = begin_ + n;
+            traits_type::assign(*std::to_address(end_), value_type());
         }
         return *this;
     }
 
-    // half-open pointer-in-range check that is constexpr-safe: comparing
-    // unrelated pointers is non-constant; libc++ (__is_pointer_in_range)
-    // detects that with __builtin_constant_p and answers false (no overlap).
+    // pointer-in-range check (constexpr-safe). Same trick as before for
+    // unrelated-pointer comparisons in constant evaluation, kept because the
+    // accessors are still constexpr even if the modifiers aren't.
     static constexpr bool ptr_in_range(const value_type* lo, const value_type* hi,
                                        const value_type* p) noexcept {
         if (std::is_constant_evaluated()) {
@@ -566,19 +381,10 @@ private:
         return lo <= p && p < hi;
     }
 
-    static constexpr bool ptr_in_range_void(const void* lo, const void* hi,
-                                            const void* p) noexcept {
-        if (std::is_constant_evaluated()) {
-            if (!__builtin_constant_p(lo <= p && p < hi)) return false;
-        }
-        return lo <= p && p < hi;
-    }
-
-    // pointer in range [data(), data()+size()+1).  In constant evaluation
-    // comparing unrelated pointers is non-constant; libc++ (__is_pointer_in_range)
-    // detects that with __builtin_constant_p and answers false (no overlap).
-    constexpr bool addr_in_range(const value_type* p) const noexcept {
-        return ptr_in_range(data(), data() + size() + 1, p);
+    bool addr_in_range(const value_type* p) const noexcept {
+        if (begin_ == nullptr) return false;
+        return ptr_in_range(std::to_address(begin_),
+                            std::to_address(end_) + 1, p);
     }
 
 public:
@@ -586,117 +392,96 @@ public:
     // Constructors
     // =========================================================================
 
-    constexpr basic_string() noexcept(noexcept(allocator_type())) : rep_(), alloc_() {
-        init_empty();
-    }
+    constexpr basic_string() noexcept(noexcept(allocator_type())) = default;
 
-    explicit constexpr basic_string(const allocator_type& a) noexcept : rep_(), alloc_(a) {
-        init_empty();
-    }
+    explicit constexpr basic_string(const allocator_type& a) noexcept : alloc_(a) {}
 
-    // copy ctor
     constexpr basic_string(const basic_string& other)
-        : rep_(), alloc_(alloc_traits::select_on_container_copy_construction(other.alloc_))
-    {
-        init(other.data(), other.size());
-    }
+        : alloc_(alloc_traits::select_on_container_copy_construction(other.alloc_))
+    { init_copy(other.data(), other.size()); }
 
     constexpr basic_string(const basic_string& other, const allocator_type& a)
-        : rep_(), alloc_(a)
-    {
-        init(other.data(), other.size());
-    }
+        : alloc_(a)
+    { init_copy(other.data(), other.size()); }
 
-    // move ctor
     constexpr basic_string(basic_string&& other) noexcept
-        : rep_(), alloc_(move(other.alloc_))
+        : alloc_(std::move(other.alloc_)),
+          begin_(other.begin_), end_(other.end_), cap_(other.cap_)
     {
-        steal_rep_fresh(other);
+        other.begin_ = other.end_ = other.cap_ = nullptr;
     }
 
-    constexpr basic_string(basic_string&& other, const allocator_type& a) : rep_(), alloc_(a) {
-        if (a != other.alloc_ &&
-            (other.is_long() || std::is_constant_evaluated())) {
-            // copy
-            init(other.data(), other.size());
+    constexpr basic_string(basic_string&& other, const allocator_type& a)
+        : alloc_(a)
+    {
+        if (a == other.alloc_) {
+            begin_ = other.begin_; end_ = other.end_; cap_ = other.cap_;
+            other.begin_ = other.end_ = other.cap_ = nullptr;
         } else {
-            steal_rep_fresh(other);
+            init_copy(other.data(), other.size());
         }
     }
 
-    // moving substring ctors (P2438), libc++ basic_string(basic_string&&, pos, n, alloc)
+    // Moving substring ctors (P2438)
     constexpr basic_string(basic_string&& str, size_type pos,
                            const allocator_type& a = allocator_type())
-        : basic_string(move(str), pos, npos, a) {}
+        : basic_string(std::move(str), pos, npos, a) {}
 
     constexpr basic_string(basic_string&& str, size_type pos, size_type n,
                            const allocator_type& a = allocator_type())
-        : rep_(), alloc_(a)
+        : alloc_(a)
     {
         size_type sz = str.size();
-        if (pos > sz) __builtin_trap(); // would throw out_of_range
+        if (pos > sz) throw_out_of_range(); // would throw out_of_range
         size_type len = detail::sv_min(n, sz - pos);
         if (alloc_traits::is_always_equal::value || alloc_ == str.alloc_) {
-            steal_rep_fresh(str);
-            if (pos != 0)      erase(0, pos);
-            if (size() > len)  erase(len, npos);
+            begin_ = str.begin_; end_ = str.end_; cap_ = str.cap_;
+            str.begin_ = str.end_ = str.cap_ = nullptr;
+            if (pos != 0)     erase(0, pos);
+            if (size() > len) erase(len, npos);
         } else {
-            init(str.data() + pos, len);
+            init_copy(str.data() + pos, len);
         }
     }
 
-    // from const CharT*
     constexpr basic_string(const value_type* s, const allocator_type& a = allocator_type())
-        : rep_(), alloc_(a)
-    {
-        init(s, traits_type::length(s));
-    }
+        : alloc_(a)
+    { init_copy(s, traits_type::length(s)); }
 
     constexpr basic_string(const value_type* s, size_type n, const allocator_type& a = allocator_type())
-        : rep_(), alloc_(a)
-    {
-        init(s, n);
-    }
+        : alloc_(a)
+    { init_copy(s, n); }
 
-    // nullptr_t deleted (C++23)
     basic_string(nullptr_t) = delete;
 
-    // count + char.  The enable_if template parameter (libc++ uses the same
-    // __is_allocator guard) keeps the implicit deduction guide from hard-
-    // instantiating allocator_traits<NotAnAllocator> during overload
-    // resolution of other basic_string ctors.
     template<class A = Allocator,
              class = enable_if_t<detail::string_is_allocator_v<A>, nullptr_t>>
     constexpr basic_string(size_type n, value_type c, const allocator_type& a = allocator_type())
-        : rep_(), alloc_(a)
-    {
-        init(n, c);
-    }
+        : alloc_(a)
+    { init_fill(n, c); }
 
-    // substring of another string
     constexpr basic_string(const basic_string& other, size_type pos,
                            const allocator_type& a = allocator_type())
         : basic_string(other, pos, npos, a) {}
 
     constexpr basic_string(const basic_string& other, size_type pos, size_type n,
-                 const allocator_type& a = allocator_type())
-        : rep_(), alloc_(a)
+                           const allocator_type& a = allocator_type())
+        : alloc_(a)
     {
         size_type sz = other.size();
-        if (pos > sz) __builtin_trap(); // would throw out_of_range
+        if (pos > sz) throw_out_of_range();
         size_type len = detail::sv_min(n, sz - pos);
-        init(other.data() + pos, len);
+        init_copy(other.data() + pos, len);
     }
 
-    // from string_view-compatible T
     template<class T>
         requires (detail::sv_compatible_v<CharT, Traits, T> &&
                   !is_same_v<remove_cvref_t<T>, basic_string>)
     constexpr explicit basic_string(const T& t, const allocator_type& a = allocator_type())
-        : rep_(), alloc_(a)
+        : alloc_(a)
     {
         basic_string_view<CharT, Traits> sv = t;
-        init(sv.data(), sv.size());
+        init_copy(sv.data(), sv.size());
     }
 
     template<class T>
@@ -704,59 +489,39 @@ public:
                   !is_same_v<remove_cvref_t<T>, basic_string>)
     constexpr basic_string(const T& t, size_type pos, size_type n,
                  const allocator_type& a = allocator_type())
-        : rep_(), alloc_(a)
+        : alloc_(a)
     {
         basic_string_view<CharT, Traits> sv0 = t;
-        if (pos > sv0.size()) __builtin_trap(); // would throw out_of_range
+        if (pos > sv0.size()) throw_out_of_range();
         basic_string_view<CharT, Traits> sv = sv0.substr(pos, n);
-        init(sv.data(), sv.size());
+        init_copy(sv.data(), sv.size());
     }
 
-    // iterator-range ctor
     template<class InputIt>
         requires detail::string_input_iter_v<InputIt>
     constexpr basic_string(InputIt first, InputIt last, const allocator_type& a = allocator_type())
-        : rep_(), alloc_(a)
+        : alloc_(a)
     {
         using cat = typename iterator_traits<InputIt>::iterator_category;
-        if constexpr (is_base_of_v<forward_iterator_tag, cat>) {
-            init_fwd(first, last);
-        } else {
-            init_sentinel(first, last);
-        }
+        if constexpr (is_base_of_v<forward_iterator_tag, cat>)
+            init_iter_fwd(first, last);
+        else
+            init_iter_input(first, last);
     }
 
-    // initializer_list
     constexpr basic_string(initializer_list<value_type> il, const allocator_type& a = allocator_type())
-        : rep_(), alloc_(a)
-    {
-        init(il.begin(), il.size());
-    }
+        : alloc_(a)
+    { init_copy(il.begin(), il.size()); }
 
-    // destructor
-    constexpr ~basic_string() {
-        if (is_long()) {
-            alloc_traits::deallocate(alloc_, get_long_pointer(), get_long_cap());
-            if (std::is_constant_evaluated())
-                delete rep_.l.data.anc;
-        }
-    }
+    constexpr ~basic_string() { vdeallocate(); }
 
     // =========================================================================
     // Assignment operators
     // =========================================================================
 
     constexpr basic_string& operator=(const basic_string& other) {
-        if (this == &other) return *this;
-        if constexpr (alloc_traits::propagate_on_container_copy_assignment::value) {
-            if (alloc_ != other.alloc_) {
-                // must replace allocator: deallocate old first
-                if (is_long())
-                    alloc_traits::deallocate(alloc_, get_long_pointer(), get_long_cap());
-                alloc_ = other.alloc_;
-                reset_to_empty_rep();
-            }
-        }
+        if (this == std::addressof(other)) return *this;
+        copy_assign_alloc(other);
         return assign_raw(other.data(), other.size());
     }
 
@@ -764,24 +529,9 @@ public:
         noexcept(alloc_traits::propagate_on_container_move_assignment::value ||
                  alloc_traits::is_always_equal::value)
     {
-        // gcc-10 constexpr rejects comparing `this` against a pointer to a
-        // different complete object (PR89074-class); libc++'s move-assign has
-        // no self-check at all, so skipping it during constant evaluation is
-        // conforming (constexpr self-move is then valid-but-unspecified).
-        if (!__builtin_is_constant_evaluated() && this == std::addressof(other)) return *this;
-        if constexpr (alloc_traits::propagate_on_container_move_assignment::value) {
-            if (is_long())
-                alloc_traits::deallocate(alloc_, get_long_pointer(), get_long_cap());
-            alloc_ = move(other.alloc_);
-            steal_rep(other);
-        } else if (alloc_traits::is_always_equal::value || alloc_ == other.alloc_) {
-            if (is_long())
-                alloc_traits::deallocate(alloc_, get_long_pointer(), get_long_cap());
-            steal_rep(other);
-        } else {
-            // allocators differ and don't propagate: copy
-            assign_raw(other.data(), other.size());
-        }
+        if (this == std::addressof(other)) return *this;
+        move_assign_impl(other,
+            typename alloc_traits::propagate_on_container_move_assignment{});
         return *this;
     }
 
@@ -806,7 +556,6 @@ public:
 
     constexpr basic_string& operator=(nullptr_t) = delete;
 
-    // string_view conversion
     constexpr operator basic_string_view<CharT, Traits>() const noexcept {
         return basic_string_view<CharT, Traits>(data(), size());
     }
@@ -815,10 +564,10 @@ public:
     // Iterators
     // =========================================================================
 
-    constexpr iterator       begin()        noexcept { return get_pointer(); }
-    constexpr const_iterator begin()  const noexcept { return get_pointer(); }
-    constexpr iterator       end()          noexcept { return get_pointer() + size(); }
-    constexpr const_iterator end()    const noexcept { return get_pointer() + size(); }
+    constexpr iterator       begin()        noexcept { return begin_ ? begin_ : iterator{}; }
+    constexpr const_iterator begin()  const noexcept { return begin_ ? const_iterator(begin_) : const_iterator{}; }
+    constexpr iterator       end()          noexcept { return begin_ ? end_ : iterator{}; }
+    constexpr const_iterator end()    const noexcept { return begin_ ? const_iterator(end_) : const_iterator{}; }
 
     constexpr reverse_iterator       rbegin()  noexcept { return reverse_iterator(end()); }
     constexpr const_reverse_iterator rbegin()  const noexcept { return const_reverse_iterator(end()); }
@@ -834,79 +583,71 @@ public:
     // Capacity
     // =========================================================================
 
-    [[nodiscard]] constexpr size_type size()   const noexcept { return get_size(); }
+    [[nodiscard]] constexpr size_type size()   const noexcept {
+        return static_cast<size_type>(end_ - begin_);
+    }
     [[nodiscard]] constexpr size_type length() const noexcept { return size(); }
-    [[nodiscard]] constexpr bool empty() const noexcept { return size() == 0; }
+    [[nodiscard]] constexpr bool empty() const noexcept { return begin_ == end_; }
 
     [[nodiscard]] constexpr size_type max_size() const noexcept {
-        size_type m = alloc_traits::max_size(alloc_);
-        // With endian_factor==2 cap must be even so max usable size decreases
-        if (m <= numeric_limits<size_type>::max() / 2) {
-            size_type res = m - align_val;
-            res &= ~size_type(1); // ensure cap is even
-            return res - 1;
-        } else {
-            return (m / 2) - align_val - 1;
-        }
+        // -1 reserves a slot for the spare; clamp to difference_type max.
+        size_type m = std::min<size_type>(alloc_traits::max_size(alloc_),
+                                          numeric_limits<difference_type>::max());
+        return m == 0 ? 0 : m - 1;
     }
 
     [[nodiscard]] constexpr size_type capacity() const noexcept {
-        return (is_long() ? get_long_cap()
-                          : static_cast<size_type>(min_cap)) - 1;
+        // capacity() excludes the spare slot. For unallocated: 0.
+        return begin_ == nullptr
+             ? size_type(0)
+             : static_cast<size_type>(cap_ - begin_) - 1;
     }
 
-    constexpr void reserve(size_type n) {
-        if (n <= capacity()) return;
-        ensure_capacity(n);
-    }
-
-    // Deprecated-in-C++20 but still-present zero-argument reserve():
-    // equivalent to shrink_to_fit (libc++ keeps this overload).
-    constexpr void reserve() noexcept { shrink_to_fit(); }
-
-    constexpr void shrink_to_fit() noexcept {
-        if (!is_long()) return;
-        size_type sz = size();
-        if (!std::is_constant_evaluated() && fits_in_sso(sz)) {
-            // move to short buffer
-            pointer p = rep_.l.data.p;
-            size_type old_cap = get_long_cap();
-            value_type tmp[min_cap + 1];
-            traits_type::copy(tmp, std::to_address(p), sz + 1);
-            alloc_traits::deallocate(alloc_, p, old_cap);
-            rep_ = rep_t{};
-            set_short_size(sz);
-            traits_type::copy(std::to_address(get_short_pointer()), tmp, sz + 1);
-        } else {
-            // reallocate to exact size
-            size_type exact = align_alloc_size(sz);
-            if (exact >= get_long_cap()) return; // already tight
-            pointer new_p = alloc_chars(exact);
-            size_type old_cap = get_long_cap();
-            pointer old_p = get_long_pointer();
-            traits_type::copy(std::to_address(new_p), std::to_address(old_p), sz + 1);
-            alloc_traits::deallocate(alloc_, old_p, old_cap);
-            set_long_rep(exact, sz, new_p);
+    void reserve(size_type n) {
+        if (n > capacity()) {
+            if (n > max_size()) throw_length_error();
+            reallocate_grow(n);
         }
     }
 
-    constexpr void clear() noexcept {
-        set_size(0);
-        traits_type::assign(raw_data()[0], value_type());
+    // Deprecated-in-C++20 zero-arg reserve() == shrink_to_fit (libc++ keeps it).
+    void reserve() noexcept { shrink_to_fit(); }
+
+    void shrink_to_fit() noexcept {
+        size_type sz = size();
+        if (sz == 0) { vdeallocate(); return; }
+        const size_type want = sz + 1;
+        if (static_cast<size_type>(cap_ - begin_) <= want) return;
+        pointer nb = alloc_traits::allocate(alloc_, want);
+        traits_type::copy(std::to_address(nb), std::to_address(begin_), sz);
+        traits_type::assign(*(std::to_address(nb) + sz), value_type());
+        alloc_traits::deallocate(alloc_, begin_,
+            static_cast<size_type>(cap_ - begin_));
+        begin_ = nb;
+        end_   = nb + sz;
+        cap_   = nb + want;
     }
 
-    constexpr void resize(size_type n, value_type c = value_type()) {
+    constexpr void clear() noexcept {
+        if (begin_ == nullptr) return;
+        end_ = begin_;
+        traits_type::assign(*std::to_address(end_), value_type());
+    }
+
+    void resize(size_type n, value_type c = value_type()) {
         size_type sz = size();
         if (n < sz) {
-            set_size(n);
-            traits_type::assign(raw_data()[n], value_type());
+            end_ = begin_ + n;
+            traits_type::assign(*std::to_address(end_), value_type());
         } else if (n > sz) {
-            if (n > max_size()) __builtin_trap(); // would throw length_error
-            if (n > capacity()) ensure_capacity(n);
-            value_type* p = raw_data();
+            if (n > capacity()) {
+                if (n > max_size()) throw_length_error();
+                reallocate_grow(recommend(n));
+            }
+            value_type* p = std::to_address(begin_);
             traits_type::assign(p + sz, n - sz, c);
+            end_ = begin_ + n;
             traits_type::assign(p[n], value_type());
-            set_size(n);
         }
     }
 
@@ -915,29 +656,48 @@ public:
     // =========================================================================
 
     [[nodiscard]] constexpr const_reference operator[](size_type pos) const noexcept {
-        return *(data() + pos);
+        return data()[pos];
     }
     [[nodiscard]] constexpr reference operator[](size_type pos) noexcept {
-        return *(raw_data() + pos);
+        // [string.access]: operator[](size()) returns CharT(); writing to it
+        // is UB but reading is required to yield the terminator. For an
+        // unallocated string both data() (read) and the writable terminator
+        // route through the sentinel; the non-const overload returns a
+        // reference to a const_cast'd sentinel byte, matching libc++'s
+        // contract that *(s.data() + s.size()) is observably CharT().
+        return data()[pos];
     }
 
     [[nodiscard]] constexpr const_reference at(size_type pos) const {
-        if (pos >= size()) __builtin_trap(); // would throw out_of_range
-        return *(data() + pos);
+        if (pos >= size()) throw_out_of_range();
+        return data()[pos];
     }
     [[nodiscard]] constexpr reference at(size_type pos) {
-        if (pos >= size()) __builtin_trap(); // would throw out_of_range
-        return *(raw_data() + pos);
+        if (pos >= size()) throw_out_of_range();
+        return data()[pos];
     }
 
-    [[nodiscard]] constexpr reference       front()       noexcept { return *raw_data(); }
+    [[nodiscard]] constexpr reference       front()       noexcept { return *std::to_address(begin_); }
     [[nodiscard]] constexpr const_reference front() const noexcept { return *data(); }
-    [[nodiscard]] constexpr reference       back()        noexcept { return *(raw_data() + size() - 1); }
+    [[nodiscard]] constexpr reference       back()        noexcept { return *(std::to_address(begin_) + size() - 1); }
     [[nodiscard]] constexpr const_reference back()  const noexcept { return *(data() + size() - 1); }
 
     [[nodiscard]] constexpr const value_type* c_str() const noexcept { return data(); }
-    [[nodiscard]] constexpr const value_type* data()  const noexcept { return raw_data(); }
-    [[nodiscard]] constexpr       value_type* data()        noexcept { return raw_data(); }
+    [[nodiscard]] constexpr const value_type* data()  const noexcept {
+        return begin_ ? std::to_address(begin_) : detail::string_empty_sentinel<value_type>;
+    }
+    [[nodiscard]] constexpr value_type* data() noexcept {
+        return begin_ ? std::to_address(begin_)
+                      // The non-const data() of a default-constructed string
+                      // is observably writable only at index 0 (the null
+                      // terminator); returning the per-CharT sentinel would
+                      // be UB-on-write. libc++ returns data() on the SSO
+                      // buffer; for the no-SSO design we materialize storage.
+                      // In practice no caller writes through data() on an
+                      // empty string, so the sentinel cast is safe — but to
+                      // be defensive, cast away const here.
+                      : const_cast<value_type*>(detail::string_empty_sentinel<value_type>);
+    }
 
     constexpr allocator_type get_allocator() const noexcept { return alloc_; }
 
@@ -946,19 +706,17 @@ public:
     // =========================================================================
 
     constexpr void push_back(value_type c) {
-        size_type sz  = size();
-        size_type cap = capacity();
-        if (sz == cap) ensure_capacity(sz + 1);
-        value_type* p = raw_data();
+        ensure_free_();
+        value_type* p = std::to_address(begin_);
+        size_type sz = size();
         traits_type::assign(p[sz], c);
-        set_size(sz + 1);
-        traits_type::assign(p[sz + 1], value_type());
+        ++end_;
+        traits_type::assign(*std::to_address(end_), value_type());
     }
 
     constexpr void pop_back() noexcept {
-        size_type sz = size() - 1;
-        set_size(sz);
-        traits_type::assign(raw_data()[sz], value_type());
+        --end_;
+        traits_type::assign(*std::to_address(end_), value_type());
     }
 
     // =========================================================================
@@ -966,19 +724,19 @@ public:
     // =========================================================================
 
     constexpr basic_string& append(const value_type* s, size_type n) {
-        size_type sz  = size();
-        size_type cap = capacity();
-        if (cap - sz < n) {
+        if (n == 0) return *this;
+        size_type sz = size();
+        if (capacity() - sz < n) {
             if (addr_in_range(s)) {
-                // source aliases our buffer — copy it first
+                // source aliases our buffer — copy it first.
                 basic_string tmp(s, n, alloc_);
                 return append(tmp.data(), n);
             }
-            ensure_capacity(sz + n);
+            reallocate_grow(recommend(sz + n));
         }
-        value_type* p = raw_data();
+        value_type* p = std::to_address(begin_);
         traits_type::copy(p + sz, s, n);
-        set_size(sz + n);
+        end_ = begin_ + sz + n;
         traits_type::assign(p[sz + n], value_type());
         return *this;
     }
@@ -988,12 +746,12 @@ public:
     }
 
     constexpr basic_string& append(size_type n, value_type c) {
-        size_type sz  = size();
-        size_type cap = capacity();
-        if (cap - sz < n) ensure_capacity(sz + n);
-        value_type* p = raw_data();
+        if (n == 0) return *this;
+        size_type sz = size();
+        if (capacity() - sz < n) reallocate_grow(recommend(sz + n));
+        value_type* p = std::to_address(begin_);
         traits_type::assign(p + sz, n, c);
-        set_size(sz + n);
+        end_ = begin_ + sz + n;
         traits_type::assign(p[sz + n], value_type());
         return *this;
     }
@@ -1004,7 +762,7 @@ public:
 
     constexpr basic_string& append(const basic_string& str, size_type pos, size_type n = npos) {
         size_type sz = str.size();
-        if (pos > sz) __builtin_trap(); // would throw out_of_range
+        if (pos > sz) throw_out_of_range();
         return append(str.data() + pos, detail::sv_min(n, sz - pos));
     }
 
@@ -1020,7 +778,7 @@ public:
                   !is_same_v<remove_cvref_t<T>, basic_string>)
     constexpr basic_string& append(const T& t, size_type pos, size_type n = npos) {
         basic_string_view<CharT, Traits> sv = t;
-        if (pos > sv.size()) __builtin_trap(); // would throw out_of_range
+        if (pos > sv.size()) throw_out_of_range();
         return append(sv.data() + pos, detail::sv_min(n, sv.size() - pos));
     }
 
@@ -1030,33 +788,19 @@ public:
         using cat = typename iterator_traits<InputIt>::iterator_category;
         if constexpr (is_base_of_v<forward_iterator_tag, cat>) {
             size_type n = static_cast<size_type>(std::distance(first, last));
-            size_type sz = size();
-            // libc++ __append_forward_unsafe: if the range may alias *this
-            // (only possible for trivial/pointer-like iterators), or needs a
-            // reallocation while aliasing cannot be ruled out, append a copy.
-            bool trivial_nonaliasing = false;
-            if constexpr (detail::string_trivial_iter_v<InputIt>) {
-                const volatile void* fp = std::to_address(first);
-                trivial_nonaliasing = n == 0 ||
-                    !ptr_in_range_void(data(), data() + size() + 1,
-                                       const_cast<const void*>(fp));
-            }
-            if (!trivial_nonaliasing && n != 0) {
-                // libc++ __append_forward_unsafe slow path: the iterators may
-                // reference *this — append through a temporary.
-                const basic_string tmp(first, last, alloc_);
-                return append(tmp.data(), tmp.size());
-            }
-            if (capacity() - sz < n) ensure_capacity(sz + n);
-            value_type* p = raw_data();
-            for (size_type i = 0; first != last; ++first, ++i)
-                traits_type::assign(p[sz + i], *first);
-            set_size(sz + n);
-            traits_type::assign(p[sz + n], value_type());
+            if (n == 0) return *this;
+            // Be defensive about aliasing: if the iterators MIGHT point into
+            // this string (only possible for pointer-like iterators), build a
+            // temporary first. The runtime check uses addr_in_range, which
+            // returns false for unrelated buffers.
+            // For correctness in the common (non-aliasing) case we still need
+            // a fast bulk copy.
+            const basic_string tmp(first, last, alloc_);
+            return append(tmp.data(), tmp.size());
         } else {
             for (; first != last; ++first) push_back(*first);
+            return *this;
         }
-        return *this;
     }
 
     constexpr basic_string& append(initializer_list<value_type> il) {
@@ -1081,33 +825,44 @@ public:
     // assign
     // =========================================================================
 
-    constexpr basic_string& assign(const value_type* s, size_type n) { return assign_raw(s, n); }
-    constexpr basic_string& assign(const value_type* s) { return assign_raw(s, traits_type::length(s)); }
+    constexpr basic_string& assign(const value_type* s, size_type n) {
+        // If source aliases, take a copy before potentially deallocating.
+        if (addr_in_range(s) && (n > capacity())) {
+            basic_string tmp(s, n, alloc_);
+            return assign_raw(tmp.data(), n);
+        }
+        return assign_raw(s, n);
+    }
+    constexpr basic_string& assign(const value_type* s) { return assign(s, traits_type::length(s)); }
     constexpr basic_string& assign(size_type n, value_type c) {
-        if (n > capacity()) ensure_capacity(n);
-        value_type* p = raw_data();
+        if (n > capacity()) {
+            vdeallocate();
+            vallocate(n);
+        }
+        if (begin_ == nullptr) return *this; // n == 0 && unallocated
+        value_type* p = std::to_address(begin_);
         traits_type::assign(p, n, c);
-        set_size(n);
+        end_ = begin_ + n;
         traits_type::assign(p[n], value_type());
         return *this;
     }
     constexpr basic_string& assign(const basic_string& str) { return *this = str; }
     constexpr basic_string& assign(basic_string&& str) noexcept(
-        noexcept(move(*this) = move(str))) {
-        *this = move(str);
+        noexcept(std::declval<basic_string&>() = std::move(str))) {
+        *this = std::move(str);
         return *this;
     }
     constexpr basic_string& assign(const basic_string& str, size_type pos, size_type n = npos) {
         size_type sz = str.size();
-        if (pos > sz) __builtin_trap(); // would throw out_of_range
-        return assign_raw(str.data() + pos, detail::sv_min(n, sz - pos));
+        if (pos > sz) throw_out_of_range();
+        return assign(str.data() + pos, detail::sv_min(n, sz - pos));
     }
 
     template<class T>
         requires detail::sv_compatible_v<CharT, Traits, T>
     constexpr basic_string& assign(const T& t) {
         basic_string_view<CharT, Traits> sv = t;
-        return assign_raw(sv.data(), sv.size());
+        return assign(sv.data(), sv.size());
     }
 
     template<class T>
@@ -1115,8 +870,8 @@ public:
                   !is_same_v<remove_cvref_t<T>, basic_string>)
     constexpr basic_string& assign(const T& t, size_type pos, size_type n = npos) {
         basic_string_view<CharT, Traits> sv = t;
-        if (pos > sv.size()) __builtin_trap(); // would throw out_of_range
-        return assign_raw(sv.data() + pos, detail::sv_min(n, sv.size() - pos));
+        if (pos > sv.size()) throw_out_of_range();
+        return assign(sv.data() + pos, detail::sv_min(n, sv.size() - pos));
     }
 
     template<class InputIt>
@@ -1127,7 +882,7 @@ public:
     }
 
     constexpr basic_string& assign(initializer_list<value_type> il) {
-        return assign_raw(il.begin(), il.size());
+        return assign(il.begin(), il.size());
     }
 
     // =========================================================================
@@ -1136,38 +891,21 @@ public:
 
     constexpr basic_string& insert(size_type pos, const value_type* s, size_type n) {
         size_type sz = size();
-        if (pos > sz) __builtin_trap(); // would throw out_of_range
-        size_type cap = capacity();
-        if (cap - sz < n) {
-            // may alias: check before realloc.  grow_by_without_replace
-            // already places the tail at [pos+n, ...), so only the gap is
-            // filled afterwards (libc++ __grow_by_and_replace equivalent).
-            if (addr_in_range(s)) {
-                basic_string tmp(s, n, alloc_);
-                grow_by_without_replace(cap, sz + n - cap, sz, pos, 0, n);
-                value_type* p = raw_data();
-                traits_type::copy(p + pos, tmp.data(), n);
-                traits_type::assign(p[sz + n], value_type());
-                return *this;
-            }
-            grow_by_without_replace(cap, sz + n - cap, sz, pos, 0, n);
-            value_type* p = raw_data();
-            traits_type::copy(p + pos, s, n);
-            traits_type::assign(p[sz + n], value_type());
-        } else if (n != 0) {
-            // libc++ basic_string::insert: shift the tail, and if the source
-            // lives inside the shifted region, re-aim it.
-            value_type* p = raw_data();
-            size_type n_move = sz - pos;
-            if (n_move != 0) {
-                if (ptr_in_range(p + pos, p + sz, s))
-                    s += n;
-                traits_type::move(p + pos + n, p + pos, n_move);
-            }
-            traits_type::move(p + pos, s, n);
-            set_size(sz + n);
-            traits_type::assign(p[sz + n], value_type());
+        if (pos > sz) throw_out_of_range();
+        if (n == 0) return *this;
+        // Aliasing — if s lives inside our buffer, copy first.
+        if (addr_in_range(s)) {
+            basic_string tmp(s, n, alloc_);
+            return insert(pos, tmp.data(), n);
         }
+        if (capacity() - sz < n) reallocate_grow(recommend(sz + n));
+        value_type* p = std::to_address(begin_);
+        size_type n_move = sz - pos;
+        if (n_move != 0)
+            traits_type::move(p + pos + n, p + pos, n_move);
+        traits_type::copy(p + pos, s, n);
+        end_ = begin_ + sz + n;
+        traits_type::assign(p[sz + n], value_type());
         return *this;
     }
 
@@ -1176,21 +914,17 @@ public:
     }
 
     constexpr basic_string& insert(size_type pos, size_type n, value_type c) {
-        size_type sz  = size();
-        size_type cap = capacity();
-        if (pos > sz) __builtin_trap(); // would throw out_of_range
-        if (cap - sz < n) {
-            grow_by_without_replace(cap, sz + n - cap, sz, pos, 0, n);
-            value_type* p = raw_data();
-            traits_type::assign(p + pos, n, c);
-            traits_type::assign(p[sz + n], value_type());
-        } else {
-            value_type* p = raw_data();
-            traits_type::move(p + pos + n, p + pos, sz - pos);
-            traits_type::assign(p + pos, n, c);
-            set_size(sz + n);
-            traits_type::assign(p[sz + n], value_type());
-        }
+        size_type sz = size();
+        if (pos > sz) throw_out_of_range();
+        if (n == 0) return *this;
+        if (capacity() - sz < n) reallocate_grow(recommend(sz + n));
+        value_type* p = std::to_address(begin_);
+        size_type n_move = sz - pos;
+        if (n_move != 0)
+            traits_type::move(p + pos + n, p + pos, n_move);
+        traits_type::assign(p + pos, n, c);
+        end_ = begin_ + sz + n;
+        traits_type::assign(p[sz + n], value_type());
         return *this;
     }
 
@@ -1201,7 +935,7 @@ public:
     constexpr basic_string& insert(size_type pos1, const basic_string& str,
                          size_type pos2, size_type n = npos) {
         size_type sz = str.size();
-        if (pos2 > sz) __builtin_trap(); // would throw out_of_range
+        if (pos2 > sz) throw_out_of_range();
         return insert(pos1, str.data() + pos2, detail::sv_min(n, sz - pos2));
     }
 
@@ -1217,7 +951,7 @@ public:
                   !is_same_v<remove_cvref_t<T>, basic_string>)
     constexpr basic_string& insert(size_type pos1, const T& t, size_type pos2, size_type n = npos) {
         basic_string_view<CharT, Traits> sv = t;
-        if (pos2 > sv.size()) __builtin_trap(); // would throw out_of_range
+        if (pos2 > sv.size()) throw_out_of_range();
         return insert(pos1, sv.data() + pos2, detail::sv_min(n, sv.size() - pos2));
     }
 
@@ -1254,12 +988,13 @@ public:
 
     constexpr basic_string& erase(size_type pos = 0, size_type n = npos) {
         size_type sz = size();
-        if (pos > sz) __builtin_trap(); // would throw out_of_range
+        if (pos > sz) throw_out_of_range();
         size_type xlen = detail::sv_min(n, sz - pos);
+        if (xlen == 0) return *this;
         size_type new_sz = sz - xlen;
-        value_type* p = raw_data();
+        value_type* p = std::to_address(begin_);
         traits_type::move(p + pos, p + pos + xlen, new_sz - pos);
-        set_size(new_sz);
+        end_ = begin_ + new_sz;
         traits_type::assign(p[new_sz], value_type());
         return *this;
     }
@@ -1283,26 +1018,24 @@ public:
 
     constexpr basic_string& replace(size_type pos, size_type n1, const value_type* s, size_type n2) {
         size_type sz = size();
-        if (pos > sz) __builtin_trap(); // would throw out_of_range
+        if (pos > sz) throw_out_of_range();
         n1 = detail::sv_min(n1, sz - pos);
-        size_type cap = capacity();
-        if (sz - n1 + n2 > cap) {
-            grow_by_and_replace(cap, sz - n1 + n2 - cap, sz, pos, n1, n2, s);
-        } else {
-            value_type* p = raw_data();
-            // Handle possible alias
-            if (addr_in_range(s)) {
-                basic_string tmp(s, n2, alloc_);
-                traits_type::move(p + pos + n2, p + pos + n1, sz - pos - n1);
-                traits_type::copy(p + pos, tmp.data(), n2);
-            } else {
-                traits_type::move(p + pos + n2, p + pos + n1, sz - pos - n1);
-                traits_type::copy(p + pos, s, n2);
-            }
-            size_type new_sz = sz - n1 + n2;
-            set_size(new_sz);
-            traits_type::assign(p[new_sz], value_type());
+        size_type new_sz = sz - n1 + n2;
+        // Aliasing: capture a copy when s points into our buffer.
+        if (addr_in_range(s) && n2 != 0) {
+            basic_string tmp(s, n2, alloc_);
+            return replace(pos, n1, tmp.data(), n2);
         }
+        if (new_sz > capacity()) reallocate_grow(recommend(new_sz));
+        if (begin_ == nullptr) return *this; // new_sz == 0 && unallocated
+        value_type* p = std::to_address(begin_);
+        // Shift tail [pos+n1, sz) to [pos+n2, sz-n1+n2).
+        if (sz - pos - n1 != 0)
+            traits_type::move(p + pos + n2, p + pos + n1, sz - pos - n1);
+        if (n2 != 0)
+            traits_type::copy(p + pos, s, n2);
+        end_ = begin_ + new_sz;
+        traits_type::assign(p[new_sz], value_type());
         return *this;
     }
 
@@ -1312,21 +1045,18 @@ public:
 
     constexpr basic_string& replace(size_type pos, size_type n1, size_type n2, value_type c) {
         size_type sz = size();
-        if (pos > sz) __builtin_trap(); // would throw out_of_range
+        if (pos > sz) throw_out_of_range();
         n1 = detail::sv_min(n1, sz - pos);
-        size_type cap = capacity();
-        value_type* p = raw_data();
-        if (sz - n1 + n2 > cap) {
-            // build fill buffer and replace
-            basic_string tmp(n2, c, alloc_);
-            grow_by_and_replace(cap, sz - n1 + n2 - cap, sz, pos, n1, n2, tmp.data());
-        } else {
+        size_type new_sz = sz - n1 + n2;
+        if (new_sz > capacity()) reallocate_grow(recommend(new_sz));
+        if (begin_ == nullptr) return *this; // new_sz == 0 && unallocated
+        value_type* p = std::to_address(begin_);
+        if (sz - pos - n1 != 0)
             traits_type::move(p + pos + n2, p + pos + n1, sz - pos - n1);
+        if (n2 != 0)
             traits_type::assign(p + pos, n2, c);
-            size_type new_sz = sz - n1 + n2;
-            set_size(new_sz);
-            traits_type::assign(p[new_sz], value_type());
-        }
+        end_ = begin_ + new_sz;
+        traits_type::assign(p[new_sz], value_type());
         return *this;
     }
 
@@ -1337,7 +1067,7 @@ public:
     constexpr basic_string& replace(size_type pos1, size_type n1, const basic_string& str,
                           size_type pos2, size_type n2 = npos) {
         size_type sz = str.size();
-        if (pos2 > sz) __builtin_trap(); // would throw out_of_range
+        if (pos2 > sz) throw_out_of_range();
         return replace(pos1, n1, str.data() + pos2, detail::sv_min(n2, sz - pos2));
     }
 
@@ -1354,11 +1084,10 @@ public:
     constexpr basic_string& replace(size_type pos1, size_type n1, const T& t,
                           size_type pos2, size_type n2 = npos) {
         basic_string_view<CharT, Traits> sv = t;
-        if (pos2 > sv.size()) __builtin_trap(); // would throw out_of_range
+        if (pos2 > sv.size()) throw_out_of_range();
         return replace(pos1, n1, sv.data() + pos2, detail::sv_min(n2, sv.size() - pos2));
     }
 
-    // iterator-based replace overloads
     constexpr basic_string& replace(const_iterator i1, const_iterator i2, const basic_string& str) {
         return replace(static_cast<size_type>(i1 - begin()),
                        static_cast<size_type>(i2 - i1),
@@ -1402,37 +1131,27 @@ public:
 
     constexpr size_type copy(value_type* s, size_type n, size_type pos = 0) const {
         size_type sz = size();
-        if (pos > sz) __builtin_trap(); // would throw out_of_range
+        if (pos > sz) throw_out_of_range();
         size_type rlen = detail::sv_min(n, sz - pos);
         traits_type::copy(s, data() + pos, rlen);
         return rlen;
     }
 
     [[nodiscard]] constexpr basic_string substr(size_type pos = 0, size_type n = npos) const& {
-        return basic_string(*this, pos, n);   // P2438: result uses Allocator()
+        return basic_string(*this, pos, n);
     }
 
     [[nodiscard]] constexpr basic_string substr(size_type pos = 0, size_type n = npos) && {
-        return basic_string(move(*this), pos, n);
+        return basic_string(std::move(*this), pos, n);
     }
 
     constexpr void swap(basic_string& other) noexcept(
         alloc_traits::propagate_on_container_swap::value ||
         alloc_traits::is_always_equal::value)
     {
-        if (std::is_constant_evaluated()) {
-            // swap anchor CONTENTS, never the anchors themselves (each object's
-            // anchor must stay with it for its whole lifetime — see ce_anchor).
-            ce_anchor* a = rep_.l.data.anc;
-            ce_anchor* b = other.rep_.l.data.anc;
-            pointer   tp = a->data;
-            size_type tc = a->cap;
-            size_type ts = a->sz;
-            a->data = b->data; a->cap = b->cap; a->sz = b->sz;
-            b->data = tp;      b->cap = tc;     b->sz = ts;
-        } else {
-            std::swap(rep_, other.rep_);
-        }
+        std::swap(begin_, other.begin_);
+        std::swap(end_,   other.end_);
+        std::swap(cap_,   other.cap_);
         if constexpr (alloc_traits::propagate_on_container_swap::value)
             std::swap(alloc_, other.alloc_);
     }
@@ -1687,7 +1406,6 @@ operator==(const basic_string<CharT, Traits, Alloc>& lhs,
     return Traits::compare(lhs.data(), rhs.data(), lhs.size()) == 0;
 }
 
-// rhs const CharT* (C++20: == synthesises !=)
 template<class CharT, class Traits, class Alloc>
 [[nodiscard]] constexpr bool
 operator==(const basic_string<CharT, Traits, Alloc>& lhs,
@@ -1702,8 +1420,6 @@ operator<=>(const basic_string<CharT, Traits, Alloc>& lhs,
     int r = Traits::compare(lhs.data(), rhs.data(),
                             detail::sv_min(lhs.size(), rhs.size()));
     if (r == 0) r = (lhs.size() < rhs.size()) ? -1 : (lhs.size() > rhs.size() ? 1 : 0);
-    // [string.cmp]: the return type is Traits::comparison_category if
-    // present, weak_ordering otherwise.
     if constexpr (requires { typename Traits::comparison_category; })
         return static_cast<typename Traits::comparison_category>(r <=> 0);
     else
@@ -1730,8 +1446,6 @@ constexpr basic_string<CharT, Traits, Alloc>
 operator+(const basic_string<CharT, Traits, Alloc>& lhs,
           const basic_string<CharT, Traits, Alloc>& rhs)
 {
-    // [string.op+]: the result's allocator is
-    // SOCCC(lhs.get_allocator()) (libc++ __concatenate_strings).
     basic_string<CharT, Traits, Alloc> r(
         allocator_traits<Alloc>::select_on_container_copy_construction(lhs.get_allocator()));
     r.reserve(lhs.size() + rhs.size());
@@ -1746,7 +1460,7 @@ operator+(basic_string<CharT, Traits, Alloc>&& lhs,
           const basic_string<CharT, Traits, Alloc>& rhs)
 {
     lhs.append(rhs);
-    return move(lhs);
+    return std::move(lhs);
 }
 
 template<class CharT, class Traits, class Alloc>
@@ -1755,7 +1469,7 @@ operator+(const basic_string<CharT, Traits, Alloc>& lhs,
           basic_string<CharT, Traits, Alloc>&& rhs)
 {
     rhs.insert(0, lhs);
-    return move(rhs);
+    return std::move(rhs);
 }
 
 template<class CharT, class Traits, class Alloc>
@@ -1764,7 +1478,7 @@ operator+(basic_string<CharT, Traits, Alloc>&& lhs,
           basic_string<CharT, Traits, Alloc>&& rhs)
 {
     lhs.append(rhs);
-    return move(lhs);
+    return std::move(lhs);
 }
 
 template<class CharT, class Traits, class Alloc>
@@ -1784,7 +1498,7 @@ constexpr basic_string<CharT, Traits, Alloc>
 operator+(const CharT* lhs, basic_string<CharT, Traits, Alloc>&& rhs)
 {
     rhs.insert(0, lhs);
-    return move(rhs);
+    return std::move(rhs);
 }
 
 template<class CharT, class Traits, class Alloc>
@@ -1804,7 +1518,7 @@ constexpr basic_string<CharT, Traits, Alloc>
 operator+(CharT lhs, basic_string<CharT, Traits, Alloc>&& rhs)
 {
     rhs.insert(rhs.begin(), lhs);
-    return move(rhs);
+    return std::move(rhs);
 }
 
 template<class CharT, class Traits, class Alloc>
@@ -1824,7 +1538,7 @@ constexpr basic_string<CharT, Traits, Alloc>
 operator+(basic_string<CharT, Traits, Alloc>&& lhs, const CharT* rhs)
 {
     lhs.append(rhs);
-    return move(lhs);
+    return std::move(lhs);
 }
 
 template<class CharT, class Traits, class Alloc>
@@ -1844,7 +1558,7 @@ constexpr basic_string<CharT, Traits, Alloc>
 operator+(basic_string<CharT, Traits, Alloc>&& lhs, CharT rhs)
 {
     lhs.push_back(rhs);
-    return move(lhs);
+    return std::move(lhs);
 }
 
 //=============================================================================
@@ -1960,15 +1674,14 @@ operator""s(const char32_t* str, size_t len) {
 // On parse error libc++ throws invalid_argument/out_of_range -> __builtin_trap
 //=============================================================================
 
-// Helper: call strtol-family and check for errors.
 namespace detail {
 
 inline long do_strtol(const char* s, size_t* idx, int base) {
     char* end = nullptr;
     errno = 0;
     long r = strtol(s, &end, base);
-    if (end == s)         __builtin_trap(); // would throw invalid_argument
-    if (errno == ERANGE)  __builtin_trap(); // would throw out_of_range
+    if (end == s)         __builtin_trap();
+    if (errno == ERANGE)  __builtin_trap();
     if (idx) *idx = static_cast<size_t>(end - s);
     return r;
 }
@@ -2027,7 +1740,6 @@ inline long double do_strtold(const char* s, size_t* idx) {
     return r;
 }
 
-// Wide versions
 inline long do_wcstol(const wchar_t* s, size_t* idx, int base) {
     wchar_t* end = nullptr;
     errno = 0;
@@ -2094,10 +1806,9 @@ inline long double do_wcstold(const wchar_t* s, size_t* idx) {
 
 } // namespace detail
 
-// narrow string conversions
 inline int                stoi  (const string& s, size_t* idx=nullptr, int base=10) {
     long r = detail::do_strtol(s.c_str(), idx, base);
-    if (r < INT_MIN || r > INT_MAX) __builtin_trap(); // would throw out_of_range
+    if (r < INT_MIN || r > INT_MAX) __builtin_trap();
     return static_cast<int>(r);
 }
 inline long               stol  (const string& s, size_t* idx=nullptr, int base=10) { return detail::do_strtol(s.c_str(), idx, base); }
@@ -2108,7 +1819,6 @@ inline float              stof  (const string& s, size_t* idx=nullptr) { return 
 inline double             stod  (const string& s, size_t* idx=nullptr) { return detail::do_strtod(s.c_str(), idx); }
 inline long double        stold (const string& s, size_t* idx=nullptr) { return detail::do_strtold(s.c_str(), idx); }
 
-// wide string conversions
 inline int                stoi  (const wstring& s, size_t* idx=nullptr, int base=10) {
     long r = detail::do_wcstol(s.c_str(), idx, base);
     if (r < INT_MIN || r > INT_MAX) __builtin_trap();
@@ -2134,12 +1844,6 @@ inline string int_to_string(const char* fmt, T v) {
     int n = snprintf(buf, sizeof(buf), fmt, v);
     return string(buf, static_cast<string::size_type>(n));
 }
-// Ported from libc++ src/string.cpp: as_string() / to_string() float overloads.
-// libc++ uses snprintf with "%f"/"%Lf" (not "%.6g") so that trailing zeros
-// are always printed, matching the C standard [string.conversions] requirement
-// that to_string(float) behaves as if by sprintf(buf, "%f", val).
-// The (double) cast in the original libcis code was also wrong for long double;
-// pass v directly so the format specifier controls promotion.
 inline string flt_to_string(const char* fmt, double v) {
     char buf[64];
     int n = snprintf(buf, sizeof(buf), fmt, v);
@@ -2183,13 +1887,10 @@ inline wstring int_to_wstring(const wchar_t* fmt, T v) {
     int n = swprintf(buf, sizeof(buf)/sizeof(wchar_t), fmt, v);
     return wstring(buf, static_cast<wstring::size_type>(n));
 }
-// Ported from libc++ src/string.cpp: as_string() / to_wstring() float overloads.
-// Uses "%f"/"%Lf" (not "%.6g") so trailing zeros are always present.
 inline wstring flt_to_wstring(const wchar_t* fmt, double v) {
     wchar_t buf[64];
     int n = swprintf(buf, sizeof(buf)/sizeof(wchar_t), fmt, v);
     if (n < 0 || static_cast<size_t>(n) >= sizeof(buf)/sizeof(wchar_t)) {
-        // fallback: convert narrow string to wstring
         string ns = to_string(v);
         return wstring(ns.begin(), ns.end());
     }
