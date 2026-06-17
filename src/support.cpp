@@ -155,54 +155,61 @@ void grow(const type_ops* tops, const storage_ops* sops,
 // allocation uses ::malloc for blocks > 256 bytes (the common insert-by-one
 // case has a 1-element block so the stack alternative covers it).
 // ---------------------------------------------------------------------------
-void rotate(const type_ops* ops, void* el_ctx,
-            void* first, void* middle, void* last) {
+void rotate(const type_ops* ops, const storage_ops* sops,
+            void* st_ctx, void* el_ctx,
+            void* first, void* middle, void* last,
+            ptrdiff_t size_delta_bytes) {
     auto* f = static_cast<unsigned char*>(first);
     auto* m = static_cast<unsigned char*>(middle);
     auto* l = static_cast<unsigned char*>(last);
     // PRECONDITION trap: first <= middle <= last.
     if (f > m || m > l) __builtin_trap();
-    if (f == m || m == l) return;
-    const size_t left  = static_cast<size_t>(m - f);
-    const size_t right = static_cast<size_t>(l - m);
-    const size_t small = left <= right ? left : right;
+    if (f != m && m != l) {
+        const size_t left  = static_cast<size_t>(m - f);
+        const size_t right = static_cast<size_t>(l - m);
+        const size_t small = left <= right ? left : right;
 
-    // Stack buffer fits common small rotations (insert/erase by one or a few
-    // small elements); else fall back to ::malloc.
-    constexpr size_t kStack = 256;
-    alignas(::max_align_t) unsigned char stack_scratch[kStack];
-    void* scratch = small <= kStack ? static_cast<void*>(stack_scratch)
-                                    : ::malloc(small);
+        constexpr size_t kStack = 256;
+        alignas(::max_align_t) unsigned char stack_scratch[kStack];
+        void* scratch = small <= kStack ? static_cast<void*>(stack_scratch)
+                                        : ::malloc(small);
 
-    if (triv_reloc(ops)) {
-        // [f, m=f+left, l=f+left+right) -> [m..l, f..m) at f..l.
-        if (left <= right) {
-            __builtin_memcpy(scratch, f, left);
-            __builtin_memmove(f, m, right);
-            __builtin_memcpy(f + right, scratch, left);
+        if (triv_reloc(ops)) {
+            if (left <= right) {
+                __builtin_memcpy(scratch, f, left);
+                __builtin_memmove(f, m, right);
+                __builtin_memcpy(f + right, scratch, left);
+            } else {
+                __builtin_memcpy(scratch, m, right);
+                __builtin_memmove(f + right, f, left);
+                __builtin_memcpy(f, scratch, right);
+            }
         } else {
-            __builtin_memcpy(scratch, m, right);
-            __builtin_memmove(f + right, f, left);
-            __builtin_memcpy(f, scratch, right);
+            if (left <= right) {
+                relocate_block    (ops, el_ctx, scratch, f, left);
+                relocate_block    (ops, el_ctx, f, m, right);
+                relocate_block    (ops, el_ctx, f + right, scratch, left);
+            } else {
+                relocate_block    (ops, el_ctx, scratch, m, right);
+                relocate_block_rev(ops, el_ctx, f + right, f, left);
+                relocate_block    (ops, el_ctx, f, scratch, right);
+            }
         }
-    } else {
-        // Leaf-driven block-swap. The scratch buffer holds the smaller block
-        // during the shift; the larger block then moves into the freed slots.
-        // Shift direction matters when ranges overlap: the larger-block move
-        // is from middle->first (DOWN, forward iter) when left <= right, or
-        // from first->first+right (UP, backward iter) when right < left.
-        if (left <= right) {
-            relocate_block    (ops, el_ctx, scratch, f, left);   // f..m  -> scratch
-            relocate_block    (ops, el_ctx, f, m, right);        // m..l  -> f..f+right  (fwd, shift DOWN)
-            relocate_block    (ops, el_ctx, f + right, scratch, left); // scratch -> tail
-        } else {
-            relocate_block    (ops, el_ctx, scratch, m, right);  // m..l  -> scratch
-            relocate_block_rev(ops, el_ctx, f + right, f, left); // f..m  -> f+right..l  (rev, shift UP)
-            relocate_block    (ops, el_ctx, f, scratch, right);  // scratch -> head
-        }
+
+        if (small > kStack) ::free(scratch);
     }
 
-    if (small > kStack) ::free(scratch);
+    if (size_delta_bytes != 0) {
+        if (size_delta_bytes < 0) {
+            // Destroy the trailing |delta| bytes' worth of elements (now at
+            // the tail of [f, l) post-rotate) before truncating size.
+            unsigned char* db = l + size_delta_bytes;
+            if (!triv_destroy(ops))
+                destroy_range(ops, el_ctx, db, l);
+        }
+        byte_span data = sops->data(st_ctx);
+        sops->set_size(st_ctx, data.size + size_delta_bytes);
+    }
 }
 
 } // namespace detail

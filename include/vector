@@ -328,11 +328,13 @@ private:
     // Type-erased rotate over a constructed range. Used by insert/emplace/
     // erase: insert is `emplace_back(x); rotate(pos, end-1, end)` and erase
     // is `rotate(pos, pos+1, end); pop_back`.
-    void rotate_(pointer first, pointer middle, pointer last) {
-        detail::rotate(ops_table_(), el_ctx_(),
+    void rotate_(pointer first, pointer middle, pointer last,
+                 ptrdiff_t size_delta_bytes = 0) {
+        detail::rotate(ops_table_(), storage_table_(), this, el_ctx_(),
                        std::to_address(first),
                        std::to_address(middle),
-                       std::to_address(last));
+                       std::to_address(last),
+                       size_delta_bytes);
     }
 
     constexpr void copy_assign_alloc(const vector& c) {
@@ -760,9 +762,10 @@ public:
     constexpr iterator emplace(const_iterator position, Args&&... args) {
         difference_type off = position - cbegin();
         value_type tmp(std::forward<Args>(args)...);
-        emplace_back(std::move(tmp));   // restores spare-slot invariant
-        pointer ep = end_ptr_();
-        rotate_(this->begin_ + off, ep - 1, ep);
+        pointer p = ensure_free_(2);    // 1 for new + 1 spare
+        construct_one(p, std::move(tmp));
+        rotate_(this->begin_ + off, p, p + 1,
+                static_cast<ptrdiff_t>(sizeof(value_type)));
         return this->begin_ + off;
     }
 
@@ -781,12 +784,12 @@ public:
         difference_type off = position - cbegin();
         if (n == 0) return this->begin_ + off;
         value_type x_copy = x;
-        pointer p = ensure_free_(n);
+        pointer p = ensure_free_(n + 1);    // n new + 1 spare
         detail::construct_copy_one_n(ops_table_(), el_ctx_(),
                                      std::to_address(p),
                                      std::to_address(&x_copy), n);
-        set_size_elems_(static_cast<size_type>(p + n - this->begin_));
-        rotate_(this->begin_ + off, p, p + n);
+        rotate_(this->begin_ + off, p, p + n,
+                static_cast<ptrdiff_t>(n * sizeof(value_type)));
         return this->begin_ + off;
     }
 
@@ -800,13 +803,13 @@ public:
         difference_type off = position - cbegin();
         size_type n = static_cast<size_type>(std::distance(first, last));
         if (n == 0) return this->begin_ + off;
-        pointer p = ensure_free_(n);
+        pointer p = ensure_free_(n + 1);    // n new + 1 spare
         size_type i = 0;
         for (; first != last; ++first, ++i) {
             construct_one(p + i, *first);
         }
-        set_size_elems_(static_cast<size_type>(p + i - this->begin_));
-        rotate_(this->begin_ + off, p, p + n);
+        rotate_(this->begin_ + off, p, p + n,
+                static_cast<ptrdiff_t>(n * sizeof(value_type)));
         return this->begin_ + off;
     }
 
@@ -833,24 +836,23 @@ public:
         return insert(position, il.begin(), il.end());
     }
 
-    // erase(pos): rotate the element at pos to the end, then pop_back.
+    // erase(pos): single core call — rotate moves the element to end and the
+    // negative delta truncates+destroys it.
     constexpr iterator erase(const_iterator position) {
         difference_type off = position - cbegin();
         pointer p = this->begin_ + off;
-        rotate_(p, p + 1, end_ptr_());
-        pop_back();
+        rotate_(p, p + 1, end_ptr_(),
+                -static_cast<ptrdiff_t>(sizeof(value_type)));
         return p;
     }
 
-    // erase(first, last): rotate the [first, last) block to the end, then
-    // destroy the now-tail n elements.
+    // erase(first, last): same single-core shape with delta = -n*es.
     constexpr iterator erase(const_iterator first, const_iterator last) {
         pointer p = this->begin_ + (first - cbegin());
         size_type n = static_cast<size_type>(last - first);
         if (n == 0) return p;
-        pointer ep = end_ptr_();
-        rotate_(p, p + n, ep);
-        destruct_at_end(ep - n);
+        rotate_(p, p + n, end_ptr_(),
+                -static_cast<ptrdiff_t>(n * sizeof(value_type)));
         return p;
     }
 

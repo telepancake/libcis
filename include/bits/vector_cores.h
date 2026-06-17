@@ -61,10 +61,23 @@ void construct_copy_one_n(const type_ops* tops, void* el_ctx,
 // Rotate the constructed elements in [first, last) so that *middle becomes
 // the new *first and *(middle - 1) becomes the new *(last - 1). Standard
 // std::rotate semantics; type-erased.
+//
+// size_delta_bytes (signed): after rotating, adjust container size by this
+// amount. Negative delta truncates: the trailing |delta| bytes are destroyed
+// and dropped. Positive delta extends: the [middle, last) range — which the
+// caller pre-constructed and rotated into [first, first+(last-middle)) — is
+// folded into the live size. Delta = 0 leaves size unchanged (used when the
+// caller already set size around an in-place rotation).
+//
+// Lets erase be a single core call (`rotate(p, p+1, end, -1*es)`) and insert
+// be (`construct n at end; rotate(pos, end, end+n, +n*es)`) — no
+// destruct_at_end / pop_back / set_size_elems_ in the forwarder.
 // PRECONDITION traps: first <= middle <= last.
 // ---------------------------------------------------------------------------
-void rotate(const type_ops* tops, void* el_ctx,
-            void* first, void* middle, void* last);
+void rotate(const type_ops* tops, const storage_ops* sops,
+            void* st_ctx, void* el_ctx,
+            void* first, void* middle, void* last,
+            ptrdiff_t size_delta_bytes);
 
 // ---------------------------------------------------------------------------
 // Byte-level relocation primitive used by storage_ops::resize implementations
