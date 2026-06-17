@@ -97,7 +97,10 @@ inline constexpr CharT string_empty_sentinel[1] = { CharT() };
 template<class CharT,
          class Traits    = char_traits<CharT>,
          class Allocator = allocator<CharT>>
-class basic_string {
+class basic_string
+    : private detail::string_layout<
+          typename allocator_traits<Allocator>::pointer,
+          detail::storage_uses_header_layout<basic_string<CharT, Traits, Allocator>, Allocator>> {
 public:
     // -------------------------------------------------------------------------
     // types
@@ -131,19 +134,75 @@ public:
         "Allocator::value_type must be same type as value_type");
 
 private:
-    // -------------------------------------------------------------------------
-    // Layout: 3 pointers + (potentially empty) allocator. No SSO, no anchor,
-    // no union, no tag byte. Matches std::vector.
-    //
-    // alloc_ is declared FIRST (libc++/our vector use the same workaround) so
-    // that g++-10's constexpr evaluator doesn't lose track of pointers when a
-    // later-declared [[no_unique_address]] allocator is value-initialized
-    // through the member-init-list ("modification of '*0'"). Layout-neutral
-    // for any empty allocator.
+    // Strategy B (1-pointer layout): selected for std::allocator<CharT>. The
+    // buffer carries a small header with the live byte count; capacity comes
+    // from ::malloc_usable_size. Otherwise Strategy A (3 pointers).
+    static constexpr bool uses_header_layout_ =
+        detail::storage_uses_header_layout<basic_string, allocator_type>;
+    using layout_base_ = detail::string_layout<pointer, uses_header_layout_>;
+
+    // alloc_ is declared FIRST as a member; the layout base subobject is
+    // initialized before any member (default-init: pointers nullptr). With
+    // [[no_unique_address]] the empty allocator collapses; Strategy A = 24 B,
+    // Strategy B = 8 B.
     [[no_unique_address]] allocator_type alloc_;
-    pointer        begin_ = nullptr;
-    pointer        end_   = nullptr;
-    pointer        cap_   = nullptr;
+
+    // Strategy-uniform accessors. See vector for parallel reasoning.
+    constexpr pointer end_ptr_() const noexcept {
+        if constexpr (!uses_header_layout_) {
+            return this->end_;
+        } else {
+            if (this->begin_ == nullptr) return pointer{};
+            auto sp = detail::storage_b_data<basic_string>(const_cast<basic_string*>(this));
+            return this->begin_ + (sp.size / sizeof(value_type));
+        }
+    }
+    constexpr pointer cap_ptr_() const noexcept {
+        if constexpr (!uses_header_layout_) {
+            return this->cap_;
+        } else {
+            if (this->begin_ == nullptr) return pointer{};
+            void* e = detail::storage_b_cap_end<basic_string>(const_cast<basic_string*>(this));
+            const size_t total_b = static_cast<unsigned char*>(e)
+                                 - reinterpret_cast<unsigned char*>(std::to_address(this->begin_));
+            return this->begin_ + (total_b / sizeof(value_type));
+        }
+    }
+    constexpr void set_size_elems_(size_type n) noexcept {
+        if constexpr (!uses_header_layout_) {
+            this->end_ = this->begin_ + n;
+        } else {
+            detail::storage_b_set_size<basic_string>(this, n * sizeof(value_type));
+        }
+    }
+    constexpr void clear_storage_() noexcept {
+        this->begin_ = pointer{};
+        if constexpr (!uses_header_layout_) {
+            this->end_ = pointer{};
+            this->cap_ = pointer{};
+        }
+    }
+    constexpr void transfer_storage_from_(basic_string& other) noexcept {
+        this->begin_ = other.begin_;
+        other.begin_ = pointer{};
+        if constexpr (!uses_header_layout_) {
+            this->end_ = other.end_;
+            this->cap_ = other.cap_;
+            other.end_ = pointer{};
+            other.cap_ = pointer{};
+        }
+    }
+    constexpr void swap_storage_(basic_string& other) noexcept {
+        using std::swap;
+        swap(this->begin_, other.begin_);
+        if constexpr (!uses_header_layout_) {
+            swap(this->end_, other.end_);
+            swap(this->cap_, other.cap_);
+        }
+    }
+
+    layout_base_* layout_() noexcept { return this; }
+    const layout_base_* layout_() const noexcept { return this; }
 
     // -------------------------------------------------------------------------
     // Internal helpers
@@ -152,12 +211,12 @@ private:
     [[noreturn]] static void throw_length_error() noexcept { __builtin_trap(); }
     [[noreturn]] static void throw_out_of_range()  noexcept { __builtin_trap(); }
 
-    // Write the null terminator at *end_. No-op when the string is in the
+    // Write the null terminator at *end. No-op when the string is in the
     // unallocated state (begin_ == nullptr) — c_str() then returns the
     // per-CharT sentinel and there is no spare slot to maintain.
     constexpr void null_terminate_() noexcept {
-        if (begin_ != nullptr)
-            traits_type::assign(*std::to_address(end_), value_type());
+        if (this->begin_ != nullptr)
+            traits_type::assign(*std::to_address(end_ptr_()), value_type());
     }
 
     // Amortized growth: double capacity, clamped to max_size.
@@ -184,12 +243,14 @@ private:
                                 detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>;
     }
 
-    // Friend the storage_a_glue specialization so it can reach our private
-    // begin_/end_/cap_ and alloc_.
+    // Friend the storage_*_glue specializations so they can reach our private
+    // alloc_ and the layout base subobject (private inheritance hides
+    // up-casts even for friends).
     template<class C2> friend struct detail::storage_a_glue;
+    template<class C2> friend struct detail::storage_b_glue;
 
     static const detail::storage_ops* storage_table_() noexcept {
-        return &detail::storage_ops_a<basic_string>;
+        return &detail::storage_for_v<basic_string>;
     }
 
     void* el_ctx_() noexcept {
@@ -200,44 +261,38 @@ private:
     }
 
     // Allocate space for n characters PLUS the one-slot spare (null
-    // terminator). Sets begin_/end_/cap_. Always null-terminates *end_.
+    // terminator) via the storage_ops::resize slot. After resize size is 0.
     void vallocate(size_type n) {
         if (n > max_size()) throw_length_error();
-        auto res = alloc_traits::allocate_at_least(alloc_, n + 1);
-        begin_ = res.ptr;
-        end_   = res.ptr;
-        cap_   = begin_ + res.count;
-        traits_type::assign(*std::to_address(end_), value_type());
+        detail::grow(ops_table_(), storage_table_(), this, el_ctx_(),
+                     (n + 1) * sizeof(value_type));
+        // size remains 0; spare slot is zero-initialized by the storage_ops
+        // resize path, which is the null terminator.
     }
 
     void vdeallocate() noexcept {
-        if (begin_ != nullptr) {
-            // For trivially-destructible char this is a flag-checked no-op,
-            // but we route through the core for the symbol-sharing benefit.
+        if (this->begin_ != nullptr) {
             detail::destroy_range(ops_table_(), el_ctx_(),
-                                  std::to_address(begin_),
-                                  std::to_address(end_));
-            alloc_traits::deallocate(alloc_, begin_,
-                static_cast<size_type>(cap_ - begin_));
-            begin_ = end_ = cap_ = nullptr;
+                                  std::to_address(this->begin_),
+                                  std::to_address(end_ptr_()));
+            storage_table_()->free(this);
         }
     }
 
     // Reallocate to at least new_cap usable chars (+ the spare slot) via the
-    // storage_ops::resize slot. The spare slot at the new *end_ holds the
+    // storage_ops::resize slot. The spare slot at the new *end holds the
     // null terminator (zeroed automatically by resize).
     void reallocate_grow(size_type new_cap) {
         if (new_cap > max_size()) throw_length_error();
         detail::grow(ops_table_(), storage_table_(), this, el_ctx_(),
                      (new_cap + 1) * sizeof(value_type));
-        traits_type::assign(*std::to_address(end_), value_type());
+        traits_type::assign(*std::to_address(end_ptr_()), value_type());
     }
 
     // Make sure capacity() - size() >= n. Internally adds 1 for the spare slot.
     void ensure_free_(size_type n = 1) {
-        if (static_cast<size_type>(cap_ - end_) <= n)
-            // <= because end_ itself occupies the spare slot; cap_ - end_ == 1
-            // means "zero free chars + the terminator slot".
+        // capacity() excludes the spare slot. Use a + 1 spare slot threshold.
+        if (capacity() - size() < n)
             reallocate_grow(recommend(size() + n));
     }
 
@@ -256,8 +311,7 @@ private:
     void move_assign_impl(basic_string& c, true_type) noexcept {
         vdeallocate();
         move_assign_alloc(c);
-        begin_ = c.begin_; end_ = c.end_; cap_ = c.cap_;
-        c.begin_ = c.end_ = c.cap_ = nullptr;
+        transfer_storage_from_(c);
     }
 
     void move_assign_impl(basic_string& c, false_type) {
@@ -272,17 +326,17 @@ private:
     void init_copy(const value_type* s, size_type n) {
         if (n == 0) return;
         vallocate(n);
-        traits_type::copy(std::to_address(begin_), s, n);
-        end_ = begin_ + n;
-        traits_type::assign(*std::to_address(end_), value_type());
+        traits_type::copy(std::to_address(this->begin_), s, n);
+        set_size_elems_(n);
+        traits_type::assign(*std::to_address(end_ptr_()), value_type());
     }
 
     void init_fill(size_type n, value_type c) {
         if (n == 0) return;
         vallocate(n);
-        traits_type::assign(std::to_address(begin_), n, c);
-        end_ = begin_ + n;
-        traits_type::assign(*std::to_address(end_), value_type());
+        traits_type::assign(std::to_address(this->begin_), n, c);
+        set_size_elems_(n);
+        traits_type::assign(*std::to_address(end_ptr_()), value_type());
     }
 
     template<class InputIt>
@@ -290,11 +344,11 @@ private:
         size_type n = static_cast<size_type>(std::distance(first, last));
         if (n == 0) return;
         vallocate(n);
-        value_type* p = std::to_address(begin_);
+        value_type* p = std::to_address(this->begin_);
         for (size_type i = 0; first != last; ++first, ++i)
             traits_type::assign(p[i], *first);
-        end_ = begin_ + n;
-        traits_type::assign(*std::to_address(end_), value_type());
+        set_size_elems_(n);
+        traits_type::assign(*std::to_address(end_ptr_()), value_type());
     }
 
     template<class InputIt, class Sentinel>
@@ -307,14 +361,14 @@ private:
     // -------------------------------------------------------------------------
     basic_string& assign_raw(const value_type* s, size_type n) {
         if (capacity() >= n) {
-            if (begin_ == nullptr) {
+            if (this->begin_ == nullptr) {
                 // Unallocated + n == 0: nothing to do, no spare slot exists.
                 return *this;
             }
-            value_type* p = std::to_address(begin_);
+            value_type* p = std::to_address(this->begin_);
             // move (not copy) — caller may have s aliased to *this.
             traits_type::move(p, s, n);
-            end_ = begin_ + n;
+            set_size_elems_(n);
             traits_type::assign(p[n], value_type());
             return *this;
         }
@@ -326,9 +380,9 @@ private:
         vdeallocate();
         if (n > 0) {
             vallocate(n);
-            traits_type::copy(std::to_address(begin_), s, n);
-            end_ = begin_ + n;
-            traits_type::assign(*std::to_address(end_), value_type());
+            traits_type::copy(std::to_address(this->begin_), s, n);
+            set_size_elems_(n);
+            traits_type::assign(*std::to_address(end_ptr_()), value_type());
         }
         return *this;
     }
@@ -345,9 +399,9 @@ private:
     }
 
     bool addr_in_range(const value_type* p) const noexcept {
-        if (begin_ == nullptr) return false;
-        return ptr_in_range(std::to_address(begin_),
-                            std::to_address(end_) + 1, p);
+        if (this->begin_ == nullptr) return false;
+        return ptr_in_range(std::to_address(this->begin_),
+                            std::to_address(end_ptr_()) + 1, p);
     }
 
 public:
@@ -368,18 +422,16 @@ public:
     { init_copy(other.data(), other.size()); }
 
     constexpr basic_string(basic_string&& other) noexcept
-        : alloc_(std::move(other.alloc_)),
-          begin_(other.begin_), end_(other.end_), cap_(other.cap_)
+        : alloc_(std::move(other.alloc_))
     {
-        other.begin_ = other.end_ = other.cap_ = nullptr;
+        transfer_storage_from_(other);
     }
 
     constexpr basic_string(basic_string&& other, const allocator_type& a)
         : alloc_(a)
     {
         if (a == other.alloc_) {
-            begin_ = other.begin_; end_ = other.end_; cap_ = other.cap_;
-            other.begin_ = other.end_ = other.cap_ = nullptr;
+            transfer_storage_from_(other);
         } else {
             init_copy(other.data(), other.size());
         }
@@ -398,8 +450,7 @@ public:
         if (pos > sz) throw_out_of_range(); // would throw out_of_range
         size_type len = detail::sv_min(n, sz - pos);
         if (alloc_traits::is_always_equal::value || alloc_ == str.alloc_) {
-            begin_ = str.begin_; end_ = str.end_; cap_ = str.cap_;
-            str.begin_ = str.end_ = str.cap_ = nullptr;
+            transfer_storage_from_(str);
             if (pos != 0)     erase(0, pos);
             if (size() > len) erase(len, npos);
         } else {
@@ -527,10 +578,10 @@ public:
     // Iterators
     // =========================================================================
 
-    constexpr iterator       begin()        noexcept { return begin_ ? begin_ : iterator{}; }
-    constexpr const_iterator begin()  const noexcept { return begin_ ? const_iterator(begin_) : const_iterator{}; }
-    constexpr iterator       end()          noexcept { return begin_ ? end_ : iterator{}; }
-    constexpr const_iterator end()    const noexcept { return begin_ ? const_iterator(end_) : const_iterator{}; }
+    constexpr iterator       begin()        noexcept { return this->begin_ ? this->begin_ : iterator{}; }
+    constexpr const_iterator begin()  const noexcept { return this->begin_ ? const_iterator(this->begin_) : const_iterator{}; }
+    constexpr iterator       end()          noexcept { return this->begin_ ? end_ptr_() : iterator{}; }
+    constexpr const_iterator end()    const noexcept { return this->begin_ ? const_iterator(end_ptr_()) : const_iterator{}; }
 
     constexpr reverse_iterator       rbegin()  noexcept { return reverse_iterator(end()); }
     constexpr const_reverse_iterator rbegin()  const noexcept { return const_reverse_iterator(end()); }
@@ -546,11 +597,18 @@ public:
     // Capacity
     // =========================================================================
 
-    [[nodiscard]] constexpr size_type size()   const noexcept {
-        return static_cast<size_type>(end_ - begin_);
+    [[nodiscard]] constexpr size_type size() const noexcept {
+        if constexpr (!uses_header_layout_) {
+            return static_cast<size_type>(this->end_ - this->begin_);
+        } else {
+            if (this->begin_ == nullptr) return 0;
+            auto sp = detail::storage_b_data<basic_string>(
+                const_cast<basic_string*>(this));
+            return static_cast<size_type>(sp.size / sizeof(value_type));
+        }
     }
     [[nodiscard]] constexpr size_type length() const noexcept { return size(); }
-    [[nodiscard]] constexpr bool empty() const noexcept { return begin_ == end_; }
+    [[nodiscard]] constexpr bool empty() const noexcept { return size() == 0; }
 
     [[nodiscard]] constexpr size_type max_size() const noexcept {
         // -1 reserves a slot for the spare; clamp to difference_type max.
@@ -561,9 +619,17 @@ public:
 
     [[nodiscard]] constexpr size_type capacity() const noexcept {
         // capacity() excludes the spare slot. For unallocated: 0.
-        return begin_ == nullptr
-             ? size_type(0)
-             : static_cast<size_type>(cap_ - begin_) - 1;
+        if (this->begin_ == nullptr) return 0;
+        if constexpr (!uses_header_layout_) {
+            return static_cast<size_type>(this->cap_ - this->begin_) - 1;
+        } else {
+            void* e = detail::storage_b_cap_end<basic_string>(
+                const_cast<basic_string*>(this));
+            const size_t total_b = static_cast<unsigned char*>(e)
+                                 - reinterpret_cast<unsigned char*>(std::to_address(this->begin_));
+            size_type total = static_cast<size_type>(total_b / sizeof(value_type));
+            return total == 0 ? 0 : total - 1;
+        }
     }
 
     void reserve(size_type n) {
@@ -580,36 +646,34 @@ public:
         size_type sz = size();
         if (sz == 0) { vdeallocate(); return; }
         const size_type want = sz + 1;
-        if (static_cast<size_type>(cap_ - begin_) <= want) return;
-        pointer nb = alloc_traits::allocate(alloc_, want);
-        traits_type::copy(std::to_address(nb), std::to_address(begin_), sz);
-        traits_type::assign(*(std::to_address(nb) + sz), value_type());
-        alloc_traits::deallocate(alloc_, begin_,
-            static_cast<size_type>(cap_ - begin_));
-        begin_ = nb;
-        end_   = nb + sz;
-        cap_   = nb + want;
+        // capacity() returns chars excluding the spare slot.
+        if (capacity() + 1 <= want) return;
+        // Route through grow: allocates `want` chars exactly, relocates live
+        // bytes, frees old. Spare slot zeroed by resize.
+        detail::grow(ops_table_(), storage_table_(), this, el_ctx_(),
+                     want * sizeof(value_type));
+        traits_type::assign(*std::to_address(end_ptr_()), value_type());
     }
 
     constexpr void clear() noexcept {
-        if (begin_ == nullptr) return;
-        end_ = begin_;
-        traits_type::assign(*std::to_address(end_), value_type());
+        if (this->begin_ == nullptr) return;
+        set_size_elems_(0);
+        traits_type::assign(*std::to_address(end_ptr_()), value_type());
     }
 
     void resize(size_type n, value_type c = value_type()) {
         size_type sz = size();
         if (n < sz) {
-            end_ = begin_ + n;
-            traits_type::assign(*std::to_address(end_), value_type());
+            set_size_elems_(n);
+            traits_type::assign(*std::to_address(end_ptr_()), value_type());
         } else if (n > sz) {
             if (n > capacity()) {
                 if (n > max_size()) throw_length_error();
                 reallocate_grow(recommend(n));
             }
-            value_type* p = std::to_address(begin_);
+            value_type* p = std::to_address(this->begin_);
             traits_type::assign(p + sz, n - sz, c);
-            end_ = begin_ + n;
+            set_size_elems_(n);
             traits_type::assign(p[n], value_type());
         }
     }
@@ -640,17 +704,17 @@ public:
         return data()[pos];
     }
 
-    [[nodiscard]] constexpr reference       front()       noexcept { return *std::to_address(begin_); }
+    [[nodiscard]] constexpr reference       front()       noexcept { return *std::to_address(this->begin_); }
     [[nodiscard]] constexpr const_reference front() const noexcept { return *data(); }
-    [[nodiscard]] constexpr reference       back()        noexcept { return *(std::to_address(begin_) + size() - 1); }
+    [[nodiscard]] constexpr reference       back()        noexcept { return *(std::to_address(this->begin_) + size() - 1); }
     [[nodiscard]] constexpr const_reference back()  const noexcept { return *(data() + size() - 1); }
 
     [[nodiscard]] constexpr const value_type* c_str() const noexcept { return data(); }
     [[nodiscard]] constexpr const value_type* data()  const noexcept {
-        return begin_ ? std::to_address(begin_) : detail::string_empty_sentinel<value_type>;
+        return this->begin_ ? std::to_address(this->begin_) : detail::string_empty_sentinel<value_type>;
     }
     [[nodiscard]] constexpr value_type* data() noexcept {
-        return begin_ ? std::to_address(begin_)
+        return this->begin_ ? std::to_address(this->begin_)
                       // The non-const data() of a default-constructed string
                       // is observably writable only at index 0 (the null
                       // terminator); returning the per-CharT sentinel would
@@ -670,16 +734,17 @@ public:
 
     constexpr void push_back(value_type c) {
         ensure_free_();
-        value_type* p = std::to_address(begin_);
+        value_type* p = std::to_address(this->begin_);
         size_type sz = size();
         traits_type::assign(p[sz], c);
-        ++end_;
-        traits_type::assign(*std::to_address(end_), value_type());
+        set_size_elems_(sz + 1);
+        traits_type::assign(*std::to_address(end_ptr_()), value_type());
     }
 
     constexpr void pop_back() noexcept {
-        --end_;
-        traits_type::assign(*std::to_address(end_), value_type());
+        size_type sz = size();
+        set_size_elems_(sz - 1);
+        traits_type::assign(*std::to_address(end_ptr_()), value_type());
     }
 
     // =========================================================================
@@ -697,9 +762,9 @@ public:
             }
             reallocate_grow(recommend(sz + n));
         }
-        value_type* p = std::to_address(begin_);
+        value_type* p = std::to_address(this->begin_);
         traits_type::copy(p + sz, s, n);
-        end_ = begin_ + sz + n;
+        set_size_elems_(sz + n);
         traits_type::assign(p[sz + n], value_type());
         return *this;
     }
@@ -712,9 +777,9 @@ public:
         if (n == 0) return *this;
         size_type sz = size();
         if (capacity() - sz < n) reallocate_grow(recommend(sz + n));
-        value_type* p = std::to_address(begin_);
+        value_type* p = std::to_address(this->begin_);
         traits_type::assign(p + sz, n, c);
-        end_ = begin_ + sz + n;
+        set_size_elems_(sz + n);
         traits_type::assign(p[sz + n], value_type());
         return *this;
     }
@@ -802,10 +867,10 @@ public:
             vdeallocate();
             vallocate(n);
         }
-        if (begin_ == nullptr) return *this; // n == 0 && unallocated
-        value_type* p = std::to_address(begin_);
+        if (this->begin_ == nullptr) return *this; // n == 0 && unallocated
+        value_type* p = std::to_address(this->begin_);
         traits_type::assign(p, n, c);
-        end_ = begin_ + n;
+        set_size_elems_(n);
         traits_type::assign(p[n], value_type());
         return *this;
     }
@@ -862,12 +927,12 @@ public:
             return insert(pos, tmp.data(), n);
         }
         if (capacity() - sz < n) reallocate_grow(recommend(sz + n));
-        value_type* p = std::to_address(begin_);
+        value_type* p = std::to_address(this->begin_);
         size_type n_move = sz - pos;
         if (n_move != 0)
             traits_type::move(p + pos + n, p + pos, n_move);
         traits_type::copy(p + pos, s, n);
-        end_ = begin_ + sz + n;
+        set_size_elems_(sz + n);
         traits_type::assign(p[sz + n], value_type());
         return *this;
     }
@@ -881,12 +946,12 @@ public:
         if (pos > sz) throw_out_of_range();
         if (n == 0) return *this;
         if (capacity() - sz < n) reallocate_grow(recommend(sz + n));
-        value_type* p = std::to_address(begin_);
+        value_type* p = std::to_address(this->begin_);
         size_type n_move = sz - pos;
         if (n_move != 0)
             traits_type::move(p + pos + n, p + pos, n_move);
         traits_type::assign(p + pos, n, c);
-        end_ = begin_ + sz + n;
+        set_size_elems_(sz + n);
         traits_type::assign(p[sz + n], value_type());
         return *this;
     }
@@ -955,9 +1020,9 @@ public:
         size_type xlen = detail::sv_min(n, sz - pos);
         if (xlen == 0) return *this;
         size_type new_sz = sz - xlen;
-        value_type* p = std::to_address(begin_);
+        value_type* p = std::to_address(this->begin_);
         traits_type::move(p + pos, p + pos + xlen, new_sz - pos);
-        end_ = begin_ + new_sz;
+        set_size_elems_(new_sz);
         traits_type::assign(p[new_sz], value_type());
         return *this;
     }
@@ -990,14 +1055,14 @@ public:
             return replace(pos, n1, tmp.data(), n2);
         }
         if (new_sz > capacity()) reallocate_grow(recommend(new_sz));
-        if (begin_ == nullptr) return *this; // new_sz == 0 && unallocated
-        value_type* p = std::to_address(begin_);
+        if (this->begin_ == nullptr) return *this; // new_sz == 0 && unallocated
+        value_type* p = std::to_address(this->begin_);
         // Shift tail [pos+n1, sz) to [pos+n2, sz-n1+n2).
         if (sz - pos - n1 != 0)
             traits_type::move(p + pos + n2, p + pos + n1, sz - pos - n1);
         if (n2 != 0)
             traits_type::copy(p + pos, s, n2);
-        end_ = begin_ + new_sz;
+        set_size_elems_(new_sz);
         traits_type::assign(p[new_sz], value_type());
         return *this;
     }
@@ -1012,13 +1077,13 @@ public:
         n1 = detail::sv_min(n1, sz - pos);
         size_type new_sz = sz - n1 + n2;
         if (new_sz > capacity()) reallocate_grow(recommend(new_sz));
-        if (begin_ == nullptr) return *this; // new_sz == 0 && unallocated
-        value_type* p = std::to_address(begin_);
+        if (this->begin_ == nullptr) return *this; // new_sz == 0 && unallocated
+        value_type* p = std::to_address(this->begin_);
         if (sz - pos - n1 != 0)
             traits_type::move(p + pos + n2, p + pos + n1, sz - pos - n1);
         if (n2 != 0)
             traits_type::assign(p + pos, n2, c);
-        end_ = begin_ + new_sz;
+        set_size_elems_(new_sz);
         traits_type::assign(p[new_sz], value_type());
         return *this;
     }
@@ -1112,9 +1177,7 @@ public:
         alloc_traits::propagate_on_container_swap::value ||
         alloc_traits::is_always_equal::value)
     {
-        std::swap(begin_, other.begin_);
-        std::swap(end_,   other.end_);
-        std::swap(cap_,   other.cap_);
+        swap_storage_(other);
         if constexpr (alloc_traits::propagate_on_container_swap::value)
             std::swap(alloc_, other.alloc_);
     }
@@ -1329,8 +1392,7 @@ public:
     }
 }; // class basic_string
 
-// Strategy A glue for basic_string<CharT, Traits, Alloc>: expose
-// begin_/end_/cap_ + the allocator to the type-erased buffer ops.
+// Strategy A glue for basic_string<CharT, Traits, Alloc>.
 namespace detail {
 template<class CharT, class Traits, class A>
 struct storage_a_glue<basic_string<CharT, Traits, A>> {
@@ -1340,17 +1402,20 @@ struct storage_a_glue<basic_string<CharT, Traits, A>> {
     using pointer      = typename C::pointer;
     using value_type   = CharT;
 
-    static unsigned char* begin(C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(c->begin_)); }
-    static unsigned char* end  (C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(c->end_));   }
-    static unsigned char* cap  (C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(c->cap_));   }
+    using a_base = string_layout<pointer, false>;
+    static a_base* lb(C* c) noexcept { return reinterpret_cast<a_base*>(c); }
+
+    static unsigned char* begin(C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(lb(c)->begin_)); }
+    static unsigned char* end  (C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(lb(c)->end_));   }
+    static unsigned char* cap  (C* c) noexcept { return reinterpret_cast<unsigned char*>(std::to_address(lb(c)->cap_));   }
 
     static pointer raw_to_pointer(void* raw) noexcept {
         if (raw == nullptr) return pointer{};
         return std::pointer_traits<pointer>::pointer_to(*static_cast<value_type*>(raw));
     }
-    static void set_begin(C* c, void* p) noexcept { c->begin_ = raw_to_pointer(p); }
-    static void set_end  (C* c, void* p) noexcept { c->end_   = raw_to_pointer(p); }
-    static void set_cap  (C* c, void* p) noexcept { c->cap_   = raw_to_pointer(p); }
+    static void set_begin(C* c, void* p) noexcept { lb(c)->begin_ = raw_to_pointer(p); }
+    static void set_end  (C* c, void* p) noexcept { lb(c)->end_   = raw_to_pointer(p); }
+    static void set_cap  (C* c, void* p) noexcept { lb(c)->cap_   = raw_to_pointer(p); }
 
     static void* allocate(C* c, size_t bytes, size_t* got_bytes) noexcept {
         const size_t es = sizeof(value_type);
@@ -1363,11 +1428,41 @@ struct storage_a_glue<basic_string<CharT, Traits, A>> {
 
     static void deallocate(C* c, void* /*p*/, size_t bytes) noexcept {
         const size_t es = sizeof(value_type);
-        alloc_traits::deallocate(c->alloc_, c->begin_,
+        alloc_traits::deallocate(c->alloc_, lb(c)->begin_,
                                  static_cast<size_type>(bytes / es));
     }
 };
+
+// Strategy B glue for basic_string<CharT, Traits, std::allocator<CharT>>.
+template<class CharT, class Traits, class A>
+struct storage_b_glue<basic_string<CharT, Traits, A>> {
+    using C = basic_string<CharT, Traits, A>;
+    using pointer    = typename C::pointer;
+    using value_type = CharT;
+
+    using b_base = string_layout<pointer, true>;
+    static b_base* lb(C* c) noexcept { return reinterpret_cast<b_base*>(c); }
+
+    static unsigned char* begin(C* c) noexcept {
+        return reinterpret_cast<unsigned char*>(std::to_address(lb(c)->begin_));
+    }
+    static void set_begin(C* c, void* p) noexcept {
+        lb(c)->begin_ = static_cast<pointer>(static_cast<value_type*>(p));
+    }
+    static void* raw_alloc(C* /*c*/, size_t bytes) noexcept {
+        void* p = ::malloc(bytes);
+        if (!p) __builtin_trap();
+        return p;
+    }
+    static void raw_free(C* /*c*/, void* base) noexcept {
+        ::free(base);
+    }
+};
 } // namespace detail
+
+// Strategy B verification — std::basic_string<char> must be 1-pointer-sized.
+static_assert(sizeof(basic_string<char>) == sizeof(void*),
+              "Strategy B should give 1-pointer string for std::allocator");
 
 //=============================================================================
 // Deduction guides
