@@ -691,22 +691,27 @@ public:
     constexpr void push_back(const_reference x) { emplace_back(x); }
     constexpr void push_back(value_type&& x)    { emplace_back(std::move(x)); }
 
-    // emplace_back: fast path is a one-line placement-new + advance. Grow path
-    // captures args into a local tmp first (the per-T cost of aliasing safety;
-    // libc++'s alternative is the explicit construct-relocate-destroy dance,
-    // which inlines ~80 lines of per-T code). One extra move per geometric
-    // growth event in exchange for the entire slow path collapsing into
-    // reallocate_grow (a non-template core).
+    // emplace_back: fast path is a placement-new + advance. The slow path is
+    // outlined to its own [[gnu::cold, noinline]] body so it ends up as one
+    // symbol per (T, Args...) rather than inlined into every call site.
+    // Linker places it in .text.unlikely, off the hot cache lines.
+    template<class... Args>
+    [[gnu::cold, gnu::noinline]]
+    void emplace_back_slow_(Args&&... args) {
+        value_type tmp(std::forward<Args>(args)...);
+        reallocate_grow(recommend(size() + 1));
+        construct_one(end_, std::move(tmp));
+        ++end_;
+    }
+
     template<class... Args>
     constexpr reference emplace_back(Args&&... args) {
-        if (end_ == cap_) {
-            value_type tmp(std::forward<Args>(args)...);
-            reallocate_grow(recommend(size() + 1));
-            construct_one(end_, std::move(tmp));
+        if (end_ == cap_) [[unlikely]] {
+            emplace_back_slow_(std::forward<Args>(args)...);
         } else {
             construct_one(end_, std::forward<Args>(args)...);
+            ++end_;
         }
-        ++end_;
         return *(end_ - 1);
     }
 
