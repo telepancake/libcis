@@ -60,7 +60,7 @@ void destroy_range(const type_ops* ops, void* el_ctx, void* begin, void* end) {
 void construct_default_n(const type_ops* ops, void* el_ctx, void* dst, size_t n) {
     if (triv_default(ops)) {
         // value-initialize trivially-default-constructible T == zero-fill
-        ::memset(dst, 0, n * ops->size);
+        __builtin_memset(dst, 0, n * ops->size);
         return;
     }
     const size_t sz = ops->size;
@@ -76,7 +76,7 @@ void construct_copy_one_n(const type_ops* ops, void* el_ctx,
     if (triv_copy(ops)) {
         // trivial copy + default lifecycle: memcpy the one element n times
         for (size_t i = 0; i < n; ++i, p += sz)
-            ::memcpy(p, src, sz);
+            __builtin_memcpy(p, src, sz);
         return;
     }
     for (size_t i = 0; i < n; ++i, p += sz)
@@ -90,7 +90,7 @@ static void relocate_block(const type_ops* ops, void* el_ctx,
                            void* dst, void* src, size_t size_bytes) {
     if (triv_reloc(ops)) {
         // triv-reloc + default lifecycle: memmove handles both overlap cases.
-        ::memmove(dst, src, size_bytes);
+        __builtin_memmove(dst, src, size_bytes);
         return;
     }
     const size_t sz = ops->size;
@@ -109,7 +109,7 @@ static void relocate_block(const type_ops* ops, void* el_ctx,
 static void relocate_block_rev(const type_ops* ops, void* el_ctx,
                                void* dst, void* src, size_t size_bytes) {
     if (triv_reloc(ops)) {
-        ::memmove(dst, src, size_bytes);
+        __builtin_memmove(dst, src, size_bytes);
         return;
     }
     const size_t sz = ops->size;
@@ -174,9 +174,9 @@ void* grow_with_gap(const type_ops* ops, realloc_op realloc, void* st_ctx,
     if (triv_reloc(ops)) {
         // triv-reloc + default-life: memcpy both halves.
         if (gap_off_bytes)
-            ::memcpy(nb_b, cur_begin, gap_off_bytes);
+            __builtin_memcpy(nb_b, cur_begin, gap_off_bytes);
         if (tail_bytes)
-            ::memcpy(nb_b + gap_off_bytes + gap_bytes,
+            __builtin_memcpy(nb_b + gap_off_bytes + gap_bytes,
                      cur_begin + gap_off_bytes, tail_bytes);
     } else {
         relocate_block(ops, el_ctx, nb_b, cur_begin, gap_off_bytes);
@@ -197,7 +197,7 @@ void* grow_with_gap(const type_ops* ops, realloc_op realloc, void* st_ctx,
 void open_gap(void* base, size_t end_bytes, size_t off_bytes, size_t gap_bytes) {
     // Move [off, end) to [off+gap, end+gap); overlapping so memmove.
     auto p = static_cast<unsigned char*>(base);
-    ::memmove(p + off_bytes + gap_bytes, p + off_bytes, end_bytes - off_bytes);
+    __builtin_memmove(p + off_bytes + gap_bytes, p + off_bytes, end_bytes - off_bytes);
 }
 
 // ---------------------------------------------------------------------------
@@ -235,13 +235,13 @@ void rotate(const type_ops* ops, void* el_ctx,
     if (triv_reloc(ops)) {
         // [f, m=f+left, l=f+left+right) -> [m..l, f..m) at f..l.
         if (left <= right) {
-            ::memcpy(scratch, f, left);
-            ::memmove(f, m, right);
-            ::memcpy(f + right, scratch, left);
+            __builtin_memcpy(scratch, f, left);
+            __builtin_memmove(f, m, right);
+            __builtin_memcpy(f + right, scratch, left);
         } else {
-            ::memcpy(scratch, m, right);
-            ::memmove(f + right, f, left);
-            ::memcpy(f, scratch, right);
+            __builtin_memcpy(scratch, m, right);
+            __builtin_memmove(f + right, f, left);
+            __builtin_memcpy(f, scratch, right);
         }
     } else {
         // Leaf-driven block-swap. The scratch buffer holds the smaller block
