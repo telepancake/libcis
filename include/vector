@@ -1003,9 +1003,21 @@ static_assert(sizeof(vector<int, allocator<int>>) == sizeof(void*),
 // Non-member operators and swap
 // -----------------------------------------------------------------------
 
+// Stage 5: when T is bytewise-equality-comparable, route directly through
+// detail::equal_bytes on data() pointers. std::equal already routes through
+// the same core for raw-pointer iterators, but going via data() elides the
+// iterator-category dispatch and works regardless of whether `iterator` is
+// a raw or fancy pointer.
 template<class T, class Alloc>
 constexpr bool operator==(const vector<T,Alloc>& x, const vector<T,Alloc>& y) {
-    return x.size() == y.size() && std::equal(x.begin(), x.end(), y.begin());
+    if (x.size() != y.size()) return false;
+    if constexpr (detail::is_byte_equal_v<T, T>) {
+        if (!is_constant_evaluated()) {
+            return detail::equal_bytes_triv(
+                sizeof(T), x.data(), y.data(), x.size() * sizeof(T));
+        }
+    }
+    return std::equal(x.begin(), x.end(), y.begin());
 }
 
 // libc++ uses __synth_three_way (falls back to operator< for types without

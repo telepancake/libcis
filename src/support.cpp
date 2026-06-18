@@ -19,6 +19,7 @@
 #include <sched.h>     // sched_yield — for guard spin loop
 #include <bits/cores.h>
 #include <bits/value_ops.h>
+#include <bits/algo_cores.h>
 
 // ---------------------------------------------------------------------------
 // Container cores — non-template bodies that vector/string/etc. forward into.
@@ -632,6 +633,77 @@ void segmented_rotate(const type_ops* ops, const segment_map_ops* mops,
                               drop_seg, drop_ptr,
                               last_seg, last_ptr);
     }
+}
+
+// ---------------------------------------------------------------------------
+// equal_bytes / find_byte — Stage 5 algorithm cores.
+//
+// Trivial fast paths collapse to memcmp/memchr. Non-trivial T (where the
+// caller passes a type_ops whose `equal` leaf is set) walks element-wise.
+// Used by `std::equal`, `std::find`, `vector::operator==`.
+// ---------------------------------------------------------------------------
+
+bool equal_bytes_triv(size_t /*element_size*/, const void* a, const void* b,
+                      size_t n_bytes) {
+    // The bytewise gate is up to the caller: this body assumes T's `==` is
+    // equivalent to memcmp on sizeof(T) bytes. (element_size is unused on
+    // the trivial path; the count is already in bytes.)
+    if (n_bytes == 0) return true;
+    return __builtin_memcmp(a, b, n_bytes) == 0;
+}
+
+const void* find_byte_triv(size_t element_size, const void* begin,
+                           const void* end, const void* needle) {
+    auto p = static_cast<const unsigned char*>(begin);
+    auto e = static_cast<const unsigned char*>(end);
+    if (p > e) __builtin_trap();
+    const size_t n_bytes = static_cast<size_t>(e - p);
+    if (n_bytes == 0) return e;
+    if (element_size == 0 || (n_bytes % element_size) != 0) __builtin_trap();
+    if (element_size == 1) {
+        const unsigned char nv = *static_cast<const unsigned char*>(needle);
+        const void* hit = __builtin_memchr(p, nv, n_bytes);
+        return hit ? hit : e;
+    }
+    const size_t n = n_bytes / element_size;
+    for (size_t i = 0; i < n; ++i, p += element_size)
+        if (__builtin_memcmp(p, needle, element_size) == 0) return p;
+    return e;
+}
+
+bool equal_bytes(const type_ops* ops, const void* a, const void* b,
+                 size_t n_bytes) {
+    if (n_bytes == 0) return true;
+    // Trivial fast path: when the consumer routed through here on the strength
+    // of "T's == is bytewise" (the caller's gate, not the table's), tops->equal
+    // is null and we just memcmp. Body shared with equal_bytes_triv.
+    if (ops->equal == nullptr)
+        return equal_bytes_triv(ops->size, a, b, n_bytes);
+    const size_t sz = ops->size;
+    if (sz == 0 || (n_bytes % sz) != 0) __builtin_trap();
+    auto p = static_cast<const unsigned char*>(a);
+    auto q = static_cast<const unsigned char*>(b);
+    const size_t n = n_bytes / sz;
+    for (size_t i = 0; i < n; ++i, p += sz, q += sz)
+        if (!ops->equal(p, q)) return false;
+    return true;
+}
+
+const void* find_byte(const type_ops* ops, const void* begin, const void* end,
+                      const void* needle) {
+    if (ops->equal == nullptr)
+        return find_byte_triv(ops->size, begin, end, needle);
+    auto p = static_cast<const unsigned char*>(begin);
+    auto e = static_cast<const unsigned char*>(end);
+    if (p > e) __builtin_trap();
+    const size_t n_bytes = static_cast<size_t>(e - p);
+    if (n_bytes == 0) return e;
+    const size_t sz = ops->size;
+    if (sz == 0 || (n_bytes % sz) != 0) __builtin_trap();
+    const size_t n = n_bytes / sz;
+    for (size_t i = 0; i < n; ++i, p += sz)
+        if (ops->equal(p, needle)) return p;
+    return e;
 }
 
 } // namespace detail

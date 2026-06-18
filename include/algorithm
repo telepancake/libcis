@@ -41,6 +41,7 @@
 #include <new>
 #include <cstddef>
 #include <execution>
+#include <bits/algo_cores.h>   // equal_bytes_triv, find_byte_triv (Stage 5)
 
 namespace std {
 
@@ -452,10 +453,28 @@ equal(InputIter1 first1, InputIter1 last1,
 }
 
 // equal (4-iter, operator==)
+//
+// Stage 5: when both ranges are raw pointers to bytewise-equality-comparable
+// element types, dispatch to detail::equal_bytes. The length check is already
+// done above (in the 4-iter/pred overload) but this overload skips that path
+// because it routes through the bytewise core directly.
 template<class InputIter1, class InputIter2>
 [[nodiscard]] constexpr bool
 equal(InputIter1 first1, InputIter1 last1,
       InputIter2 first2, InputIter2 last2) {
+    if constexpr (is_pointer_v<InputIter1> && is_pointer_v<InputIter2> &&
+                  detail::is_byte_equal_v<
+                      remove_pointer_t<InputIter1>,
+                      remove_pointer_t<InputIter2>>) {
+        if (!is_constant_evaluated()) {
+            using T = remove_cv_t<remove_pointer_t<InputIter1>>;
+            const auto n1 = last1 - first1;
+            const auto n2 = last2 - first2;
+            if (n1 != n2) return false;
+            return detail::equal_bytes_triv(sizeof(T), first1, first2,
+                                            static_cast<size_t>(n1) * sizeof(T));
+        }
+    }
     return equal(first1, last1, first2, last2, equal_to<>{});
 }
 
@@ -471,16 +490,50 @@ equal(InputIter1 first1, InputIter1 last1,
 }
 
 // equal (3-iter, operator==)
+//
+// Stage 5: byte-level dispatch when both iterators are raw pointers to
+// bytewise-equality-comparable element types. Otherwise the typed loop.
 template<class InputIter1, class InputIter2>
 [[nodiscard]] constexpr bool
 equal(InputIter1 first1, InputIter1 last1, InputIter2 first2) {
+    if constexpr (is_pointer_v<InputIter1> && is_pointer_v<InputIter2> &&
+                  detail::is_byte_equal_v<
+                      remove_pointer_t<InputIter1>,
+                      remove_pointer_t<InputIter2>>) {
+        if (!is_constant_evaluated()) {
+            using T = remove_cv_t<remove_pointer_t<InputIter1>>;
+            const auto n = last1 - first1;
+            return detail::equal_bytes_triv(sizeof(T), first1, first2,
+                                            static_cast<size_t>(n) * sizeof(T));
+        }
+    }
     return equal(first1, last1, first2, equal_to<>{});
 }
 
 // find
+//
+// Stage 5: raw-pointer iterator + bytewise-equality-comparable T routes
+// through detail::find_byte (memchr for sizeof(T)==1, memcmp-per-element
+// otherwise). Other iterators / non-bytewise T keep the typed loop.
 template<class InputIter, class T>
 [[nodiscard]] constexpr InputIter
 find(InputIter first, InputIter last, const T& value) {
+    if constexpr (is_pointer_v<InputIter> &&
+                  detail::is_byte_equal_v<remove_pointer_t<InputIter>, T>) {
+        if (!is_constant_evaluated()) {
+            using ElT = remove_cv_t<remove_pointer_t<InputIter>>;
+            // libc++ semantics: cross-type integral find casts value to the
+            // element type's bit pattern before searching (same width and
+            // signedness are required for is_byte_equal_v to be true).
+            const ElT v = static_cast<ElT>(value);
+            const void* hit = detail::find_byte_triv(
+                sizeof(ElT), first, last, &v);
+            // hit lies in [first, last] as a byte offset; recover the iter.
+            const auto off = static_cast<const unsigned char*>(hit) -
+                             reinterpret_cast<const unsigned char*>(first);
+            return first + (off / static_cast<ptrdiff_t>(sizeof(ElT)));
+        }
+    }
     for (; first != last; ++first)
         if (*first == value) return first;
     return last;
