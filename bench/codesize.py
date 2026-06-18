@@ -116,14 +116,11 @@ PROJECTS_CFG = {
     "vec_mixed": {"dirs": [], "defines": []},
     "vec_many": {"dirs": [], "defines": []},
     # Stage-0 probes for the cores-design migration (notes/cores-design.md §6).
-    # Each exists so a later stage's bench claim can be journal-recorded as a
-    # measured delta against this baseline, not a predicted one.
     "variant_probe":    {"dirs": [], "defines": []},
     "shared_ptr_probe": {"dirs": [], "defines": []},
     "two_deque_probe":  {"dirs": [], "defines": []},
     "regex_probe":      {"dirs": [], "defines": []},
-    # Stage-3 probe: std::function over many distinct captured-F flavours
-    # and a couple of signatures.
+    # Stage-3 probe.
     "function_probe": {"dirs": [], "defines": []},
 }
 

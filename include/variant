@@ -21,6 +21,7 @@
 #include <new>
 #include <bits/hash.h>     // std::hash (cannot include <functional>: cycle)
 #include <bits/construct_at.h>
+#include <bits/sum_ops.h>  // sum_destroy / sum_copy_construct / sum_move_construct
 
 namespace std {
 
@@ -585,6 +586,12 @@ protected:
 };
 
 // Non-trivially destructible
+//
+// destroy() routes to the sum_ops core at runtime — one table lookup +
+// leaf call replaces the per-flavor fmatrix of N visit-alt trampolines.
+// In a constant-evaluation context the core (which uses __builtin_memcpy
+// and raw byte work) is not usable, so we keep the template fallback for
+// that one path.
 template<class... Types>
 class vdtor<traits<Types...>, Trait::Available>
     : public vbase<Trait::Available, Types...>
@@ -603,12 +610,18 @@ public:
 protected:
     constexpr void destroy() noexcept {
         if (!this->valueless_by_exception()) {
-            visitation_base::visit_alt(
-                [](auto& a) noexcept {
-                    using alt_type = remove_cvref_t<decltype(a)>;
-                    a.~alt_type();
-                },
-                *this);
+            if (std::is_constant_evaluated()) {
+                visitation_base::visit_alt(
+                    [](auto& a) noexcept {
+                        using alt_type = remove_cvref_t<decltype(a)>;
+                        a.~alt_type();
+                    },
+                    *this);
+            } else {
+                detail::sum_destroy(
+                    &detail::sum_ops_for<decltype(this->data), Types...>,
+                    __builtin_addressof(this->data), this->index());
+            }
         }
         this->idx = variant_npos_v<index_t>;
     }
@@ -636,10 +649,22 @@ protected:
 
 // --------------------------------------------------------------------------
 // vctor: adds generic_construct
+//
+// generic_construct is the shared copy/move-ctor body (vmove_ctor/vcopy_ctor
+// both forward here). The runtime path routes to sum_copy_construct /
+// sum_move_construct in src/support.cpp; in constant-evaluation we keep the
+// visit_alt_at fallback because the cores use raw byte work.
+//
+// Ts... is recovered from the vdtor<traits<Types...>, ...> base so the
+// sum_ops descriptor matches the variant's own union storage exactly. The
+// rhs forwarding-reference's value category selects move vs copy.
 // --------------------------------------------------------------------------
 template<class Traits>
-class vctor : public vdtor<Traits> {
-    using base_type = vdtor<Traits>;
+class vctor;
+
+template<class... Types>
+class vctor<traits<Types...>> : public vdtor<traits<Types...>> {
+    using base_type = vdtor<traits<Types...>>;
 public:
     using base_type::base_type;
     using base_type::operator=;
@@ -650,17 +675,34 @@ protected:
         lhs.destroy();
         if (!rhs.valueless_by_exception()) {
             auto rhs_index = rhs.index();
-            visitation_base::visit_alt_at(
-                rhs_index,
-                [&lhs](auto&& rhs_alt) {
-                    // constexpr in-place construction must go through
-                    // std::construct_at (gcc-10 rule)
-                    std::construct_at(
+            if (std::is_constant_evaluated()) {
+                visitation_base::visit_alt_at(
+                    rhs_index,
+                    [&lhs](auto&& rhs_alt) {
+                        std::construct_at(
+                            __builtin_addressof(lhs.data),
+                            in_place_index<decay_t<decltype(rhs_alt)>::index_val>,
+                            std::forward<decltype(rhs_alt)>(rhs_alt).value);
+                    },
+                    std::forward<Rhs>(rhs));
+            } else {
+                constexpr const detail::sum_ops* sops =
+                    &detail::sum_ops_for<decltype(lhs.data), Types...>;
+                if constexpr (std::is_lvalue_reference_v<Rhs> ||
+                              std::is_const_v<std::remove_reference_t<Rhs>>) {
+                    detail::sum_copy_construct(
+                        sops,
                         __builtin_addressof(lhs.data),
-                        in_place_index<decay_t<decltype(rhs_alt)>::index_val>,
-                        std::forward<decltype(rhs_alt)>(rhs_alt).value);
-                },
-                std::forward<Rhs>(rhs));
+                        __builtin_addressof(rhs.data),
+                        rhs_index);
+                } else {
+                    detail::sum_move_construct(
+                        sops,
+                        __builtin_addressof(lhs.data),
+                        __builtin_addressof(rhs.data),
+                        rhs_index);
+                }
+            }
             lhs.idx = static_cast<typename vctor::index_t>(rhs_index);
         }
     }

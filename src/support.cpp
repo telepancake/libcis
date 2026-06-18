@@ -20,6 +20,7 @@
 #include <bits/cores.h>
 #include <bits/value_ops.h>
 #include <bits/algo_cores.h>
+#include <bits/sum_ops.h>
 
 // ---------------------------------------------------------------------------
 // Container cores — non-template bodies that vector/string/etc. forward into.
@@ -704,6 +705,84 @@ const void* find_byte(const type_ops* ops, const void* begin, const void* end,
     for (size_t i = 0; i < n; ++i, p += sz)
         if (ops->equal(p, needle)) return p;
     return e;
+}
+
+// ---------------------------------------------------------------------------
+// Pin sum_ops's locally-duplicated trivial-fast-path bits to the canonical
+// ops_flags values, so any future skew is a load-bearing build break. The
+// duplication exists only because bits/sum_ops.h cannot include type_ops.h
+// (cycle through <memory> → <iterator> → <variant> → <bits/sum_ops.h>).
+static_assert(sum_f_triv_destroy == static_cast<unsigned>(f_triv_destroy));
+static_assert(sum_f_triv_copy    == static_cast<unsigned>(f_triv_copy));
+static_assert(sum_f_triv_reloc   == static_cast<unsigned>(f_triv_reloc));
+
+// ---------------------------------------------------------------------------
+// sum_ops cores — variant lifecycle. The fmatrix-per-flavor that visitation
+// builds for destroy / copy-construct / move-construct collapses into one
+// table lookup plus a leaf call. Trivial fast paths short-circuit:
+//   sum_destroy on a fully-triv-destroy variant returns immediately;
+//   sum_copy_construct on a fully-triv-copy variant memcpys the union storage;
+//   sum_move_construct uses the SAME triv_copy bit (NOT triv_reloc) — see
+//   the note on the function for why.
+// Caller owns the discriminator (index field): the cores touch payload only.
+// ---------------------------------------------------------------------------
+void sum_destroy(const sum_ops* s, void* self, size_t index) {
+    if (index >= s->n_alternatives) __builtin_trap();
+    if (sum_triv_destroy(s)) return;
+    const alt_ops& a = s->alts[index];
+    // A non-trivial sum may still have individual trivial alternatives whose
+    // destroy slot is null — skip those without dispatching.
+    if (a.destroy)
+        a.destroy(static_cast<unsigned char*>(self) + a.offset);
+}
+
+void sum_copy_construct(const sum_ops* s, void* dst, const void* src,
+                        size_t src_index) {
+    if (src_index >= s->n_alternatives) __builtin_trap();
+    if (sum_triv_copy(s)) {
+        __builtin_memcpy(dst, src, s->size);
+        return;
+    }
+    const alt_ops& a = s->alts[src_index];
+    if (a.copy_construct) {
+        a.copy_construct(static_cast<unsigned char*>(dst) + a.offset,
+                         static_cast<const unsigned char*>(src) + a.offset);
+    } else {
+        // Trivial alt inside a non-trivial sum: memcpy the alt payload. The
+        // sum's `size` covers the whole union, so we copy that span and let
+        // the inactive bytes ride — they are unobserved (union semantics).
+        __builtin_memcpy(static_cast<unsigned char*>(dst) + a.offset,
+                         static_cast<const unsigned char*>(src) + a.offset,
+                         s->size - a.offset);
+    }
+}
+
+void sum_move_construct(const sum_ops* s, void* dst, void* src,
+                        size_t src_index) {
+    if (src_index >= s->n_alternatives) __builtin_trap();
+    // Move-construct semantics here are "construct dst from std::move(*src),
+    // leaving src in a valid moved-from state that the caller will destroy
+    // later." That's variant's pattern, not the relocate-and-destroy pattern
+    // the contiguous-storage cores use. The trivially-copyable bit is the
+    // right fast path (bit-copy preserves both objects); triv_reloc would be
+    // wrong because for e.g. std::string two memcpy'd copies would share the
+    // heap buffer and double-free at scope exit.
+    if (sum_triv_copy(s)) {
+        __builtin_memcpy(dst, src, s->size);
+        return;
+    }
+    const alt_ops& a = s->alts[src_index];
+    if (a.move_construct) {
+        a.move_construct(static_cast<unsigned char*>(dst) + a.offset,
+                         static_cast<unsigned char*>(src) + a.offset);
+    } else {
+        // Trivially-copyable alt inside a non-trivially-copyable sum: a
+        // memcpy of the alt's payload is safe (the type has a trivial copy
+        // ctor by definition).
+        __builtin_memcpy(static_cast<unsigned char*>(dst) + a.offset,
+                         static_cast<unsigned char*>(src) + a.offset,
+                         s->size - a.offset);
+    }
 }
 
 } // namespace detail
