@@ -201,10 +201,50 @@ Documented to save the next round of analysis from re-discovering these.
 |-----------------------------------------|-------------------|-----------------|---------|
 | reorder rotate args (st_ctx-first)      | +13 erase, +13 insert | 0 everywhere | **REGRESSION** — compiler picked stack-save over rbx for the pass-through `this` because of `end_ptr_()` call between |
 | ensure_free_ returns pointer            | -5 push, -12 insert | TBD | **WIN** |
-| rotate(delta) swallowing erase truncate | -10 insert, +27 erase callsite, but project still up | TBD | **MIXED** — per-callsite isn't the whole story |
+| rotate(...,delta) folded into core      | +12 erase callsite saved vs separate set_size/pop_back call chain | same direction (smaller magnitude) | **WIN** — see real-consumer measurement below |
 | alloc_ctx slot lookup vs threaded el_ctx | +20 destroy_range callsite (5 args vs 4) | TBD | **REGRESSION at callsite, abstraction OK** — should split: cores that already take sops gain the slot, others keep el_ctx as compile-time arg |
 
 The pattern: simple-sounding "principles" (pass-through args first, lazy
 fetch always wins) don't survive contact with the compiler's
 heuristics. Measure both architectures, compare across real consumer
 code, then decide.
+
+## rotate(...,delta) verdict on three architectures
+
+Built `bench/drivers/vec_mixed.cpp` (5 instantiations: int, long,
+double, string, Big — exercises push_back, insert, erase, resize) and
+`src/support.cpp` with and without the rotate-`delta` argument. With
+delta, erase/insert/emplace each become one rotate call (delta spills
+as `mov [rsp], imm32` = 8 B on x86_64); without delta they become
+rotate + explicit `pop_back`/`destruct_at_end`/`set_size_elems_`
+follow-up calls.
+
+```
+Arch    Object       with-delta    no-delta    Δ
+x86_64  vec_mixed.o   10371        10698       +327   (per-callsite tax)
+x86_64  support.o     81563        81410       -153   (rotate body shrank)
+x86_64  NET           ---          ---         +174   per binary using vec_mixed
+
+i386    vec_mixed.o   11446        11758       +312
+i386    support.o     86124        85887       -237
+i386    NET           ---          ---         +75
+
+ARM-32  vec_mixed.o    8223         8395       +172
+ARM-32  support.o     62174        62070       -104
+ARM-32  NET           ---          ---         +68
+```
+
+All three architectures agree: with-delta is smaller per real-world
+binary. Magnitude is largest on x86_64 (set_size-via-storage-slot is
+multiple call instructions); smallest on ARM-32 (Thumb-2 makes small
+follow-up calls compact). On every architecture, the `support.cpp`
+saving from a simpler rotate body does NOT offset the per-callsite
+cost of replacing one rotate call with rotate+follow-up.
+
+**Decision:** keep rotate(...,delta) as designed. The 8-byte delta
+spill on x86_64 (`mov [rsp], 0xfffffffffffffffc`) is the right
+trade for collapsing the erase/insert/emplace post-amble into one core.
+
+This was the first analysis in this branch that compared real-consumer
+TUs on real target architectures (not synthetic probes on x86_64 only).
+Numbers were directional, not single-arch noise.
