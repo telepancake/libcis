@@ -64,15 +64,23 @@ struct byte_span {
 };
 
 // The vocabulary table: six function pointers, container-agnostic.
+//
+// Every slot except alloc_ctx takes a `const type_ops*`. Strategy B's
+// implementations are non-template and read the element size from tops->size
+// and the header offset from tops->align (header_size = max(sizeof(size_t),
+// tops->align)), so a single set of five symbols covers every (Container, T)
+// pair gated to Strategy B. Strategy A's templated implementations still get
+// size/align statically from C::value_type and ignore the tops argument; the
+// uniform ABI is what lets the Strategy-B table itself be non-template.
 struct storage_ops {
-    byte_span (*data)     (void* st_ctx);
-    void      (*set_size) (void* st_ctx, size_t bytes);
-    void*     (*cap_end)  (void* st_ctx);
+    byte_span (*data)     (const type_ops* tops, void* st_ctx);
+    void      (*set_size) (const type_ops* tops, void* st_ctx, size_t bytes);
+    void*     (*cap_end)  (const type_ops* tops, void* st_ctx);
     // resize: (re)allocate to hold at least `min_bytes` and relocate live
     // bytes into the new buffer. Internally fetches the element ctx via
     // alloc_ctx when the type_ops flags say the allocator has state.
     void*     (*resize)   (const type_ops* tops, void* st_ctx, size_t min_bytes);
-    void      (*free)     (void* st_ctx);
+    void      (*free)     (const type_ops* tops, void* st_ctx);
     // alloc_ctx: returns the container's allocator instance pointer (&alloc_)
     // when the allocator has per-instance state, else nullptr. Cores call this
     // lazily, gated by `tops->flags & f_alloc_ctx`. The name mirrors the gate
@@ -96,8 +104,10 @@ struct storage_a_glue;
 //   void* allocate(C*, size_t bytes, size_t* got_bytes);  // sets *got_bytes
 //   void  deallocate(C*, void* p, size_t bytes);
 
+// Strategy A's templated slots take `tops` for uniform ABI but ignore it —
+// element size / alignment come statically from C::value_type via the glue.
 template<class C>
-static byte_span storage_a_data(void* st_ctx) {
+static byte_span storage_a_data(const type_ops*, void* st_ctx) {
     using G = storage_a_glue<C>;
     auto* c = static_cast<C*>(st_ctx);
     unsigned char* b = G::begin(c);
@@ -106,12 +116,12 @@ static byte_span storage_a_data(void* st_ctx) {
 }
 
 template<class C>
-static void* storage_a_cap_end(void* st_ctx) {
+static void* storage_a_cap_end(const type_ops*, void* st_ctx) {
     return storage_a_glue<C>::cap(static_cast<C*>(st_ctx));
 }
 
 template<class C>
-static void storage_a_set_size(void* st_ctx, size_t bytes) {
+static void storage_a_set_size(const type_ops*, void* st_ctx, size_t bytes) {
     using G = storage_a_glue<C>;
     auto* c = static_cast<C*>(st_ctx);
     unsigned char* b = G::begin(c);
@@ -126,7 +136,7 @@ static void storage_a_set_size(void* st_ctx, size_t bytes) {
 }
 
 template<class C>
-static void storage_a_free(void* st_ctx) {
+static void storage_a_free(const type_ops*, void* st_ctx) {
     using G = storage_a_glue<C>;
     auto* c = static_cast<C*>(st_ctx);
     unsigned char* b = G::begin(c);
@@ -232,123 +242,36 @@ concept allocator_with_usable_size =
     }
     && is_same_v<Alloc, ::std::allocator<typename Alloc::value_type>>;
 
-template<class C>
-struct storage_b_glue;
-// Specializations provide:
-//   unsigned char* begin(C*);
-//   void           set_begin(C*, void*);
-//   void*          raw_alloc(C*, size_t bytes);
-//   void           raw_free (C*, void* base);
-
-template<class C>
-struct storage_b_traits {
-    using value_type = typename C::value_type;
-    static constexpr size_t header_size =
-        sizeof(size_t) > alignof(value_type) ? sizeof(size_t) : alignof(value_type);
-};
-
-template<class C>
-static byte_span storage_b_data(void* st_ctx) {
-    auto* c = static_cast<C*>(st_ctx);
-    unsigned char* b = storage_b_glue<C>::begin(c);
-    if (b == nullptr) return { nullptr, 0 };
-    size_t live;
-    __builtin_memcpy(&live, b - storage_b_traits<C>::header_size, sizeof(size_t));
-    return { b, live };
-}
-
-template<class C>
-static void* storage_b_cap_end(void* st_ctx) {
-    auto* c = static_cast<C*>(st_ctx);
-    unsigned char* b = storage_b_glue<C>::begin(c);
-    if (b == nullptr) return nullptr;
-    constexpr size_t H = storage_b_traits<C>::header_size;
-    unsigned char* base = b - H;
-    size_t total = ::malloc_usable_size(base);
-    return base + total;
-}
-
-template<class C>
-static void storage_b_set_size(void* st_ctx, size_t bytes) {
-    auto* c = static_cast<C*>(st_ctx);
-    unsigned char* b = storage_b_glue<C>::begin(c);
-    if (b == nullptr) return;
-    constexpr size_t H = storage_b_traits<C>::header_size;
-    __builtin_memcpy(b - H, &bytes, sizeof(size_t));
-    unsigned char* base = b - H;
-    size_t total = ::malloc_usable_size(base);
-    unsigned char* cap = base + total;
-    unsigned char* new_end = b + bytes;
-    constexpr size_t es = sizeof(typename C::value_type);
-    if (new_end + es <= cap)
-        __builtin_memset(new_end, 0, es);
-}
-
-template<class C>
-static void storage_b_free(void* st_ctx) {
-    auto* c = static_cast<C*>(st_ctx);
-    unsigned char* b = storage_b_glue<C>::begin(c);
-    if (b) {
-        constexpr size_t H = storage_b_traits<C>::header_size;
-        storage_b_glue<C>::raw_free(c, b - H);
-    }
-    storage_b_glue<C>::set_begin(c, nullptr);
-}
-
-// Strategy B is restricted to std::allocator (stateless), so the slot always
+// Strategy B is gated to std::allocator on glibc, which is stateless and
+// always rebinds to ::malloc / ::free. Combined with `begin_` being at offset
+// 0 of every Strategy-B container (`vector_layout<P, true>` and
+// `string_layout<P, true>` each have `begin_` as their only field; the layout
+// base is the container's first / only base), the byte work below is fully
+// container-agnostic: element size comes from `tops->size`, header_size from
+// `tops->align`, and `*(void**)st_ctx` is `c->begin_`. So one set of five
+// non-template symbols (declared here, defined in src/support.cpp) replaces
+// the per-`C` `storage_b_*<C>` instantiations of the old design, and the
+// `storage_ops` table for Strategy B becomes a single shared constant rather
+// than a per-`C` template.
+//
+// header_size = max(sizeof(size_t), tops->align). Header layout:
+//     [header: size_t live_bytes][value_type buffer ...]
+byte_span storage_b_data    (const type_ops* tops, void* st_ctx);
+void      storage_b_set_size(const type_ops* tops, void* st_ctx, size_t bytes);
+void*     storage_b_cap_end (const type_ops* tops, void* st_ctx);
+void*     storage_b_resize  (const type_ops* tops, void* st_ctx, size_t min_bytes);
+void      storage_b_free    (const type_ops* tops, void* st_ctx);
+// Strategy B is gated to std::allocator (stateless), so the slot always
 // returns nullptr. Kept for ABI uniformity with Strategy A.
-template<class C>
-static void* storage_b_alloc_ctx(void* /*st_ctx*/) {
-    return nullptr;
-}
+void*     storage_b_alloc_ctx(void* st_ctx);
 
-template<class C>
-static void* storage_b_resize(const type_ops* tops, void* st_ctx,
-                              size_t min_bytes) {
-    auto* c = static_cast<C*>(st_ctx);
-    constexpr size_t H = storage_b_traits<C>::header_size;
-    unsigned char* old_begin = storage_b_glue<C>::begin(c);
-    size_t live = 0;
-    if (old_begin) {
-        __builtin_memcpy(&live, old_begin - H, sizeof(size_t));
-    }
-
-    size_t want = H + min_bytes;
-    unsigned char* base = static_cast<unsigned char*>(
-        storage_b_glue<C>::raw_alloc(c, want));
-    unsigned char* nb = base + H;
-
-    if (live) {
-        // Strategy B's gate guarantees the allocator is std::allocator
-        // (stateless), so f_alloc_ctx is never set here. Keep the check for
-        // uniformity with Strategy A; the compiler folds it away.
-        void* ec = (tops->flags & f_alloc_ctx) ? storage_b_alloc_ctx<C>(st_ctx)
-                                               : nullptr;
-        relocate_live(tops, ec, nb, old_begin, live);
-    }
-    if (old_begin)
-        storage_b_glue<C>::raw_free(c, old_begin - H);
-
-    __builtin_memcpy(base, &live, sizeof(size_t));
-    storage_b_glue<C>::set_begin(c, nb);
-
-    size_t total = ::malloc_usable_size(base);
-    unsigned char* cap = base + total;
-    constexpr size_t es = sizeof(typename C::value_type);
-    if (nb + live + es <= cap)
-        __builtin_memset(nb + live, 0, es);
-
-    return nb;
-}
-
-template<class C>
 inline constexpr storage_ops storage_ops_b{
-    &storage_b_data     <C>,
-    &storage_b_set_size <C>,
-    &storage_b_cap_end  <C>,
-    &storage_b_resize   <C>,
-    &storage_b_free     <C>,
-    &storage_b_alloc_ctx<C>,
+    &storage_b_data,
+    &storage_b_set_size,
+    &storage_b_cap_end,
+    &storage_b_resize,
+    &storage_b_free,
+    &storage_b_alloc_ctx,
 };
 
 // ============================================================================
@@ -360,7 +283,7 @@ inline constexpr bool storage_uses_header_layout = allocator_with_usable_size<A>
 template<class C>
 constexpr const storage_ops& pick_storage_for() noexcept {
     if constexpr (storage_uses_header_layout<C, typename C::allocator_type>) {
-        return storage_ops_b<C>;
+        return storage_ops_b;
     } else {
         return storage_ops_a<C>;
     }

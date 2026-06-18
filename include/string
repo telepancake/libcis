@@ -153,7 +153,8 @@ private:
             return this->end_;
         } else {
             if (this->begin_ == nullptr) return pointer{};
-            auto sp = detail::storage_b_data<basic_string>(const_cast<basic_string*>(this));
+            auto sp = detail::storage_b_data(ops_<detail::OP_DESTROY>(),
+                                             const_cast<basic_string*>(this));
             return this->begin_ + (sp.size / sizeof(value_type));
         }
     }
@@ -162,7 +163,8 @@ private:
             return this->cap_;
         } else {
             if (this->begin_ == nullptr) return pointer{};
-            void* e = detail::storage_b_cap_end<basic_string>(const_cast<basic_string*>(this));
+            void* e = detail::storage_b_cap_end(ops_<detail::OP_DESTROY>(),
+                                                const_cast<basic_string*>(this));
             const size_t total_b = static_cast<unsigned char*>(e)
                                  - reinterpret_cast<unsigned char*>(std::to_address(this->begin_));
             return this->begin_ + (total_b / sizeof(value_type));
@@ -172,7 +174,8 @@ private:
         if constexpr (!uses_header_layout_) {
             this->end_ = this->begin_ + n;
         } else {
-            detail::storage_b_set_size<basic_string>(this, n * sizeof(value_type));
+            detail::storage_b_set_size(ops_<detail::OP_DESTROY>(),
+                                       this, n * sizeof(value_type));
         }
     }
     constexpr void clear_storage_() noexcept {
@@ -252,11 +255,12 @@ private:
         return &detail::ops_for<value_type, allocator_type, MASK>;
     }
 
-    // Friend the storage_*_glue specializations so they can reach our private
+    // Friend the storage_a_glue specialization so it can reach our private
     // alloc_ and the layout base subobject (private inheritance hides
-    // up-casts even for friends).
+    // up-casts even for friends). Strategy B no longer has a per-container
+    // glue — the shared non-template `storage_b_*` helpers read `begin_` as
+    // `*(void**)this` and dispatch ::malloc/::free directly.
     template<class C2> friend struct detail::storage_a_glue;
-    template<class C2> friend struct detail::storage_b_glue;
 
     static const detail::storage_ops* storage_table_() noexcept {
         return &detail::storage_for_v<basic_string>;
@@ -280,11 +284,11 @@ private:
 
     void vdeallocate() noexcept {
         if (this->begin_ != nullptr) {
-            detail::destroy_range(ops_<detail::OP_DESTROY>(),
-                                  storage_table_(), this,
+            const detail::type_ops* tops = ops_<detail::OP_DESTROY>();
+            detail::destroy_range(tops, storage_table_(), this,
                                   std::to_address(this->begin_),
                                   std::to_address(end_ptr_()));
-            storage_table_()->free(this);
+            storage_table_()->free(tops, this);
         }
     }
 
@@ -614,8 +618,8 @@ public:
             return static_cast<size_type>(this->end_ - this->begin_);
         } else {
             if (this->begin_ == nullptr) return 0;
-            auto sp = detail::storage_b_data<basic_string>(
-                const_cast<basic_string*>(this));
+            auto sp = detail::storage_b_data(ops_<detail::OP_DESTROY>(),
+                                             const_cast<basic_string*>(this));
             return static_cast<size_type>(sp.size / sizeof(value_type));
         }
     }
@@ -635,8 +639,8 @@ public:
         if constexpr (!uses_header_layout_) {
             return static_cast<size_type>(this->cap_ - this->begin_) - 1;
         } else {
-            void* e = detail::storage_b_cap_end<basic_string>(
-                const_cast<basic_string*>(this));
+            void* e = detail::storage_b_cap_end(ops_<detail::OP_DESTROY>(),
+                                                const_cast<basic_string*>(this));
             const size_t total_b = static_cast<unsigned char*>(e)
                                  - reinterpret_cast<unsigned char*>(std::to_address(this->begin_));
             size_type total = static_cast<size_type>(total_b / sizeof(value_type));
@@ -1446,31 +1450,11 @@ struct storage_a_glue<basic_string<CharT, Traits, A>> {
     static void* alloc_ptr(C* c) noexcept { return &c->alloc_; }
 };
 
-// Strategy B glue for basic_string<CharT, Traits, std::allocator<CharT>>.
-template<class CharT, class Traits, class A>
-struct storage_b_glue<basic_string<CharT, Traits, A>> {
-    using C = basic_string<CharT, Traits, A>;
-    using pointer    = typename C::pointer;
-    using value_type = CharT;
-
-    using b_base = string_layout<pointer, true>;
-    static b_base* lb(C* c) noexcept { return reinterpret_cast<b_base*>(c); }
-
-    static unsigned char* begin(C* c) noexcept {
-        return reinterpret_cast<unsigned char*>(std::to_address(lb(c)->begin_));
-    }
-    static void set_begin(C* c, void* p) noexcept {
-        lb(c)->begin_ = static_cast<pointer>(static_cast<value_type*>(p));
-    }
-    static void* raw_alloc(C* /*c*/, size_t bytes) noexcept {
-        void* p = ::malloc(bytes);
-        if (!p) __builtin_trap();
-        return p;
-    }
-    static void raw_free(C* /*c*/, void* base) noexcept {
-        ::free(base);
-    }
-};
+// Strategy B has no per-container glue: the shared non-template
+// `detail::storage_b_*` helpers read `c->begin_` via `*(void**)c` (begin_ is
+// at offset 0 of string_layout<P, true>, which is the container's only base
+// when the allocator is std::allocator and collapses under
+// [[no_unique_address]]) and call ::malloc / ::free directly.
 } // namespace detail
 
 // Strategy B verification — std::basic_string<char> must be 1-pointer-sized.

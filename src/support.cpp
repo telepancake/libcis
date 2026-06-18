@@ -136,6 +136,93 @@ void grow(const type_ops* tops, const storage_ops* sops,
 }
 
 // ---------------------------------------------------------------------------
+// Strategy B — the one set of buffer-vocab symbols shared by every container
+// gated to std::allocator on glibc. begin_ is at offset 0 of the container
+// (`vector_layout<P, true>` / `string_layout<P, true>` have it as their only
+// field, and the layout base is the container's only base — the empty
+// allocator collapses under [[no_unique_address]]), so `*(void**)st_ctx` is
+// the live data pointer. Element size comes from `tops->size`; header_size
+// from max(sizeof(size_t), tops->align). See bits/storage_ops.h for the
+// design comment.
+// ---------------------------------------------------------------------------
+static inline size_t storage_b_header_size(const type_ops* tops) noexcept {
+    const size_t a = tops->align;
+    return sizeof(size_t) > a ? sizeof(size_t) : a;
+}
+
+byte_span storage_b_data(const type_ops* tops, void* st_ctx) {
+    auto* b = *static_cast<unsigned char**>(st_ctx);
+    if (b == nullptr) return { nullptr, 0 };
+    size_t live;
+    __builtin_memcpy(&live, b - storage_b_header_size(tops), sizeof(size_t));
+    return { b, live };
+}
+
+void* storage_b_cap_end(const type_ops* tops, void* st_ctx) {
+    auto* b = *static_cast<unsigned char**>(st_ctx);
+    if (b == nullptr) return nullptr;
+    unsigned char* base = b - storage_b_header_size(tops);
+    return base + ::malloc_usable_size(base);
+}
+
+void storage_b_set_size(const type_ops* tops, void* st_ctx, size_t bytes) {
+    auto* b = *static_cast<unsigned char**>(st_ctx);
+    if (b == nullptr) return;
+    const size_t H = storage_b_header_size(tops);
+    __builtin_memcpy(b - H, &bytes, sizeof(size_t));
+    unsigned char* base = b - H;
+    unsigned char* cap  = base + ::malloc_usable_size(base);
+    unsigned char* new_end = b + bytes;
+    const size_t es = tops->size;
+    if (new_end + es <= cap)
+        __builtin_memset(new_end, 0, es);
+}
+
+void storage_b_free(const type_ops* tops, void* st_ctx) {
+    auto** slot = static_cast<unsigned char**>(st_ctx);
+    unsigned char* b = *slot;
+    if (b) ::free(b - storage_b_header_size(tops));
+    *slot = nullptr;
+}
+
+void* storage_b_alloc_ctx(void* /*st_ctx*/) {
+    return nullptr;
+}
+
+void* storage_b_resize(const type_ops* tops, void* st_ctx, size_t min_bytes) {
+    auto** slot = static_cast<unsigned char**>(st_ctx);
+    const size_t H = storage_b_header_size(tops);
+    unsigned char* old_begin = *slot;
+    size_t live = 0;
+    if (old_begin)
+        __builtin_memcpy(&live, old_begin - H, sizeof(size_t));
+
+    auto* base = static_cast<unsigned char*>(::malloc(H + min_bytes));
+    if (!base) __builtin_trap();
+    unsigned char* nb = base + H;
+
+    if (live) {
+        // Strategy B's gate guarantees std::allocator (stateless), so
+        // f_alloc_ctx is never set here — the check folds away. Kept for
+        // uniformity with Strategy A.
+        void* ec = (tops->flags & f_alloc_ctx) ? storage_b_alloc_ctx(st_ctx)
+                                               : nullptr;
+        relocate_live(tops, ec, nb, old_begin, live);
+    }
+    if (old_begin) ::free(old_begin - H);
+
+    __builtin_memcpy(base, &live, sizeof(size_t));
+    *slot = nb;
+
+    unsigned char* cap = base + ::malloc_usable_size(base);
+    const size_t es = tops->size;
+    if (nb + live + es <= cap)
+        __builtin_memset(nb + live, 0, es);
+
+    return nb;
+}
+
+// ---------------------------------------------------------------------------
 // rotate: standard std::rotate semantics, type-erased.
 //
 // Rearranges [first, last) so that *middle becomes the new *first and
@@ -199,8 +286,8 @@ void rotate(const type_ops* ops, const storage_ops* sops, void* st_ctx,
             if (!triv_destroy(ops))
                 destroy_range(ops, sops, st_ctx, db, l);
         }
-        byte_span data = sops->data(st_ctx);
-        sops->set_size(st_ctx, data.size + size_delta_bytes);
+        byte_span data = sops->data(ops, st_ctx);
+        sops->set_size(ops, st_ctx, data.size + size_delta_bytes);
     }
 }
 
