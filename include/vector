@@ -215,11 +215,18 @@ private:
     // table installs only those three leaves; for types like
     // std::chrono::tzdb where copy_assign's body would deep-instantiate to
     // a hard error, the leaf is never named.
-    static const detail::type_ops* ops_table_() noexcept {
-        return &detail::ops_for<value_type, allocator_type,
-                                detail::OP_DESTROY |
-                                detail::OP_COPY_CONSTRUCT |
-                                detail::OP_MOVE_CONSTRUCT>;
+    // Per-call ops tables. Each modifier asks for the minimal MASK it
+    // actually exercises: ~vector wants only OP_DESTROY; insert(pos, n, x)
+    // wants OP_COPY_CONSTRUCT; grow/rotate want OP_DESTROY|OP_MOVE_CONSTRUCT.
+    // Having one table with a maximal MASK was wrong — it forced
+    // make_type_ops's body-level `requires` to evaluate every leaf at
+    // instantiation, so `vector<NonCopyable>::~vector()` was deep-
+    // instantiating the copy_construct requires-expression and hard-erroring
+    // (chrono::tzdb -> vector<time_zone>::vector(const&) -> placement-new
+    // of non-copyable time_zone).
+    template<unsigned MASK>
+    static const detail::type_ops* ops_() noexcept {
+        return &detail::ops_for<value_type, allocator_type, MASK>;
     }
 
     // Friend the storage glue specializations so they can reach our private
@@ -261,14 +268,14 @@ private:
     constexpr void vallocate(size_type n) {
         if (n > max_size())
             throw_length_error();
-        detail::grow(ops_table_(), storage_table_(), this,
+        detail::grow(ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>(), storage_table_(), this,
                      (n + 1) * sizeof(value_type));
         // size remains 0 after vallocate (live bytes carried through resize).
     }
 
     void vdeallocate() noexcept {
         if (this->begin_ != nullptr) {
-            detail::destroy_range(ops_table_(), storage_table_(), this,
+            detail::destroy_range(ops_<detail::OP_DESTROY>(), storage_table_(), this,
                                   std::to_address(this->begin_),
                                   std::to_address(end_ptr_()));
             // storage_ops::free deallocates and resets begin_ (+ end_/cap_ in A).
@@ -307,7 +314,7 @@ private:
     }
 
     void destruct_at_end(pointer new_last) noexcept {
-        detail::destroy_range(ops_table_(), storage_table_(), this,
+        detail::destroy_range(ops_<detail::OP_DESTROY>(), storage_table_(), this,
                               std::to_address(new_last),
                               std::to_address(end_ptr_()));
         set_size_elems_(static_cast<size_type>(new_last - this->begin_));
@@ -320,7 +327,7 @@ private:
         if (new_cap > max_size() - 1)
             throw_length_error();
         ++new_cap;  // include the spare slot
-        detail::grow(ops_table_(), storage_table_(), this,
+        detail::grow(ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>(), storage_table_(), this,
                      new_cap * sizeof(value_type));
     }
 
@@ -329,7 +336,7 @@ private:
     // is `rotate(pos, pos+1, end); pop_back`.
     void rotate_(pointer first, pointer middle, pointer last,
                  ptrdiff_t size_delta_bytes = 0) {
-        detail::rotate(ops_table_(), storage_table_(), this,
+        detail::rotate(ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>(), storage_table_(), this,
                        std::to_address(first),
                        std::to_address(middle),
                        std::to_address(last),
@@ -677,7 +684,7 @@ public:
         // Route through grow so both strategies share the path. grow will
         // allocate exactly want elements (Strategy A) or want bytes (B),
         // then relocate live bytes and free the old.
-        detail::grow(ops_table_(), storage_table_(), this,
+        detail::grow(ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>(), storage_table_(), this,
                      want * sizeof(value_type));
     }
 
@@ -784,7 +791,7 @@ public:
         if (n == 0) return this->begin_ + off;
         value_type x_copy = x;
         pointer p = ensure_free_(n + 1);    // n new + 1 spare
-        detail::construct_copy_one_n(ops_table_(), storage_table_(), this,
+        detail::construct_copy_one_n(ops_<detail::OP_COPY_CONSTRUCT>(), storage_table_(), this,
                                      std::to_address(p),
                                      std::to_address(&x_copy), n);
         rotate_(this->begin_ + off, p, p + n,
