@@ -314,6 +314,326 @@ void func_destroy_held(const callable_ops_base* ops, void* buf) {
     }
 }
 
+// ===========================================================================
+// Segmented (deque) cores. The chain walks via segment_map_ops::next_segment.
+// At this layer, an iterator is a (segment_base, in-segment byte pointer)
+// pair carried as two void*s.
+// ===========================================================================
+
+static inline void* seg_fetch_ec(const type_ops* ops,
+                                 const segment_map_ops* mops, void* st_ctx) {
+    return (ops->flags & f_alloc_ctx) ? mops->alloc_ctx(st_ctx) : nullptr;
+}
+
+// Number of "next" segment hops between two segments along the live chain,
+// counted by walking. Used only for assertion-style monotonicity checks; the
+// cores themselves walk and don't need a count.
+static size_t seg_hop_count(const segment_map_ops* mops, void* st_ctx,
+                            void* from_seg, void* to_seg) {
+    size_t n = 0;
+    void* s = from_seg;
+    while (s && s != to_seg) {
+        s = mops->next_segment(st_ctx, s);
+        ++n;
+        if (n > (size_t)-1 / 2) __builtin_trap(); // runaway: chain malformed
+    }
+    return n;
+}
+
+void segmented_destroy(const type_ops* ops, const segment_map_ops* mops,
+                       void* st_ctx,
+                       void* first_seg, void* first_ptr,
+                       void* last_seg,  void* last_ptr) {
+    if (first_seg == last_seg) {
+        if (first_ptr > last_ptr) __builtin_trap();
+        if (triv_destroy(ops)) return;
+        void* ec = seg_fetch_ec(ops, mops, st_ctx);
+        const size_t sz = ops->size;
+        auto* p = static_cast<unsigned char*>(last_ptr);
+        auto* q = static_cast<unsigned char*>(first_ptr);
+        while (p != q) { p -= sz; ops->destroy(ec, p); }
+        return;
+    }
+    if (triv_destroy(ops)) return;
+
+    const size_t seg_bytes = mops->size_bytes(st_ctx);
+    const size_t sz = ops->size;
+    void* ec = seg_fetch_ec(ops, mops, st_ctx);
+
+    // First segment: [first_ptr, first_seg + seg_bytes)
+    auto* fseg = static_cast<unsigned char*>(first_seg);
+    auto* fend = fseg + seg_bytes;
+    auto* p = fend;
+    auto* q = static_cast<unsigned char*>(first_ptr);
+    while (p != q) { p -= sz; ops->destroy(ec, p); }
+
+    // Middle segments: full segments [seg, seg + seg_bytes)
+    void* s = mops->next_segment(st_ctx, first_seg);
+    while (s && s != last_seg) {
+        auto* ss = static_cast<unsigned char*>(s);
+        auto* ee = ss + seg_bytes;
+        auto* pp = ee;
+        while (pp != ss) { pp -= sz; ops->destroy(ec, pp); }
+        s = mops->next_segment(st_ctx, s);
+    }
+    if (s != last_seg) __builtin_trap(); // last_seg not reachable from first_seg
+
+    // Last segment: [last_seg, last_ptr)
+    auto* lseg = static_cast<unsigned char*>(last_seg);
+    auto* lend = static_cast<unsigned char*>(last_ptr);
+    auto* pp = lend;
+    while (pp != lseg) { pp -= sz; ops->destroy(ec, pp); }
+}
+
+// Walk a (seg, ptr) cursor by `bytes` bytes within a chain. Returns the new
+// (seg, ptr) by reference. `bytes` must be ≤ total remaining in the chain.
+static void seg_advance(const segment_map_ops* mops, void* st_ctx,
+                        size_t seg_bytes,
+                        void*& seg, unsigned char*& ptr, size_t bytes) {
+    auto* sb = static_cast<unsigned char*>(seg);
+    size_t in_seg = static_cast<size_t>(ptr - sb);
+    size_t avail  = seg_bytes - in_seg;
+    while (bytes >= avail && seg) {
+        bytes -= avail;
+        seg = mops->next_segment(st_ctx, seg);
+        sb  = static_cast<unsigned char*>(seg);
+        ptr = sb;
+        in_seg = 0;
+        avail  = seg_bytes;
+        if (bytes == 0) return;
+    }
+    ptr += bytes;
+}
+
+// Copy/move-construct from src chain to dst chain. The destination range is
+// raw uninitialized memory; on the trivial fast path this is per-segment
+// memcpy; else element-by-element.
+void segmented_copy(const type_ops* ops,
+                    const segment_map_ops* src_mops,
+                    const segment_map_ops* dst_mops,
+                    void* src_ctx, void* dst_ctx,
+                    void* src_first_seg, void* src_first_ptr,
+                    void* src_last_seg,  void* src_last_ptr,
+                    void* dst_first_seg, void* dst_first_ptr,
+                    bool is_copy) {
+    const size_t src_seg_bytes = src_mops->size_bytes(src_ctx);
+    const size_t dst_seg_bytes = dst_mops->size_bytes(dst_ctx);
+    const size_t sz = ops->size;
+
+    const bool triv = is_copy ? triv_copy(ops) : triv_reloc(ops);
+
+    void*  src_seg = src_first_seg;
+    auto*  src_ptr = static_cast<unsigned char*>(src_first_ptr);
+    void*  dst_seg = dst_first_seg;
+    auto*  dst_ptr = static_cast<unsigned char*>(dst_first_ptr);
+
+    void* dst_ec = (ops->flags & f_alloc_ctx) ? dst_mops->alloc_ctx(dst_ctx) : nullptr;
+
+    while (!(src_seg == src_last_seg
+             && src_ptr == static_cast<unsigned char*>(src_last_ptr))) {
+        auto* sb = static_cast<unsigned char*>(src_seg);
+        auto* db = static_cast<unsigned char*>(dst_seg);
+
+        // Bytes available on the source side this run.
+        size_t src_avail;
+        if (src_seg == src_last_seg)
+            src_avail = static_cast<size_t>(
+                static_cast<unsigned char*>(src_last_ptr) - src_ptr);
+        else
+            src_avail = src_seg_bytes - static_cast<size_t>(src_ptr - sb);
+
+        // Bytes available on the destination side this run.
+        size_t dst_avail = dst_seg_bytes - static_cast<size_t>(dst_ptr - db);
+
+        size_t run = src_avail < dst_avail ? src_avail : dst_avail;
+
+        if (triv) {
+            __builtin_memcpy(dst_ptr, src_ptr, run);
+        } else {
+            size_t n = run / sz;
+            for (size_t i = 0; i < n; ++i, dst_ptr += sz, src_ptr += sz) {
+                if (is_copy) ops->copy_construct(dst_ec, dst_ptr, src_ptr);
+                else         ops->move_construct(dst_ec, dst_ptr, src_ptr);
+            }
+            // Trivial branch advances pointers below; non-trivial already did.
+            // Skip the post-increment block for the non-trivial path.
+            // Step segments if we exhausted them.
+            if (src_ptr == sb + src_seg_bytes && src_seg != src_last_seg) {
+                src_seg = src_mops->next_segment(src_ctx, src_seg);
+                src_ptr = static_cast<unsigned char*>(src_seg);
+            }
+            if (dst_ptr == db + dst_seg_bytes) {
+                dst_seg = dst_mops->next_segment(dst_ctx, dst_seg);
+                dst_ptr = static_cast<unsigned char*>(dst_seg);
+            }
+            continue;
+        }
+        // Trivial-path pointer advance.
+        src_ptr += run;
+        dst_ptr += run;
+        if (src_ptr == sb + src_seg_bytes && src_seg != src_last_seg) {
+            src_seg = src_mops->next_segment(src_ctx, src_seg);
+            src_ptr = static_cast<unsigned char*>(src_seg);
+        }
+        if (dst_ptr == db + dst_seg_bytes) {
+            dst_seg = dst_mops->next_segment(dst_ctx, dst_seg);
+            dst_ptr = static_cast<unsigned char*>(dst_seg);
+        }
+    }
+}
+
+// Reverse [first, last) walking the segmented chain. Element swap via a
+// scratch element on the stack (ops->size ≤ kSwapStack) or ::malloc above.
+// The three-reverse algorithm (reverse-first, reverse-second, reverse-all)
+// builds the rotate.
+static void seg_reverse(const type_ops* ops, const segment_map_ops* mops,
+                        void* st_ctx, size_t seg_bytes,
+                        void* lo_seg, unsigned char* lo_ptr,
+                        void* hi_seg, unsigned char* hi_ptr) {
+    const size_t sz = ops->size;
+    if (lo_seg == hi_seg && lo_ptr >= hi_ptr) return;
+
+    constexpr size_t kSwapStack = 64;
+    alignas(::max_align_t) unsigned char stack_tmp[kSwapStack];
+    unsigned char* tmp = (sz <= kSwapStack)
+        ? stack_tmp
+        : static_cast<unsigned char*>(::malloc(sz));
+
+    if (triv_reloc(ops)) {
+        // Two-cursor swap walking forward / backward.
+        while (true) {
+            // hi cursor is one-past; step it back to point at the last live elt.
+            // Step hi back by sz.
+            if (hi_ptr == static_cast<unsigned char*>(hi_seg)) {
+                // walk back: need previous segment — but we don't have a
+                // prev_segment slot. Fall back to scan from first_seg.
+                // For deque this shouldn't be exercised on triv_reloc T since
+                // we go through the trivial path; build a fallback that scans.
+                void* p_seg = lo_seg;
+                while (p_seg) {
+                    void* n = mops->next_segment(st_ctx, p_seg);
+                    if (n == hi_seg) { hi_seg = p_seg; hi_ptr = static_cast<unsigned char*>(p_seg) + seg_bytes; break; }
+                    p_seg = n;
+                }
+                if (hi_ptr == static_cast<unsigned char*>(hi_seg)) {
+                    // hi_seg degenerate; nothing to do.
+                    break;
+                }
+            }
+            hi_ptr -= sz;
+            if (lo_seg == hi_seg && lo_ptr >= hi_ptr) break;
+            __builtin_memcpy(tmp,    lo_ptr, sz);
+            __builtin_memcpy(lo_ptr, hi_ptr, sz);
+            __builtin_memcpy(hi_ptr, tmp,    sz);
+            // advance lo
+            lo_ptr += sz;
+            if (lo_ptr == static_cast<unsigned char*>(lo_seg) + seg_bytes) {
+                lo_seg = mops->next_segment(st_ctx, lo_seg);
+                lo_ptr = static_cast<unsigned char*>(lo_seg);
+            }
+            if (lo_seg == hi_seg && lo_ptr >= hi_ptr) break;
+        }
+    } else {
+        void* ec = seg_fetch_ec(ops, mops, st_ctx);
+        while (true) {
+            if (hi_ptr == static_cast<unsigned char*>(hi_seg)) {
+                void* p_seg = lo_seg;
+                while (p_seg) {
+                    void* n = mops->next_segment(st_ctx, p_seg);
+                    if (n == hi_seg) { hi_seg = p_seg; hi_ptr = static_cast<unsigned char*>(p_seg) + seg_bytes; break; }
+                    p_seg = n;
+                }
+                if (hi_ptr == static_cast<unsigned char*>(hi_seg)) break;
+            }
+            hi_ptr -= sz;
+            if (lo_seg == hi_seg && lo_ptr >= hi_ptr) break;
+            // swap lo and hi using ops->swap if present, else use move-thru-tmp
+            if (ops->swap) {
+                ops->swap(lo_ptr, hi_ptr);
+            } else {
+                ops->move_construct(ec, tmp,    lo_ptr); ops->destroy(ec, lo_ptr);
+                ops->move_construct(ec, lo_ptr, hi_ptr); ops->destroy(ec, hi_ptr);
+                ops->move_construct(ec, hi_ptr, tmp);    ops->destroy(ec, tmp);
+            }
+            lo_ptr += sz;
+            if (lo_ptr == static_cast<unsigned char*>(lo_seg) + seg_bytes) {
+                lo_seg = mops->next_segment(st_ctx, lo_seg);
+                lo_ptr = static_cast<unsigned char*>(lo_seg);
+            }
+            if (lo_seg == hi_seg && lo_ptr >= hi_ptr) break;
+        }
+    }
+
+    if (sz > kSwapStack) ::free(tmp);
+}
+
+void segmented_rotate(const type_ops* ops, const segment_map_ops* mops,
+                      void* st_ctx,
+                      void* first_seg,  void* first_ptr,
+                      void* middle_seg, void* middle_ptr,
+                      void* last_seg,   void* last_ptr,
+                      ptrdiff_t size_delta_bytes) {
+    const size_t seg_bytes = mops->size_bytes(st_ctx);
+
+    auto eq = [](void* a_seg, void* a_ptr, void* b_seg, void* b_ptr) {
+        return a_seg == b_seg && a_ptr == b_ptr;
+    };
+
+    if (!eq(first_seg, first_ptr, middle_seg, middle_ptr)
+        && !eq(middle_seg, middle_ptr, last_seg, last_ptr)) {
+        // Three-reverse rotate.
+        seg_reverse(ops, mops, st_ctx, seg_bytes,
+                    first_seg,  static_cast<unsigned char*>(first_ptr),
+                    middle_seg, static_cast<unsigned char*>(middle_ptr));
+        seg_reverse(ops, mops, st_ctx, seg_bytes,
+                    middle_seg, static_cast<unsigned char*>(middle_ptr),
+                    last_seg,   static_cast<unsigned char*>(last_ptr));
+        seg_reverse(ops, mops, st_ctx, seg_bytes,
+                    first_seg, static_cast<unsigned char*>(first_ptr),
+                    last_seg,  static_cast<unsigned char*>(last_ptr));
+    }
+
+    if (size_delta_bytes < 0) {
+        // Destroy the trailing |delta| bytes from the back.
+        size_t drop = static_cast<size_t>(-size_delta_bytes);
+        // Walk backward from last by drop bytes; since segment_map_ops has no
+        // prev_segment, walk forward from first to find the drop-point.
+        // But we already have `first` as the start of the rotated range; the
+        // simpler computation is: total range bytes = (last - first), drop-point
+        // is at total - drop from the start.
+        // We can ask locate for a byte index, but locate is from the deque's
+        // logical start, not from `first`. Walk instead.
+        // Compute total live bytes in [first, last) by walking segments.
+        size_t total = 0;
+        if (first_seg == last_seg) {
+            total = static_cast<size_t>(
+                static_cast<unsigned char*>(last_ptr) -
+                static_cast<unsigned char*>(first_ptr));
+        } else {
+            total = seg_bytes - static_cast<size_t>(
+                static_cast<unsigned char*>(first_ptr) -
+                static_cast<unsigned char*>(first_seg));
+            void* s = mops->next_segment(st_ctx, first_seg);
+            while (s && s != last_seg) {
+                total += seg_bytes;
+                s = mops->next_segment(st_ctx, s);
+            }
+            total += static_cast<size_t>(
+                static_cast<unsigned char*>(last_ptr) -
+                static_cast<unsigned char*>(last_seg));
+        }
+        if (drop > total) __builtin_trap();
+        size_t keep = total - drop;
+        void* drop_seg = first_seg;
+        unsigned char* drop_ptr = static_cast<unsigned char*>(first_ptr);
+        seg_advance(mops, st_ctx, seg_bytes, drop_seg, drop_ptr, keep);
+        if (!triv_destroy(ops))
+            segmented_destroy(ops, mops, st_ctx,
+                              drop_seg, drop_ptr,
+                              last_seg, last_ptr);
+    }
+}
+
 } // namespace detail
 } // namespace std
 

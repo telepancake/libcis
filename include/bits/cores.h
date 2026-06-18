@@ -23,6 +23,7 @@
 #include <cstddef>
 #include <bits/type_ops.h>
 #include <bits/storage_ops.h>
+#include <bits/segment_map_ops.h>
 
 namespace std {
 namespace detail {
@@ -85,6 +86,62 @@ void rotate(const type_ops* tops, const storage_ops* sops, void* st_ctx,
 // ---------------------------------------------------------------------------
 void relocate_live(const type_ops* tops, void* el_ctx,
                    unsigned char* dst, unsigned char* src, size_t live_bytes);
+
+// ---------------------------------------------------------------------------
+// Segmented (deque) cores.
+//
+// Where the contiguous cores above operate on a single byte range, the
+// segmented cores walk a segment chain through `segment_map_ops`. Iterators
+// at this layer are (segment_base, in-segment byte pointer) pairs carried as
+// two void*s; the container converts at the boundary.
+//
+// All three share the same trivial fast paths as their contiguous siblings:
+//   destroy   -> skip when (f_triv_destroy & f_alloc_default_life)
+//   copy/move -> memcpy a segment-aligned run when (f_triv_X &
+//                f_alloc_default_life), else walk elements via the leaves.
+//
+// PRECONDITION traps: (first.seg, first.ptr) <= (last.seg, last.ptr) along
+// the live chain, in the same total ordering deque_iterator uses.
+// ---------------------------------------------------------------------------
+
+// Destroy [first, last) walking the chain segment by segment. Trivial-X +
+// default-life T skip the destroy entirely.
+void segmented_destroy(const type_ops* tops, const segment_map_ops* mops,
+                       void* st_ctx,
+                       void* first_seg, void* first_ptr,
+                       void* last_seg,  void* last_ptr);
+
+// Move-construct [src_first, src_last) into the segments starting at
+// dst_first, walking both source and destination segment chains. The two
+// segment_map_ops can name DIFFERENT deques (e.g. cross-deque assignment) or
+// the same one (the common case). When `is_copy` is true, copy_construct is
+// used; otherwise move_construct. The destination range is expected to be
+// already-laid-out raw segments (no live elements there yet) — the cores'
+// responsibility is the construct, not the segment growth.
+void segmented_copy(const type_ops* tops,
+                    const segment_map_ops* src_mops,
+                    const segment_map_ops* dst_mops,
+                    void* src_ctx, void* dst_ctx,
+                    void* src_first_seg, void* src_first_ptr,
+                    void* src_last_seg,  void* src_last_ptr,
+                    void* dst_first_seg, void* dst_first_ptr,
+                    bool is_copy);
+
+// Segment-aware rotate of [first, last) so that *middle becomes the new
+// *first. Algorithm: gather the smaller block into scratch (stack ≤ 256 B,
+// ::malloc above), shift the larger block, restore. Trivial-reloc + default-
+// life T degenerates to per-segment memcpy runs.
+//
+// size_delta_bytes (signed): after rotating, adjust the deque's logical size
+// by this amount. Negative truncates from the back; positive extends. The
+// caller is responsible for any segment push_back_segment / pop_back_segment
+// needed before the call; the core walks within the already-existing chain.
+void segmented_rotate(const type_ops* tops, const segment_map_ops* mops,
+                      void* st_ctx,
+                      void* first_seg,  void* first_ptr,
+                      void* middle_seg, void* middle_ptr,
+                      void* last_seg,   void* last_ptr,
+                      ptrdiff_t size_delta_bytes);
 
 } // namespace detail
 } // namespace std

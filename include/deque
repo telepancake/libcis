@@ -19,6 +19,8 @@
 #include <utility>
 #include <type_traits>
 #include <cstddef>
+#include <bits/vector_cores.h>     // segmented_destroy / _copy / _rotate
+#include <bits/segment_map_ops.h>
 
 namespace std {
 
@@ -553,6 +555,91 @@ private:
     size_type  size_;
     allocator_type alloc_;
 
+    // ---------------- segment_map_ops glue (Stage 4 — cores migration) -------
+    // Slots are byte-typed; we convert at the boundary. `void* seg` is a raw
+    // value_type* pointer at the deque level (the segment's base), recovered
+    // via std::to_address when the allocator uses fancy pointers.
+    static detail::byte_span dq_locate_(void* st_ctx, size_t byte_index) {
+        auto* d = static_cast<deque*>(st_ctx);
+        const size_t es  = sizeof(value_type);
+        const size_t seg = byte_index / (static_cast<size_t>(block_size) * es);
+        const size_t off = byte_index % (static_cast<size_t>(block_size) * es);
+        auto* slot = d->map_.begin() + (d->start_ / block_size) + seg;
+        return { reinterpret_cast<unsigned char*>(std::to_address(*slot)), off };
+    }
+    static size_t dq_size_bytes_(void* st_ctx) {
+        (void)st_ctx;
+        return static_cast<size_t>(block_size) * sizeof(value_type);
+    }
+    static void* dq_next_segment_(void* st_ctx, void* seg) {
+        auto* d = static_cast<deque*>(st_ctx);
+        // Walk the map array to find the slot whose stored block base matches
+        // `seg`, then return the block base of the slot after it. This is O(n)
+        // in the worst case but the deque map is small in practice; if it ever
+        // shows up in a profile the deque can cache the cursor.
+        for (auto* p = d->map_.begin(), *e = d->map_.end(); p != e; ++p) {
+            if (std::to_address(*p) == static_cast<value_type*>(seg)) {
+                if (p + 1 == e) return nullptr;
+                return reinterpret_cast<void*>(std::to_address(*(p + 1)));
+            }
+        }
+        return nullptr;
+    }
+    static void dq_push_back_segment_(void* st_ctx) {
+        auto* d = static_cast<deque*>(st_ctx);
+        d->add_back_capacity();
+    }
+    static void dq_pop_back_segment_(void* st_ctx) {
+        auto* d = static_cast<deque*>(st_ctx);
+        // Mirror the body of `maybe_remove_back_spare(keep_one=false)`.
+        if (!d->map_.empty()) {
+            alloc_traits::deallocate(d->alloc_ref(), d->map_.back(), block_size);
+            d->map_.pop_back();
+        }
+    }
+    static void* dq_alloc_ctx_(void* st_ctx) {
+        if constexpr (detail::alloc_stateless<allocator_type>) {
+            (void)st_ctx;
+            return nullptr;
+        } else {
+            return std::addressof(static_cast<deque*>(st_ctx)->alloc_);
+        }
+    }
+
+    static const detail::segment_map_ops* seg_table_() noexcept {
+        static constexpr detail::segment_map_ops t{
+            &dq_locate_, &dq_size_bytes_, &dq_next_segment_,
+            &dq_push_back_segment_, &dq_pop_back_segment_, &dq_alloc_ctx_,
+        };
+        return &t;
+    }
+
+    // Deque consumes destroy + move_construct + copy_construct from the cores
+    // (destroy_range path, segmented_rotate path, segmented_copy path).
+    static const detail::type_ops* ops_table_() noexcept {
+        return &detail::ops_for<value_type, allocator_type,
+                                detail::OP_DESTROY |
+                                detail::OP_MOVE_CONSTRUCT |
+                                detail::OP_COPY_CONSTRUCT |
+                                detail::OP_SWAP>;
+    }
+
+    // Convert a (const_)iterator's representation to the (seg, ptr) void*
+    // pair the segmented cores consume. For end()-aliased one-past-the-last,
+    // when the map is empty the iterator's ptr is null and the segment is
+    // null; the cores treat this consistently with first==last.
+    template<class It>
+    static void* it_seg_(const It& it) noexcept {
+        if (it.m_iter == nullptr) return nullptr;
+        auto fancy = *it.m_iter;
+        return reinterpret_cast<void*>(std::to_address(fancy));
+    }
+    template<class It>
+    static void* it_ptr_(const It& it) noexcept {
+        if (it.ptr == nullptr) return nullptr;
+        return reinterpret_cast<void*>(std::to_address(it.ptr));
+    }
+
     // Accessors
     allocator_type&       alloc_ref()       noexcept { return alloc_; }
     const allocator_type& alloc_ref() const noexcept { return alloc_; }
@@ -748,9 +835,9 @@ private:
         iterator e  = end();
         difference_type n = e - p;
         if (n > 0) {
-            allocator_type& a = alloc_ref();
-            for (iterator i = p; i != e; ++i)
-                alloc_traits::destroy(a, addressof(*i));
+            detail::segmented_destroy(ops_table_(), seg_table_(), this,
+                                      it_seg_(p), it_ptr_(p),
+                                      it_seg_(e), it_ptr_(e));
             size_ -= static_cast<size_type>(n);
             while (maybe_remove_back_spare()) {}
         }
@@ -979,7 +1066,13 @@ public:
     }
 
     ~deque() {
-        clear();
+        if (size_ > 0) {
+            iterator b = begin(), e = end();
+            detail::segmented_destroy(ops_table_(), seg_table_(), this,
+                                      it_seg_(b), it_ptr_(b),
+                                      it_seg_(e), it_ptr_(e));
+            size_ = 0;
+        }
         allocator_type& a = alloc_ref();
         for (pointer p : map_)
             alloc_traits::deallocate(a, p, block_size);
@@ -1267,22 +1360,50 @@ public:
         iterator b   = begin();
         difference_type pos = f - b;
         iterator    p = b + pos;
-        allocator_type& a = alloc_ref();
+        const size_type es = sizeof(value_type);
         if (static_cast<size_type>(pos) <= (size_ - 1) / 2) {
-            // erase from front side
-            std::move_backward(b, p, std::next(p));
-            alloc_traits::destroy(a, addressof(*b));
+            // erase from front side: rotate(b, p+1, p+1, -es is wrong; the
+            // canonical "shift down toward front" is rotate(b, p, p+1, -es),
+            // which moves *p to the front and the front element off the end.
+            // Easier: rotate(b, b+1, p+1, 0) shifts the front element rightward
+            // — not what we want. Instead, mirror vector's erase shape but on
+            // the front side: rotate the prefix forward so the old front gets
+            // overwritten by *p shifting back to it.
+            iterator pp1 = std::next(p);
+            // Three reverses on [b, p+1) with middle = p make *p the new *b
+            // and shift everything else back by one. Then destroy the new
+            // first element (the original *p).
+            detail::segmented_rotate(ops_table_(), seg_table_(), this,
+                                     it_seg_(b),   it_ptr_(b),
+                                     it_seg_(p),   it_ptr_(p),
+                                     it_seg_(pp1), it_ptr_(pp1),
+                                     0); // we update size/start_ manually below
+            allocator_type& a = alloc_ref();
+            iterator b2 = begin();
+            alloc_traits::destroy(a, addressof(*b2));
             --size_;
             ++start_;
             maybe_remove_front_spare();
         } else {
-            // erase from back side
-            iterator i = std::move(std::next(p), end(), p);
-            alloc_traits::destroy(a, addressof(*i));
+            // erase from back side: rotate(p, p+1, end, -es) makes the
+            // trailing element the original *p; the core's size_delta<0 path
+            // would destroy it AND adjust size — but our deque tracks size_
+            // outside storage_ops, so we pass delta=0 and clean up here.
+            iterator pp1 = std::next(p);
+            iterator e   = end();
+            detail::segmented_rotate(ops_table_(), seg_table_(), this,
+                                     it_seg_(p),   it_ptr_(p),
+                                     it_seg_(pp1), it_ptr_(pp1),
+                                     it_seg_(e),   it_ptr_(e),
+                                     0);
+            allocator_type& a = alloc_ref();
+            iterator new_end = end() - 1;
+            alloc_traits::destroy(a, addressof(*new_end));
             --size_;
             maybe_remove_back_spare();
         }
         return begin() + pos;
+        (void)es;
     }
 
     iterator erase(const_iterator f, const_iterator l) {
@@ -1292,18 +1413,38 @@ public:
         iterator p          = b + pos;
 
         if (n > 0) {
-            allocator_type& a = alloc_ref();
             if (static_cast<size_type>(pos) <= (size_ - static_cast<size_type>(n)) / 2) {
-                iterator i = std::move_backward(b, p, p + n);
-                for (iterator j = b; j != i; ++j)
-                    alloc_traits::destroy(a, addressof(*j));
+                // front side: rotate(b, p, p+n) makes [b, b+n) the original
+                // [p, p+n) and shifts the prefix to [b+n, p+n).
+                // Concretely: three-reverse on [b, p+n) with middle=p.
+                iterator pn = p + n;
+                detail::segmented_rotate(ops_table_(), seg_table_(), this,
+                                         it_seg_(b),  it_ptr_(b),
+                                         it_seg_(p),  it_ptr_(p),
+                                         it_seg_(pn), it_ptr_(pn),
+                                         0);
+                // The first n elements are now the to-be-erased originals.
+                allocator_type& a = alloc_ref();
+                iterator new_b = begin();
+                for (difference_type k = 0; k < n; ++k, (void)++new_b)
+                    alloc_traits::destroy(a, addressof(*new_b));
                 size_   -= static_cast<size_type>(n);
                 start_  += static_cast<size_type>(n);
                 while (maybe_remove_front_spare()) {}
             } else {
-                iterator i = std::move(p + n, end(), p);
-                for (iterator j = i; j != end(); ++j)
-                    alloc_traits::destroy(a, addressof(*j));
+                // back side: rotate(p, p+n, end) makes [end-n, end) the
+                // original [p, p+n) and the rest shifts left.
+                iterator pn = p + n;
+                iterator e  = end();
+                detail::segmented_rotate(ops_table_(), seg_table_(), this,
+                                         it_seg_(p),  it_ptr_(p),
+                                         it_seg_(pn), it_ptr_(pn),
+                                         it_seg_(e),  it_ptr_(e),
+                                         0);
+                allocator_type& a = alloc_ref();
+                iterator new_end = end() - n;
+                for (difference_type k = 0; k < n; ++k, (void)++new_end)
+                    alloc_traits::destroy(a, addressof(*new_end));
                 size_ -= static_cast<size_type>(n);
                 while (maybe_remove_back_spare()) {}
             }
@@ -1320,10 +1461,14 @@ public:
     }
 
     void clear() noexcept {
+        if (size_ > 0) {
+            iterator b = begin(), e = end();
+            detail::segmented_destroy(ops_table_(), seg_table_(), this,
+                                      it_seg_(b), it_ptr_(b),
+                                      it_seg_(e), it_ptr_(e));
+            size_ = 0;
+        }
         allocator_type& a = alloc_ref();
-        for (iterator i = begin(), e = end(); i != e; ++i)
-            alloc_traits::destroy(a, addressof(*i));
-        size_ = 0;
         // Keep at most 2 blocks; release the rest
         while (map_.size() > 2) {
             alloc_traits::deallocate(a, map_.front(), block_size);
