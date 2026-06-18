@@ -20,6 +20,7 @@
 #include <cstdint>  // uintptr_t
 #include <atomic>   // memory_order (for the [util.smartptr.shared.atomic] API)
 #include <iosfwd>   // basic_ostream forward declaration (for operator<<)
+#include <bits/sp_cb_ops.h>  // sp_cb_ops vocab table (stage 7)
 // <functional> is included here (before namespace std) so that <tuple>'s
 // uses_allocator definition (pulled in transitively) is authoritative.
 // <memory> itself does NOT redefine uses_allocator — it reuses the one
@@ -1347,36 +1348,46 @@ struct bad_weak_ptr : public std::exception {
 
 //===----------------------------------------------------------------------===//
 // Control-block hierarchy
-//   sp_counted_base         — atomic shared+weak refcounts (no virtuals for
-//                             data; on_zero_shared/on_zero_shared_weak are pure)
-//   sp_counted_ptr          — stores raw pointer, calls delete (or delete[])
+//   sp_counted_base         — atomic shared+weak refcounts; holds a
+//                             const detail::sp_cb_ops* in place of the
+//                             vtable (stage 7; see bits/sp_cb_ops.h)
 //   sp_counted_ptr_deleter  — stores pointer + custom deleter + allocator
 //   sp_counted_emplace      — make_shared / allocate_shared inplace storage
+//   sp_{unbounded,bounded}_array_control_block — array variants for the
+//                             C++20 shared_ptr<T[]> / shared_ptr<T[N]> APIs
 //===----------------------------------------------------------------------===//
 
 // NOTE: counts are stored as (actual_count - 1) so that reaching -1 means zero.
 // This matches the libc++ convention in __shared_count.h.
+//
+// sp_counted_base used to be an abstract base with two pure-virtual hooks
+// (on_zero_shared, on_zero_shared_weak); each derived control block emitted
+// its own vtable. Per cores-design.md §3.7 / stage 7, the vtable is replaced
+// by a const detail::sp_cb_ops* slot occupying the same position the vtable
+// pointer did. The two hooks become indirect calls through that table; the
+// derived class is responsible for publishing a static-storage sp_cb_ops
+// constant and passing &it to the base constructor. The class is no longer
+// polymorphic — derived classes inherit storage, not dispatch.
 
 class sp_counted_base {
     sp_counted_base(const sp_counted_base&) = delete;
     sp_counted_base& operator=(const sp_counted_base&) = delete;
 
 protected:
+    // Vocab table — replaces the vtable. Same dispatch shape, no RTTI
+    // slot, eligible for COMDAT folding across instantiations whose
+    // on_zero_shared* leaf bodies are byte-identical.
+    const detail::sp_cb_ops* ops_;
     // shared_owners_ == actual_use_count - 1  (starts at 0 for use_count 1)
     long shared_owners_;
     // shared_weak_owners_ == actual_weak_count - 1  (same convention)
     long shared_weak_owners_;
 
-    virtual ~sp_counted_base() noexcept = default;
+    ~sp_counted_base() noexcept = default;
 
 public:
-    explicit sp_counted_base() noexcept
-        : shared_owners_(0), shared_weak_owners_(0) {}
-
-    // Called when shared refcount hits zero: destroy the owned object.
-    virtual void on_zero_shared() noexcept = 0;
-    // Called when weak refcount hits zero: free the control block itself.
-    virtual void on_zero_shared_weak() noexcept = 0;
+    explicit sp_counted_base(const detail::sp_cb_ops* ops) noexcept
+        : ops_(ops), shared_owners_(0), shared_weak_owners_(0) {}
 
     // --- shared refcount ---
     void add_shared() noexcept {
@@ -1390,7 +1401,9 @@ public:
         // ACQ_REL: the decrement that reaches -1 must synchronize with all
         // prior uses (acquire the effects of those releases).
         if (__atomic_sub_fetch(&shared_owners_, 1, __ATOMIC_ACQ_REL) == -1) {
-            on_zero_shared();
+            // Indirect call through the vocab table — same cost as the
+            // virtual it replaces, no typeinfo slot baggage.
+            ops_->on_zero_shared(this);
             return true;
         }
         return false;
@@ -1412,7 +1425,7 @@ public:
 
     void release_weak() noexcept {
         if (__atomic_sub_fetch(&shared_weak_owners_, 1, __ATOMIC_ACQ_REL) == -1)
-            on_zero_shared_weak();
+            ops_->on_zero_shared_weak(this);
     }
 
     // lock() for weak_ptr::lock(): atomically try to increment shared count
@@ -1444,31 +1457,50 @@ namespace detail {
 }
 
 // sp_counted_ptr_deleter: stores pointer, deleter, and allocator.
-// Used for shared_ptr(Y*, D) and shared_ptr(Y*, D, A).
+// Used for shared_ptr(Y*, D) and shared_ptr(Y*, D, A). Inherits from
+// sp_counted_base for storage only — dispatch is via sp_cb_ops (k_ops).
 template<class Ptr, class Deleter, class Alloc>
 class sp_counted_ptr_deleter : public sp_counted_base {
     [[no_unique_address]] Ptr ptr_;
     [[no_unique_address]] Deleter del_;
     [[no_unique_address]] Alloc alloc_;
 
-public:
-    sp_counted_ptr_deleter(Ptr p, Deleter d, Alloc a)
-        : ptr_(p), del_(move(d)), alloc_(move(a)) {}
-
-    void on_zero_shared() noexcept override {
-        del_(ptr_);
-        del_.~Deleter();
+    // Leaves transcribed from the prior virtual bodies. Free functions in
+    // their own .text.<fn> section; fold across instantiations under ICF.
+    static void on_zero_shared_impl(void* cb) noexcept {
+        auto* self = static_cast<sp_counted_ptr_deleter*>(cb);
+        self->del_(self->ptr_);
+        self->del_.~Deleter();
     }
 
-    void on_zero_shared_weak() noexcept override {
+    static void on_zero_shared_weak_impl(void* cb) noexcept {
+        auto* self = static_cast<sp_counted_ptr_deleter*>(cb);
         using CbAlloc = typename allocator_traits<Alloc>::template rebind_alloc<
             sp_counted_ptr_deleter>;
         using CbTraits = allocator_traits<CbAlloc>;
-        CbAlloc a(alloc_);
-        alloc_.~Alloc();
+        CbAlloc a(self->alloc_);
+        self->alloc_.~Alloc();
         CbTraits::deallocate(a,
-            pointer_traits<typename CbTraits::pointer>::pointer_to(*this), 1);
+            pointer_traits<typename CbTraits::pointer>::pointer_to(*self), 1);
     }
+
+public:
+    // Per-instantiation vocab table. The offsets / cb_size are reserved
+    // for a future generic-dealloc core; the dispatching base reads only
+    // on_zero_shared / on_zero_shared_weak.
+    static inline constexpr detail::sp_cb_ops k_ops = {
+        /*ptr_offset    */ offsetof(sp_counted_ptr_deleter, ptr_),
+        /*deleter_offset*/ offsetof(sp_counted_ptr_deleter, del_),
+        /*alloc_offset  */ offsetof(sp_counted_ptr_deleter, alloc_),
+        /*cb_size       */ sizeof(sp_counted_ptr_deleter),
+        /*flags         */ 0u,
+        &on_zero_shared_impl,
+        &on_zero_shared_weak_impl,
+    };
+
+    sp_counted_ptr_deleter(Ptr p, Deleter d, Alloc a)
+        : sp_counted_base(&k_ops),
+          ptr_(p), del_(move(d)), alloc_(move(a)) {}
 };
 
 //===----------------------------------------------------------------------===//
@@ -1511,15 +1543,48 @@ class sp_counted_emplace : public sp_counted_base {
 
     Storage storage_;
 
+    // Leaves transcribed from the prior virtual bodies.
+    static void on_zero_shared_impl(void* cb) noexcept {
+        auto* self = static_cast<sp_counted_emplace*>(cb);
+        if constexpr (!is_same_v<typename Alloc::value_type, sp_for_overwrite_tag>) {
+            using ElemAlloc = typename allocator_traits<Alloc>::template rebind_alloc<value_type>;
+            ElemAlloc ea(*self->get_alloc());
+            allocator_traits<ElemAlloc>::destroy(ea, self->get_elem());
+        } else {
+            self->get_elem()->~value_type();
+        }
+    }
+
+    static void on_zero_shared_weak_impl(void* cb) noexcept {
+        auto* self = static_cast<sp_counted_emplace*>(cb);
+        using CbAlloc = typename allocator_traits<Alloc>::template rebind_alloc<sp_counted_emplace>;
+        using CbTraits = allocator_traits<CbAlloc>;
+        CbAlloc ca(*self->get_alloc());
+        self->storage_.~Storage();
+        CbTraits::deallocate(ca,
+            pointer_traits<typename CbTraits::pointer>::pointer_to(*self), 1);
+    }
+
 public:
     Alloc* get_alloc() noexcept { return storage_.get_alloc(); }
     value_type* get_elem() noexcept { return storage_.get_elem(); }
+
+    // Per-instantiation vocab table.
+    static inline constexpr detail::sp_cb_ops k_ops = {
+        /*ptr_offset    */ offsetof(sp_counted_emplace, storage_),
+        /*deleter_offset*/ detail::SP_NO_OFFSET,
+        /*alloc_offset  */ offsetof(sp_counted_emplace, storage_),
+        /*cb_size       */ sizeof(sp_counted_emplace),
+        /*flags         */ detail::f_sp_inline_element,
+        &on_zero_shared_impl,
+        &on_zero_shared_weak_impl,
+    };
 
     // Constructor for make_shared / allocate_shared (value-init args)
     template<class... Args>
         requires (!is_same_v<typename Alloc::value_type, sp_for_overwrite_tag>)
     explicit sp_counted_emplace(Alloc a, Args&&... args)
-        : storage_(a)
+        : sp_counted_base(&k_ops), storage_(a)
     {
         using ElemAlloc = typename allocator_traits<Alloc>::template rebind_alloc<value_type>;
         ElemAlloc ea(*get_alloc());
@@ -1530,29 +1595,10 @@ public:
     template<class Dummy = void>
         requires (is_same_v<typename Alloc::value_type, sp_for_overwrite_tag>)
     explicit sp_counted_emplace(Alloc a)
-        : storage_(a)
+        : sp_counted_base(&k_ops), storage_(a)
     {
         // Default-initialize (not value-initialize) per the standard.
         ::new(static_cast<void*>(get_elem())) value_type;
-    }
-
-    void on_zero_shared() noexcept override {
-        if constexpr (!is_same_v<typename Alloc::value_type, sp_for_overwrite_tag>) {
-            using ElemAlloc = typename allocator_traits<Alloc>::template rebind_alloc<value_type>;
-            ElemAlloc ea(*get_alloc());
-            allocator_traits<ElemAlloc>::destroy(ea, get_elem());
-        } else {
-            get_elem()->~value_type();
-        }
-    }
-
-    void on_zero_shared_weak() noexcept override {
-        using CbAlloc = typename allocator_traits<Alloc>::template rebind_alloc<sp_counted_emplace>;
-        using CbTraits = allocator_traits<CbAlloc>;
-        CbAlloc ca(*get_alloc());
-        storage_.~Storage();
-        CbTraits::deallocate(ca,
-            pointer_traits<typename CbTraits::pointer>::pointer_to(*this), 1);
     }
 };
 
@@ -2429,13 +2475,53 @@ template<class T, class Alloc>
 struct sp_unbounded_array_control_block<T[], Alloc> : sp_counted_base {
     constexpr T* get_data() noexcept { return data_; }
 
+    // Leaves transcribed from the prior virtual bodies.
+    static void on_zero_shared_impl(void* cb) noexcept {
+        auto* self = static_cast<sp_unbounded_array_control_block*>(cb);
+        if constexpr (is_same_v<typename Alloc::value_type, sp_for_overwrite_tag>) {
+            detail::reverse_destroy(self->data_, self->data_ + self->count_);
+        } else {
+            typename allocator_traits<Alloc>::template rebind_alloc<T> value_alloc(self->alloc_);
+            detail::allocator_destroy_multidimensional(value_alloc, self->data_, self->data_ + self->count_);
+        }
+    }
+
+    static void on_zero_shared_weak_impl(void* cb) noexcept {
+        auto* self = static_cast<sp_unbounded_array_control_block*>(cb);
+        using AlignedStorage =
+            sp_aligned_storage<alignof(sp_unbounded_array_control_block)>;
+        using StorageAlloc =
+            typename allocator_traits<Alloc>::template rebind_alloc<AlignedStorage>;
+        using PtrTraits = pointer_traits<typename allocator_traits<StorageAlloc>::pointer>;
+
+        StorageAlloc tmp(self->alloc_);
+        self->alloc_.~Alloc();
+        size_t size = sp_unbounded_array_control_block::bytes_for(self->count_);
+        AlignedStorage* storage = reinterpret_cast<AlignedStorage*>(self);
+        allocator_traits<StorageAlloc>::deallocate(
+            tmp, PtrTraits::pointer_to(*storage), size / sizeof(AlignedStorage));
+    }
+
+    // Per-instantiation vocab table. cb_size carries the sizeof() of the
+    // control block alone; the trailing inline element bytes are sized
+    // dynamically (count_) by on_zero_shared_weak_impl.
+    static inline constexpr detail::sp_cb_ops k_ops = {
+        /*ptr_offset    */ offsetof(sp_unbounded_array_control_block, data_),
+        /*deleter_offset*/ detail::SP_NO_OFFSET,
+        /*alloc_offset  */ offsetof(sp_unbounded_array_control_block, alloc_),
+        /*cb_size       */ sizeof(sp_unbounded_array_control_block),
+        /*flags         */ detail::f_sp_inline_element,
+        &on_zero_shared_impl,
+        &on_zero_shared_weak_impl,
+    };
+
     explicit sp_unbounded_array_control_block(Alloc const& alloc, size_t count, T const& arg)
-        : alloc_(alloc), count_(count) {
+        : sp_counted_base(&k_ops), alloc_(alloc), count_(count) {
         detail::uninitialized_allocator_fill_n_multidimensional(alloc_, data_, count_, arg);
     }
 
     explicit sp_unbounded_array_control_block(Alloc const& alloc, size_t count)
-        : alloc_(alloc), count_(count) {
+        : sp_counted_base(&k_ops), alloc_(alloc), count_(count) {
         if constexpr (is_same_v<typename Alloc::value_type, sp_for_overwrite_tag>) {
             // We are purposefully not using an allocator-aware default construction
             // because the spec says so. There's currently no way of expressing
@@ -2463,32 +2549,8 @@ struct sp_unbounded_array_control_block<T[], Alloc> : sp_counted_base {
         return (bytes + align - 1) & ~(align - 1);
     }
 
-    ~sp_unbounded_array_control_block() override {
+    ~sp_unbounded_array_control_block() {
     } // can't be `= default` because of the sometimes-non-trivial union member data_
-
-    void on_zero_shared() noexcept override {
-        if constexpr (is_same_v<typename Alloc::value_type, sp_for_overwrite_tag>) {
-            detail::reverse_destroy(data_, data_ + count_);
-        } else {
-            typename allocator_traits<Alloc>::template rebind_alloc<T> value_alloc(alloc_);
-            detail::allocator_destroy_multidimensional(value_alloc, data_, data_ + count_);
-        }
-    }
-
-    void on_zero_shared_weak() noexcept override {
-        using AlignedStorage =
-            sp_aligned_storage<alignof(sp_unbounded_array_control_block)>;
-        using StorageAlloc =
-            typename allocator_traits<Alloc>::template rebind_alloc<AlignedStorage>;
-        using PtrTraits = pointer_traits<typename allocator_traits<StorageAlloc>::pointer>;
-
-        StorageAlloc tmp(alloc_);
-        alloc_.~Alloc();
-        size_t size = sp_unbounded_array_control_block::bytes_for(count_);
-        AlignedStorage* storage = reinterpret_cast<AlignedStorage*>(this);
-        allocator_traits<StorageAlloc>::deallocate(
-            tmp, PtrTraits::pointer_to(*storage), size / sizeof(AlignedStorage));
-    }
 
     [[no_unique_address]] Alloc alloc_;
     size_t count_;
@@ -2530,13 +2592,47 @@ template<class T, size_t Count, class Alloc>
 struct sp_bounded_array_control_block<T[Count], Alloc> : sp_counted_base {
     constexpr T* get_data() noexcept { return data_; }
 
+    // Leaves transcribed from the prior virtual bodies.
+    static void on_zero_shared_impl(void* cb) noexcept {
+        auto* self = static_cast<sp_bounded_array_control_block*>(cb);
+        if constexpr (is_same_v<typename Alloc::value_type, sp_for_overwrite_tag>) {
+            detail::reverse_destroy(self->data_, self->data_ + Count);
+        } else {
+            typename allocator_traits<Alloc>::template rebind_alloc<T> value_alloc(self->alloc_);
+            detail::allocator_destroy_multidimensional(value_alloc, self->data_, self->data_ + Count);
+        }
+    }
+
+    static void on_zero_shared_weak_impl(void* cb) noexcept {
+        auto* self = static_cast<sp_bounded_array_control_block*>(cb);
+        using CbAlloc =
+            typename allocator_traits<Alloc>::template rebind_alloc<sp_bounded_array_control_block>;
+        using PtrTraits = pointer_traits<typename allocator_traits<CbAlloc>::pointer>;
+
+        CbAlloc tmp(self->alloc_);
+        self->alloc_.~Alloc();
+        allocator_traits<CbAlloc>::deallocate(tmp, PtrTraits::pointer_to(*self), 1);
+    }
+
+    // Per-instantiation vocab table.
+    static inline constexpr detail::sp_cb_ops k_ops = {
+        /*ptr_offset    */ offsetof(sp_bounded_array_control_block, data_),
+        /*deleter_offset*/ detail::SP_NO_OFFSET,
+        /*alloc_offset  */ offsetof(sp_bounded_array_control_block, alloc_),
+        /*cb_size       */ sizeof(sp_bounded_array_control_block),
+        /*flags         */ detail::f_sp_inline_element,
+        &on_zero_shared_impl,
+        &on_zero_shared_weak_impl,
+    };
+
     explicit sp_bounded_array_control_block(Alloc const& alloc, T const& arg)
-        : alloc_(alloc) {
+        : sp_counted_base(&k_ops), alloc_(alloc) {
         detail::uninitialized_allocator_fill_n_multidimensional(
             alloc_, std::addressof(data_[0]), Count, arg);
     }
 
-    explicit sp_bounded_array_control_block(Alloc const& alloc) : alloc_(alloc) {
+    explicit sp_bounded_array_control_block(Alloc const& alloc)
+        : sp_counted_base(&k_ops), alloc_(alloc) {
         if constexpr (is_same_v<typename Alloc::value_type, sp_for_overwrite_tag>) {
             // We are purposefully not using an allocator-aware default construction
             // because the spec says so. There's currently no way of expressing
@@ -2548,27 +2644,8 @@ struct sp_bounded_array_control_block<T[Count], Alloc> : sp_counted_base {
         }
     }
 
-    ~sp_bounded_array_control_block() override {
+    ~sp_bounded_array_control_block() {
     } // can't be `= default` because of the sometimes-non-trivial union member data_
-
-    void on_zero_shared() noexcept override {
-        if constexpr (is_same_v<typename Alloc::value_type, sp_for_overwrite_tag>) {
-            detail::reverse_destroy(data_, data_ + Count);
-        } else {
-            typename allocator_traits<Alloc>::template rebind_alloc<T> value_alloc(alloc_);
-            detail::allocator_destroy_multidimensional(value_alloc, data_, data_ + Count);
-        }
-    }
-
-    void on_zero_shared_weak() noexcept override {
-        using CbAlloc =
-            typename allocator_traits<Alloc>::template rebind_alloc<sp_bounded_array_control_block>;
-        using PtrTraits = pointer_traits<typename allocator_traits<CbAlloc>::pointer>;
-
-        CbAlloc tmp(alloc_);
-        alloc_.~Alloc();
-        allocator_traits<CbAlloc>::deallocate(tmp, PtrTraits::pointer_to(*this), 1);
-    }
 
     [[no_unique_address]] Alloc alloc_;
     union {
