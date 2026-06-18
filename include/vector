@@ -208,14 +208,18 @@ private:
     // The storage_a_glue<vector> specialization below provides the byte-level
     // hooks that storage_ops_a<vector> uses.
     // -----------------------------------------------------------------------
-    // Vector consumes only `destroy` (from destroy_range, called by
-    // vdeallocate/destruct_at_end) and `move_construct` (from the grow path's
-    // relocation). The shared core table installs only those two leaves; for
-    // types like std::chrono::tzdb where copy_assign's body would deep-
-    // instantiate to a hard error, the leaf is never named.
+    // Vector consumes `destroy` (from destroy_range, called by
+    // vdeallocate/destruct_at_end), `move_construct` (from the grow path's
+    // relocation), and `copy_construct` (from construct_copy_one_n, called
+    // by insert(pos, n, x) on the non-trivial-copy path). The shared core
+    // table installs only those three leaves; for types like
+    // std::chrono::tzdb where copy_assign's body would deep-instantiate to
+    // a hard error, the leaf is never named.
     static const detail::type_ops* ops_table_() noexcept {
         return &detail::ops_for<value_type, allocator_type,
-                                detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>;
+                                detail::OP_DESTROY |
+                                detail::OP_COPY_CONSTRUCT |
+                                detail::OP_MOVE_CONSTRUCT>;
     }
 
     // Friend the storage glue specializations so they can reach our private
