@@ -65,19 +65,6 @@ void destroy_range(const type_ops* ops, const storage_ops* sops,
     }
 }
 
-void construct_default_n(const type_ops* ops, const storage_ops* sops,
-                         void* st_ctx, void* dst, size_t n) {
-    if (triv_default(ops)) {
-        __builtin_memset(dst, 0, n * ops->size);
-        return;
-    }
-    void* el_ctx = fetch_ec(ops, sops, st_ctx);
-    const size_t sz = ops->size;
-    auto p = static_cast<unsigned char*>(dst);
-    for (size_t i = 0; i < n; ++i, p += sz)
-        ops->default_construct(el_ctx, p);
-}
-
 void construct_copy_one_n(const type_ops* ops, const storage_ops* sops,
                           void* st_ctx, void* dst, const void* src, size_t n) {
     const size_t sz = ops->size;

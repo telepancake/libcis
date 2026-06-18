@@ -50,11 +50,6 @@ void grow(const type_ops* tops, const storage_ops* sops,
 void destroy_range(const type_ops* tops, const storage_ops* sops,
                    void* st_ctx, void* begin, void* end);
 
-// Default-construct n elements starting at `dst`. For trivially-default-
-// constructible T + default lifecycle, value-init is a memset(0).
-void construct_default_n(const type_ops* tops, const storage_ops* sops,
-                         void* st_ctx, void* dst, size_t n);
-
 // Copy-construct n elements at `dst`, each from `src` (one source object,
 // broadcast). For trivially-copyable T + default lifecycle, this memcpys.
 void construct_copy_one_n(const type_ops* tops, const storage_ops* sops,
