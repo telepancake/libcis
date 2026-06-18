@@ -63,16 +63,21 @@ struct byte_span {
     size_t size;
 };
 
-// The vocabulary table: five function pointers, container-agnostic.
+// The vocabulary table: six function pointers, container-agnostic.
 struct storage_ops {
-    byte_span (*data)    (void* st_ctx);
-    void      (*set_size)(void* st_ctx, size_t bytes);
-    void*     (*cap_end) (void* st_ctx);
-    // resize takes the element type_ops (for the live-bytes relocation) and
-    // the element ctx (for allocator-mediated move_construct/destroy leaves).
-    void*     (*resize)  (const type_ops* tops, void* st_ctx, void* el_ctx,
-                          size_t min_bytes);
-    void      (*free)    (void* st_ctx);
+    byte_span (*data)     (void* st_ctx);
+    void      (*set_size) (void* st_ctx, size_t bytes);
+    void*     (*cap_end)  (void* st_ctx);
+    // resize: (re)allocate to hold at least `min_bytes` and relocate live
+    // bytes into the new buffer. Internally fetches the element ctx via
+    // alloc_ctx when the type_ops flags say the allocator has state.
+    void*     (*resize)   (const type_ops* tops, void* st_ctx, size_t min_bytes);
+    void      (*free)     (void* st_ctx);
+    // alloc_ctx: returns the container's allocator instance pointer (&alloc_)
+    // when the allocator has per-instance state, else nullptr. Cores call this
+    // lazily, gated by `tops->flags & f_alloc_ctx`. The name mirrors the gate
+    // flag so callsites read self-documenting.
+    void*     (*alloc_ctx)(void* st_ctx);
 };
 
 // ============================================================================
@@ -139,8 +144,21 @@ static void storage_a_free(void* st_ctx) {
 void relocate_live(const type_ops* tops, void* el_ctx,
                    unsigned char* dst, unsigned char* src, size_t live_bytes);
 
+// alloc_ctx slot: returns &c->alloc_ if the allocator has per-instance state,
+// else nullptr. The container exposes &alloc_ via the glue (alloc_ptr()).
 template<class C>
-static void* storage_a_resize(const type_ops* tops, void* st_ctx, void* el_ctx,
+static void* storage_a_alloc_ctx(void* st_ctx) {
+    using A = typename C::allocator_type;
+    if constexpr (alloc_stateless<A>) {
+        (void)st_ctx;
+        return nullptr;
+    } else {
+        return storage_a_glue<C>::alloc_ptr(static_cast<C*>(st_ctx));
+    }
+}
+
+template<class C>
+static void* storage_a_resize(const type_ops* tops, void* st_ctx,
                               size_t min_bytes) {
     using G = storage_a_glue<C>;
     auto* c = static_cast<C*>(st_ctx);
@@ -153,8 +171,13 @@ static void* storage_a_resize(const type_ops* tops, void* st_ctx, void* el_ctx,
     unsigned char* nb = static_cast<unsigned char*>(
         G::allocate(c, min_bytes, &got));
 
-    if (live)
-        relocate_live(tops, el_ctx, nb, old_begin, live);
+    if (live) {
+        // Only fetch the allocator instance when the leaves actually need it.
+        void* ec = (tops->flags & f_alloc_ctx)
+                 ? storage_a_alloc_ctx<C>(st_ctx)
+                 : nullptr;
+        relocate_live(tops, ec, nb, old_begin, live);
+    }
     if (old_begin)
         G::deallocate(c, old_begin, old_total);
 
@@ -172,11 +195,12 @@ static void* storage_a_resize(const type_ops* tops, void* st_ctx, void* el_ctx,
 
 template<class C>
 inline constexpr storage_ops storage_ops_a{
-    &storage_a_data    <C>,
-    &storage_a_set_size<C>,
-    &storage_a_cap_end <C>,
-    &storage_a_resize  <C>,
-    &storage_a_free    <C>,
+    &storage_a_data     <C>,
+    &storage_a_set_size <C>,
+    &storage_a_cap_end  <C>,
+    &storage_a_resize   <C>,
+    &storage_a_free     <C>,
+    &storage_a_alloc_ctx<C>,
 };
 
 // ============================================================================
@@ -271,8 +295,15 @@ static void storage_b_free(void* st_ctx) {
     storage_b_glue<C>::set_begin(c, nullptr);
 }
 
+// Strategy B is restricted to std::allocator (stateless), so the slot always
+// returns nullptr. Kept for ABI uniformity with Strategy A.
 template<class C>
-static void* storage_b_resize(const type_ops* tops, void* st_ctx, void* el_ctx,
+static void* storage_b_alloc_ctx(void* /*st_ctx*/) {
+    return nullptr;
+}
+
+template<class C>
+static void* storage_b_resize(const type_ops* tops, void* st_ctx,
                               size_t min_bytes) {
     auto* c = static_cast<C*>(st_ctx);
     constexpr size_t H = storage_b_traits<C>::header_size;
@@ -287,8 +318,14 @@ static void* storage_b_resize(const type_ops* tops, void* st_ctx, void* el_ctx,
         storage_b_glue<C>::raw_alloc(c, want));
     unsigned char* nb = base + H;
 
-    if (live)
-        relocate_live(tops, el_ctx, nb, old_begin, live);
+    if (live) {
+        // Strategy B's gate guarantees the allocator is std::allocator
+        // (stateless), so f_alloc_ctx is never set here. Keep the check for
+        // uniformity with Strategy A; the compiler folds it away.
+        void* ec = (tops->flags & f_alloc_ctx) ? storage_b_alloc_ctx<C>(st_ctx)
+                                               : nullptr;
+        relocate_live(tops, ec, nb, old_begin, live);
+    }
     if (old_begin)
         storage_b_glue<C>::raw_free(c, old_begin - H);
 
@@ -306,11 +343,12 @@ static void* storage_b_resize(const type_ops* tops, void* st_ctx, void* el_ctx,
 
 template<class C>
 inline constexpr storage_ops storage_ops_b{
-    &storage_b_data    <C>,
-    &storage_b_set_size<C>,
-    &storage_b_cap_end <C>,
-    &storage_b_resize  <C>,
-    &storage_b_free    <C>,
+    &storage_b_data     <C>,
+    &storage_b_set_size <C>,
+    &storage_b_cap_end  <C>,
+    &storage_b_resize   <C>,
+    &storage_b_free     <C>,
+    &storage_b_alloc_ctx<C>,
 };
 
 // ============================================================================

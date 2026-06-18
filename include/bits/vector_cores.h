@@ -28,34 +28,37 @@ namespace std {
 namespace detail {
 
 // ---------------------------------------------------------------------------
-// Storage growth: ensure the buffer can hold at least `min_bytes` live
-// bytes. Updates the storage state in place via storage_ops::resize.
-// Used by reserve / resize-grow / shrink_to_fit / and the "ensure a spare
-// slot" path before emplace_back's placement-new.
+// All public cores follow the same context shape:
+//
+//   (type_ops*, storage_ops*, st_ctx, ...op-specific args...)
+//
+// The element ctx (`el_ctx`, the allocator instance pointer) is fetched
+// LAZILY by the core via `sops->alloc_ctx(st_ctx)` only when the type_ops
+// flags say the allocator has per-instance state (`f_alloc_ctx` set). For
+// stateless allocators (std::allocator, min_allocator, ...) and trivial
+// fast-path operations, the fetch never happens — no el_ctx threading.
 // ---------------------------------------------------------------------------
-void grow(const type_ops* tops, const storage_ops* sops,
-          void* st_ctx, void* el_ctx, size_t min_bytes);
 
-// ---------------------------------------------------------------------------
+// Storage growth: ensure the buffer can hold at least `min_bytes` live bytes.
+// Updates the storage state in place via storage_ops::resize.
+void grow(const type_ops* tops, const storage_ops* sops,
+          void* st_ctx, size_t min_bytes);
+
 // Destroy all elements in [begin, end) using tops->destroy (skipped when T is
 // trivially destructible AND the allocator has default lifecycle).
 // PRECONDITION trap: begin <= end.
-// ---------------------------------------------------------------------------
-void destroy_range(const type_ops* tops, void* el_ctx, void* begin, void* end);
+void destroy_range(const type_ops* tops, const storage_ops* sops,
+                   void* st_ctx, void* begin, void* end);
 
-// ---------------------------------------------------------------------------
 // Default-construct n elements starting at `dst`. For trivially-default-
 // constructible T + default lifecycle, value-init is a memset(0).
-// ---------------------------------------------------------------------------
-void construct_default_n(const type_ops* tops, void* el_ctx,
-                         void* dst, size_t n);
+void construct_default_n(const type_ops* tops, const storage_ops* sops,
+                         void* st_ctx, void* dst, size_t n);
 
-// ---------------------------------------------------------------------------
 // Copy-construct n elements at `dst`, each from `src` (one source object,
 // broadcast). For trivially-copyable T + default lifecycle, this memcpys.
-// ---------------------------------------------------------------------------
-void construct_copy_one_n(const type_ops* tops, void* el_ctx,
-                          void* dst, const void* src, size_t n);
+void construct_copy_one_n(const type_ops* tops, const storage_ops* sops,
+                          void* st_ctx, void* dst, const void* src, size_t n);
 
 // ---------------------------------------------------------------------------
 // Rotate the constructed elements in [first, last) so that *middle becomes
@@ -74,8 +77,7 @@ void construct_copy_one_n(const type_ops* tops, void* el_ctx,
 // destruct_at_end / pop_back / set_size_elems_ in the forwarder.
 // PRECONDITION traps: first <= middle <= last.
 // ---------------------------------------------------------------------------
-void rotate(const type_ops* tops, const storage_ops* sops,
-            void* st_ctx, void* el_ctx,
+void rotate(const type_ops* tops, const storage_ops* sops, void* st_ctx,
             void* first, void* middle, void* last,
             ptrdiff_t size_delta_bytes);
 

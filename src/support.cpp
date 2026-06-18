@@ -43,44 +43,51 @@ static inline bool triv_reloc(const type_ops* ops) {
     return (ops->flags & f_triv_reloc) && (ops->flags & f_alloc_default_life);
 }
 
-void destroy_range(const type_ops* ops, void* el_ctx, void* begin, void* end) {
-    // PRECONDITION trap: begin <= end.
+// Fetch the element ctx lazily: only when the type_ops flag says the
+// allocator has per-instance state, ask storage_ops for &alloc_. Stateless
+// allocators (std::allocator, min_allocator, ...) never trigger the slot.
+static inline void* fetch_ec(const type_ops* ops, const storage_ops* sops,
+                             void* st_ctx) {
+    return (ops->flags & f_alloc_ctx) ? sops->alloc_ctx(st_ctx) : nullptr;
+}
+
+void destroy_range(const type_ops* ops, const storage_ops* sops,
+                   void* st_ctx, void* begin, void* end) {
     if (begin > end) __builtin_trap();
     if (triv_destroy(ops)) return;
+    void* el_ctx = fetch_ec(ops, sops, st_ctx);
     const size_t sz = ops->size;
     auto p = static_cast<unsigned char*>(end);
     auto q = static_cast<unsigned char*>(begin);
-    // destroy in reverse construction order; ops->destroy must be non-null
-    // here per the contract (flags say non-trivial, so consumer's mask must
-    // have asked for OP_DESTROY).
     while (p != q) {
         p -= sz;
         ops->destroy(el_ctx, p);
     }
 }
 
-void construct_default_n(const type_ops* ops, void* el_ctx, void* dst, size_t n) {
+void construct_default_n(const type_ops* ops, const storage_ops* sops,
+                         void* st_ctx, void* dst, size_t n) {
     if (triv_default(ops)) {
-        // value-initialize trivially-default-constructible T == zero-fill
         __builtin_memset(dst, 0, n * ops->size);
         return;
     }
+    void* el_ctx = fetch_ec(ops, sops, st_ctx);
     const size_t sz = ops->size;
     auto p = static_cast<unsigned char*>(dst);
     for (size_t i = 0; i < n; ++i, p += sz)
         ops->default_construct(el_ctx, p);
 }
 
-void construct_copy_one_n(const type_ops* ops, void* el_ctx,
-                          void* dst, const void* src, size_t n) {
+void construct_copy_one_n(const type_ops* ops, const storage_ops* sops,
+                          void* st_ctx, void* dst, const void* src, size_t n) {
     const size_t sz = ops->size;
     auto p = static_cast<unsigned char*>(dst);
     if (triv_copy(ops)) {
-        // trivial copy + default lifecycle: memcpy the one element n times
         for (size_t i = 0; i < n; ++i, p += sz)
             __builtin_memcpy(p, src, sz);
         return;
     }
+    void* el_ctx = fetch_ec(ops, sops, st_ctx);
     for (size_t i = 0; i < n; ++i, p += sz)
         ops->copy_construct(el_ctx, p, src);
 }
@@ -133,11 +140,9 @@ void relocate_live(const type_ops* ops, void* el_ctx,
 }
 
 void grow(const type_ops* tops, const storage_ops* sops,
-          void* st_ctx, void* el_ctx, size_t min_bytes) {
-    // Dispatch to the storage_ops::resize slot. The implementation handles
-    // allocation, element relocation (via relocate_live), and updating the
-    // container's state.
-    sops->resize(tops, st_ctx, el_ctx, min_bytes);
+          void* st_ctx, size_t min_bytes) {
+    // resize fetches el_ctx internally via sops->alloc_ctx if needed.
+    sops->resize(tops, st_ctx, min_bytes);
 }
 
 // ---------------------------------------------------------------------------
@@ -155,14 +160,12 @@ void grow(const type_ops* tops, const storage_ops* sops,
 // allocation uses ::malloc for blocks > 256 bytes (the common insert-by-one
 // case has a 1-element block so the stack alternative covers it).
 // ---------------------------------------------------------------------------
-void rotate(const type_ops* ops, const storage_ops* sops,
-            void* st_ctx, void* el_ctx,
+void rotate(const type_ops* ops, const storage_ops* sops, void* st_ctx,
             void* first, void* middle, void* last,
             ptrdiff_t size_delta_bytes) {
     auto* f = static_cast<unsigned char*>(first);
     auto* m = static_cast<unsigned char*>(middle);
     auto* l = static_cast<unsigned char*>(last);
-    // PRECONDITION trap: first <= middle <= last.
     if (f > m || m > l) __builtin_trap();
     if (f != m && m != l) {
         const size_t left  = static_cast<size_t>(m - f);
@@ -185,6 +188,7 @@ void rotate(const type_ops* ops, const storage_ops* sops,
                 __builtin_memcpy(f, scratch, right);
             }
         } else {
+            void* el_ctx = fetch_ec(ops, sops, st_ctx);
             if (left <= right) {
                 relocate_block    (ops, el_ctx, scratch, f, left);
                 relocate_block    (ops, el_ctx, f, m, right);
@@ -201,11 +205,9 @@ void rotate(const type_ops* ops, const storage_ops* sops,
 
     if (size_delta_bytes != 0) {
         if (size_delta_bytes < 0) {
-            // Destroy the trailing |delta| bytes' worth of elements (now at
-            // the tail of [f, l) post-rotate) before truncating size.
             unsigned char* db = l + size_delta_bytes;
             if (!triv_destroy(ops))
-                destroy_range(ops, el_ctx, db, l);
+                destroy_range(ops, sops, st_ctx, db, l);
         }
         byte_span data = sops->data(st_ctx);
         sops->set_size(st_ctx, data.size + size_delta_bytes);
