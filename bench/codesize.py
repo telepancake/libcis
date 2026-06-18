@@ -122,15 +122,18 @@ PROJECTS_CFG = {
     "shared_ptr_probe": {"dirs": [], "defines": []},
     "two_deque_probe":  {"dirs": [], "defines": []},
     "regex_probe":      {"dirs": [], "defines": []},
+    # Stage-3 probe: std::function over many distinct captured-F flavours
+    # and a couple of signatures.
+    "function_probe": {"dirs": [], "defines": []},
 }
 
 # Measured by default: the empty-program baseline, the external header-only
 # codebases (real STL users), the two artificial vector probes, then the
-# stage-0 cores-design probes.
+# cores-design probes.
 ORDER = ["baseline", "fmt", "unordered_dense", "magic_enum",
          "json", "tomlplusplus", "doctest", "vec_mixed", "vec_many",
          "variant_probe", "shared_ptr_probe", "two_deque_probe",
-         "regex_probe"]
+         "regex_probe", "function_probe"]
 
 
 def run(cmd, **kw):

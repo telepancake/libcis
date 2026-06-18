@@ -18,6 +18,7 @@
 #include <stdint.h>    // int64_t, uint8_t
 #include <sched.h>     // sched_yield — for guard spin loop
 #include <bits/cores.h>
+#include <bits/value_ops.h>
 
 // ---------------------------------------------------------------------------
 // Container cores — non-template bodies that vector/string/etc. forward into.
@@ -198,6 +199,118 @@ void rotate(const type_ops* ops, const storage_ops* sops, void* st_ctx,
         }
         byte_span data = sops->data(st_ctx);
         sops->set_size(st_ctx, data.size + size_delta_bytes);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// callable_ops lifecycle cores (stage 3 of notes/cores-design.md §3.4).
+//
+// These three helpers carry the small-vs-heap discrimination + the trivial
+// fast path for std::function<Sig>'s value_func<Sig>, so the wrapper body
+// has one call per lifecycle modifier. They are TYPELESS — keyed only by
+// the signature-INDEPENDENT prefix of callable_ops<Sig> (callable_ops_base).
+//
+// Storage convention (matches bits/value_ops.h):
+//   small (f_is_small): held object lives in place at &buf[0..size).
+//   large (!f_is_small): held object lives on the heap; pointer cached in
+//                        *(void**)&buf[0].
+//
+// The trivial fast paths read off ops->flags exactly the same way the
+// container cores read type_ops->flags — except there is no allocator-
+// default-life bit to AND in (none of these wrappers thread an allocator
+// through their per-T leaves), so a triv_X flag alone authorises the byte
+// path.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// In bits/value_ops.h the small-buffer size is hard-coded as
+// 3 * sizeof(void*). Mirror it here for the heap-vs-inline ::operator new
+// calls; static_assert in value_ops.h pins the layout match.
+constexpr size_t kCallableSmallBufBytes = 3 * sizeof(void*);
+
+inline void* heap_ptr_of(void* buf) {
+    return *static_cast<void**>(buf);
+}
+inline const void* heap_ptr_of(const void* buf) {
+    return *static_cast<void* const*>(buf);
+}
+inline void store_heap_ptr(void* buf, void* p) {
+    *static_cast<void**>(buf) = p;
+}
+
+} // anonymous
+
+void func_copy_into(const callable_ops_base* ops, void* dst_buf, const void* src_buf) {
+    if (ops->flags & vo_f_is_small) {
+        // Both wrappers' inline buffers are 3*sizeof(void*) bytes,
+        // void*-aligned. Construct the destination object directly inside
+        // dst_buf — there is no heap allocation either way.
+        if (ops->flags & vo_f_triv_copy) {
+            __builtin_memcpy(dst_buf, src_buf, ops->size);
+        } else {
+            ops->copy_construct(dst_buf, src_buf);
+        }
+    } else {
+        // Heap-owned: allocate a fresh object on the heap and copy-construct
+        // it from *heap_ptr_of(src_buf). Aligned allocation when the
+        // alignment exceeds the default new alignment.
+        const size_t sz = ops->size;
+        const size_t al = ops->align;
+        void* p;
+        if (al > __STDCPP_DEFAULT_NEW_ALIGNMENT__) {
+            p = ::operator new(sz, std::align_val_t{al});
+        } else {
+            p = ::operator new(sz);
+        }
+        const void* src_obj = heap_ptr_of(src_buf);
+        if (ops->flags & vo_f_triv_copy) {
+            __builtin_memcpy(p, src_obj, sz);
+        } else {
+            ops->copy_construct(p, src_obj);
+        }
+        store_heap_ptr(dst_buf, p);
+    }
+}
+
+void func_move_into(const callable_ops_base* ops, void* dst_buf, void* src_buf) {
+    if (ops->flags & vo_f_is_small) {
+        // Inline: move the bytes (or invoke the per-F move leaf) into
+        // dst_buf. The source object remains constructed at src_buf; the
+        // wrapper is expected to destroy it via func_destroy_held after.
+        if (ops->flags & vo_f_triv_reloc) {
+            __builtin_memcpy(dst_buf, src_buf, ops->size);
+        } else {
+            ops->move_construct(dst_buf, src_buf);
+        }
+    } else {
+        // Heap-owned: pointer transfer. No leaf call (the heap object is
+        // not moved, only its owning slot rotates). Clear the source slot
+        // so its wrapper's destructor doesn't double-free.
+        void* p = heap_ptr_of(src_buf);
+        store_heap_ptr(dst_buf, p);
+        store_heap_ptr(src_buf, nullptr);
+    }
+}
+
+void func_destroy_held(const callable_ops_base* ops, void* buf) {
+    if (ops->flags & vo_f_is_small) {
+        // Inline: just run the dtor leaf (skip if trivial).
+        if (!(ops->flags & vo_f_triv_destroy))
+            ops->destroy(buf);
+    } else {
+        // Heap-owned: run the dtor on the heap object then release.
+        void* p = heap_ptr_of(buf);
+        if (!p) return;  // post-move zeroing — nothing to release.
+        if (!(ops->flags & vo_f_triv_destroy))
+            ops->destroy(p);
+        const size_t al = ops->align;
+        if (al > __STDCPP_DEFAULT_NEW_ALIGNMENT__) {
+            ::operator delete(p, std::align_val_t{al});
+        } else {
+            ::operator delete(p);
+        }
+        store_heap_ptr(buf, nullptr);
     }
 }
 

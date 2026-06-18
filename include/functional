@@ -40,6 +40,7 @@
 #include <tuple>
 #include <exception>        // exception (base of bad_function_call)
 #include <new>              // placement new
+#include <bits/value_ops.h> // callable_ops<Sig> (function's vocab table)
 #include <bits/pointer.h>   // addressof
 #include <bits/identity.h>  // identity (do NOT redefine)
 #include <bits/hash.h>      // std::hash
@@ -1004,175 +1005,137 @@ inline bool fn_is_null(Ret Class::* p) noexcept { return !p; }
 template<class Fp>
 inline bool fn_is_null(const function<Fp>& f) noexcept { return !f; }
 
-// Abstract base for type-erased callable
-template<class Fp>
-class fn_base;
-
-template<class Rp, class... ArgTypes>
-class fn_base<Rp(ArgTypes...)> {
-public:
-    fn_base(const fn_base&)            = delete;
-    fn_base& operator=(const fn_base&) = delete;
-    fn_base() noexcept {}
-    virtual ~fn_base() noexcept {}
-    virtual fn_base* clone() const = 0;
-    virtual void clone(fn_base*) const = 0;
-    virtual void destroy() noexcept = 0;
-    virtual void destroy_deallocate() noexcept = 0;
-    virtual Rp operator()(ArgTypes&&...) = 0;
-    // target() / target_type() OMITTED: require typeid (RTTI, -fno-rtti).
-};
-
-// Concrete implementation for a specific functor
-template<class FD, class FB>
-class fn_func;
-
-template<class Fp, class Rp, class... ArgTypes>
-class fn_func<Fp, Rp(ArgTypes...)> : public fn_base<Rp(ArgTypes...)> {
-    Fp func_;
-
-public:
-    explicit fn_func(Fp&& f) : func_(std::move(f)) {}
-    explicit fn_func(const Fp& f) : func_(f) {}
-
-    fn_base<Rp(ArgTypes...)>* clone() const override {
-        return new fn_func(func_);
-    }
-    void clone(fn_base<Rp(ArgTypes...)>* p) const override {
-        ::new (static_cast<void*>(p)) fn_func(func_);
-    }
-    void destroy() noexcept override { func_.~Fp(); }
-    void destroy_deallocate() noexcept override { delete this; }
-    Rp operator()(ArgTypes&&... args) override {
-        return std::invoke_r<Rp>(func_, std::forward<ArgTypes>(args)...);
-    }
-};
-
-// value_func: owns the type-erased functor via small-buffer optimisation
+// value_func: owns the type-erased functor via small-buffer optimisation,
+// with the per-F lifecycle / invoke dispatched through a const callable_ops*
+// (stage 3 of notes/cores-design.md §3.4).
+//
+// Layout: 3-pointer inline buffer + one ops pointer + nothing else.
+//   empty: ops_ == nullptr.
+//   small: ops_ != nullptr, ops_->flags & f_is_small,
+//          held object lives at &buf_[0].
+//   large: ops_ != nullptr, !(ops_->flags & f_is_small),
+//          held object lives on the heap, pointer cached in *(void**)&buf_[0].
+//
+// Lifecycle (construct/destroy/copy/move) routes through three typeless
+// support.cpp helpers (func_copy_into / func_move_into / func_destroy_held)
+// off the callable_ops_base prefix of ops_. Invoke and the swap-via-temporary
+// stay per-signature here; both inline small at -Os.
 template<class Fp>
 class value_func;
 
 template<class Rp, class... ArgTypes>
 class value_func<Rp(ArgTypes...)> {
-    // Small buffer: 3 pointers (matches libc++ default)
-    alignas(alignof(void*)) char buf_[3 * sizeof(void*)];
-    using base_t = fn_base<Rp(ArgTypes...)>;
-    base_t* f_;
+    using ops_t = detail::callable_ops<Rp(ArgTypes...)>;
 
-    static base_t* as_base(void* p) noexcept {
-        return reinterpret_cast<base_t*>(p);
+    // 3-pointer inline buffer, void*-aligned. Bit-exactly the SBO shape the
+    // value_ops.h `cb_small_buffer_*` constants describe; static_assert pins
+    // it.
+    alignas(alignof(void*)) char buf_[detail::cb_small_buffer_size];
+    const ops_t* ops_;
+
+    // Reinterpret-cast to the sig-independent prefix so we can call into the
+    // typeless lifecycle cores in src/support.cpp. The struct layout is
+    // static_asserted in bits/value_ops.h.
+    const detail::callable_ops_base* base_ops() const noexcept {
+        return reinterpret_cast<const detail::callable_ops_base*>(ops_);
     }
 
 public:
-    value_func() noexcept : f_(nullptr) {}
+    value_func() noexcept : ops_(nullptr) {}
 
     template<class Fp>
         requires (!is_same_v<decay_t<Fp>, value_func>)
-    explicit value_func(Fp&& f) : f_(nullptr) {
-        using Fun = fn_func<decay_t<Fp>, Rp(ArgTypes...)>;
+    explicit value_func(Fp&& f) : ops_(nullptr) {
+        using F = decay_t<Fp>;
         if (detail::fn_is_null(f)) return;
-        if (sizeof(Fun) <= sizeof(buf_) &&
-            is_nothrow_copy_constructible_v<decay_t<Fp>>)
-        {
-            f_ = ::new (static_cast<void*>(buf_)) Fun(std::move(f));
+        constexpr const ops_t* table = &detail::callable_ops_for<F, Rp(ArgTypes...)>;
+        if constexpr (detail::callable_is_small<F>) {
+            ::new (static_cast<void*>(buf_)) F(std::forward<Fp>(f));
         } else {
-            f_ = new Fun(std::move(f));
+            // Heap-allocate. align_val_t overload only when alignment exceeds
+            // the platform default — std::function's typical F is void*-aligned.
+            void* p;
+            if constexpr (alignof(F) > __STDCPP_DEFAULT_NEW_ALIGNMENT__) {
+                p = ::operator new(sizeof(F), std::align_val_t{alignof(F)});
+            } else {
+                p = ::operator new(sizeof(F));
+            }
+            ::new (p) F(std::forward<Fp>(f));
+            *reinterpret_cast<void**>(buf_) = p;
+        }
+        ops_ = table;
+    }
+
+    value_func(const value_func& other) : ops_(nullptr) {
+        if (other.ops_ != nullptr) {
+            detail::func_copy_into(other.base_ops(), buf_, other.buf_);
+            ops_ = other.ops_;
         }
     }
 
-    value_func(const value_func& other) {
-        if (other.f_ == nullptr) {
-            f_ = nullptr;
-        } else if (reinterpret_cast<const void*>(other.f_) == other.buf_) {
-            f_ = as_base(buf_);
-            other.f_->clone(f_);
-        } else {
-            f_ = other.f_->clone();
-        }
-    }
-
-    value_func(value_func&& other) noexcept {
-        if (other.f_ == nullptr) {
-            f_ = nullptr;
-        } else if (reinterpret_cast<void*>(other.f_) == other.buf_) {
-            f_ = as_base(buf_);
-            other.f_->clone(f_);
-        } else {
-            f_ = other.f_;
-            other.f_ = nullptr;
+    value_func(value_func&& other) noexcept : ops_(nullptr) {
+        if (other.ops_ != nullptr) {
+            detail::func_move_into(other.base_ops(), buf_, other.buf_);
+            ops_ = other.ops_;
+            // For the inline case the source still holds a constructed
+            // object: destroy + clear it. For the heap case func_move_into
+            // already zeroed the source's heap-pointer slot, so the
+            // func_destroy_held below is a no-op release.
+            if (other.ops_->flags & detail::vo_f_is_small) {
+                detail::func_destroy_held(other.base_ops(), other.buf_);
+            }
+            other.ops_ = nullptr;
         }
     }
 
     ~value_func() {
-        if (reinterpret_cast<void*>(f_) == buf_)
-            f_->destroy();
-        else if (f_)
-            f_->destroy_deallocate();
+        if (ops_) detail::func_destroy_held(base_ops(), buf_);
     }
 
     value_func& operator=(value_func&& other) {
         *this = nullptr;
-        if (other.f_ == nullptr) {
-            f_ = nullptr;
-        } else if (reinterpret_cast<void*>(other.f_) == other.buf_) {
-            f_ = as_base(buf_);
-            other.f_->clone(f_);
-        } else {
-            f_ = other.f_;
-            other.f_ = nullptr;
+        if (other.ops_ != nullptr) {
+            detail::func_move_into(other.base_ops(), buf_, other.buf_);
+            ops_ = other.ops_;
+            if (other.ops_->flags & detail::vo_f_is_small) {
+                detail::func_destroy_held(other.base_ops(), other.buf_);
+            }
+            other.ops_ = nullptr;
         }
         return *this;
     }
 
     value_func& operator=(nullptr_t) noexcept {
-        base_t* tmp = f_;
-        f_ = nullptr;
-        if (reinterpret_cast<void*>(tmp) == buf_)
-            tmp->destroy();
-        else if (tmp)
-            tmp->destroy_deallocate();
+        if (ops_) {
+            detail::func_destroy_held(base_ops(), buf_);
+            ops_ = nullptr;
+        }
         return *this;
     }
 
     Rp operator()(ArgTypes&&... args) const {
-        if (f_ == nullptr)
+        if (ops_ == nullptr)
             __builtin_trap(); // empty function call: __builtin_trap instead of throw
-        return (*f_)(std::forward<ArgTypes>(args)...);
+        // Inline case: held object is in buf_. Heap case: deref the pointer
+        // stashed at buf_'s first slot.
+        void* obj = (ops_->flags & detail::vo_f_is_small)
+                    ? static_cast<void*>(const_cast<char*>(buf_))
+                    : *reinterpret_cast<void* const*>(buf_);
+        return ops_->invoke(obj, std::forward<ArgTypes>(args)...);
     }
 
     void swap(value_func& other) noexcept {
         if (std::addressof(other) == this) return;
-        bool this_inline = (reinterpret_cast<void*>(f_) == buf_);
-        bool other_inline = (reinterpret_cast<void*>(other.f_) == other.buf_);
-
-        if (this_inline && other_inline) {
-            // Both inline: temp-clone one, move/clone the other
-            alignas(alignof(void*)) char tmp[3 * sizeof(void*)];
-            base_t* t = as_base(tmp);
-            f_->clone(t);
-            f_->destroy(); f_ = nullptr;
-            other.f_->clone(as_base(buf_));
-            other.f_->destroy(); other.f_ = nullptr;
-            f_ = as_base(buf_);
-            t->clone(as_base(other.buf_));
-            t->destroy();
-            other.f_ = as_base(other.buf_);
-        } else if (this_inline) {
-            f_->clone(as_base(other.buf_));
-            f_->destroy();
-            f_ = other.f_;
-            other.f_ = as_base(other.buf_);
-        } else if (other_inline) {
-            other.f_->clone(as_base(buf_));
-            other.f_->destroy();
-            other.f_ = f_;
-            f_ = as_base(buf_);
-        } else {
-            base_t* tmp2 = f_; f_ = other.f_; other.f_ = tmp2;
-        }
+        // swap-via-temporary: three move-constructions. Per-signature, but
+        // small enough to inline at -Os. The temporary's destructor handles
+        // any cleanup if a move leaves a moved-from-but-still-constructed
+        // inline source (the move ctor above already destroys those).
+        value_func tmp(std::move(*this));
+        *this = std::move(other);
+        other = std::move(tmp);
     }
 
-    explicit operator bool() const noexcept { return f_ != nullptr; }
+    explicit operator bool() const noexcept { return ops_ != nullptr; }
 };
 
 } // namespace detail
