@@ -435,3 +435,360 @@ the stack. On ARM-32 `r0` likewise. Confirm via objdump on the bodies.
   per `resize` site. Measure on a TU with three `resize(n)` calls
   versus three inlined construct loops; if savings <8 bytes per
   callsite on i386, leave it inline.
+
+## 6. ABI and header layout
+
+**Where the symbols live.** All six cores are declared in
+`include/bits/vector_cores.h` and defined exactly once in
+`src/support.cpp`, linked into `libcis.so`. They are non-template, non-
+inline free functions in `namespace std::detail`. The mangled names are
+stable: `_ZNSt6detail11truncate_to...` etc. They participate in the same
+ABI gate as the rest of `libcis.so` — no API-level guarantee outside the
+library, but a stability promise across compatible builds of the headers
+(matching `LIBCIS_ABI_VERSION`).
+
+**No inline definitions.** The whole point is to amortize body bytes
+across instantiations. An inline definition in the header would defeat
+that for any TU that pulled `<vector>` or `<string>`, even if the LTO
+decided not to inline; the linker's dedup is per-comdat, and the
+per-TU object cost stays. Keeping the definitions in the `.so` ensures
+exactly one body, exactly one set of fast-path branches, and exactly one
+trap path.
+
+**Linkage and visibility.** Default visibility on the cores (so they are
+called from any TU that pulls the header). The lifecycle and value-op
+leaf templates (`destroy_op<T,A>`, etc.) and the per-`(T,A,MASK)`
+`ops_for` instances are `inline constexpr`/header-only — their cost is
+already amortized through the static-init folding the linker does on
+identical comdats.
+
+**`noexcept` contract.** Every core is declared `noexcept`. Because
+libcis is built `-fno-exceptions`, any leaf that would throw under the
+standard (e.g. user-supplied `T::T(const T&)` that throws) is implementation-
+defined here: the program is terminated (the compiler emits the `std::terminate`
+landing pad as `__builtin_trap`). The cores therefore do NOT need
+strong-exception-guarantee unwind paths for `insert`/`emplace`, which is
+load-bearing for `replace_range`'s implementation — no rollback of the
+suffix shift is required, the type assumption "either trivially
+relocatable or we abort on throw" is enforced at the library boundary
+not at the core.
+
+**No RTTI, no `dynamic_cast`, no virtuals.** The `noexcept` is checked
+by the compiler; the rest is a project-wide invariant repeated for
+locality.
+
+**`constexpr`.** Cores are runtime-only. `<vector>` and `<string>`
+operations called in a constexpr context fail to instantiate (the cores
+are not `constexpr` and there is no parallel constexpr implementation).
+This is the deliberate stance recorded in `CONVENTIONS.md`: constexpr
+container support is dropped.
+
+**Header dependency surface.** `bits/vector_cores.h` includes only
+`<cstddef>`, `bits/type_ops.h`, `bits/storage_ops.h`. The cores need
+no `<memory>`, no `<algorithm>`, no `<iterator>` — the byte-pointer
+boundary erases all of that. Containers re-include those headers for
+their own iterator/allocator-traits surface, not for the cores.
+
+## 7. Mapping containers to cores
+
+The proof that six cores suffice is that every mutating method on
+`vector<T,A>` and `basic_string<C,T,A>` lowers to a short, mechanical
+sequence on the cores below, with no per-method byte-loop in the header.
+Each line below is a *complete* forwarder body (modulo the iterator-to-
+byte-pointer conversion at the boundary and any pre-call size arithmetic).
+
+### 7.1 `vector<T,A>`
+
+```
+push_back(v):            p = replace_range(.., live, 0, es)
+                         ::new (p) T(v)
+
+emplace_back(args...):   p = replace_range(.., live, 0, es)
+                         ::new (p) T(std::forward<Args>(args)...)
+
+pop_back():              truncate_to(.., live - es)
+
+clear():                 truncate_to(.., 0)
+
+resize(n):               if (n*es < live) truncate_to(.., n*es)
+                         else if (n*es > live)
+                             p = replace_range(.., live, 0, n*es - live)
+                             default-construct loop on [p, p + n*es - live)
+
+resize(n, v):            if (n*es < live) truncate_to(.., n*es)
+                         else if (n*es > live)
+                             p = replace_range(.., live, 0, n*es - live)
+                             fill_construct(.., p, n*es - live, &v)
+
+reserve(n):              if (n*es > cap) sops->resize(tops, st_ctx, n*es)
+                         (NOT a core; one inline cmp + tail call)
+
+shrink_to_fit():         if (live < cap) sops->resize(tops, st_ctx, live)
+
+insert(pos, v):          p = replace_range(.., pos_off, 0, es)
+                         ::new (p) T(v)
+
+insert(pos, n, v):       p = replace_range(.., pos_off, 0, n*es)
+                         fill_construct(.., p, n*es, &v)
+
+insert(pos, first,last): n_bytes = (last - first) * es   // forward-iter only
+                         p = replace_range(.., pos_off, 0, n_bytes)
+                         copy_construct_range(.., p, &*first, n_bytes)
+
+emplace(pos, args...):   p = replace_range(.., pos_off, 0, es)
+                         ::new (p) T(std::forward<Args>(args)...)
+
+erase(pos):              replace_range(.., pos_off, es, 0)
+
+erase(first, last):      replace_range(.., first_off, (last-first)*es, 0)
+
+assign(n, v):            if (n*es <= live) truncate_to(.., n*es) then
+                             call replace_range(.., 0, n*es, n*es)
+                             fill_construct(.., p, n*es, &v)   // overwrite live
+                         else
+                             truncate_to(.., 0)
+                             p = replace_range(.., 0, 0, n*es)
+                             fill_construct(.., p, n*es, &v)
+
+assign(first, last):     same shape with copy_construct_range
+
+operator=(const&):       same as assign(first, last) on rhs.begin()/end()
+
+== / !=:                 size != size -> false; equal_bytes(tops, a, b, live)
+
+<=>:                     compare_bytes(tops, a, a.live, b, b.live)
+```
+
+The "replace_range with old_n == new_n" idiom in `assign(n,v)` shrink
+leg is intentional: it gives one path that ensures pre-conditions
+(destroy-old, leave the spare slot), then a uniform construct call.
+Alternative analyzed in §3 (fill_assign as a distinct core) loses on
+the byte ledger.
+
+### 7.2 `basic_string<C,T,A>` (`C` always trivially copyable)
+
+```
+push_back(c):            p = replace_range(.., live, 0, sizeof(C))
+                         *(C*)p = c
+
+pop_back():              truncate_to(.., live - sizeof(C))
+
+clear():                 truncate_to(.., 0)
+
+resize(n):               if (n*sz < live) truncate_to(.., n*sz)
+                         else if (n*sz > live)
+                             p = replace_range(.., live, 0, n*sz - live)
+                             fill_construct(.., p, n*sz - live, &C{})
+
+resize(n, c):            similar with &c
+
+append(s, n):            p = replace_range(.., live, 0, n*sz)
+                         copy_construct_range(.., p, s, n*sz)
+
+append(n, c):            p = replace_range(.., live, 0, n*sz)
+                         fill_construct(.., p, n*sz, &c)
+
+operator+=(s):           append-shape
+
+operator+=(c):           push_back-shape
+
+insert(pos, s, n):       p = replace_range(.., pos_off, 0, n*sz)
+                         copy_construct_range(.., p, s, n*sz)
+
+insert(pos, n, c):       p = replace_range(.., pos_off, 0, n*sz)
+                         fill_construct(.., p, n*sz, &c)
+
+erase(pos, n):           replace_range(.., pos_off, n*sz, 0)
+
+replace(pos, n, s, m):   p = replace_range(.., pos_off, n*sz, m*sz)
+                         copy_construct_range(.., p, s, m*sz)
+
+replace(pos, n, k, c):   p = replace_range(.., pos_off, n*sz, k*sz)
+                         fill_construct(.., p, k*sz, &c)
+
+substr(pos, n):          temporary string + replace_range/copy_construct_range
+                         on its empty buffer
+
+operator==:              size != size -> false; equal_bytes
+                         (always memcmp; charT trivial)
+
+compare / <=>:           compare_bytes
+```
+
+Every string mutator is *one* `replace_range` + at most one
+`fill_construct` / `copy_construct_range`. That is the size win the
+design is paying for.
+
+### 7.3 The forwarders' shared shape
+
+Each forwarder body is:
+1. Convert iterator/index inputs to byte offsets (`pos_off = (pos -
+   begin()) * es`).
+2. Call the relevant core(s).
+3. Convert the returned `void*` back to an iterator (`(iterator)(begin()
+   + pos_off)`); the iterator-arithmetic *re-read* of `begin()` here is
+   why `replace_range` returns the gap pointer (§4.5): otherwise the
+   forwarder would do a second `sops->data(st_ctx)` to recover the
+   moved base after a possible grow.
+
+The forwarder owns: the iterator/iterator-pair shape, the `Args&&...`
+perfect forwarding for `emplace`/`emplace_back`, the value-vs-default
+init selection at the leaf placement-new, the iterator distance
+computation for forward-iterator overloads. Everything else is the
+cores.
+
+## 8. Migration from the v2-shaped tree
+
+The current tree (per §`include/bits/vector_cores.h`) exposes five
+primitives at a different granularity:
+`grow`, `destroy_range`, `construct_copy_one_n`, `rotate`,
+`relocate_live`. Mapping v2 → v3:
+
+- `grow(min_bytes)` — kept as an out-of-band helper but renamed and
+  moved behind `sops->resize`; not a public core in v3. Callers that
+  need pre-allocation reserve do so via a one-line wrapper.
+- `destroy_range(begin, end)` — subsumed by `truncate_to`. The two
+  call-site flavors ("destroy AND set size to 0" for `clear`/`~vec`,
+  "destroy AND set size to k" for `pop_back`/`resize`) collapse to one
+  call: `truncate_to(0)` or `truncate_to(k_bytes)`.
+- `construct_copy_one_n(dst, &v, n)` — split into `fill_construct`
+  (broadcast a single prototype) and `copy_construct_range`
+  (memcpy-shape from a buffer). v2 collapsed these into one function
+  with a `src_stride` arg; v3 splits because the trivial fast paths
+  diverge (memset vs memcpy) and the callsites statically know which
+  they want. Validation §4.2.
+- `rotate(first, middle, last, size_delta)` — replaced by
+  `replace_range`. v2's `rotate` did the suffix-shift; v3's
+  `replace_range` does suffix-shift + destroy + grow + size-update +
+  return-pointer in one call. Net effect: each insert/erase callsite
+  shrinks by one core call.
+- `relocate_live` — kept as an internal-to-`storage_ops::resize`
+  primitive, not a public core (it always was; just clarifying).
+
+The mechanical port is:
+
+```
+old: detail::destroy_range(tops, sops, st_ctx, begin+k*es, end);
+     sops->set_size(st_ctx, k*es);
+new: detail::truncate_to(tops, sops, st_ctx, k*es);
+
+old: detail::rotate(tops, sops, st_ctx, p, p+es, end, -1*es);   // erase 1
+new: detail::replace_range(tops, sops, st_ctx, pos_off, es, 0);
+
+old: detail::grow(tops, sops, st_ctx, new_live);
+     detail::rotate(tops, sops, st_ctx, pos, end, end+n*es, +n*es); // insert
+     detail::construct_copy_one_n(tops, sops, st_ctx, pos, &v, n);
+new: void* p = detail::replace_range(tops, sops, st_ctx, pos_off, 0, n*es);
+     detail::fill_construct(tops, p, n*es, &v);
+```
+
+The migration is mechanical and can be done one container method at a
+time; the v2 cores can remain in the `.so` until the last caller is
+removed, then dropped.
+
+## 9. The `noexcept` policy in full
+
+Two questions resolved here that §6 only sketches.
+
+**Q1. What happens when a user `T::T(const T&)` throws inside
+`replace_range`'s suffix-shift slow path?**
+
+The library is built `-fno-exceptions`. The leaf calls
+`tops->copy_construct(el_ctx, dst, src)`; that leaf is itself
+`-fno-exceptions`, so any exception escaping `T::T(const T&)` is
+converted at the language level into `std::terminate` (which becomes
+`__builtin_trap` under the libcis support TU since we do not link
+libstdc++'s terminate handler). Net effect: a partially-shifted suffix
+is leaked, the container is in a torn state, and the program aborts.
+This is the *deliberate* trade for code size; it matches the docs in
+`CONVENTIONS.md` (no exceptions, no RTTI). The standard's strong
+exception guarantee on `insert`/`emplace` is not provided.
+
+**Q2. What about `resize(n, v)` and the grow leg?**
+
+Same path: `replace_range` opens uninitialized storage and returns;
+`fill_construct` walks the storage calling `tops->copy_construct`; a
+throw terminates. The torn state is: the buffer has been grown, the
+suffix has been shifted, and *some* of the new elements are constructed.
+`~vector` will then walk and destroy the constructed prefix when it
+runs from the abort handler — but since we abort, no destructor runs.
+For trivially-destructible `T` (the dominant case) the leak is one
+allocation. For non-trivial `T` the leak is the allocation plus any
+state the constructed prefix had grabbed; the program is going down,
+so this is acceptable.
+
+This means the cores can be one straight-line function each, with no
+unwind protectors. That's worth several hundred bytes per core on
+i386.
+
+## 10. Pre/post conditions against `storage_ops`
+
+The cores assume the storage_ops contract documented in
+`bits/storage_ops.h`. The ones the cores rely on, made explicit so the
+contract change is visible if it ever changes:
+
+**Spare-slot invariant.** `set_size(st_ctx, k)` writes `tops->size`
+bytes of zeros at `begin + k` whenever `begin + k + tops->size <=
+cap_end`. The cores rely on this for:
+- string null-termination (one trailing `'\0'`),
+- vector's "spare slot" used by `emplace_back`'s placement-new target.
+
+`truncate_to` does its `set_size` last; `replace_range` does it last
+too. Neither core writes to the spare slot directly — it falls out of
+`set_size`.
+
+**Capacity floor for grow.** `sops->resize(tops, st_ctx, min_bytes)`
+guarantees that the resulting allocation has at least `min_bytes` live-
+addressable bytes, but may have more (geometric growth policy lives in
+the storage strategy, not the core). The cores pass `min_bytes =
+new_live` and do not enforce a growth policy of their own.
+
+**Pointer stability.** `sops->resize` invalidates `begin`. Cores that
+may call `resize` (`replace_range` only, in the growth leg) re-fetch
+`sops->data` afterward. Cores that never grow (`truncate_to`,
+`fill_construct`, `copy_construct_range`, `equal_bytes`, `compare_bytes`)
+do not.
+
+**Allocator ctx fetch is lazy.** `el_ctx = (tops->flags & f_alloc_ctx)
+? sops->alloc_ctx(st_ctx) : nullptr` happens at most once per core call,
+just before the slow-path loop. For the trivial fast path the fetch is
+never done — this is the only allocator-related cost on the hot path.
+
+**Alignment.** All byte pointers passed across the core boundary are
+assumed to be `alignof(T)`-aligned. The trivial fast paths (memcpy,
+memset, memmove) do not require T-alignment per the C standard, so
+this is mostly a debug-trap safety net. The slow paths cast the void*
+to T* via `static_cast` inside the leaves; misalignment there is UB.
+
+## 11. Future extensions
+
+**Deque slabs.** A `deque<T,A>` will need the same six cores applied
+to a per-slab buffer rather than a single contiguous range. The
+`storage_ops` table changes shape (no monolithic resize; instead a
+slab-allocator hook), but the cores' signatures stay. The
+`replace_range`-as-suffix-shift case is the only one that needs
+adapting: across-slab shifts cannot be a single memmove. The likely
+resolution is a new core `slab_replace_range` parameterized on a
+`slab_storage_ops` table; the existing six remain.
+
+**`cross_ops` cores.** `cross_ops` (T-from-U) currently has no
+container-core caller. The plausible future caller is heterogeneous
+lookup in `unordered_map`/`set` — not a contiguous-storage container,
+so it does not belong in this set. If it shows up, it is its own core
+family, not an extension of these six.
+
+**Future flag-tested fast paths.** If `f_triv_default` ever gets a
+fast path (today only `f_triv_copy`, `f_triv_destroy`, `f_triv_reloc`
+do), the candidates are:
+- `replace_range` growth-leg followed by `default_construct` of the
+  new region (currently expands to a caller-side loop): trivial path
+  `memset(p, 0, n_bytes)` saves the loop. Adding this to
+  `replace_range` would require either a "fill with zero" boolean arg
+  or a separate `default_construct_range` core (§5 open question).
+
+**Layered cores.** If measurement ever justifies it, an `assign_range`
+core that fuses `truncate_to + replace_range + copy_construct_range`
+could replace the current three-call sequence in `vector::assign`.
+The §3 rejection assumed the call sites' byte cost was acceptable;
+a measurement on the libcxx test driver could overturn that.
+
