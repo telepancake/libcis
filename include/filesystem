@@ -16,7 +16,7 @@
 #include <functional>
 
 #include <iosfwd>  // forward decls of basic_ostream/basic_istream
-#include <bits/vector_cores.h>  // detail::path_lexical_normal_bytes
+#include <bits/cores.h>  // detail::path_lexical_normal_bytes
 
 // NOTE: <ostream>/<istream>/<iomanip> are intentionally NOT included here, to
 // avoid dragging heavy stream/locale machinery (and its ODR interaction with

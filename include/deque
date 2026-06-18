@@ -19,7 +19,7 @@
 #include <utility>
 #include <type_traits>
 #include <cstddef>
-#include <bits/vector_cores.h>     // segmented_destroy / _copy / _rotate
+#include <bits/cores.h>     // segmented_destroy / _copy / _rotate
 #include <bits/segment_map_ops.h>
 
 namespace std {
