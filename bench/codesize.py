@@ -115,12 +115,22 @@ PROJECTS_CFG = {
     # (just <vector>/<string>), so no submodule dirs are needed.
     "vec_mixed": {"dirs": [], "defines": []},
     "vec_many": {"dirs": [], "defines": []},
+    # Stage-0 probes for the cores-design migration (notes/cores-design.md §6).
+    # Each exists so a later stage's bench claim can be journal-recorded as a
+    # measured delta against this baseline, not a predicted one.
+    "variant_probe":    {"dirs": [], "defines": []},
+    "shared_ptr_probe": {"dirs": [], "defines": []},
+    "two_deque_probe":  {"dirs": [], "defines": []},
+    "regex_probe":      {"dirs": [], "defines": []},
 }
 
 # Measured by default: the empty-program baseline, the external header-only
-# codebases (real STL users), then the two artificial vector probes.
+# codebases (real STL users), the two artificial vector probes, then the
+# stage-0 cores-design probes.
 ORDER = ["baseline", "fmt", "unordered_dense", "magic_enum",
-         "json", "tomlplusplus", "doctest", "vec_mixed", "vec_many"]
+         "json", "tomlplusplus", "doctest", "vec_mixed", "vec_many",
+         "variant_probe", "shared_ptr_probe", "two_deque_probe",
+         "regex_probe"]
 
 
 def run(cmd, **kw):
