@@ -20,7 +20,7 @@
 #include <cstddef>
 #include <bits/type_ops.h>
 #include <bits/storage_ops.h>
-#include <bits/vector_cores.h>
+#include <bits/cores.h>
 
 namespace std {
 

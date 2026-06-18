@@ -1,4 +1,4 @@
-// bits/vector_cores.h — non-template shared cores used by <vector> and
+// bits/cores.h — non-template shared cores used by <vector> and
 // <string> (and other contiguous-storage containers with the same shape).
 //
 // These primitives are keyed by:

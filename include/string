@@ -13,7 +13,7 @@
 //     *end_ == CharT(0) after every modifier.
 //   * capacity() = (cap_ - begin_) - 1 when allocated; 0 otherwise.
 //
-// Heavy operations route through the shared cores in <bits/vector_cores.h>:
+// Heavy operations route through the shared cores in <bits/cores.h>:
 //   * detail::grow              — reserve / resize-grow / append grow / insert grow
 //     (for char this hits the trivially-relocatable + default-life fast path:
 //     a raw realloc through realloc_shim_.)
@@ -47,7 +47,7 @@
 #include <climits>        // CHAR_BIT
 #include <bits/type_ops.h>
 #include <bits/storage_ops.h>
-#include <bits/vector_cores.h>
+#include <bits/cores.h>
 
 namespace std {
 

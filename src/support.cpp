@@ -17,7 +17,7 @@
 #include <string.h>    // memcpy / memmove for the trivial-relocation cores
 #include <stdint.h>    // int64_t, uint8_t
 #include <sched.h>     // sched_yield — for guard spin loop
-#include <bits/vector_cores.h>
+#include <bits/cores.h>
 
 // ---------------------------------------------------------------------------
 // Container cores — non-template bodies that vector/string/etc. forward into.
