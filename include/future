@@ -25,6 +25,7 @@
 #include <stdexcept>
 #include <system_error>
 #include <string>
+#include <bits/future_cb_ops.h>
 
 namespace std {
 
@@ -169,6 +170,13 @@ inline at_thread_exit_registry& tl_at_thread_exit() {
 
 class assoc_sub_state {
 protected:
+    // Per stages-9 (notes/cores-design.md §3.8): the assoc_sub_state hierarchy
+    // formerly used a vtable to dispatch on_zero() and execute(). The vtable is
+    // replaced by `cb_ops_`, a per-flavor future_callback_ops constant. Each
+    // concrete subclass defines its own table; the base dispatches through it.
+    // Destructor is non-virtual: destroy_value is responsible for invoking the
+    // subclass's destructor before deallocating the storage.
+    const detail::future_callback_ops* cb_ops_;
     mutable mutex            mut_;
     mutable condition_variable cv_;
     unsigned                 state_ = 0;
@@ -194,9 +202,24 @@ public:
     // Refcount: starts at 1 (owned by promise). get_future() adds one.
     long shared_cnt_ = 1;
 
-    virtual void on_zero() noexcept { delete this; }
+    // Non-virtual on_zero(): dispatches through the per-flavor vocab table.
+    // Replaces the former `virtual void on_zero() noexcept { delete this; }`
+    // and all derived overrides; each subclass installs the right leaf in
+    // its future_callback_ops constant.
+    void on_zero() noexcept { cb_ops_->destroy_value(this); }
 
 public:
+    // The leaf for the plain `new assoc_sub_state` flavor (e.g.
+    // `promise<void>::promise() : state_(new assoc_sub_state)`). Defined
+    // out-of-line below once the class is complete.
+    static void destroy_value_leaf(void* p) noexcept;
+    static const detail::future_callback_ops cb_ops;
+
+    // Default ctor used by `new assoc_sub_state` — points at the plain table.
+    assoc_sub_state() noexcept : cb_ops_(&cb_ops) {}
+    explicit assoc_sub_state(const detail::future_callback_ops* ops) noexcept
+        : cb_ops_(ops) {}
+
     void add_shared() noexcept {
         __atomic_add_fetch(&shared_cnt_, 1, __ATOMIC_RELAXED);
     }
@@ -207,11 +230,15 @@ public:
     long use_count() const noexcept {
         return __atomic_load_n(&shared_cnt_, __ATOMIC_RELAXED);
     }
+    // Dispatch into the per-flavor invoke leaf. Called from sub_wait() on the
+    // deferred path and from the detached thread spawned by async (which sees
+    // the state through an `assoc_*_state*` of the concrete subclass — and in
+    // the prior virtual design the override was public, so we keep it public
+    // here for the same callsites to compile).
+public:
+    void execute() { cb_ops_->invoke(this); }
+
 protected:
-
-    // Called by deferred state on wait/get.
-    virtual void execute() {}
-
     void sub_wait(unique_lock<mutex>& lk) {
         if (state_ & flag_deferred) {
             // Remove deferred flag, release lock, run, re-acquire.
@@ -224,7 +251,10 @@ protected:
     }
 
 public:
-    virtual ~assoc_sub_state() = default;
+    // Non-virtual: the destroy_value leaf in cb_ops_ runs the concrete
+    // subclass's destructor before deallocating storage. Polymorphic delete
+    // through assoc_sub_state* is not used; the vocab table is the dispatcher.
+    ~assoc_sub_state() = default;
 
     bool has_value_locked() const {
         return (state_ & constructed) != 0 || exception_ != nullptr;
@@ -318,6 +348,17 @@ public:
     friend struct detail::at_thread_exit_registry;
 };
 
+// Plain-assoc_sub_state leaf and table. Defined out-of-line so the static_cast
+// to `assoc_sub_state*` and `::delete` see the complete type.
+inline void assoc_sub_state::destroy_value_leaf(void* p) noexcept {
+    ::delete static_cast<assoc_sub_state*>(p);
+}
+inline const detail::future_callback_ops assoc_sub_state::cb_ops = {
+    0, 1, 0u,
+    &assoc_sub_state::destroy_value_leaf,
+    &detail::future_cb_invoke_noop,
+};
+
 namespace detail {
 inline at_thread_exit_registry::~at_thread_exit_registry() {
     while (head != nullptr) {
@@ -337,18 +378,31 @@ protected:
 
     void* value_ptr() noexcept { return value_; }
 
-    void on_zero() noexcept override {
-        if (state_ & constructed)
-            reinterpret_cast<R*>(value_)->~R();
-        delete this;
+    // destroy_value leaf for the plain `new assoc_state<R>` flavor: destroy
+    // the stored value (when constructed) and ::delete the state.
+    static void destroy_value_leaf(void* p) noexcept {
+        auto* s = static_cast<assoc_state*>(p);
+        if (s->state_ & constructed)
+            reinterpret_cast<R*>(s->value_)->~R();
+        ::delete s;
     }
 
 public:
-    ~assoc_state() override {
-        // destructor only called when refcount hits 0 via on_zero (delete this),
-        // so we do NOT double-destroy here. The value was already destroyed in
-        // on_zero. Just leave this empty to satisfy the virtual dtor.
-    }
+    static constexpr detail::future_callback_ops cb_ops = {
+        sizeof(R), alignof(R), 0u,
+        &assoc_state::destroy_value_leaf,
+        &detail::future_cb_invoke_noop,
+    };
+
+    assoc_state() noexcept : assoc_sub_state(&cb_ops) {}
+    explicit assoc_state(const detail::future_callback_ops* ops) noexcept
+        : assoc_sub_state(ops) {}
+
+    // Destructor is non-virtual: invoked by destroy_value leaf after the
+    // value has been destroyed (or directly by the alloc variant after
+    // value destruction). Empty body — the value_ buffer is raw storage
+    // and the destroy_value leaf owns its lifetime.
+    ~assoc_state() = default;
 
     template<class Arg>
     void set_value(Arg&& arg) {
@@ -392,7 +446,23 @@ template<class R>
 class assoc_state<R&> : public assoc_sub_state {
     R* value_ = nullptr;
 
+    static void destroy_value_leaf(void* p) noexcept {
+        // value_ is a pointer; nothing to destroy. ::delete handles storage.
+        ::delete static_cast<assoc_state*>(p);
+    }
+
 public:
+    static constexpr detail::future_callback_ops cb_ops = {
+        sizeof(R*), alignof(R*), 0u,
+        &assoc_state::destroy_value_leaf,
+        &detail::future_cb_invoke_noop,
+    };
+
+    assoc_state() noexcept : assoc_sub_state(&cb_ops) {}
+    explicit assoc_state(const detail::future_callback_ops* ops) noexcept
+        : assoc_sub_state(ops) {}
+    ~assoc_state() = default;
+
     void set_value(R& arg) {
         unique_lock<mutex> lk(mut_);
         if (has_value_locked())
@@ -425,42 +495,72 @@ public:
 template<class R, class Alloc>
 class assoc_state_alloc : public assoc_state<R> {
     Alloc alloc_;
-    void on_zero() noexcept override {
-        if (this->state_ & assoc_sub_state::constructed)
-            reinterpret_cast<R*>(this->value_ptr())->~R();
+
+    static void destroy_value_leaf(void* p) noexcept {
+        auto* s = static_cast<assoc_state_alloc*>(p);
+        if (s->state_ & assoc_sub_state::constructed)
+            reinterpret_cast<R*>(s->value_ptr())->~R();
         using Al = typename allocator_traits<Alloc>::template rebind_alloc<assoc_state_alloc>;
-        Al a(alloc_);
-        this->~assoc_state_alloc();
-        a.deallocate(pointer_traits<typename allocator_traits<Al>::pointer>::pointer_to(*this), 1);
+        Al a(s->alloc_);
+        s->~assoc_state_alloc();
+        a.deallocate(pointer_traits<typename allocator_traits<Al>::pointer>::pointer_to(*s), 1);
     }
+
 public:
-    explicit assoc_state_alloc(const Alloc& a) : alloc_(a) {}
+    static constexpr detail::future_callback_ops cb_ops = {
+        sizeof(R), alignof(R), detail::f_fcb_alloc,
+        &assoc_state_alloc::destroy_value_leaf,
+        &detail::future_cb_invoke_noop,
+    };
+
+    explicit assoc_state_alloc(const Alloc& a)
+        : assoc_state<R>(&cb_ops), alloc_(a) {}
 };
 
 template<class R, class Alloc>
 class assoc_state_alloc<R&, Alloc> : public assoc_state<R&> {
     Alloc alloc_;
-    void on_zero() noexcept override {
+
+    static void destroy_value_leaf(void* p) noexcept {
+        auto* s = static_cast<assoc_state_alloc*>(p);
         using Al = typename allocator_traits<Alloc>::template rebind_alloc<assoc_state_alloc>;
-        Al a(alloc_);
-        this->~assoc_state_alloc();
-        a.deallocate(pointer_traits<typename allocator_traits<Al>::pointer>::pointer_to(*this), 1);
+        Al a(s->alloc_);
+        s->~assoc_state_alloc();
+        a.deallocate(pointer_traits<typename allocator_traits<Al>::pointer>::pointer_to(*s), 1);
     }
+
 public:
-    explicit assoc_state_alloc(const Alloc& a) : alloc_(a) {}
+    static constexpr detail::future_callback_ops cb_ops = {
+        sizeof(R*), alignof(R*), detail::f_fcb_alloc,
+        &assoc_state_alloc::destroy_value_leaf,
+        &detail::future_cb_invoke_noop,
+    };
+
+    explicit assoc_state_alloc(const Alloc& a)
+        : assoc_state<R&>(&cb_ops), alloc_(a) {}
 };
 
 template<class Alloc>
 class assoc_sub_state_alloc : public assoc_sub_state {
     Alloc alloc_;
-    void on_zero() noexcept override {
+
+    static void destroy_value_leaf(void* p) noexcept {
+        auto* s = static_cast<assoc_sub_state_alloc*>(p);
         using Al = typename allocator_traits<Alloc>::template rebind_alloc<assoc_sub_state_alloc>;
-        Al a(alloc_);
-        this->~assoc_sub_state_alloc();
-        a.deallocate(pointer_traits<typename allocator_traits<Al>::pointer>::pointer_to(*this), 1);
+        Al a(s->alloc_);
+        s->~assoc_sub_state_alloc();
+        a.deallocate(pointer_traits<typename allocator_traits<Al>::pointer>::pointer_to(*s), 1);
     }
+
 public:
-    explicit assoc_sub_state_alloc(const Alloc& a) : alloc_(a) {}
+    static constexpr detail::future_callback_ops cb_ops = {
+        0, 1, detail::f_fcb_alloc,
+        &assoc_sub_state_alloc::destroy_value_leaf,
+        &detail::future_cb_invoke_noop,
+    };
+
+    explicit assoc_sub_state_alloc(const Alloc& a)
+        : assoc_sub_state(&cb_ops), alloc_(a) {}
 };
 
 // Helper: allocate+construct an assoc_state_alloc through a user allocator.
@@ -479,25 +579,54 @@ State* make_assoc_state_alloc(const Alloc& a0) {
 template<class R, class F>
 class deferred_assoc_state : public assoc_state<R> {
     F func_;
-public:
-    explicit deferred_assoc_state(F&& f) : func_(std::forward<F>(f)) {
-        this->set_deferred();
+
+    static void destroy_value_leaf(void* p) noexcept {
+        auto* s = static_cast<deferred_assoc_state*>(p);
+        if (s->state_ & assoc_sub_state::constructed)
+            reinterpret_cast<R*>(s->value_ptr())->~R();
+        ::delete s;
     }
-    void execute() override {
-        this->set_value(func_());
+    static void invoke_leaf(void* p) {
+        auto* s = static_cast<deferred_assoc_state*>(p);
+        s->set_value(s->func_());
+    }
+
+public:
+    static constexpr detail::future_callback_ops cb_ops = {
+        sizeof(R), alignof(R), detail::f_fcb_deferred,
+        &deferred_assoc_state::destroy_value_leaf,
+        &deferred_assoc_state::invoke_leaf,
+    };
+
+    explicit deferred_assoc_state(F&& f)
+        : assoc_state<R>(&cb_ops), func_(std::forward<F>(f)) {
+        this->set_deferred();
     }
 };
 
 template<class F>
 class deferred_assoc_state<void, F> : public assoc_sub_state {
     F func_;
-public:
-    explicit deferred_assoc_state(F&& f) : func_(std::forward<F>(f)) {
-        this->set_deferred();
+
+    static void destroy_value_leaf(void* p) noexcept {
+        ::delete static_cast<deferred_assoc_state*>(p);
     }
-    void execute() override {
-        func_();
-        this->set_value_void();
+    static void invoke_leaf(void* p) {
+        auto* s = static_cast<deferred_assoc_state*>(p);
+        s->func_();
+        s->set_value_void();
+    }
+
+public:
+    static constexpr detail::future_callback_ops cb_ops = {
+        0, 1, detail::f_fcb_deferred,
+        &deferred_assoc_state::destroy_value_leaf,
+        &deferred_assoc_state::invoke_leaf,
+    };
+
+    explicit deferred_assoc_state(F&& f)
+        : assoc_sub_state(&cb_ops), func_(std::forward<F>(f)) {
+        this->set_deferred();
     }
 };
 
@@ -505,31 +634,55 @@ public:
 template<class R, class F>
 class async_assoc_state : public assoc_state<R> {
     F func_;
-    void on_zero() noexcept override {
-        // Wait for the thread to finish before freeing.
-        this->wait();
-        assoc_state<R>::on_zero();
+
+    static void destroy_value_leaf(void* p) noexcept {
+        auto* s = static_cast<async_assoc_state*>(p);
+        // Wait for the detached thread before freeing.
+        s->wait();
+        if (s->state_ & assoc_sub_state::constructed)
+            reinterpret_cast<R*>(s->value_ptr())->~R();
+        ::delete s;
     }
+    static void invoke_leaf(void* p) {
+        auto* s = static_cast<async_assoc_state*>(p);
+        s->set_value(s->func_());
+    }
+
 public:
-    explicit async_assoc_state(F&& f) : func_(std::forward<F>(f)) {}
-    void execute() override {
-        this->set_value(func_());
-    }
+    static constexpr detail::future_callback_ops cb_ops = {
+        sizeof(R), alignof(R), detail::f_fcb_async,
+        &async_assoc_state::destroy_value_leaf,
+        &async_assoc_state::invoke_leaf,
+    };
+
+    explicit async_assoc_state(F&& f)
+        : assoc_state<R>(&cb_ops), func_(std::forward<F>(f)) {}
 };
 
 template<class F>
 class async_assoc_state<void, F> : public assoc_sub_state {
     F func_;
-    void on_zero() noexcept override {
-        this->wait();
-        delete this;
+
+    static void destroy_value_leaf(void* p) noexcept {
+        auto* s = static_cast<async_assoc_state*>(p);
+        s->wait();
+        ::delete s;
     }
+    static void invoke_leaf(void* p) {
+        auto* s = static_cast<async_assoc_state*>(p);
+        s->func_();
+        s->set_value_void();
+    }
+
 public:
-    explicit async_assoc_state(F&& f) : func_(std::forward<F>(f)) {}
-    void execute() override {
-        func_();
-        this->set_value_void();
-    }
+    static constexpr detail::future_callback_ops cb_ops = {
+        0, 1, detail::f_fcb_async,
+        &async_assoc_state::destroy_value_leaf,
+        &async_assoc_state::invoke_leaf,
+    };
+
+    explicit async_assoc_state(F&& f)
+        : assoc_sub_state(&cb_ops), func_(std::forward<F>(f)) {}
 };
 
 //===----------------------------------------------------------------------===//
