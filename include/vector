@@ -749,16 +749,16 @@ public:
         set_size_elems_(sz - 1);
     }
 
-    // emplace(pos, args) — uniform pattern: capture args into a tmp (aliasing-
-    // safe), emplace_back the tmp, then rotate to bring it down to pos. The
-    // capture is also what libc++ pays for emplace's aliasing guarantee; the
-    // rotate replaces the per-T move_range + grow-with-gap dance.
+    // emplace(pos, args): construct directly at end (alias-safe thanks to the
+    // spare-slot invariant: ensure_free_ PRE is a no-op for non-empty
+    // vectors, so the construct reads args before any potential grow), then
+    // rotate to bring the new element down to pos. The rotate's POST size
+    // delta is 0 because we already advanced size in the construct step.
     template<class... Args>
     constexpr iterator emplace(const_iterator position, Args&&... args) {
         difference_type off = position - cbegin();
-        value_type tmp(std::forward<Args>(args)...);
         pointer p = ensure_free_(2);    // 1 for new + 1 spare
-        construct_one(p, std::move(tmp));
+        construct_one(p, std::forward<Args>(args)...);
         rotate_(this->begin_ + off, p, p + 1,
                 static_cast<ptrdiff_t>(sizeof(value_type)));
         return this->begin_ + off;
