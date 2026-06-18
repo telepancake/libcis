@@ -785,6 +785,208 @@ void sum_move_construct(const sum_ops* s, void* dst, void* src,
     }
 }
 
+// ---------------------------------------------------------------------------
+// Stage 8 cold-corner cores (notes/cores-design.md §3.9).
+// ---------------------------------------------------------------------------
+
+// valarray<T> uses std::allocator<T> only — no allocator ctx, no leaf
+// dispatch through storage_ops. Direct ::operator new / ::operator delete
+// (which valarray reaches via std::allocator<T>().{allocate,deallocate})
+// is the byte-vocab for the heap; the core mirrors it.
+void* valarray_resize_exact(const type_ops* ops, void* old_begin,
+                            size_t old_n, size_t new_n,
+                            const void* src_value) {
+    const size_t sz = ops->size;
+
+    // 1. Destroy and deallocate the old buffer.
+    if (old_begin != nullptr) {
+        if (!triv_destroy(ops)) {
+            auto* p = static_cast<unsigned char*>(old_begin) + old_n * sz;
+            auto* q = static_cast<unsigned char*>(old_begin);
+            while (p != q) {
+                p -= sz;
+                ops->destroy(nullptr, p);
+            }
+        }
+        ::operator delete(old_begin);
+    }
+
+    if (new_n == 0) return nullptr;
+
+    // 2. Allocate the new buffer.
+    void* nb = ::operator new(new_n * sz);
+
+    // 3. Broadcast src_value into all new_n slots.
+    auto* p = static_cast<unsigned char*>(nb);
+    if (triv_copy(ops)) {
+        for (size_t i = 0; i < new_n; ++i, p += sz)
+            __builtin_memcpy(p, src_value, sz);
+    } else {
+        for (size_t i = 0; i < new_n; ++i, p += sz)
+            ops->copy_construct(nullptr, p, src_value);
+    }
+    return nb;
+}
+
+// path_lexical_normal_bytes — single state-machine walk over a POSIX path.
+//
+// The algorithm mirrors the in-class lexically_normal (filesystem path
+// algorithm from libc++) but operates entirely on bytes: no path objects,
+// no std::vector<std::pair<std::string, ...>>, no path concatenation. It
+// scans `in` and emits canonicalized components into `out`.
+//
+// State per component: we track the kinds (Filename, RootSep, DotDot) of
+// the components currently in `out` via byte indices stored in a small
+// scratch ring; for the typical depth the stack alloca suffices and
+// arbitrarily deep paths fall back to ::malloc.
+//
+// Component kinds we observe in the input stream:
+//   - '/' (root separator at the leading position)
+//   - '..'                                 (dot-dot)
+//   - '.'                                  (dot — skipped)
+//   - '' between two separators            (collapsed)
+//   - any other non-empty run              (filename)
+size_t path_lexical_normal_bytes(const char* in, size_t in_n,
+                                 char* out, size_t out_cap) {
+    // [fs.path.generic]p6.1: empty input -> empty output.
+    if (in_n == 0) return 0;
+
+    // Scratch: starting byte offset within `out` of each emitted component,
+    // plus a kind byte (0=RootSep, 1=Filename, 2=DotDot). Per emission we
+    // push; per dot-dot collapse we pop. Depth grows with the input
+    // component count; 64 entries cover the typical case on the stack and
+    // we ::malloc beyond that.
+    constexpr size_t kStack = 64;
+    struct entry { size_t off; unsigned char kind; };
+    entry stack_buf[kStack];
+    entry* parts = stack_buf;
+    size_t parts_cap = kStack;
+    size_t parts_n = 0;
+
+    auto reserve_parts = [&](size_t need) {
+        if (need <= parts_cap) return;
+        size_t new_cap = parts_cap * 2;
+        while (new_cap < need) new_cap *= 2;
+        entry* nb = static_cast<entry*>(::malloc(new_cap * sizeof(entry)));
+        for (size_t i = 0; i < parts_n; ++i) nb[i] = parts[i];
+        if (parts != stack_buf) ::free(parts);
+        parts = nb;
+        parts_cap = new_cap;
+    };
+
+    // Walk the input; emit components into `out` (sized writes only when
+    // we are within out_cap, but always advance `out_len` for the
+    // measurement-pass return).
+    size_t out_len = 0;
+    bool maybe_need_trailing_sep = false;
+
+    auto push_byte = [&](char c) {
+        if (out_len < out_cap) out[out_len] = c;
+        ++out_len;
+    };
+    auto push_bytes = [&](const char* s, size_t n) {
+        for (size_t i = 0; i < n; ++i) push_byte(s[i]);
+    };
+    auto pop_to = [&](size_t off) { out_len = off; };
+
+    enum kind : unsigned char { K_RootSep = 0, K_Filename = 1, K_DotDot = 2 };
+
+    auto emit_root_sep = [&]() {
+        reserve_parts(parts_n + 1);
+        parts[parts_n++] = entry{out_len, K_RootSep};
+        push_byte('/');
+        maybe_need_trailing_sep = false;
+    };
+    auto emit_filename = [&](const char* s, size_t n) {
+        reserve_parts(parts_n + 1);
+        // Insert preferred separator between parts unless we're appending
+        // immediately after a RootSep.
+        if (parts_n > 0 && parts[parts_n - 1].kind != K_RootSep)
+            push_byte('/');
+        parts[parts_n++] = entry{out_len, K_Filename};
+        push_bytes(s, n);
+        maybe_need_trailing_sep = false;
+    };
+    auto emit_dotdot = [&]() {
+        reserve_parts(parts_n + 1);
+        if (parts_n > 0 && parts[parts_n - 1].kind != K_RootSep)
+            push_byte('/');
+        parts[parts_n++] = entry{out_len, K_DotDot};
+        push_byte('.');
+        push_byte('.');
+        maybe_need_trailing_sep = false;
+    };
+
+    // Leading run of '/' is a single RootSep (POSIX-only: no root name).
+    size_t i = 0;
+    if (i < in_n && in[i] == '/') {
+        emit_root_sep();
+        while (i < in_n && in[i] == '/') ++i;
+    }
+
+    while (i < in_n) {
+        // Skip duplicate separators between components.
+        if (in[i] == '/') {
+            // Trailing-separator hint applies if we're at the end of input.
+            maybe_need_trailing_sep = true;
+            ++i;
+            continue;
+        }
+        // Consume one component [comp_start, i).
+        size_t comp_start = i;
+        while (i < in_n && in[i] != '/') ++i;
+        size_t comp_len = i - comp_start;
+        const char* comp = in + comp_start;
+
+        if (comp_len == 1 && comp[0] == '.') {
+            // Dot: skip; remember trailing-sep intent.
+            maybe_need_trailing_sep = true;
+        } else if (comp_len == 2 && comp[0] == '.' && comp[1] == '.') {
+            // Dot-dot: collapse against a preceding Filename, drop above
+            // RootSep, otherwise emit literally.
+            unsigned char last = parts_n ? parts[parts_n - 1].kind : 255;
+            if (last == K_Filename) {
+                // Pop the preceding Filename; rewind `out` to its offset,
+                // trimming the leading '/' we inserted before it (when
+                // there was one — i.e. when the part before it wasn't
+                // a RootSep).
+                size_t off = parts[parts_n - 1].off;
+                bool had_sep =
+                    parts_n >= 2 && parts[parts_n - 2].kind != K_RootSep;
+                pop_to(had_sep ? off - 1 : off);
+                --parts_n;
+                maybe_need_trailing_sep = true;
+            } else if (last == K_RootSep) {
+                // .. above root: drop silently (POSIX root has no parent).
+                maybe_need_trailing_sep = false;
+            } else {
+                emit_dotdot();
+            }
+        } else {
+            emit_filename(comp, comp_len);
+        }
+    }
+
+    // [fs.path.generic]p6.8: empty -> ".".
+    if (parts_n == 0) {
+        push_byte('.');
+        if (parts != stack_buf) ::free(parts);
+        return out_len;
+    }
+
+    // [fs.path.generic]p6.7: if the last filename is dot-dot, remove any
+    // trailing directory-separator.
+    bool last_is_filename =
+        parts[parts_n - 1].kind == K_Filename;
+    if (maybe_need_trailing_sep && last_is_filename) {
+        // Trailing separator (the "/" before the implicit empty filename).
+        push_byte('/');
+    }
+
+    if (parts != stack_buf) ::free(parts);
+    return out_len;
+}
+
 } // namespace detail
 } // namespace std
 

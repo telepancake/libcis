@@ -16,6 +16,7 @@
 #include <functional>
 
 #include <iosfwd>  // forward decls of basic_ostream/basic_istream
+#include <bits/vector_cores.h>  // detail::path_lexical_normal_bytes
 
 // NOTE: <ostream>/<istream>/<iomanip> are intentionally NOT included here, to
 // avoid dragging heavy stream/locale machinery (and its ODR interaction with
@@ -1350,66 +1351,15 @@ inline path::iterator path::end() const {
 inline path path::lexically_normal() const {
     if (pn_.empty())
         return *this;
-
-    enum part_kind : unsigned char {
-        PK_None, PK_RootSep, PK_Filename, PK_Dot, PK_DotDot, PK_TrailingSep
-    };
-    auto classify = [](std::string_view part) -> part_kind {
-        if (part.empty()) return PK_TrailingSep;
-        if (part == ".") return PK_Dot;
-        if (part == "..") return PK_DotDot;
-        if (part == "/") return PK_RootSep;
-        return PK_Filename;
-    };
-
-    std::vector<std::pair<std::string, part_kind>> parts;
-    auto last_kind = [&]() -> part_kind {
-        return parts.empty() ? PK_None : parts.back().second;
-    };
-
-    bool maybe_need_trailing_sep = false;
-    for (auto it = begin(); it != end(); ++it) {
-        std::string part = it->native();
-        part_kind kind = classify(part);
-        switch (kind) {
-        case PK_Filename:
-        case PK_RootSep:
-            parts.emplace_back(std::move(part), kind);
-            maybe_need_trailing_sep = false;
-            break;
-        case PK_DotDot: {
-            part_kind lk = last_kind();
-            if (lk == PK_Filename) {
-                parts.pop_back();
-            } else if (lk != PK_RootSep) {
-                parts.emplace_back(std::string(".."), PK_DotDot);
-            }
-            maybe_need_trailing_sep = (lk == PK_Filename);
-            break;
-        }
-        case PK_Dot:
-        case PK_TrailingSep:
-            maybe_need_trailing_sep = true;
-            break;
-        default:
-            break;
-        }
-    }
-
-    // [fs.path.generic]p6.8: empty -> ".".
-    if (parts.empty())
-        return path(".");
-
-    // [fs.path.generic]p6.7: if the last filename is dot-dot, remove any
-    // trailing directory-separator.
-    bool need_trailing_sep = maybe_need_trailing_sep && last_kind() == PK_Filename;
-
-    path result;
-    for (auto& pk : parts)
-        result /= pk.first;
-    if (need_trailing_sep)
-        result /= path("");
-    return result;
+    // Routes through the typeless path_lexical_normal_bytes core (stage 8).
+    // The core never expands the path; output_len <= pn_.size() + 1 (the +1
+    // covers the empty-input "." replacement, gated out above).
+    std::string out;
+    out.resize(pn_.size() + 2);
+    size_t n = detail::path_lexical_normal_bytes(pn_.data(), pn_.size(),
+                                                 out.data(), out.size());
+    out.resize(n);
+    return path(std::move(out));
 }
 
 //===----------------------------------------------------------------------===//

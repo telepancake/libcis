@@ -143,5 +143,48 @@ void segmented_rotate(const type_ops* tops, const segment_map_ops* mops,
                       void* last_seg,   void* last_ptr,
                       ptrdiff_t size_delta_bytes);
 
+// ---------------------------------------------------------------------------
+// Stage 8 cold-corner cores (see notes/cores-design.md §3.9).
+//
+// These do not follow the (type_ops*, storage_ops*, st_ctx, ...) contract of
+// the five contiguous-storage cores above — they have only one caller family
+// each and don't reuse the storage_ops vocab. They live here so a single
+// consumer pulls in everything emitted from src/support.cpp.
+// ---------------------------------------------------------------------------
+
+// valarray<T>::resize / size-mismatch operator= / move-from-shorter.
+//
+// Destroys the `old_n` elements in [old_begin, old_begin+old_n*tops->size),
+// deallocates that buffer (when old_begin != nullptr), allocates a new buffer
+// for `new_n` elements via ::operator new(new_n * tops->size), and broadcasts
+// `*src_value` into all new_n slots via copy_construct. When new_n == 0,
+// returns nullptr and does not allocate (and src_value may be null).
+//
+// Trivial fast path on destroy (f_triv_destroy & f_alloc_default_life):
+// skip the per-element destroy loop. Trivial fast path on broadcast
+// (f_triv_copy & f_alloc_default_life): memcpy the bytes of *src_value n
+// times rather than calling copy_construct per slot.
+//
+// valarray hard-wires std::allocator<T>, so no allocator ctx is threaded;
+// the core uses tops->copy_construct with a null ctx, which is correct for
+// any stateless allocator (the leaf default-constructs one).
+void* valarray_resize_exact(const type_ops* tops, void* old_begin,
+                            size_t old_n, size_t new_n, const void* src_value);
+
+// path::lexically_normal / lexically_relative / lexically_proximate /
+// parent_path — POSIX-char path state-machine walk.
+//
+// Reads `in_n` bytes from `in` (the unnormalized POSIX path) and writes the
+// lexically-normalized form into [out, out + out_cap). Returns the number of
+// bytes that would be written if out_cap were unbounded; the caller checks
+// against out_cap to detect truncation. When out_cap == 0 (sizing pass),
+// no bytes are written and only the required size is computed.
+//
+// Pure byte work; no allocation, no type_ops, no allocator. Output is at
+// most in_n + 1 bytes (the +1 covers the empty-input "." replacement).
+// Callers allocate in_n + 2 to be safe and write directly.
+size_t path_lexical_normal_bytes(const char* in, size_t in_n,
+                                 char* out, size_t out_cap);
+
 } // namespace detail
 } // namespace std

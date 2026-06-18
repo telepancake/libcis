@@ -16,6 +16,7 @@
 #include <utility>
 #include <functional>
 #include <new>
+#include <bits/vector_cores.h>  // detail::valarray_resize_exact
 
 namespace std {
 
@@ -530,12 +531,16 @@ public:
   [[nodiscard]] valarray apply(T f(const T&)) const;
 
   void resize(size_t n, T x = T()) {
-    clear(size());
-    if (n) {
-      begin_ = end_ = std::allocator<T>().allocate(n);
-      for (size_t left = n; left; --left, ++end_)
-        ::new (static_cast<void*>(end_)) T(x);
-    }
+    // Routes through the typeless valarray_resize_exact core (stage 8):
+    // destroy old elements, deallocate, allocate new buffer of n
+    // elements, broadcast x into all of them. Trivial-destroy/copy fast
+    // paths handled inside the core.
+    static constexpr detail::type_ops ops =
+        detail::make_type_ops<T, std::allocator<T>,
+                              detail::OP_DESTROY | detail::OP_COPY_CONSTRUCT>();
+    void* nb = detail::valarray_resize_exact(&ops, begin_, size(), n, &x);
+    begin_ = static_cast<T*>(nb);
+    end_ = begin_ + n;
   }
 
 private:
