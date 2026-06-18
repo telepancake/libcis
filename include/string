@@ -231,16 +231,25 @@ private:
     // -------------------------------------------------------------------------
     // Type-erasure plumbing for the shared cores in src/support.cpp.
     //
-    // Like vector, string only consumes destroy + move_construct from the
-    // ops table. For trivially-relocatable + default-lifecycle T (which
-    // includes char/wchar_t/char{8,16,32}_t under std::allocator), both
+    // Per-call ops tables. Each modifier asks for the minimal MASK it
+    // actually exercises: vdeallocate's destroy_range wants OP_DESTROY only;
+    // grow/shrink_to_fit want OP_DESTROY|OP_MOVE_CONSTRUCT. Asking for a
+    // maximal mask at every callsite is wrong for the same reason vector's
+    // ops_table_() was — make_type_ops's body-level `requires` evaluates
+    // every leaf at instantiation, so a destroy-only callsite would
+    // still drag move_construct's requires-expression through and
+    // hard-error on element types whose implicit move-ctor body is
+    // ill-formed.
+    //
+    // For trivially-relocatable + default-lifecycle T (which includes
+    // char/wchar_t/char{8,16,32}_t under std::allocator), the requested
     // leaves are null and the cores take their memmove fast paths.
     //
     // No constexpr: the cores run only at runtime.
     // -------------------------------------------------------------------------
-    static const detail::type_ops* ops_table_() noexcept {
-        return &detail::ops_for<value_type, allocator_type,
-                                detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>;
+    template<unsigned MASK>
+    static const detail::type_ops* ops_() noexcept {
+        return &detail::ops_for<value_type, allocator_type, MASK>;
     }
 
     // Friend the storage_*_glue specializations so they can reach our private
@@ -262,7 +271,8 @@ private:
     // terminator) via the storage_ops::resize slot. After resize size is 0.
     void vallocate(size_type n) {
         if (n > max_size()) throw_length_error();
-        detail::grow(ops_table_(), storage_table_(), this,
+        detail::grow(ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>(),
+                     storage_table_(), this,
                      (n + 1) * sizeof(value_type));
         // size remains 0; spare slot is zero-initialized by the storage_ops
         // resize path, which is the null terminator.
@@ -270,7 +280,8 @@ private:
 
     void vdeallocate() noexcept {
         if (this->begin_ != nullptr) {
-            detail::destroy_range(ops_table_(), storage_table_(), this,
+            detail::destroy_range(ops_<detail::OP_DESTROY>(),
+                                  storage_table_(), this,
                                   std::to_address(this->begin_),
                                   std::to_address(end_ptr_()));
             storage_table_()->free(this);
@@ -282,7 +293,8 @@ private:
     // null terminator (zeroed automatically by resize).
     void reallocate_grow(size_type new_cap) {
         if (new_cap > max_size()) throw_length_error();
-        detail::grow(ops_table_(), storage_table_(), this,
+        detail::grow(ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>(),
+                     storage_table_(), this,
                      (new_cap + 1) * sizeof(value_type));
         traits_type::assign(*std::to_address(end_ptr_()), value_type());
     }
@@ -650,7 +662,8 @@ public:
         if (capacity() + 1 <= want) return;
         // Route through grow: allocates `want` chars exactly, relocates live
         // bytes, frees old. Spare slot zeroed by resize.
-        detail::grow(ops_table_(), storage_table_(), this,
+        detail::grow(ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>(),
+                     storage_table_(), this,
                      want * sizeof(value_type));
         traits_type::assign(*std::to_address(end_ptr_()), value_type());
     }

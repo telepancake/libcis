@@ -614,14 +614,20 @@ private:
         return &t;
     }
 
-    // Deque consumes destroy + move_construct + copy_construct from the cores
-    // (destroy_range path, segmented_rotate path, segmented_copy path).
-    static const detail::type_ops* ops_table_() noexcept {
-        return &detail::ops_for<value_type, allocator_type,
-                                detail::OP_DESTROY |
-                                detail::OP_MOVE_CONSTRUCT |
-                                detail::OP_COPY_CONSTRUCT |
-                                detail::OP_SWAP>;
+    // Per-call ops tables. Each modifier asks for the minimal MASK it
+    // actually exercises: segmented_destroy wants OP_DESTROY only;
+    // segmented_rotate wants OP_DESTROY|OP_MOVE_CONSTRUCT|OP_SWAP (the
+    // rotate core uses swap when present, else move_construct+destroy).
+    // Asking for a maximal mask at every callsite is wrong for the same
+    // reason vector's ops_table_() was — make_type_ops's body-level
+    // `requires` evaluates every leaf at instantiation, so a destroy-only
+    // callsite would still drag the copy_construct / swap requires-
+    // expressions through and hard-error on element types whose
+    // implicit op body is ill-formed. (deque does not call segmented_copy
+    // today; OP_COPY_CONSTRUCT was dead.)
+    template<unsigned MASK>
+    static const detail::type_ops* ops_() noexcept {
+        return &detail::ops_for<value_type, allocator_type, MASK>;
     }
 
     // Convert a (const_)iterator's representation to the (seg, ptr) void*
@@ -835,7 +841,8 @@ private:
         iterator e  = end();
         difference_type n = e - p;
         if (n > 0) {
-            detail::segmented_destroy(ops_table_(), seg_table_(), this,
+            detail::segmented_destroy(ops_<detail::OP_DESTROY>(),
+                                      seg_table_(), this,
                                       it_seg_(p), it_ptr_(p),
                                       it_seg_(e), it_ptr_(e));
             size_ -= static_cast<size_type>(n);
@@ -1068,7 +1075,8 @@ public:
     ~deque() {
         if (size_ > 0) {
             iterator b = begin(), e = end();
-            detail::segmented_destroy(ops_table_(), seg_table_(), this,
+            detail::segmented_destroy(ops_<detail::OP_DESTROY>(),
+                                      seg_table_(), this,
                                       it_seg_(b), it_ptr_(b),
                                       it_seg_(e), it_ptr_(e));
             size_ = 0;
@@ -1373,11 +1381,13 @@ public:
             // Three reverses on [b, p+1) with middle = p make *p the new *b
             // and shift everything else back by one. Then destroy the new
             // first element (the original *p).
-            detail::segmented_rotate(ops_table_(), seg_table_(), this,
-                                     it_seg_(b),   it_ptr_(b),
-                                     it_seg_(p),   it_ptr_(p),
-                                     it_seg_(pp1), it_ptr_(pp1),
-                                     0); // we update size/start_ manually below
+            detail::segmented_rotate(
+                ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT | detail::OP_SWAP>(),
+                seg_table_(), this,
+                it_seg_(b),   it_ptr_(b),
+                it_seg_(p),   it_ptr_(p),
+                it_seg_(pp1), it_ptr_(pp1),
+                0); // we update size/start_ manually below
             allocator_type& a = alloc_ref();
             iterator b2 = begin();
             alloc_traits::destroy(a, addressof(*b2));
@@ -1391,11 +1401,13 @@ public:
             // outside storage_ops, so we pass delta=0 and clean up here.
             iterator pp1 = std::next(p);
             iterator e   = end();
-            detail::segmented_rotate(ops_table_(), seg_table_(), this,
-                                     it_seg_(p),   it_ptr_(p),
-                                     it_seg_(pp1), it_ptr_(pp1),
-                                     it_seg_(e),   it_ptr_(e),
-                                     0);
+            detail::segmented_rotate(
+                ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT | detail::OP_SWAP>(),
+                seg_table_(), this,
+                it_seg_(p),   it_ptr_(p),
+                it_seg_(pp1), it_ptr_(pp1),
+                it_seg_(e),   it_ptr_(e),
+                0);
             allocator_type& a = alloc_ref();
             iterator new_end = end() - 1;
             alloc_traits::destroy(a, addressof(*new_end));
@@ -1418,11 +1430,13 @@ public:
                 // [p, p+n) and shifts the prefix to [b+n, p+n).
                 // Concretely: three-reverse on [b, p+n) with middle=p.
                 iterator pn = p + n;
-                detail::segmented_rotate(ops_table_(), seg_table_(), this,
-                                         it_seg_(b),  it_ptr_(b),
-                                         it_seg_(p),  it_ptr_(p),
-                                         it_seg_(pn), it_ptr_(pn),
-                                         0);
+                detail::segmented_rotate(
+                    ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT | detail::OP_SWAP>(),
+                    seg_table_(), this,
+                    it_seg_(b),  it_ptr_(b),
+                    it_seg_(p),  it_ptr_(p),
+                    it_seg_(pn), it_ptr_(pn),
+                    0);
                 // The first n elements are now the to-be-erased originals.
                 allocator_type& a = alloc_ref();
                 iterator new_b = begin();
@@ -1436,11 +1450,13 @@ public:
                 // original [p, p+n) and the rest shifts left.
                 iterator pn = p + n;
                 iterator e  = end();
-                detail::segmented_rotate(ops_table_(), seg_table_(), this,
-                                         it_seg_(p),  it_ptr_(p),
-                                         it_seg_(pn), it_ptr_(pn),
-                                         it_seg_(e),  it_ptr_(e),
-                                         0);
+                detail::segmented_rotate(
+                    ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT | detail::OP_SWAP>(),
+                    seg_table_(), this,
+                    it_seg_(p),  it_ptr_(p),
+                    it_seg_(pn), it_ptr_(pn),
+                    it_seg_(e),  it_ptr_(e),
+                    0);
                 allocator_type& a = alloc_ref();
                 iterator new_end = end() - n;
                 for (difference_type k = 0; k < n; ++k, (void)++new_end)
@@ -1463,7 +1479,8 @@ public:
     void clear() noexcept {
         if (size_ > 0) {
             iterator b = begin(), e = end();
-            detail::segmented_destroy(ops_table_(), seg_table_(), this,
+            detail::segmented_destroy(ops_<detail::OP_DESTROY>(),
+                                      seg_table_(), this,
                                       it_seg_(b), it_ptr_(b),
                                       it_seg_(e), it_ptr_(e));
             size_ = 0;
