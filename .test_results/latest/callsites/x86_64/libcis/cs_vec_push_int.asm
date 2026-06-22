@@ -14,7 +14,7 @@ cs_vec_push_int():
  251:	55                   	push   %rbp
  252:	89 f5                	mov    %esi,%ebp
 _ZNSt6vectorIiSaIiEE12emplace_backIJRKiEEERiDpOT_():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:766
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:771
  254:	be 01 00 00 00       	mov    $0x1,%esi
 cs_vec_push_int():
 /home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
@@ -22,7 +22,7 @@ cs_vec_push_int():
  25a:	48 89 fb             	mov    %rdi,%rbx
  25d:	50                   	push   %rax
 _ZNSt6vectorIiSaIiEE12emplace_backIJRKiEEERiDpOT_():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:766
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:771
  25e:	e8 00 00 00 00       	call   263 <cs_vec_push_int+0x16>
 _ZNSt6vectorIiSaIiEE15set_size_elems_Em():
 /home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:118 (discriminator 1)
@@ -32,7 +32,7 @@ _ZSt12construct_atIiJRKiEEPT_S3_DpOT0_():
 /home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/bits/construct_at.h:19 (discriminator 1)
  26d:	89 28                	mov    %ebp,(%rax)
 _ZNSt6vectorIiSaIiEE12emplace_backIJRKiEEERiDpOT_():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:768
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:773
  26f:	48 8d 50 04          	lea    0x4(%rax),%rdx
  273:	48 2b 13             	sub    (%rbx),%rdx
 _ZNSt6vectorIiSaIiEE15set_size_elems_Em():
@@ -42,7 +42,7 @@ cs_vec_push_int():
 /home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
  27b:	5a                   	pop    %rdx
 _ZNSt6vectorIiSaIiEE12emplace_backIJRKiEEERiDpOT_():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:769
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:774
  27c:	48 89 df             	mov    %rbx,%rdi
  27f:	be 01 00 00 00       	mov    $0x1,%esi
 cs_vec_push_int():
@@ -50,7 +50,7 @@ cs_vec_push_int():
  284:	5b                   	pop    %rbx
  285:	5d                   	pop    %rbp
 _ZNSt6vectorIiSaIiEE12emplace_backIJRKiEEERiDpOT_():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:769
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:774
  286:	e9 00 00 00 00       	jmp    28b <cs_vec_insert_H>
 
 Disassembly of section .text._ZNKSt19bad_optional_access4whatEv:

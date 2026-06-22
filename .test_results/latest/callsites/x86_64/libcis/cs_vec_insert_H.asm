@@ -14,7 +14,7 @@ cs_vec_insert_H():
  28f:	55                   	push   %rbp
  290:	48 89 f5             	mov    %rsi,%rbp
 _ZNSt6vectorI1HSaIS0_EE7emplaceIJRKS0_EEEPS0_PS4_DpOT_():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:787
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:792
  293:	be 02 00 00 00       	mov    $0x2,%esi
 cs_vec_insert_H():
 /home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
@@ -22,7 +22,7 @@ cs_vec_insert_H():
  299:	48 89 fb             	mov    %rdi,%rbx
  29c:	48 83 ec 18          	sub    $0x18,%rsp
 _ZNSt6vectorI1HSaIS0_EE7emplaceIJRKS0_EEEPS0_PS4_DpOT_():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:787
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:792
  2a0:	e8 00 00 00 00       	call   2a5 <cs_vec_insert_H+0x1a>
 _ZSt12construct_atI1HJRKS0_EEPT_S4_DpOT0_():
 /home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/bits/construct_at.h:19 (discriminator 1)
@@ -31,18 +31,18 @@ _ZSt12construct_atI1HJRKS0_EEPT_S4_DpOT0_():
  2ab:	48 89 44 24 08       	mov    %rax,0x8(%rsp)
  2b0:	e8 00 00 00 00       	call   2b5 <cs_vec_insert_H+0x2a>
 _ZNSt6vectorI1HSaIS0_EE7emplaceIJRKS0_EEEPS0_PS4_DpOT_():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:789
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:794
  2b5:	48 8b 03             	mov    (%rbx),%rax
 _ZNSt6vectorI1HSaIS0_EE7rotate_EPS0_S3_S3_l():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:353 (discriminator 2)
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:358 (discriminator 2)
  2b8:	48 89 da             	mov    %rbx,%rdx
  2bb:	48 8d 35 00 00 00 00 	lea    0x0(%rip),%rsi        # 2c2 <cs_vec_insert_H+0x37>
  2c2:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 2c9 <cs_vec_insert_H+0x3e>
 _ZNSt6vectorI1HSaIS0_EE7emplaceIJRKS0_EEEPS0_PS4_DpOT_():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:789
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:794
  2c9:	48 8d 48 10          	lea    0x10(%rax),%rcx
 _ZNSt6vectorI1HSaIS0_EE7rotate_EPS0_S3_S3_l():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:353 (discriminator 2)
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:358 (discriminator 2)
  2cd:	50                   	push   %rax
  2ce:	6a 10                	push   $0x10
  2d0:	4c 8b 44 24 18       	mov    0x18(%rsp),%r8
