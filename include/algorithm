@@ -41,6 +41,7 @@
 #include <new>
 #include <cstddef>
 #include <execution>
+#include <bits/min_max.h>
 
 namespace std {
 
@@ -86,19 +87,8 @@ namespace detail {
 // (from __algorithm/min.h, max.h, minmax.h, clamp.h)
 //===----------------------------------------------------------------------===//
 
-// min (comparator)
-template<class T, class Compare>
-[[nodiscard]] constexpr const T&
-min(const T& a, const T& b, Compare comp) {
-    return comp(b, a) ? b : a;
-}
-
-// min (operator<)
-template<class T>
-[[nodiscard]] constexpr const T&
-min(const T& a, const T& b) {
-    return (b < a) ? b : a;
-}
+// min/max (two-argument operator< and comparator forms) live in
+// <bits/min_max.h> so <ranges> can use them without pulling in <algorithm>.
 
 // min (initializer_list, comparator)
 template<class T, class Compare>
@@ -120,20 +110,6 @@ min(initializer_list<T> t) {
     for (++it; it != t.end(); ++it)
         if (*it < result) result = *it;
     return result;
-}
-
-// max (comparator)
-template<class T, class Compare>
-[[nodiscard]] constexpr const T&
-max(const T& a, const T& b, Compare comp) {
-    return comp(a, b) ? b : a;
-}
-
-// max (operator<)
-template<class T>
-[[nodiscard]] constexpr const T&
-max(const T& a, const T& b) {
-    return (a < b) ? b : a;
 }
 
 // max (initializer_list, comparator)

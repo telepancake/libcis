@@ -38,6 +38,7 @@
 #include <initializer_list>
 #include <functional>
 #include <tuple>
+#include <bits/min_max.h>
 
 namespace std {
 
@@ -49,6 +50,14 @@ namespace std {
 // cannot include <ranges> back).
 template<class CharT> struct char_traits;
 template<class CharT, class Traits> class basic_string_view;
+
+// Forward declaration of span (mirrors <span>) for views::take's passthrough
+// specializations. <span> includes <ranges>, so we cannot include it here.
+#ifndef _LIBCIS_DYNAMIC_EXTENT_DECLARED
+#define _LIBCIS_DYNAMIC_EXTENT_DECLARED
+inline constexpr size_t dynamic_extent = static_cast<size_t>(-1);
+#endif
+template<class T, size_t Extent> class span;
 
 namespace ranges {
 
@@ -108,7 +117,7 @@ concept member_end =
     access_detail::can_borrow<T> &&
     requires(T&& t) {
         typename iterator_t<T>;
-        { t.end() } -> sentinel_for<iterator_t<T>>;
+        { static_cast<decay_t<decltype((t.end()))>>(t.end()) } -> sentinel_for<iterator_t<T>>;
     };
 
 template<class T>
@@ -118,7 +127,7 @@ concept adl_end =
     access_detail::class_or_enum<remove_cvref_t<T>> &&
     requires(T&& t) {
         typename iterator_t<T>;
-        { end(t) } -> sentinel_for<iterator_t<T>>;
+        { static_cast<decay_t<decltype((end(t)))>>(end(t)) } -> sentinel_for<iterator_t<T>>;
     };
 
 struct end_fn {
@@ -129,16 +138,14 @@ struct end_fn {
     template<class T>
         requires member_end<T>
     [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(t.end()))
-        -> decltype(t.end()) {
-        return t.end();
+        noexcept(noexcept(static_cast<decay_t<decltype((t.end()))>>(t.end()))) {
+        return static_cast<decay_t<decltype((t.end()))>>(t.end());
     }
     template<class T>
         requires adl_end<T>
     [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(end(t)))
-        -> decltype(end(t)) {
-        return end(t);
+        noexcept(noexcept(static_cast<decay_t<decltype((end(t)))>>(end(t)))) {
+        return static_cast<decay_t<decltype((end(t)))>>(end(t));
     }
 };
 } // namespace end_detail
@@ -1398,11 +1405,11 @@ public:
         if constexpr (integral<Start> && integral<BoundSentinel>) {
             return (value_ < 0)
                 ? (bound_ < 0
-                   ? make_unsigned_t<Start>(-value_) - make_unsigned_t<Start>(-bound_)
-                   : make_unsigned_t<Start>(bound_) + make_unsigned_t<Start>(-value_))
-                : make_unsigned_t<Start>(bound_) - make_unsigned_t<Start>(value_);
+                   ? std::detail::to_unsigned_like(-value_) - std::detail::to_unsigned_like(-bound_)
+                   : std::detail::to_unsigned_like(bound_) + std::detail::to_unsigned_like(-value_))
+                : std::detail::to_unsigned_like(bound_) - std::detail::to_unsigned_like(value_);
         } else {
-            return static_cast<make_unsigned_t<iter_difference_t<Start>>>(bound_ - value_);
+            return std::detail::to_unsigned_like(bound_ - value_);
         }
     }
 };
@@ -1550,58 +1557,88 @@ operator|(Range&& range, Closure&& closure)
     return invoke(std::forward<Closure>(closure), std::forward<Range>(range));
 }
 
-// closure1 | closure2  -> composed closure
+// compose: __compose from libc++ __functional/compose.h.
+// std::__compose(f1, f2) is a call wrapper g such that g(args...) == f1(f2(args...)).
+// Built on detail::perfect_forward so its operator() is SFINAE-friendly.
+namespace bind_back_detail {
+    struct compose_op {
+        template<class Fn1, class Fn2, class... Args>
+        constexpr auto operator()(Fn1&& f1, Fn2&& f2, Args&&... args) const
+            noexcept(noexcept(invoke(std::forward<Fn1>(f1),
+                                     invoke(std::forward<Fn2>(f2), std::forward<Args>(args)...))))
+            -> decltype(invoke(std::forward<Fn1>(f1),
+                               invoke(std::forward<Fn2>(f2), std::forward<Args>(args)...)))
+        {
+            return invoke(std::forward<Fn1>(f1),
+                          invoke(std::forward<Fn2>(f2), std::forward<Args>(args)...));
+        }
+    };
+
+    template<class Fn1, class Fn2>
+    struct compose_t : std::detail::perfect_forward<compose_op, Fn1, Fn2> {
+        using std::detail::perfect_forward<compose_op, Fn1, Fn2>::perfect_forward;
+    };
+
+    template<class Fn1, class Fn2>
+    constexpr auto compose(Fn1&& f1, Fn2&& f2)
+        noexcept(noexcept(compose_t<decay_t<Fn1>, decay_t<Fn2>>(std::forward<Fn1>(f1), std::forward<Fn2>(f2))))
+        -> decltype(compose_t<decay_t<Fn1>, decay_t<Fn2>>(std::forward<Fn1>(f1), std::forward<Fn2>(f2)))
+    {
+        return compose_t<decay_t<Fn1>, decay_t<Fn2>>(std::forward<Fn1>(f1), std::forward<Fn2>(f2));
+    }
+} // namespace bind_back_detail
+
+// closure1 | closure2  -> composed closure (libc++ __range_adaptor.h operator|)
 template<range_adaptor_closure_type C1, range_adaptor_closure_type C2>
     requires constructible_from<decay_t<C1>, C1> && constructible_from<decay_t<C2>, C2>
 [[nodiscard]] constexpr auto operator|(C1&& c1, C2&& c2)
     noexcept(is_nothrow_constructible_v<decay_t<C1>, C1> &&
              is_nothrow_constructible_v<decay_t<C2>, C2>)
 {
-    // return a closure that applies c1 then c2
-    return pipeable([c1_ = std::forward<C1>(c1), c2_ = std::forward<C2>(c2)](auto&& range) mutable
-        -> decltype(auto) {
-        return invoke(c2_, invoke(c1_, std::forward<decltype(range)>(range)));
-    });
+    return pipeable(bind_back_detail::compose(std::forward<C2>(c2), std::forward<C1>(c1)));
 }
 
-// bind_back helper (simplified: bind last N args)
+// bind_back: libc++ __functional/bind_back.h. Binds the last N args of fn.
+// __bind_back_t derives from perfect_forward<__bind_back_op<N>, Fn, tuple<Bound...>>,
+// so its operator() is SFINAE-friendly (required for is_invocable_v in operator|).
 namespace bind_back_detail {
-    template<class Fn, class... BoundArgs>
-    struct bind_back_fn : range_adaptor_closure_base<bind_back_fn<Fn, BoundArgs...>> {
-        Fn fn_;
-        tuple<BoundArgs...> bound_;
+    template<size_t NBound, class = make_index_sequence<NBound>>
+    struct bind_back_op;
 
-        // Explicit constructor to avoid aggregate-init issues with base class
-        constexpr bind_back_fn(Fn f, tuple<BoundArgs...> b)
-            : fn_(move(f)), bound_(move(b)) {}
+    template<size_t NBound, size_t... Ip>
+    struct bind_back_op<NBound, index_sequence<Ip...>> {
+        template<class Fn, class BoundArgs, class... Args>
+        constexpr auto operator()(Fn&& f, BoundArgs&& bound_args, Args&&... args) const
+            noexcept(noexcept(invoke(std::forward<Fn>(f),
+                                     std::forward<Args>(args)...,
+                                     std::get<Ip>(std::forward<BoundArgs>(bound_args))...)))
+            -> decltype(invoke(std::forward<Fn>(f),
+                               std::forward<Args>(args)...,
+                               std::get<Ip>(std::forward<BoundArgs>(bound_args))...))
+        {
+            return invoke(std::forward<Fn>(f),
+                          std::forward<Args>(args)...,
+                          std::get<Ip>(std::forward<BoundArgs>(bound_args))...);
+        }
+    };
 
-        template<class Range>
-        constexpr decltype(auto) operator()(Range&& range) & {
-            return apply([&](auto&... args) -> decltype(auto) {
-                return invoke(fn_, std::forward<Range>(range), args...);
-            }, bound_);
-        }
-        template<class Range>
-        constexpr decltype(auto) operator()(Range&& range) const& {
-            return apply([&](const auto&... args) -> decltype(auto) {
-                return invoke(fn_, std::forward<Range>(range), args...);
-            }, bound_);
-        }
-        template<class Range>
-        constexpr decltype(auto) operator()(Range&& range) && {
-            return apply([&](auto&&... args) -> decltype(auto) {
-                return invoke(move(fn_), std::forward<Range>(range), move(args)...);
-            }, move(bound_));
-        }
+    template<class Fn, class BoundArgs>
+    struct bind_back_t : std::detail::perfect_forward<bind_back_op<tuple_size_v<BoundArgs>>, Fn, BoundArgs> {
+        using std::detail::perfect_forward<bind_back_op<tuple_size_v<BoundArgs>>, Fn, BoundArgs>::perfect_forward;
     };
 } // namespace bind_back_detail
 
 template<class Fn, class... Args>
-constexpr auto bind_back(Fn&& fn, Args&&... args) {
-    return bind_back_detail::bind_back_fn<decay_t<Fn>, decay_t<Args>...>{
-        decay_t<Fn>(std::forward<Fn>(fn)),
-        tuple<decay_t<Args>...>(std::forward<Args>(args)...)
-    };
+    requires is_constructible_v<decay_t<Fn>, Fn> && is_move_constructible_v<decay_t<Fn>> &&
+             (is_constructible_v<decay_t<Args>, Args> && ...) && (is_move_constructible_v<decay_t<Args>> && ...)
+constexpr auto bind_back(Fn&& fn, Args&&... args)
+    noexcept(noexcept(bind_back_detail::bind_back_t<decay_t<Fn>, tuple<decay_t<Args>...>>(
+        std::forward<Fn>(fn), std::forward_as_tuple(std::forward<Args>(args)...))))
+    -> decltype(bind_back_detail::bind_back_t<decay_t<Fn>, tuple<decay_t<Args>...>>(
+        std::forward<Fn>(fn), std::forward_as_tuple(std::forward<Args>(args)...)))
+{
+    return bind_back_detail::bind_back_t<decay_t<Fn>, tuple<decay_t<Args>...>>(
+        std::forward<Fn>(fn), std::forward_as_tuple(std::forward<Args>(args)...));
 }
 
 } // namespace ranges
@@ -1696,12 +1733,37 @@ inline namespace cpo {
 // views::counted
 namespace counted_detail {
 struct counted_fn {
-    template<input_or_output_iterator I>
-    [[nodiscard]] constexpr auto operator()(I&& i, iter_difference_t<I> n) const {
-        if constexpr (random_access_iterator<I>)
-            return ranges::subrange(std::forward<I>(i), std::forward<I>(i) + n);
-        else
-            return ranges::subrange(counted_iterator(std::forward<I>(i), n), default_sentinel);
+    template<contiguous_iterator It>
+    static constexpr auto go(It it, iter_difference_t<It> count)
+        noexcept(noexcept(span(std::to_address(it), static_cast<size_t>(count))))
+        // Deliberately omit return-type SFINAE, because to_address is not SFINAE-friendly
+    {
+        return span(std::to_address(it), static_cast<size_t>(count));
+    }
+
+    template<random_access_iterator It>
+    static constexpr auto go(It it, iter_difference_t<It> count)
+        noexcept(noexcept(subrange(it, it + count)))
+        -> decltype(subrange(it, it + count))
+    {
+        return subrange(it, it + count);
+    }
+
+    template<class It>
+    static constexpr auto go(It it, iter_difference_t<It> count)
+        noexcept(noexcept(subrange(counted_iterator(std::move(it), count), default_sentinel)))
+        -> decltype(subrange(counted_iterator(std::move(it), count), default_sentinel))
+    {
+        return subrange(counted_iterator(std::move(it), count), default_sentinel);
+    }
+
+    template<class It, convertible_to<iter_difference_t<It>> Diff>
+        requires input_or_output_iterator<decay_t<It>>
+    [[nodiscard]] constexpr auto operator()(It&& it, Diff&& count) const
+        noexcept(noexcept(go(std::forward<It>(it), std::forward<Diff>(count))))
+        -> decltype(go(std::forward<It>(it), std::forward<Diff>(count)))
+    {
+        return go(std::forward<It>(it), std::forward<Diff>(count));
     }
 };
 } // namespace counted_detail
@@ -1874,7 +1936,7 @@ struct filter_fn {
     [[nodiscard]] constexpr auto operator()(Pred&& pred) const
         noexcept(is_nothrow_constructible_v<decay_t<Pred>, Pred>)
     {
-        return ranges::bind_back(*this, std::forward<Pred>(pred));
+        return pipeable(ranges::bind_back(*this, std::forward<Pred>(pred)));
     }
 };
 } // namespace filter_detail
@@ -2122,7 +2184,7 @@ struct transform_fn {
         requires constructible_from<decay_t<Fn>, Fn>
     [[nodiscard]] constexpr auto operator()(Fn&& f) const
         noexcept(is_nothrow_constructible_v<decay_t<Fn>, Fn>)
-    { return ranges::bind_back(*this, std::forward<Fn>(f)); }
+    { return pipeable(ranges::bind_back(*this, std::forward<Fn>(f))); }
 };
 } // namespace transform_detail
 inline namespace cpo {
@@ -2256,17 +2318,109 @@ inline constexpr bool enable_view<take_view<T>> = true;
 
 namespace ranges::views {
 namespace take_detail {
+
+template<class T>
+inline constexpr bool is_empty_view = false;
+template<class T>
+inline constexpr bool is_empty_view<empty_view<T>> = true;
+
+template<class T>
+inline constexpr bool is_passthrough_specialization = false;
+template<class T, size_t Extent>
+inline constexpr bool is_passthrough_specialization<span<T, Extent>> = true;
+template<class CharT, class Traits>
+inline constexpr bool is_passthrough_specialization<basic_string_view<CharT, Traits>> = true;
+template<class Iter, class Sent, subrange_kind Kind>
+inline constexpr bool is_passthrough_specialization<subrange<Iter, Sent, Kind>> = true;
+
+template<class T>
+inline constexpr bool is_iota_specialization = false;
+template<class Np, class Bound>
+inline constexpr bool is_iota_specialization<iota_view<Np, Bound>> = true;
+
+template<class T>
+struct passthrough_type;
+template<class T, size_t Extent>
+struct passthrough_type<span<T, Extent>> {
+    using type = span<T, dynamic_extent>;
+};
+template<class CharT, class Traits>
+struct passthrough_type<basic_string_view<CharT, Traits>> {
+    using type = basic_string_view<CharT, Traits>;
+};
+template<class Iter, class Sent, subrange_kind Kind>
+    requires requires { typename subrange<Iter>; }
+struct passthrough_type<subrange<Iter, Sent, Kind>> {
+    using type = subrange<Iter>;
+};
+template<class T>
+using passthrough_type_t = typename passthrough_type<T>::type;
+
 struct take_fn {
-    template<class Range>
-    [[nodiscard]] constexpr auto operator()(Range&& range, range_difference_t<Range> n) const
-        noexcept(noexcept(ranges::take_view(std::forward<Range>(range), n)))
-        -> decltype(ranges::take_view(std::forward<Range>(range), n))
-    { return ranges::take_view(std::forward<Range>(range), n); }
-    template<class D>
-        requires constructible_from<decay_t<D>, D>
-    [[nodiscard]] constexpr auto operator()(D&& n) const
-        noexcept(is_nothrow_constructible_v<decay_t<D>, D>)
-    { return ranges::bind_back(*this, std::forward<D>(n)); }
+    // [range.take.overview]: the `empty_view` case.
+    template<class Range, convertible_to<range_difference_t<Range>> Np>
+        requires is_empty_view<remove_cvref_t<Range>>
+    [[nodiscard]] constexpr auto operator()(Range&& range, Np&&) const
+        noexcept(noexcept(static_cast<decay_t<decltype((range))>>(std::forward<Range>(range))))
+        -> decltype(static_cast<decay_t<decltype((range))>>(std::forward<Range>(range)))
+    { return static_cast<decay_t<decltype((range))>>(std::forward<Range>(range)); }
+
+    // [range.take.overview]: the `span | basic_string_view | subrange` case.
+    template<class Range,
+             convertible_to<range_difference_t<Range>> Np,
+             class RawRange = remove_cvref_t<Range>,
+             class Dist     = range_difference_t<Range>>
+        requires(!is_empty_view<RawRange> && random_access_range<RawRange> && sized_range<RawRange> &&
+                 is_passthrough_specialization<RawRange>)
+    [[nodiscard]] constexpr auto operator()(Range&& rng, Np&& n) const
+        noexcept(noexcept(passthrough_type_t<RawRange>(
+            ranges::begin(rng),
+            ranges::begin(rng) + std::min<Dist>(ranges::distance(rng), std::forward<Np>(n)))))
+        -> decltype(passthrough_type_t<RawRange>(
+            ranges::begin(rng),
+            ranges::begin(rng) + std::min<Dist>(ranges::distance(rng), std::forward<Np>(n))))
+    {
+        return passthrough_type_t<RawRange>(
+            ranges::begin(rng),
+            ranges::begin(rng) + std::min<Dist>(ranges::distance(rng), std::forward<Np>(n)));
+    }
+
+    // [range.take.overview]: the `iota_view` case.
+    template<class Range,
+             convertible_to<range_difference_t<Range>> Np,
+             class RawRange = remove_cvref_t<Range>,
+             class Dist     = range_difference_t<Range>>
+        requires(!is_empty_view<RawRange> && random_access_range<RawRange> && sized_range<RawRange> &&
+                 is_iota_specialization<RawRange>)
+    [[nodiscard]] constexpr auto operator()(Range&& rng, Np&& n) const
+        noexcept(noexcept(ranges::iota_view(
+            *ranges::begin(rng),
+            *(ranges::begin(rng) + std::min<Dist>(ranges::distance(rng), std::forward<Np>(n))))))
+        -> decltype(ranges::iota_view(
+            *ranges::begin(rng),
+            *(ranges::begin(rng) + std::min<Dist>(ranges::distance(rng), std::forward<Np>(n)))))
+    {
+        return ranges::iota_view(
+            *ranges::begin(rng),
+            *(ranges::begin(rng) + std::min<Dist>(ranges::distance(rng), std::forward<Np>(n))));
+    }
+
+    // [range.take.overview]: the "otherwise" case.
+    template<class Range, convertible_to<range_difference_t<Range>> Np, class RawRange = remove_cvref_t<Range>>
+        requires(!(is_empty_view<RawRange> ||
+                   (is_iota_specialization<RawRange> && sized_range<RawRange> && random_access_range<RawRange>) ||
+                   (is_passthrough_specialization<RawRange> && sized_range<RawRange> &&
+                    random_access_range<RawRange>)))
+    [[nodiscard]] constexpr auto operator()(Range&& range, Np&& n) const
+        noexcept(noexcept(take_view(std::forward<Range>(range), std::forward<Np>(n))))
+        -> decltype(take_view(std::forward<Range>(range), std::forward<Np>(n)))
+    { return take_view(std::forward<Range>(range), std::forward<Np>(n)); }
+
+    template<class Np>
+        requires constructible_from<decay_t<Np>, Np>
+    [[nodiscard]] constexpr auto operator()(Np&& n) const
+        noexcept(is_nothrow_constructible_v<decay_t<Np>, Np>)
+    { return pipeable(ranges::bind_back(*this, std::forward<Np>(n))); }
 };
 } // namespace take_detail
 inline namespace cpo {
@@ -2306,11 +2460,13 @@ public:
              indirect_unary_predicate<const Pred, iterator_t<const View>>
     { return ranges::begin(base_); }
 
-    constexpr auto end() requires(!simple_view<View>) { return sentinel<false>{*this}; }
+    constexpr auto end() requires(!simple_view<View>) {
+        return sentinel<false>(ranges::end(base_), addressof(*pred_));
+    }
     constexpr auto end() const
         requires range<const View> &&
                  indirect_unary_predicate<const Pred, iterator_t<const View>>
-    { return sentinel<true>{*this}; }
+    { return sentinel<true>(ranges::end(base_), addressof(*pred_)); }
 };
 
 template<view View, class Pred>
@@ -2326,19 +2482,22 @@ class take_while_view<View, Pred>::sentinel {
     friend class take_while_view<View, Pred>::sentinel;
 public:
     sentinel() = default;
-    constexpr explicit sentinel(take_while_view& parent)
-        requires(!Const)
-        : end_(ranges::end(parent.base_)), pred_(addressof(*parent.pred_)) {}
-    constexpr explicit sentinel(const take_while_view& parent)
-        requires Const
-        : end_(ranges::end(parent.base_)), pred_(addressof(*parent.pred_)) {}
+    constexpr explicit sentinel(sentinel_t<Base> end, const Pred* pred)
+        : end_(std::move(end)), pred_(pred) {}
     constexpr sentinel(sentinel<!Const> s)
         requires Const && convertible_to<sentinel_t<View>, sentinel_t<Base>>
-        : end_(s.end_), pred_(s.pred_) {}
+        : end_(move(s.end_)), pred_(s.pred_) {}
     [[nodiscard]] constexpr sentinel_t<Base> base() const { return end_; }
 
     friend constexpr bool operator==(const iterator_t<Base>& x, const sentinel& y) {
-        return y.end_ == x || !invoke(*y.pred_, *x);
+        return x == y.end_ || !invoke(*y.pred_, *x);
+    }
+
+    template<bool OtherConst = !Const>
+        requires sentinel_for<sentinel_t<Base>, iterator_t<conditional_t<OtherConst, const View, View>>>
+    friend constexpr bool
+    operator==(const iterator_t<conditional_t<OtherConst, const View, View>>& x, const sentinel& y) {
+        return x == y.end_ || !invoke(*y.pred_, *x);
     }
 };
 
@@ -2362,7 +2521,7 @@ struct take_while_fn {
         requires constructible_from<decay_t<Pred>, Pred>
     [[nodiscard]] constexpr auto operator()(Pred&& pred) const
         noexcept(is_nothrow_constructible_v<decay_t<Pred>, Pred>)
-    { return ranges::bind_back(*this, std::forward<Pred>(pred)); }
+    { return pipeable(ranges::bind_back(*this, std::forward<Pred>(pred))); }
 };
 } // namespace take_while_detail
 inline namespace cpo {
@@ -2447,17 +2606,119 @@ inline constexpr bool enable_view<drop_view<T>> = true;
 
 namespace ranges::views {
 namespace drop_detail {
+
+template<class T>
+inline constexpr bool is_empty_view = false;
+template<class T>
+inline constexpr bool is_empty_view<empty_view<T>> = true;
+
+template<class T>
+inline constexpr bool is_passthrough_specialization = false;
+template<class T, size_t Extent>
+inline constexpr bool is_passthrough_specialization<span<T, Extent>> = true;
+template<class CharT, class Traits>
+inline constexpr bool is_passthrough_specialization<basic_string_view<CharT, Traits>> = true;
+template<class Np, class Bound>
+inline constexpr bool is_passthrough_specialization<iota_view<Np, Bound>> = true;
+template<class Iter, class Sent, subrange_kind Kind>
+inline constexpr bool is_passthrough_specialization<subrange<Iter, Sent, Kind>> =
+    !subrange<Iter, Sent, Kind>::store_size;
+
+template<class T>
+inline constexpr bool is_subrange_specialization_with_store_size = false;
+template<class Iter, class Sent, subrange_kind Kind>
+inline constexpr bool is_subrange_specialization_with_store_size<subrange<Iter, Sent, Kind>> =
+    subrange<Iter, Sent, Kind>::store_size;
+
+template<class T>
+struct passthrough_type;
+template<class T, size_t Extent>
+struct passthrough_type<span<T, Extent>> {
+    using type = span<T, dynamic_extent>;
+};
+template<class CharT, class Traits>
+struct passthrough_type<basic_string_view<CharT, Traits>> {
+    using type = basic_string_view<CharT, Traits>;
+};
+template<class Np, class Bound>
+struct passthrough_type<iota_view<Np, Bound>> {
+    using type = iota_view<Np, Bound>;
+};
+template<class Iter, class Sent, subrange_kind Kind>
+struct passthrough_type<subrange<Iter, Sent, Kind>> {
+    using type = subrange<Iter, Sent, Kind>;
+};
+template<class T>
+using passthrough_type_t = typename passthrough_type<T>::type;
+
 struct drop_fn {
-    template<class Range>
-    [[nodiscard]] constexpr auto operator()(Range&& range, range_difference_t<Range> n) const
-        noexcept(noexcept(ranges::drop_view(std::forward<Range>(range), n)))
-        -> decltype(ranges::drop_view(std::forward<Range>(range), n))
-    { return ranges::drop_view(std::forward<Range>(range), n); }
-    template<class D>
-        requires constructible_from<decay_t<D>, D>
-    [[nodiscard]] constexpr auto operator()(D&& n) const
-        noexcept(is_nothrow_constructible_v<decay_t<D>, D>)
-    { return ranges::bind_back(*this, std::forward<D>(n)); }
+    // [range.drop.overview]: the `empty_view` case.
+    template<class Range, convertible_to<range_difference_t<Range>> Np>
+        requires is_empty_view<remove_cvref_t<Range>>
+    [[nodiscard]] constexpr auto operator()(Range&& range, Np&&) const
+        noexcept(noexcept(static_cast<decay_t<decltype((range))>>(std::forward<Range>(range))))
+        -> decltype(static_cast<decay_t<decltype((range))>>(std::forward<Range>(range)))
+    { return static_cast<decay_t<decltype((range))>>(std::forward<Range>(range)); }
+
+    // [range.drop.overview]: the `span | basic_string_view | iota_view | subrange (store_size == false)` case.
+    template<class Range,
+             convertible_to<range_difference_t<Range>> Np,
+             class RawRange = remove_cvref_t<Range>,
+             class Dist     = range_difference_t<Range>>
+        requires(!is_empty_view<RawRange> && random_access_range<RawRange> && sized_range<RawRange> &&
+                 is_passthrough_specialization<RawRange>)
+    [[nodiscard]] constexpr auto operator()(Range&& rng, Np&& n) const
+        noexcept(noexcept(passthrough_type_t<RawRange>(
+            ranges::begin(rng) + std::min<Dist>(ranges::distance(rng), std::forward<Np>(n)), ranges::end(rng))))
+        -> decltype(passthrough_type_t<RawRange>(
+            ranges::begin(rng) + std::min<Dist>(ranges::distance(rng), std::forward<Np>(n)), ranges::end(rng)))
+    {
+        return passthrough_type_t<RawRange>(
+            ranges::begin(rng) + std::min<Dist>(ranges::distance(rng), std::forward<Np>(n)), ranges::end(rng));
+    }
+
+    // [range.drop.overview]: the `subrange (store_size == true)` case.
+    template<class Range,
+             convertible_to<range_difference_t<Range>> Np,
+             class RawRange = remove_cvref_t<Range>,
+             class Dist     = range_difference_t<Range>>
+        requires(!is_empty_view<RawRange> && random_access_range<RawRange> && sized_range<RawRange> &&
+                 is_subrange_specialization_with_store_size<RawRange>)
+    [[nodiscard]] constexpr auto operator()(Range&& rng, Np&& n) const
+        noexcept(noexcept(RawRange(
+            ranges::begin(rng) + std::min<Dist>(ranges::distance(rng), std::forward<Np>(n)),
+            ranges::end(rng),
+            std::detail::to_unsigned_like(ranges::distance(rng) -
+                                          std::min<Dist>(ranges::distance(rng), std::forward<Np>(n))))))
+        -> decltype(RawRange(
+            ranges::begin(rng) + std::min<Dist>(ranges::distance(rng), std::forward<Np>(n)),
+            ranges::end(rng),
+            std::detail::to_unsigned_like(ranges::distance(rng) -
+                                          std::min<Dist>(ranges::distance(rng), std::forward<Np>(n)))))
+    {
+        auto dist    = ranges::distance(rng);
+        auto clamped = std::min<Dist>(dist, std::forward<Np>(n));
+        return RawRange(ranges::begin(rng) + clamped, ranges::end(rng),
+                        std::detail::to_unsigned_like(dist - clamped));
+    }
+
+    // [range.drop.overview]: the "otherwise" case.
+    template<class Range, convertible_to<range_difference_t<Range>> Np, class RawRange = remove_cvref_t<Range>>
+        requires(!(is_empty_view<RawRange> ||
+                   (is_subrange_specialization_with_store_size<RawRange> && sized_range<RawRange> &&
+                    random_access_range<RawRange>) ||
+                   (is_passthrough_specialization<RawRange> && sized_range<RawRange> &&
+                    random_access_range<RawRange>)))
+    [[nodiscard]] constexpr auto operator()(Range&& range, Np&& n) const
+        noexcept(noexcept(drop_view(std::forward<Range>(range), std::forward<Np>(n))))
+        -> decltype(drop_view(std::forward<Range>(range), std::forward<Np>(n)))
+    { return drop_view(std::forward<Range>(range), std::forward<Np>(n)); }
+
+    template<class Np>
+        requires constructible_from<decay_t<Np>, Np>
+    [[nodiscard]] constexpr auto operator()(Np&& n) const
+        noexcept(is_nothrow_constructible_v<decay_t<Np>, Np>)
+    { return pipeable(ranges::bind_back(*this, std::forward<Np>(n))); }
 };
 } // namespace drop_detail
 inline namespace cpo {
@@ -2533,7 +2794,7 @@ struct drop_while_fn {
         requires constructible_from<decay_t<Pred>, Pred>
     [[nodiscard]] constexpr auto operator()(Pred&& pred) const
         noexcept(is_nothrow_constructible_v<decay_t<Pred>, Pred>)
-    { return ranges::bind_back(*this, std::forward<Pred>(pred)); }
+    { return pipeable(ranges::bind_back(*this, std::forward<Pred>(pred))); }
 };
 } // namespace drop_while_detail
 inline namespace cpo {
@@ -2606,12 +2867,67 @@ inline constexpr bool enable_view<reverse_view<T>> = true;
 
 namespace ranges::views {
 namespace reverse_detail {
+
+template<class T>
+inline constexpr bool is_reverse_view = false;
+template<class T>
+inline constexpr bool is_reverse_view<reverse_view<T>> = true;
+
+template<class T>
+inline constexpr bool is_sized_reverse_subrange = false;
+template<class Iter>
+inline constexpr bool
+    is_sized_reverse_subrange<subrange<reverse_iterator<Iter>, reverse_iterator<Iter>, subrange_kind::sized>> = true;
+
+template<class T>
+inline constexpr bool is_unsized_reverse_subrange = false;
+template<class Iter, subrange_kind Kind>
+inline constexpr bool
+    is_unsized_reverse_subrange<subrange<reverse_iterator<Iter>, reverse_iterator<Iter>, Kind>> =
+        Kind == subrange_kind::unsized;
+
+template<class T>
+struct unwrapped_reverse_subrange {
+    // avoid SFINAE-ing out the overload below -- let the concept requirements do it
+    using type = void;
+};
+template<class Iter, subrange_kind Kind>
+struct unwrapped_reverse_subrange<subrange<reverse_iterator<Iter>, reverse_iterator<Iter>, Kind>> {
+    using type = subrange<Iter, Iter, Kind>;
+};
+
 struct reverse_fn : range_adaptor_closure_base<reverse_fn> {
     template<class Range>
+        requires is_reverse_view<remove_cvref_t<Range>>
     [[nodiscard]] constexpr auto operator()(Range&& range) const
-        noexcept(noexcept(ranges::reverse_view(std::forward<Range>(range))))
-        -> decltype(ranges::reverse_view(std::forward<Range>(range)))
-    { return ranges::reverse_view(std::forward<Range>(range)); }
+        noexcept(noexcept(std::forward<Range>(range).base()))
+        -> decltype(std::forward<Range>(range).base())
+    { return std::forward<Range>(range).base(); }
+
+    template<class Range,
+             class UnwrappedSubrange = typename unwrapped_reverse_subrange<remove_cvref_t<Range>>::type>
+        requires is_sized_reverse_subrange<remove_cvref_t<Range>>
+    [[nodiscard]] constexpr auto operator()(Range&& range) const
+        noexcept(noexcept(UnwrappedSubrange(range.end().base(), range.begin().base(), range.size())))
+        -> decltype(UnwrappedSubrange(range.end().base(), range.begin().base(), range.size()))
+    { return UnwrappedSubrange(range.end().base(), range.begin().base(), range.size()); }
+
+    template<class Range,
+             class UnwrappedSubrange = typename unwrapped_reverse_subrange<remove_cvref_t<Range>>::type>
+        requires is_unsized_reverse_subrange<remove_cvref_t<Range>>
+    [[nodiscard]] constexpr auto operator()(Range&& range) const
+        noexcept(noexcept(UnwrappedSubrange(range.end().base(), range.begin().base())))
+        -> decltype(UnwrappedSubrange(range.end().base(), range.begin().base()))
+    { return UnwrappedSubrange(range.end().base(), range.begin().base()); }
+
+    template<class Range>
+        requires(!is_reverse_view<remove_cvref_t<Range>> &&
+                 !is_sized_reverse_subrange<remove_cvref_t<Range>> &&
+                 !is_unsized_reverse_subrange<remove_cvref_t<Range>>)
+    [[nodiscard]] constexpr auto operator()(Range&& range) const
+        noexcept(noexcept(reverse_view{std::forward<Range>(range)}))
+        -> decltype(reverse_view{std::forward<Range>(range)})
+    { return reverse_view{std::forward<Range>(range)}; }
 };
 } // namespace reverse_detail
 inline namespace cpo {
@@ -2845,8 +3161,13 @@ public:
 
     constexpr decltype(auto) operator*() const { return **inner_; }
 
+    // libc++ join_view __iterator::operator-> is constrained on __has_arrow<Inner>:
+    //   input_iterator<I> && (is_pointer_v<I> || requires(I i){ i.operator->(); })
+    // (the pointer case is essential: a raw-pointer Inner has no member operator->).
     constexpr Inner operator->() const
-        requires requires(Inner i) { i.operator->(); } && copyable<Inner>
+        requires (input_iterator<Inner> &&
+                  (is_pointer_v<Inner> || requires(Inner i) { i.operator->(); })) &&
+                 copyable<Inner>
     { return *inner_; }
 
     constexpr iterator& operator++() {
@@ -3055,6 +3376,10 @@ private:
                 return *parent_->current_;
         }
 
+        // Workaround for the GCC issue that doesn't allow calling `parent_->base_`
+        // from friend functions (because `base_` is private).
+        constexpr auto& parent_base() const noexcept { return parent_->base_; }
+
     public:
         using iterator_concept = conditional_t<forward_range<Base>, forward_iterator_tag, input_iterator_tag>;
         using difference_type  = range_difference_t<Base>;
@@ -3137,7 +3462,7 @@ private:
         }
 
         friend constexpr bool operator==(const outer_iterator& x, default_sentinel_t) {
-            return x.get_current() == ranges::end(x.parent_->base_) && !x.trailing_empty_;
+            return x.get_current() == ranges::end(x.parent_base()) && !x.trailing_empty_;
         }
     };
 
@@ -3265,7 +3590,7 @@ struct lazy_split_fn {
         requires constructible_from<decay_t<Pattern>, Pattern>
     [[nodiscard]] constexpr auto operator()(Pattern&& pattern) const
         noexcept(is_nothrow_constructible_v<decay_t<Pattern>, Pattern>)
-    { return ranges::bind_back(*this, std::forward<Pattern>(pattern)); }
+    { return pipeable(ranges::bind_back(*this, std::forward<Pattern>(pattern))); }
 };
 } // namespace lazy_split_detail
 inline namespace cpo {
@@ -3460,7 +3785,7 @@ struct split_fn {
         requires constructible_from<decay_t<Pattern>, Pattern>
     [[nodiscard]] constexpr auto operator()(Pattern&& pattern) const
         noexcept(is_nothrow_constructible_v<decay_t<Pattern>, Pattern>)
-    { return ranges::bind_back(*this, std::forward<Pattern>(pattern)); }
+    { return pipeable(ranges::bind_back(*this, std::forward<Pattern>(pattern))); }
 };
 } // namespace split_detail
 inline namespace cpo {

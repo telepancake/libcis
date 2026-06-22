@@ -1036,6 +1036,16 @@ struct make_unsigned {
 };
 template<class T> using make_unsigned_t = typename make_unsigned<T>::type;
 
+// __to_unsigned_like (libc++ __type_traits/make_unsigned.h): converts an
+// integer-like value to its unsigned counterpart, deducing T from the
+// (promoted) argument expression. Shared by <charconv>, <format>, <ranges>.
+namespace detail {
+template<class T>
+constexpr make_unsigned_t<T> to_unsigned_like(T x) noexcept {
+    return static_cast<make_unsigned_t<T>>(x);
+}
+} // namespace detail
+
 //===----------------------------------------------------------------------===//
 // decay (decay.h)
 // __decay NOT in gcc-10.2.

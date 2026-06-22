@@ -80,10 +80,7 @@ constexpr T complement(T x) noexcept {
     return T(~x + 1);
 }
 
-template<class T>
-constexpr make_unsigned_t<T> to_unsigned_like(T x) noexcept {
-    return static_cast<make_unsigned_t<T>>(x);
-}
+// to_unsigned_like now lives in <type_traits> (std::detail::to_unsigned_like).
 
 //===----------------------------------------------------------------------===//
 // Digit lookup tables (tables.h — namespace __itoa)
