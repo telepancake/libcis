@@ -28,6 +28,7 @@ is a compiler limitation, not a libcis bug).
 
 Usage:  tools/transfer.py [SUBTREE ...]      (default: numerics)
 """
+import hashlib
 import json
 import os
 import re
@@ -110,15 +111,12 @@ _RESOURCE_DIR = cfg.clang_resource_dir()
 if _RESOURCE_DIR:
     PARSE_ARGS += ["-resource-dir", _RESOURCE_DIR]
 
-# Point clang at the libc++ headers explicitly.  -stdlib=libc++ alone only finds
-# them when libc++ is installed at a path the clang/libclang in use knows about;
-# the bootstrapped toolchain ships them as a bare directory (the llvm-project
-# checkout), so name it with -isystem.  This goes AFTER -resource-dir: the libc++
-# search dir then precedes the builtins, so libc++'s <cstddef> #include_next finds
-# the clang <stddef.h> rather than shadowing it.
-_LIBCXX_INC = cfg.libcxx_include_dir()
-if _LIBCXX_INC:
-    PARSE_ARGS += ["-isystem", _LIBCXX_INC]
+# NB: do NOT add `-isystem <libc++ include>` here.  The bootstrapped toolchain
+# installs libc++ at the libclang prefix (toolchain/llvm/include/c++/v1), so
+# -stdlib=libc++ already finds it on its own; naming the same dir with -isystem
+# double-paths it and breaks libc++'s #include_next chain into the C library,
+# which surfaces as bogus "using declaration conflicts" in <cwchar> et al.
+# (libcxx_include_dir() is still used to ENUMERATE headers for the PCH below.)
 
 # A PCH of every top-level libc++ header, built once: each of the ~10k test
 # parses (plus its verify re-parse) then skips the std headers entirely
@@ -252,9 +250,15 @@ def is_test_file(name: str) -> bool:
 
 
 def slug_for(rel: str) -> str:
+    # The slug names the per-file namespace `libcis_ns_<slug>`, so it MUST be
+    # injective.  Sanitizing alone is not: `X.compile.pass.cpp` and `X.pass.cpp`
+    # both reduce to `X`, and sibling dirs differing only in punctuation (e.g.
+    # `string_oplt/` vs `string_oplt=/`) collapse together -- two files would
+    # share a namespace and redefine each other in a consolidated group TU.
+    # Append a short hash of the full path (the same fix gkey() uses for dirs).
     s = re.sub(r"\.(compile\.)?pass\.cpp$", "", rel)
     s = re.sub(r"[^A-Za-z0-9]+", "_", s).strip("_")
-    return s
+    return s + "_" + hashlib.sha1(rel.encode()).hexdigest()[:8]
 
 
 # ---------------------------------------------------------------------------

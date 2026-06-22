@@ -79,7 +79,10 @@ build_llvm() {
         -DLLVM_INCLUDE_BENCHMARKS=OFF -DCLANG_INCLUDE_TESTS=OFF \
         -DCMAKE_INSTALL_PREFIX="$TC/llvm"
     ninja -C "$TC/llvm-build" libclang
-    ninja -C "$TC/llvm-build" install-libclang install-clang-resource-headers
+    # install-LLVM too: this is a shared-libLLVM build, so libclang.so needs
+    # libLLVM.so beside it (install-libclang alone does not bring it).
+    ninja -C "$TC/llvm-build" \
+        install-libclang install-LLVM install-clang-resource-headers
 
     # 2. libc++ HEADERS only, configured by cmake for the host's libc.  Disabling
     #    the libc++ library means no compilation (and no clang dependency) -- just
