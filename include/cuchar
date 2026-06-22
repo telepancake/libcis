@@ -1,0 +1,29 @@
+// -*- C++ -*-
+// cuchar: ported from libc++ <cuchar>.  Pulls the C <uchar.h> Unicode conversion
+// functions into namespace std.  (libc++'s _LIBCPP_USING_IF_EXISTS is a clang
+// attribute gcc-10 lacks, so the C++20 char8_t overloads are guarded instead.)
+#ifndef _LIBCPP_CUCHAR
+#define _LIBCPP_CUCHAR
+
+#include <version>
+#include <cstddef>   // size_t
+#include <uchar.h>
+
+namespace std {
+
+using ::mbstate_t;
+using ::size_t;
+
+using ::mbrtoc16;
+using ::c16rtomb;
+using ::mbrtoc32;
+using ::c32rtomb;
+
+#ifdef __cpp_char8_t
+using ::mbrtoc8;
+using ::c8rtomb;
+#endif
+
+} // namespace std
+
+#endif // _LIBCPP_CUCHAR

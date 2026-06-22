@@ -1,0 +1,22 @@
+// -*- C++ -*-
+// cstdalign: removed in C++20.  Ported from libc++ <cstdalign>: defines the two
+// feature macros and (since C++20) a deprecated tag so #include <cstdalign>
+// warns.  <stdalign.h> is the compiler's; include it when present.
+#ifndef _LIBCPP_CSTDALIGN
+#define _LIBCPP_CSTDALIGN
+
+#include <version>
+
+#if __has_include(<stdalign.h>)
+#  include <stdalign.h>
+#endif
+
+#undef __alignas_is_defined
+#define __alignas_is_defined 1
+#undef __alignof_is_defined
+#define __alignof_is_defined 1
+
+using __standard_header_cstdalign [[deprecated("removed in C++20.")]] = void;
+using __use_standard_header_cstdalign                                 = __standard_header_cstdalign;
+
+#endif // _LIBCPP_CSTDALIGN
