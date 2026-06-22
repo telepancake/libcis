@@ -1,0 +1,23 @@
+// -*- C++ -*-
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef CISO646
+#define CISO646
+
+/*
+    ciso646 synopsis
+
+*/
+
+#include <version>
+
+using standard_header_ciso646 [[deprecated("removed in C++20. Include <version> instead.")]] = void;
+using use_standard_header_ciso646 = standard_header_ciso646;
+
+#endif // CISO646
