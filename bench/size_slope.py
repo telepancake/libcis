@@ -215,6 +215,36 @@ def module_memory(log):
     return rows
 
 
+# ---------------------------------------------------------------- speed
+def module_speed(log):
+    src = os.path.join(ROOT, "bench", "speedprobe.cpp")
+    res = {}
+    for lib, cflags, lflags in (("libcis", LIBCIS_C, LIBCIS_L), ("ref", REF_C, REF_L)):
+        out = "/tmp/speed_%s" % lib
+        r = sh([CXX] + BASE_CXXFLAGS + cflags + [src] + lflags + ["-o", out])
+        if r.returncode != 0:
+            log.append("  speed %s: BUILD FAILED\n%s" % (lib, r.stdout[-1200:]))
+            return None
+        best = {}
+        for _ in range(3):                       # best-of-3 process runs (least noisy)
+            run = sh([out])
+            for line in run.stdout.splitlines():
+                p = line.split()
+                if len(p) == 3 and p[0] == "SPEED":
+                    v = float(p[2])
+                    if p[1] not in best or v < best[p[1]]:
+                        best[p[1]] = v
+        res[lib] = best
+    rows = []
+    with open(os.path.join(RESULTS, "speed.csv"), "w", newline="") as f:
+        w = csv.writer(f); w.writerow(["op", "ns_libcis", "ns_ref", "pct_slower"])
+        for op in res.get("libcis", {}):
+            lc, rf = res["libcis"][op], res["ref"].get(op)
+            if rf:
+                w.writerow([op, "%.4f" % lc, "%.4f" % rf, "%.1f" % (100 * (lc - rf) / rf)])
+    return res
+
+
 # ---------------------------------------------------------------- driver
 def main():
     fresh_results()
@@ -230,6 +260,7 @@ def main():
     cs = module_callsites(present, log)
     pt = module_pertype(log)
     mem = module_memory(log)
+    spd = module_speed(log)
 
     with open(os.path.join(RESULTS, "targets.txt"), "w") as f:
         f.write("architectures this run:\n")
@@ -254,22 +285,37 @@ def main():
     out.append("libcis size/memory/codegen — overhead vs non-type-erased reference (libstdc++)")
     out.append("=" * 78)
 
-    out.append("\nPER-CALL CODE OVERHEAD  (bytes of code at one call site; libcis - reference)")
-    archs = sorted({r[0] for r in cs})
-    if archs:
-        out.append("  %-16s %s" % ("op", "  ".join("%9s" % a for a in archs)))
+    out.append("\nPER-METHOD: code size AND speed at -Os, vs the non-type-erased reference.")
+    out.append("Read this method by method. There is NO aggregate pass/fail — a change that")
+    out.append("helps some methods and hurts others is half-right: keep the wins, fix the")
+    out.append("regressions, individually. WIN = better on an axis, worse on none. LOSS = the")
+    out.append("reverse. TRADE = better on one, worse on the other → a human decides if the")
+    out.append("win there is worth the loss here. (dsize<0 and dspeed<0 are improvements.)")
+    sx = {op: (r[2], r[3], r[4]) for r in cs if r[0] == "x86_64" for op in [r[1]]}
+    sp_c = (spd or {}).get("libcis", {}); sp_r = (spd or {}).get("ref", {})
+    if sx:
+        out.append("  %-16s %7s %-11s %8s %-13s  %s" %
+                   ("method", "dsize", "size c/r", "dspeed", "ns/op c/r", "verdict"))
         for op in CALLSITE_OPS:
-            cells = []
-            for a in archs:
-                v = next((r[4] for r in cs if r[0] == a and r[1] == op), None)
-                cells.append("%+9d" % v if v is not None else "%9s" % "-")
-            out.append("  %-16s %s" % (op, "  ".join(cells)))
+            if op not in sx and op not in sp_c:
+                continue
+            ds = sx.get(op)
+            dpc, dpr = sp_c.get(op), sp_r.get(op)
+            dsize = ds[2] if ds else None
+            dspd = (100 * (dpc - dpr) / dpr) if (dpc and dpr) else None
+            scol = ("%+7d %5d/%-5d" % (dsize, ds[0], ds[1])) if ds else "%7s %-11s" % ("-", "")
+            pcol = ("%+7.1f%% %5.2f/%-6.2f" % (dspd, dpc, dpr)) if dspd is not None else "%8s %-13s" % ("-", "")
+            # verdict from deadbanded axes
+            better = (dsize is not None and dsize < -2) or (dspd is not None and dspd < -4)
+            worse = (dsize is not None and dsize > 2) or (dspd is not None and dspd > 4)
+            verdict = "TRADE" if better and worse else "WIN" if better else "LOSS" if worse else "~"
+            out.append("  %-16s %s %s  %s" % (op, scol, pcol, verdict))
     else:
-        out.append("  (no architecture produced call sites — see build_log.txt)")
+        out.append("  (no method data — see build_log.txt)")
 
     if pt:
-        out.append("\nper-type code overhead (demoted): %+.0f B per added instantiation  "
-                   "(libcis %.0f vs ref %.0f)" %
+        out.append("\nper-type code, demoted, NOT a gate (a sanity readout, decide per method above):")
+        out.append("  %+.0f B per added instantiation  (libcis %.0f vs ref %.0f)" %
                    (pt["per_type_overhead"], pt["per_type_libcis"], pt["per_type_ref"]))
 
     if mem:
@@ -287,6 +333,7 @@ def main():
     out.append("\nFULL RESULTS in .test_results/latest/ — OPEN THESE, the numbers above are a digest:")
     out.append("  callsites/<arch>/<libcis|ref>/<op>.asm   annotated disassembly of every call site")
     out.append("  per_call_overhead.csv   per-arch per-op code size, libcis vs reference")
+    out.append("  speed.csv               per-method ns/op at -Os, libcis vs reference")
     out.append("  memory.csv              internal / heap / stack per workload")
     out.append("  per_type.csv, static.txt, targets.txt, env.txt" +
                (", build_log.txt (FAILURES)" if log else ""))
