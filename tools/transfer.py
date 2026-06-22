@@ -37,22 +37,18 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config as cfg  # noqa: E402
 
-# Make the local libclang/libLLVM loadable (prepends their dir to LD_LIBRARY_PATH
-# and re-execs once) before anything dlopens them.
-cfg.ensure_libclang_runtime()
-
-# Prefer the clang python bindings (cindex.py) from the local llvm-project
-# checkout -- they match the .deb libclang exactly; fall back to a system-wide
-# `pip install libclang`.
-if os.path.isdir(cfg.CINDEX_DIR):
-    sys.path.insert(0, cfg.CINDEX_DIR)
+# Prefer the bootstrapped libclang wheel (toolchain/pylibs holds the cindex.py
+# bindings and the self-contained libclang.so); a system `pip install libclang`
+# still works as a fallback.
+if os.path.isdir(cfg.PYLIBS_DIR):
+    sys.path.insert(0, cfg.PYLIBS_DIR)
 
 try:
     import clang.cindex as ci
 except ModuleNotFoundError:
     raise SystemExit(
         "python libclang bindings not found (`import clang.cindex` failed).\n"
-        "  Run `make bootstrap` (fetches them into toolchain/llvm-project), or\n"
+        "  Run `make bootstrap` (installs them into toolchain/pylibs), or\n"
         "  `pip install libclang` system-wide.\n"
         "  (only tools/transfer.py needs them; the test gate does not.)")
 

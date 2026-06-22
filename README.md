@@ -41,26 +41,27 @@ tests can validate libcis. The repo therefore has two halves: the **library**
 
 ## 1. Requirements
 
-The pipeline needs a **version-matched** toolchain — g++-10 for the library,
-clang-20 + a clang-20-era libc++ test corpus for the transfer (an older clang
-cannot parse a newer corpus; a newer corpus's `test_macros.h` assumes headers an
-older clang lacks). Rather than make you install and version-match all of it,
-**`make bootstrap` downloads it into `./toolchain`**:
+The pipeline needs a **version-matched** toolchain — g++-10 for the library, and
+libclang + a same-version libc++ test corpus for the transfer (an older libclang
+cannot parse a newer corpus). Rather than make you install and version-match it,
+**`make bootstrap` provisions it into `./toolchain`** — without touching the
+host's package manager or any prebuilt distro/arch-specific binary:
 
 ```sh
 make bootstrap        # or: tools/bootstrap.sh
 ```
 
-| Fetched into `./toolchain` | What it is | Source |
-|------|------------|--------|
-| `g++-10` (+ libc++-20 headers, clang-20 `libclang`/`libLLVM`, clang resource headers) | the library compiler and everything the transfer parse needs | extracted Ubuntu `.deb`s |
-| `llvm-project/libcxx/test` + `clang/bindings/python` | the test corpus and the matching `cindex.py` | one sparse git checkout at a 20.1.x tag |
+| Provisioned into `./toolchain` | What it is | How |
+|------|------------|-----|
+| `gcc/` — `g++-10` | the library compiler | **built from the GNU source release** (no portable prebuilt gcc exists; `configure` detects the host arch) |
+| `pylibs/` — `libclang` | the transfer's parser | the **PyPI `libclang` wheel** via `uv`/`pip` (wheels are per-arch and self-contained, so pip resolves your CPU) |
+| `llvm-project/` — corpus, libc++ headers, clang builtin headers, `cindex.py` | the transfer's inputs | one sparse **git checkout** (arch-independent source); libc++'s two generated headers are produced from their `.in` templates |
 
-This is **not** "bazel hermetic": the fetched compilers still run against the
-host's glibc + binutils. What it pins are the version-sensitive parts. The host
-only needs `bash`, `git`, `dpkg-deb`, and `apt-get` (a Debian/Ubuntu host) — no
-pip/uv/conda. On a non-Debian host, install g++-10 + clang-20 + libc++-20-dev
-yourself and point `$CXX` / `$LIBCLANG` / `$LIBCXX` / `$LIBCXX_INCLUDE` at them.
+This is **not** "bazel hermetic": the built compiler still runs against the
+host's glibc + binutils. But it makes **no architecture or distro assumption**
+and uses **no host package manager**. The host needs `bash`, `git`, `curl`,
+`tar`, `make`, a C/C++ compiler (to build gcc), and `uv` or `pip` — that's it.
+Building gcc takes a while on the first `make bootstrap`; it is cached after.
 
 The optional reference/discriminator backends are not bootstrapped:
 

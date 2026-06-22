@@ -116,9 +116,8 @@ def main():
 
     # --- libclang + bindings: only needed to RE-RUN the transfer ----------
     # Look in the local toolchain first, exactly as transfer.py does.
-    cfg.ensure_libclang_runtime()
-    if os.path.isdir(cfg.CINDEX_DIR) and cfg.CINDEX_DIR not in sys.path:
-        sys.path.insert(0, cfg.CINDEX_DIR)
+    if os.path.isdir(cfg.PYLIBS_DIR) and cfg.PYLIBS_DIR not in sys.path:
+        sys.path.insert(0, cfg.PYLIBS_DIR)
     try:
         import clang.cindex  # noqa: F401
         bindings = True

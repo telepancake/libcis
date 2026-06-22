@@ -21,7 +21,7 @@
 # The bootstrapped toolchain (tools/bootstrap.sh); tools/config.py prefers it.
 TOOLCHAIN    := $(CURDIR)/toolchain
 BOOTSTRAP_OK := $(TOOLCHAIN)/.bootstrap-ok
-LOCAL_GXX    := $(TOOLCHAIN)/root/usr/bin/g++-10
+LOCAL_GXX    := $(TOOLCHAIN)/gcc/bin/g++-10
 
 # Default the library compiler to the local g++-10 when it has been bootstrapped.
 # Guard on origin: GNU make pre-defines CXX=g++ (origin "default"), which a plain
