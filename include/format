@@ -1491,6 +1491,11 @@ struct format_arg_store {
   Storage storage;
 };
 
+// libc++ names this type std::__format_arg_store; the test suite (which sees
+// _LIBCPP_VERSION) refers to it by that vendor name, so expose it as an alias.
+template <class Context, class... Args>
+using __format_arg_store = format_arg_store<Context, Args...>;
+
 
 } // namespace std
 

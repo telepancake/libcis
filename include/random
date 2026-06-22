@@ -26,22 +26,9 @@
 #include <ostream>
 #include <fcntl.h>
 #include <unistd.h>
+#include <bits/uniform_random_bit_generator.h>
 
 namespace std {
-
-//===----------------------------------------------------------------------===//
-// [rand.req.urng] uniform_random_bit_generator
-// (libc++ __random/uniform_random_bit_generator.h)
-//===----------------------------------------------------------------------===//
-
-template<class Gen>
-concept uniform_random_bit_generator =
-    invocable<Gen&> && unsigned_integral<invoke_result_t<Gen&>> &&
-    requires {
-        { Gen::min() } -> same_as<invoke_result_t<Gen&>>;
-        { Gen::max() } -> same_as<invoke_result_t<Gen&>>;
-        requires bool_constant<(Gen::min() < Gen::max())>::value;
-    };
 
 //===----------------------------------------------------------------------===//
 // Internal helpers: __log2

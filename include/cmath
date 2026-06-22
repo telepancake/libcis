@@ -176,6 +176,15 @@ using ::copysignl;
 // correct C function rather than promoting to double (which corrupts NaN payloads).
 inline float copysign(float x, float y) noexcept { return ::copysignf(x, y); }
 inline long double copysign(long double x, long double y) noexcept { return ::copysignl(x, y); }
+// Arithmetic-promoting overload (from libc++ __math/copysign.h): without it a
+// mixed-type call like copysign(float, double) is ambiguous between the
+// float/float and the C ::copysign(double, double) candidates.
+template<class A1, class A2>
+    requires(std::is_arithmetic_v<A1> && std::is_arithmetic_v<A2>)
+inline promote_t<A1, A2> copysign(A1 x, A2 y) noexcept {
+    using result_type = promote_t<A1, A2>;
+    return __builtin_copysign(static_cast<result_type>(x), static_cast<result_type>(y));
+}
 using ::erf;
 using ::erff;
 using ::erfl;

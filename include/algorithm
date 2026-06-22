@@ -42,6 +42,7 @@
 #include <cstddef>
 #include <execution>
 #include <bits/min_max.h>
+#include <bits/uniform_random_bit_generator.h>
 
 namespace std {
 
@@ -610,11 +611,15 @@ namespace detail {
     search_random_access_impl(RandomIter1 first1, RandomIter1 last1,
                               RandomIter2 first2, RandomIter2 last2,
                               BinaryPred pred) {
-        auto size1 = last1 - first1;
+        using DiffT1 = decltype(last1 - first1);
+        DiffT1 size1 = last1 - first1;
         auto size2 = last2 - first2;
         if (size2 == 0) return first1;
         if (size1 < size2) return last1;
-        auto s = first1 + (size1 - size2 + 1);
+        // Cast the offset to iter1's difference type: a foreign (wider) iter2
+        // difference type must not leak into iter1's operator+ (libc++ search.h
+        // uses _DiffT1 for exactly this reason; see robust_re_difference_type).
+        auto s = first1 + DiffT1(size1 - size2 + 1);
         while (true) {
             while (true) {
                 if (first1 == s) return last1;
@@ -3483,6 +3488,10 @@ struct equal_fn {
     [[nodiscard]] constexpr bool
     operator()(I1 first1, S1 last1, I2 first2, S2 last2,
                Pred pred = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        if constexpr (sized_sentinel_for<S1, I1> && sized_sentinel_for<S2, I2>) {
+            if (last1 - first1 != last2 - first2)
+                return false;
+        }
         for (; first1 != last1 && first2 != last2; ++first1, (void)++first2)
             if (!std::invoke(pred,
                              std::invoke(proj1, *first1),
@@ -3501,6 +3510,10 @@ struct equal_fn {
     [[nodiscard]] constexpr bool
     operator()(R1&& r1, R2&& r2,
                Pred pred = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        if constexpr (sized_range<R1> && sized_range<R2>) {
+            if (ranges::distance(r1) != ranges::distance(r2))
+                return false;
+        }
         return (*this)(ranges::begin(r1), ranges::end(r1),
                        ranges::begin(r2), ranges::end(r2),
                        std::move(pred), std::move(proj1), std::move(proj2));
@@ -4049,13 +4062,14 @@ struct minmax_fn {
              indirect_strict_weak_order<projected<const T*, Proj>> Comp = less>
     [[nodiscard]] constexpr min_max_result<T>
     operator()(initializer_list<T> r, Comp comp = {}, Proj proj = {}) const {
-        auto it = r.begin();
-        T mn = *it, mx = *it;
-        for (++it; it != r.end(); ++it) {
-            if (std::invoke(comp, std::invoke(proj, *it), std::invoke(proj, mn))) mn = *it;
-            if (std::invoke(comp, std::invoke(proj, mx), std::invoke(proj, *it))) mx = *it;
-        }
-        return {std::move(mn), std::move(mx)};
+        // libc++ delegates to __minmax_element_impl for the optimal
+        // [3(N-1)/2] comparison count; reuse libcis std::minmax_element with a
+        // projecting comparator so the [alg.min.max] complexity is met.
+        auto pc = [&](const T& a, const T& b) -> bool {
+            return std::invoke(comp, std::invoke(proj, a), std::invoke(proj, b));
+        };
+        auto iters = std::minmax_element(r.begin(), r.end(), pc);
+        return {*iters.first, *iters.second};
     }
 
     template<input_range R,
@@ -4064,14 +4078,58 @@ struct minmax_fn {
         requires indirectly_copyable_storable<iterator_t<R>, range_value_t<R>*>
     [[nodiscard]] constexpr min_max_result<range_value_t<R>>
     operator()(R&& r, Comp comp = {}, Proj proj = {}) const {
+        using ValueT = range_value_t<R>;
         auto first = ranges::begin(r);
         auto last  = ranges::end(r);
-        range_value_t<R> mn = *first, mx = *first;
-        for (++first; first != last; ++first) {
-            if (std::invoke(comp, std::invoke(proj, *first), std::invoke(proj, mn))) mn = *first;
-            if (std::invoke(comp, std::invoke(proj, mx), std::invoke(proj, *first))) mx = *first;
+        auto less = [&](auto&& a, auto&& b) -> bool {
+            return std::invoke(comp,
+                               std::invoke(proj, std::forward<decltype(a)>(a)),
+                               std::invoke(proj, std::forward<decltype(b)>(b)));
+        };
+        if constexpr (forward_range<R>) {
+            // libc++ ranges_minmax.h forward_range path: optimal pairwise scan
+            // via minmax_element (3(N-1)/2 comparisons).
+            // Special-case the one-element range to avoid dereferencing the same
+            // iterator twice when that is not idempotent (e.g. move_iterator).
+            if constexpr (!same_as<remove_cvref_t<range_reference_t<R>>, ValueT> ||
+                          is_rvalue_reference_v<range_reference_t<R>>) {
+                if (ranges::next(first) == last) {
+                    min_max_result<ValueT> result = {*first, result.min};
+                    return result;
+                }
+            }
+            auto tail = ranges::next(first, last);
+            auto iters = std::minmax_element(first, tail, less);
+            return {*iters.first, *iters.second};
+        } else {
+            // input_iterators can't be copied, so store the values instead of
+            // pointers (libc++ ranges_minmax.h input-range path).
+            // During initialization, members may refer to already-initialized
+            // members ([dcl.init.aggr]); max is seeded from the just-set min.
+            min_max_result<ValueT> result = {*first, result.min};
+            if (first == last || ++first == last)
+                return result;
+            if (less(*first, result.min))
+                result.min = *first;
+            else
+                result.max = *first;
+            while (++first != last) {
+                ValueT i = *first;
+                if (++first == last) {
+                    if (less(i, result.min)) result.min = i;
+                    else if (!less(i, result.max)) result.max = i;
+                    return result;
+                }
+                if (less(*first, i)) {
+                    if (less(*first, result.min)) result.min = *first;
+                    if (!less(i, result.max)) result.max = std::move(i);
+                } else {
+                    if (less(i, result.min)) result.min = std::move(i);
+                    if (!less(*first, result.max)) result.max = *first;
+                }
+            }
+            return result;
         }
-        return {std::move(mn), std::move(mx)};
     }
 };
 
@@ -5230,6 +5288,13 @@ struct is_permutation_fn {
     [[nodiscard]] constexpr bool
     operator()(I1 first1, S1 last1, I2 first2, S2 last2,
                Pred pred = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        // libc++ _ConstTimeDistance fast path: when both distances are O(1)
+        // (sized sentinels), reject unequal-length ranges with zero predicate
+        // applications, as [alg.is_permutation] requires.
+        if constexpr (sized_sentinel_for<S1, I1> && sized_sentinel_for<S2, I2>) {
+            if (last1 - first1 != last2 - first2)
+                return false;
+        }
         // Skip the common prefix.
         while (first1 != last1 && first2 != last2) {
             if (!std::invoke(pred, std::invoke(proj1, *first1), std::invoke(proj2, *first2)))
@@ -5278,6 +5343,10 @@ struct is_permutation_fn {
                                            projected<iterator_t<R2>, Proj2>> Pred = equal_to>
     [[nodiscard]] constexpr bool
     operator()(R1&& r1, R2&& r2, Pred pred = {}, Proj1 proj1 = {}, Proj2 proj2 = {}) const {
+        if constexpr (sized_range<R1> && sized_range<R2>) {
+            if (ranges::distance(r1) != ranges::distance(r2))
+                return false;
+        }
         return (*this)(ranges::begin(r1), ranges::end(r1),
                        ranges::begin(r2), ranges::end(r2),
                        std::move(pred), std::move(proj1), std::move(proj2));
@@ -5830,28 +5899,83 @@ namespace std {
 
 template<class IntType> class uniform_int_distribution;
 
-// [alg.random.shuffle] std::shuffle — libc++ __algorithm/shuffle.h:
-// Fisher-Yates with uniform_int_distribution re-parameterized per step.
+namespace detail {
+    // libc++ __shuffle<AlgPolicy>(first, last_sentinel, g): Fisher-Yates with
+    // uniform_int_distribution re-parameterized per step. Resolves the sentinel
+    // to the past-the-end iterator and returns it (ranges::shuffle needs that;
+    // std::shuffle discards it).
+    template<class RandomAccessIterator, class Sentinel, class UniformRandomBitGenerator>
+    RandomAccessIterator shuffle_impl(RandomAccessIterator first, Sentinel last_sentinel,
+                                      UniformRandomBitGenerator&& g) {
+        typedef typename iterator_traits<RandomAccessIterator>::difference_type difference_type;
+        // The artificial dependency on the template parameter delays the
+        // completeness check on uniform_int_distribution to the instantiation
+        // point (where the caller's <random> include has defined it).
+        using D = uniform_int_distribution<
+            conditional_t<(sizeof(remove_reference_t<UniformRandomBitGenerator>) > 0), ptrdiff_t, ptrdiff_t>>;
+        typedef typename D::param_type P;
+        RandomAccessIterator original_last = ranges::next(first, last_sentinel);
+        RandomAccessIterator last = original_last;
+        difference_type d = last - first;
+        if (d > 1) {
+            D uid;
+            for (--last, (void)--d; first < last; ++first, (void)--d) {
+                difference_type i = uid(g, P(0, d));
+                if (i != difference_type(0))
+                    std::iter_swap(first, first + i);
+            }
+        }
+        return original_last;
+    }
+} // namespace detail
+
+// [alg.random.shuffle] std::shuffle — libc++ __algorithm/shuffle.h.
 template<class RandomAccessIterator, class UniformRandomBitGenerator>
 void shuffle(RandomAccessIterator first, RandomAccessIterator last,
              UniformRandomBitGenerator&& g) {
-    typedef typename iterator_traits<RandomAccessIterator>::difference_type difference_type;
-    // The artificial dependency on the template parameter delays the
-    // completeness check on uniform_int_distribution to the instantiation
-    // point (where the caller's <random> include has defined it).
-    using D = uniform_int_distribution<
-        conditional_t<(sizeof(remove_reference_t<UniformRandomBitGenerator>) > 0), ptrdiff_t, ptrdiff_t>>;
-    typedef typename D::param_type P;
-    difference_type d = last - first;
-    if (d > 1) {
-        D uid;
-        for (--last, (void)--d; first < last; ++first, (void)--d) {
-            difference_type i = uid(g, P(0, d));
-            if (i != difference_type(0))
-                std::iter_swap(first, first + i);
-        }
-    }
+    (void)detail::shuffle_impl(std::move(first), std::move(last),
+                               std::forward<UniformRandomBitGenerator>(g));
 }
+
+namespace ranges {
+
+// [alg.random.shuffle] ranges::shuffle — libc++ __algorithm/ranges_shuffle.h.
+// The range versions only require uniform_random_bit_generator; the classic
+// shuffle_impl wants a urng with a nested result_type, so wrap the generator in
+// the _ClassicGenAdaptor (libc++ uniform_random_bit_generator_adaptor.h) which
+// forwards the interface and supplies the missing typedef.
+namespace detail {
+    template<class Gen>
+    class classic_gen_adaptor {
+        // The generator need not be copyable/movable, so store a reference.
+        Gen& gen;
+    public:
+        using result_type = invoke_result_t<Gen&>;
+        static constexpr auto min() { return remove_cvref_t<Gen>::min(); }
+        static constexpr auto max() { return remove_cvref_t<Gen>::max(); }
+        constexpr explicit classic_gen_adaptor(Gen& g) : gen(g) {}
+        constexpr auto operator()() const { return gen(); }
+    };
+} // namespace detail
+
+struct shuffle_fn {
+    template<random_access_iterator I, sentinel_for<I> S, class Gen>
+        requires permutable<I> && uniform_random_bit_generator<remove_reference_t<Gen>>
+    I operator()(I first, S last, Gen&& gen) const {
+        detail::classic_gen_adaptor<Gen> adapted_gen(gen);
+        return std::detail::shuffle_impl(std::move(first), std::move(last), adapted_gen);
+    }
+
+    template<random_access_range R, class Gen>
+        requires permutable<iterator_t<R>> && uniform_random_bit_generator<remove_reference_t<Gen>>
+    borrowed_iterator_t<R> operator()(R&& r, Gen&& gen) const {
+        return (*this)(ranges::begin(r), ranges::end(r), std::forward<Gen>(gen));
+    }
+};
+
+inline constexpr shuffle_fn shuffle{};
+
+} // namespace ranges
 
 } // namespace std
 
