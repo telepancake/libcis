@@ -325,6 +325,21 @@ def main():
     else:
         out.append("  (no method data — see build_log.txt)")
 
+    # cross-arch code-size matrix: the same verdict can differ in magnitude per ISA.
+    archs = sorted({r[0] for r in cs})
+    if len(archs) > 1:
+        out.append("\nPER-ARCH per-call code-size overhead (libcis - that arch's libstdc++), bytes.")
+        out.append("Verdicts above are x86_64; direction is usually arch-stable but size is NOT —")
+        out.append("weight by your actual target ISA, not this one.")
+        out.append("  %-16s %s" % ("method", "".join("%9s" % a for a in archs)))
+        for op in CALLSITE_OPS:
+            cells = ""
+            for a in archs:
+                v = next((r[4] for r in cs if r[0] == a and r[1] == op), None)
+                cells += ("%+9d" % v) if v is not None else "%9s" % "-"
+            if cells.strip():
+                out.append("  %-16s %s" % (op, cells))
+
     if pt:
         out.append("\nper-type code, demoted, NOT a gate (a sanity readout, decide per method above):")
         out.append("  %+.0f B per added instantiation  (libcis %.0f vs ref %.0f)" %
