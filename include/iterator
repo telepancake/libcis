@@ -460,11 +460,6 @@ namespace detail {
 } // namespace detail
 
 namespace detail {
-    template<class T>
-    struct indirect_value_impl { using type = iter_value_t<T>&; };
-} // namespace detail
-
-namespace detail {
     template<class In>
     concept indirectly_readable_impl =
         requires(const In i) {
@@ -482,16 +477,28 @@ namespace detail {
 template<class In>
 concept indirectly_readable = detail::indirectly_readable_impl<remove_cvref_t<In>>;
 
-// indirect_value_t helper (accounts for projected)
+// indirect_value_t helper (from __iterator/concepts.h: __indirect_value_t).
+// For a non-projected iterator: iter_value_t<T>&.
+// For a std::projected specialization: the projection applied to the
+// underlying iterator's indirect-value (recursively). This matches P2538R1
+// and is what the indirect-callable concepts must use as the "value" argument.
 namespace detail {
     template<class T>
     struct indirect_value_t_impl { using type = iter_value_t<T>&; };
-    // (Specialization for projected added after projected is defined)
+
+    template<specialization_of_projected T>
+    struct indirect_value_t_impl<T> {
+        using type = invoke_result_t<typename T::projected_projection&,
+                                     typename indirect_value_t_impl<typename T::projected_iterator>::type>;
+    };
 } // namespace detail
 
 template<indirectly_readable T>
+using indirect_value_t = typename detail::indirect_value_t_impl<remove_cvref_t<T>>::type;
+
+template<indirectly_readable T>
 using iter_common_reference_t = common_reference_t<iter_reference_t<T>,
-                                                    iter_value_t<T>&>;
+                                                    indirect_value_t<T>>;
 
 //===----------------------------------------------------------------------===//
 // [iterator.concept.writable] — indirectly_writable
@@ -915,28 +922,22 @@ template<class F, class It>
 concept indirectly_unary_invocable =
     indirectly_readable<It> &&
     copy_constructible<F> &&
-    invocable<F&, iter_value_t<It>&> &&
+    invocable<F&, indirect_value_t<It>> &&
     invocable<F&, iter_reference_t<It>> &&
-    common_reference_with<invoke_result_t<F&, iter_value_t<It>&>,
+    common_reference_with<invoke_result_t<F&, indirect_value_t<It>>,
                           invoke_result_t<F&, iter_reference_t<It>>>;
 
 template<class F, class It>
 concept indirectly_regular_unary_invocable =
     indirectly_readable<It> &&
     copy_constructible<F> &&
-    regular_invocable<F&, iter_value_t<It>&> &&
+    regular_invocable<F&, indirect_value_t<It>> &&
     regular_invocable<F&, iter_reference_t<It>> &&
-    common_reference_with<invoke_result_t<F&, iter_value_t<It>&>,
+    common_reference_with<invoke_result_t<F&, indirect_value_t<It>>,
                           invoke_result_t<F&, iter_reference_t<It>>>;
 
 template<indirectly_readable It, indirectly_regular_unary_invocable<It> Proj>
 using projected = typename detail::projected_impl<It, Proj>::type;
-
-// Specialize indirect_value_t for projected (the implementation mirror)
-// indirect_value_t: used internally by indirectly_readable concept
-// For non-projected: iter_value_t<T>&
-// For projected: invoke_result_t<Proj&, indirect_value_t<I>&>
-// We use the simpler iter_value_t<T>& for the public iter_common_reference_t above.
 
 //===----------------------------------------------------------------------===//
 // indirect predicate / relation concepts
@@ -946,34 +947,34 @@ template<class F, class It>
 concept indirect_unary_predicate =
     indirectly_readable<It> &&
     copy_constructible<F> &&
-    predicate<F&, iter_value_t<It>&> &&
+    predicate<F&, indirect_value_t<It>> &&
     predicate<F&, iter_reference_t<It>>;
 
 template<class F, class It1, class It2>
 concept indirect_binary_predicate =
     indirectly_readable<It1> && indirectly_readable<It2> &&
     copy_constructible<F> &&
-    predicate<F&, iter_value_t<It1>&, iter_value_t<It2>&> &&
-    predicate<F&, iter_value_t<It1>&, iter_reference_t<It2>> &&
-    predicate<F&, iter_reference_t<It1>, iter_value_t<It2>&> &&
+    predicate<F&, indirect_value_t<It1>, indirect_value_t<It2>> &&
+    predicate<F&, indirect_value_t<It1>, iter_reference_t<It2>> &&
+    predicate<F&, iter_reference_t<It1>, indirect_value_t<It2>> &&
     predicate<F&, iter_reference_t<It1>, iter_reference_t<It2>>;
 
 template<class F, class It1, class It2 = It1>
 concept indirect_equivalence_relation =
     indirectly_readable<It1> && indirectly_readable<It2> &&
     copy_constructible<F> &&
-    equivalence_relation<F&, iter_value_t<It1>&, iter_value_t<It2>&> &&
-    equivalence_relation<F&, iter_value_t<It1>&, iter_reference_t<It2>> &&
-    equivalence_relation<F&, iter_reference_t<It1>, iter_value_t<It2>&> &&
+    equivalence_relation<F&, indirect_value_t<It1>, indirect_value_t<It2>> &&
+    equivalence_relation<F&, indirect_value_t<It1>, iter_reference_t<It2>> &&
+    equivalence_relation<F&, iter_reference_t<It1>, indirect_value_t<It2>> &&
     equivalence_relation<F&, iter_reference_t<It1>, iter_reference_t<It2>>;
 
 template<class F, class It1, class It2 = It1>
 concept indirect_strict_weak_order =
     indirectly_readable<It1> && indirectly_readable<It2> &&
     copy_constructible<F> &&
-    strict_weak_order<F&, iter_value_t<It1>&, iter_value_t<It2>&> &&
-    strict_weak_order<F&, iter_value_t<It1>&, iter_reference_t<It2>> &&
-    strict_weak_order<F&, iter_reference_t<It1>, iter_value_t<It2>&> &&
+    strict_weak_order<F&, indirect_value_t<It1>, indirect_value_t<It2>> &&
+    strict_weak_order<F&, indirect_value_t<It1>, iter_reference_t<It2>> &&
+    strict_weak_order<F&, iter_reference_t<It1>, indirect_value_t<It2>> &&
     strict_weak_order<F&, iter_reference_t<It1>, iter_reference_t<It2>>;
 
 //===----------------------------------------------------------------------===//
