@@ -16,23 +16,23 @@ cs_vec_erase_H():
  1c7:	48 89 fb             	mov    %rdi,%rbx
  1ca:	50                   	push   %rax
 _ZNSt6vectorI1HSaIS0_EE5beginEv():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:628
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:636
  1cb:	48 8b 2f             	mov    (%rdi),%rbp
 _ZNSt6vectorI1HSaIS0_EE5eraseEPKS0_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:858
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:866
  1ce:	e8 00 00 00 00       	call   1d3 <cs_vec_erase_H+0x12>
 cs_vec_erase_H():
 /home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:32 (discriminator 1)
  1d3:	48 8d 4d 10          	lea    0x10(%rbp),%rcx
 _ZNSt6vectorI1HSaIS0_EE7rotate_EPS0_S3_S3_l():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:345 (discriminator 2)
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:353 (discriminator 2)
  1d7:	4c 8d 45 20          	lea    0x20(%rbp),%r8
  1db:	52                   	push   %rdx
 _ZNSt6vectorI1HSaIS0_EE5eraseEPKS0_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:858
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:866
  1dc:	49 89 c1             	mov    %rax,%r9
 _ZNSt6vectorI1HSaIS0_EE7rotate_EPS0_S3_S3_l():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:345 (discriminator 2)
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:353 (discriminator 2)
  1df:	48 89 da             	mov    %rbx,%rdx
  1e2:	48 8d 35 00 00 00 00 	lea    0x0(%rip),%rsi        # 1e9 <cs_vec_erase_H+0x28>
  1e9:	6a f0                	push   $0xfffffffffffffff0
@@ -77,7 +77,7 @@ Disassembly of section .text._ZNSs9vallocateEm:
 
 Disassembly of section .text._ZNSs9init_copyEPKcm:
 
-Disassembly of section .text._ZNKSt6vectorIiSaIiEE8capacityEv:
+Disassembly of section .text._ZNKSt6vectorIiSaIiEE4sizeEv:
 
 Disassembly of section .text._ZNSt6vectorIiSaIiEE12ensure_free_Em:
 

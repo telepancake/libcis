@@ -14,10 +14,10 @@ cs_vec_sort_H():
  a1d:	53                   	push   %rbx
  a1e:	48 89 fb             	mov    %rdi,%rbx
 _ZNSt6vectorI1HSaIS0_EE3endEv():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:630
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:638
  a21:	e8 00 00 00 00       	call   a26 <cs_vec_sort_H+0xd>
 _ZNSt6vectorI1HSaIS0_EE5beginEv():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:628
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:636
  a26:	48 8b 3b             	mov    (%rbx),%rdi
 _ZSt4sortIP1HSt4lessIvEEvT_S4_T0_():
 /home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/algorithm:2103
@@ -80,7 +80,7 @@ Disassembly of section .text._ZNSs9vallocateEm:
 
 Disassembly of section .text._ZNSs9init_copyEPKcm:
 
-Disassembly of section .text._ZNKSt6vectorIiSaIiEE8capacityEv:
+Disassembly of section .text._ZNKSt6vectorIiSaIiEE4sizeEv:
 
 Disassembly of section .text._ZNSt6vectorIiSaIiEE12ensure_free_Em:
 

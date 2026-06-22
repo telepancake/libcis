@@ -14,7 +14,7 @@ cs_vec_push_H():
  2e9:	41 54                	push   %r12
  2eb:	49 89 f4             	mov    %rsi,%r12
 _ZNSt6vectorI1HSaIS0_EE12emplace_backIJRKS0_EEERS0_DpOT_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:758
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:766
  2ee:	be 01 00 00 00       	mov    $0x1,%esi
 cs_vec_push_H():
 /home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:30
@@ -22,13 +22,13 @@ cs_vec_push_H():
  2f4:	48 89 fd             	mov    %rdi,%rbp
  2f7:	53                   	push   %rbx
 _ZNSt6vectorI1HSaIS0_EE12emplace_backIJRKS0_EEERS0_DpOT_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:758
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:766
  2f8:	e8 00 00 00 00       	call   2fd <cs_vec_push_H+0x18>
 _ZSt12construct_atI1HJRKS0_EEPT_S4_DpOT0_():
 /home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/bits/construct_at.h:19 (discriminator 1)
  2fd:	4c 89 e6             	mov    %r12,%rsi
 _ZNSt6vectorI1HSaIS0_EE12emplace_backIJRKS0_EEERS0_DpOT_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:758
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:766
  300:	48 89 c3             	mov    %rax,%rbx
 _ZSt12construct_atI1HJRKS0_EEPT_S4_DpOT0_():
 /home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/bits/construct_at.h:19 (discriminator 1)
@@ -38,13 +38,13 @@ _ZNSt6vectorI1HSaIS0_EE15set_size_elems_Em():
 /home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:118 (discriminator 1)
  30b:	48 89 ee             	mov    %rbp,%rsi
 _ZNSt6vectorI1HSaIS0_EE12emplace_backIJRKS0_EEERS0_DpOT_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:760
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:768
  30e:	48 8d 53 10          	lea    0x10(%rbx),%rdx
 _ZNSt6vectorI1HSaIS0_EE15set_size_elems_Em():
 /home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:118 (discriminator 1)
  312:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 319 <cs_vec_push_H+0x34>
 _ZNSt6vectorI1HSaIS0_EE12emplace_backIJRKS0_EEERS0_DpOT_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:760
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:768
  319:	48 2b 55 00          	sub    0x0(%rbp),%rdx
 _ZNSt6vectorI1HSaIS0_EE15set_size_elems_Em():
 /home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:118 (discriminator 1)
@@ -53,7 +53,7 @@ cs_vec_push_H():
 /home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:30
  322:	5b                   	pop    %rbx
 _ZNSt6vectorI1HSaIS0_EE12emplace_backIJRKS0_EEERS0_DpOT_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:761
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:769
  323:	48 89 ef             	mov    %rbp,%rdi
  326:	be 01 00 00 00       	mov    $0x1,%esi
 cs_vec_push_H():
@@ -61,7 +61,7 @@ cs_vec_push_H():
  32b:	5d                   	pop    %rbp
  32c:	41 5c                	pop    %r12
 _ZNSt6vectorI1HSaIS0_EE12emplace_backIJRKS0_EEERS0_DpOT_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:761
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:769
  32e:	e9 00 00 00 00       	jmp    333 <_ZNSt6detail5sort3IP1HSt4lessIvEEEbT_S5_S5_RT0_.isra.0>
 
 Disassembly of section .text._ZNKSt19bad_optional_access4whatEv:
@@ -96,7 +96,7 @@ Disassembly of section .text._ZNSs9vallocateEm:
 
 Disassembly of section .text._ZNSs9init_copyEPKcm:
 
-Disassembly of section .text._ZNKSt6vectorIiSaIiEE8capacityEv:
+Disassembly of section .text._ZNKSt6vectorIiSaIiEE4sizeEv:
 
 Disassembly of section .text._ZNSt6vectorIiSaIiEE12ensure_free_Em:
 

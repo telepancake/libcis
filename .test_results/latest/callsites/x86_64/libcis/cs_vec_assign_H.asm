@@ -12,7 +12,7 @@ cs_vec_assign_H():
 /home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:33
  a4f:	f3 0f 1e fa          	endbr64
 _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:564
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:572
  a53:	48 39 f7             	cmp    %rsi,%rdi
  a56:	74 2d                	je     a85 <cs_vec_assign_H+0x36>
 cs_vec_assign_H():
@@ -20,7 +20,7 @@ cs_vec_assign_H():
  a58:	55                   	push   %rbp
  a59:	48 89 fd             	mov    %rdi,%rbp
 _ZNKSt6vectorI1HSaIS0_EE3endEv():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:631
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:639
  a5c:	48 89 f7             	mov    %rsi,%rdi
 cs_vec_assign_H():
 /home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:33
@@ -28,13 +28,13 @@ cs_vec_assign_H():
  a60:	48 89 f3             	mov    %rsi,%rbx
  a63:	50                   	push   %rax
 _ZNKSt6vectorI1HSaIS0_EE3endEv():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:631
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:639
  a64:	e8 00 00 00 00       	call   a69 <cs_vec_assign_H+0x1a>
 _ZNKSt6vectorI1HSaIS0_EE5beginEv():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:629
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:637
  a69:	48 8b 33             	mov    (%rbx),%rsi
 _ZNSt6vectorI1HSaIS0_EE6assignIPKS0_EEvT_S6_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:605
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:613
  a6c:	48 89 ef             	mov    %rbp,%rdi
 cs_vec_assign_H():
 /home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:33
@@ -46,7 +46,7 @@ cs_vec_assign_H():
 /home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:33
  a74:	5b                   	pop    %rbx
 _ZNKSt6vectorI1HSaIS0_EE3endEv():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:631
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:639
  a75:	48 89 c2             	mov    %rax,%rdx
 cs_vec_assign_H():
 /home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:33
@@ -56,7 +56,7 @@ _ZSt8distanceIPK1HENSt15iterator_traitsIT_E15difference_typeES4_S4_():
  a79:	48 29 f1             	sub    %rsi,%rcx
  a7c:	48 c1 f9 04          	sar    $0x4,%rcx
 _ZNSt6vectorI1HSaIS0_EE6assignIPKS0_EEvT_S6_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:605
+/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/vector:613
  a80:	e9 00 00 00 00       	jmp    a85 <cs_vec_assign_H+0x36>
  a85:	c3                   	ret
 
@@ -92,7 +92,7 @@ Disassembly of section .text._ZNSs9vallocateEm:
 
 Disassembly of section .text._ZNSs9init_copyEPKcm:
 
-Disassembly of section .text._ZNKSt6vectorIiSaIiEE8capacityEv:
+Disassembly of section .text._ZNKSt6vectorIiSaIiEE4sizeEv:
 
 Disassembly of section .text._ZNSt6vectorIiSaIiEE12ensure_free_Em:
 

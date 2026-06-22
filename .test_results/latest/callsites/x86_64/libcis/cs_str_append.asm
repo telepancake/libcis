@@ -74,7 +74,7 @@ Disassembly of section .text._ZNSs9vallocateEm:
 
 Disassembly of section .text._ZNSs9init_copyEPKcm:
 
-Disassembly of section .text._ZNKSt6vectorIiSaIiEE8capacityEv:
+Disassembly of section .text._ZNKSt6vectorIiSaIiEE4sizeEv:
 
 Disassembly of section .text._ZNSt6vectorIiSaIiEE12ensure_free_Em:
 
