@@ -197,10 +197,18 @@ private:
         const size_type ms = max_size();
         if (new_size > ms)
             throw_length_error();
-        const size_type cap = capacity();
-        if (cap >= ms / 2)
+        // Growth base: for Strategy A capacity() is exact, so 2*cap is the
+        // textbook geometric policy. For Strategy B capacity() is recovered
+        // from ::malloc_usable_size and is rounded UP by the allocator; using
+        // it as the doubling base compounds that rounding every grow (2 -> 5
+        // -> 11 -> 23 ... instead of 2 -> 4 -> 8 ...), inflating a 2000-elem
+        // vector to ~3071 capacity and ~+40% heap. Double the LIVE size()
+        // instead — still amortized O(1), but the geometric base no longer
+        // carries forward the per-allocation rounding slack.
+        const size_type base = uses_header_layout_ ? size() : capacity();
+        if (base >= ms / 2)
             return ms;
-        return std::max<size_type>(2 * cap, new_size);
+        return std::max<size_type>(2 * base, new_size);
     }
 
     // -----------------------------------------------------------------------
