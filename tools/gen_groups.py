@@ -113,8 +113,20 @@ def group_source(members):
     for r in sorted(members, key=lambda r: r["file"]):
         filedir = os.path.dirname(r["file"])
         body = []
+        cond = 0   # preprocessor-conditional nesting depth
         for ln in open(os.path.join("test/std", r["file"]), errors="replace").read().splitlines(True):
-            if re.match(r"\s*#\s*include", ln):
+            s = ln.lstrip()
+            if re.match(r"#\s*(if|ifdef|ifndef)\b", s):
+                cond += 1
+                body.append(ln)
+            elif re.match(r"#\s*endif\b", s):
+                cond = max(0, cond - 1)
+                body.append(ln)
+            elif cond == 0 and re.match(r"\s*#\s*include", ln):
+                # Only hoist UNGUARDED top-level includes.  A #include inside an
+                # #if (e.g. `#ifdef _WIN32 #include <windows.h>`) must keep its
+                # guard -- hoisting it to the top dropped the guard and made the
+                # platform header unconditional, breaking the group on this target.
                 ln = resolve_quote_include(ln, filedir)
                 if ln.strip() not in seen:
                     seen.add(ln.strip())
