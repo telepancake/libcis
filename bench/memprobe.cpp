@@ -79,10 +79,36 @@ __attribute__((noinline)) static void bench_map(size_t n) {
     emit("map", m.size(), internal, heap, g_stack_peak);
 }
 
+// map_big: a value type sized so the rb-tree node's 8-byte color packing
+// (color folded into the parent pointer's low bit instead of a padded bool
+// field) crosses a glibc malloc size-class boundary. The reference libstdc++
+// node still carries a separate color byte, so its node lands one malloc bin
+// higher; libcis's packed node lands a bin lower. This is where the node shrink
+// shows as REAL heap (mallinfo2) overhead, not just sizeof — for map<int,int>
+// both nodes round to the same bin so the shrink is invisible to glibc, but a
+// finer-granularity (embedded / pool) allocator sees it on every node.
+// V12 makes pair<const int, V12> == 16 bytes, so the node payload is
+// 24+16=40 (libcis, packed) vs 32+16=48 (reference, separate color byte) —
+// straddling glibc's 40/56-byte usable bins (chunk 48 vs 64), a real 16-byte
+// heap saving per node that mallinfo2 reports.
+struct V12 { char b[12]; V12() { for (char& c : b) c = 0; } };
+
+__attribute__((noinline)) static void bench_map_big(size_t n) {
+    STACK_BEGIN();
+    size_t h0 = heap_inuse();
+    std::map<int, V12> m;
+    for (size_t i = 0; i < n; ++i) { m[(int)((i * 2654435761u) & 0x7fffffff)]; stack_sample(); }
+    size_t heap = heap_inuse() - h0;
+    size_t node = sizeof(std::pair<const int, V12>) + 3 * sizeof(void*);
+    size_t internal = sizeof(m) + m.size() * node;
+    emit("map_big", m.size(), internal, heap, g_stack_peak);
+}
+
 int main() {
     bench_vec_int(10000);
     bench_vec_big(2000);
     bench_string(50000);
     bench_map(5000);
+    bench_map_big(5000);
     return 0;
 }

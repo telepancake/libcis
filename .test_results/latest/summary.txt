@@ -20,6 +20,7 @@ MEMORY  (representative workloads)
   vec_big       2000    98280     163712     116512    +47200       41
   string       50000    66568      67520      63184     +4336       41
   map           5000   180032     239808     239952      -144       49
+  map_big       5000   200032     239664     319936    -80272       33
 
 architectures: measured=[x86_64]  toolchain-present-but-failed=[i586]  skipped=[arm64, arm32, mips32]
 

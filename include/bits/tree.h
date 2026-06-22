@@ -13,6 +13,7 @@
 #include <initializer_list>
 #include <limits>
 #include <type_traits>
+#include <cstdint>    // uintptr_t — color packed into parent pointer's low bit
 
 namespace std {
 
@@ -66,27 +67,66 @@ public:
     using end_node_ptr   = typename pointer_traits<VoidPtr>::template rebind<end_node_t>;
 
     node_base_ptr right    = nullptr;
-    end_node_ptr  parent   = nullptr;
-    bool          is_black = false;
+    // parent + color packed into one word. The pointer's low bit carries the
+    // red/black color (rb nodes are at least pointer-aligned, so the low 3 bits
+    // are always zero in a real parent pointer); bit 0 set == BLACK. This drops
+    // the separate `bool is_black` field, which cost a full 8 bytes per node
+    // after alignment padding before the value union — a ~20% node shrink for
+    // map<int,int>. EVERY parent read masks the bit off; every parent write
+    // preserves the current color. The raw word is private so no path can read
+    // `parent` without going through the masking accessors.
+private:
+    end_node_ptr parent = nullptr;
 
+    static constexpr unsigned color_bit = 1u;
+    // Reinterpret the parent word as an integer to manipulate the low bit.
+    uintptr_t parent_bits() const noexcept {
+        uintptr_t v; __builtin_memcpy(&v, &parent, sizeof(v)); return v;
+    }
+    void store_parent_bits(uintptr_t v) noexcept {
+        __builtin_memcpy(&parent, &v, sizeof(parent));
+    }
+
+public:
     rb_node_base() = default;
     rb_node_base(const rb_node_base&) = delete;
     rb_node_base& operator=(const rb_node_base&) = delete;
 
-    node_base_ptr parent_unsafe() const noexcept {
-        node_base_ptr r;
-        __builtin_memcpy(&r, &parent, sizeof(r));
-        return r;
+    // ---- color (low bit of parent) ----
+    bool black() const noexcept { return parent_bits() & color_bit; }
+    void set_black(bool b) noexcept {
+        store_parent_bits((parent_bits() & ~uintptr_t(color_bit)) | (b ? color_bit : 0));
     }
 
-    // set_parent: store a node_base_ptr into the end_node_ptr parent field
+    // ---- parent (high bits of parent), color-masked on every access ----
+    // Read the parent as an end_node_ptr (may be the sentinel). Masks color.
+    end_node_ptr get_parent_end() const noexcept {
+        end_node_ptr p; uintptr_t v = parent_bits() & ~uintptr_t(color_bit);
+        __builtin_memcpy(&p, &v, sizeof(p)); return p;
+    }
+    // Read the parent as a node_base_ptr. Masks color.
+    node_base_ptr parent_unsafe() const noexcept {
+        node_base_ptr r; uintptr_t v = parent_bits() & ~uintptr_t(color_bit);
+        __builtin_memcpy(&r, &v, sizeof(r)); return r;
+    }
+    // Store a node_base_ptr as parent, preserving the current color bit.
     void set_parent(node_base_ptr p) noexcept {
-        __builtin_memcpy(&parent, &p, sizeof(parent));
+        uintptr_t v; __builtin_memcpy(&v, &p, sizeof(v));
+        store_parent_bits((v & ~uintptr_t(color_bit)) | (parent_bits() & color_bit));
     }
-    // set_parent_end: store an end_node_ptr (for root's parent = sentinel)
+    // Store an end_node_ptr (e.g. root's parent = sentinel), preserving color.
     void set_parent_end(end_node_ptr ep) noexcept {
-        parent = ep;
+        uintptr_t v; __builtin_memcpy(&v, &ep, sizeof(v));
+        store_parent_bits((v & ~uintptr_t(color_bit)) | (parent_bits() & color_bit));
     }
+    // Copy the parent pointer (NOT the color) from another node into this one.
+    void copy_parent_from(const rb_node_base& o) noexcept {
+        store_parent_bits((o.parent_bits() & ~uintptr_t(color_bit))
+                          | (parent_bits() & color_bit));
+    }
+    // Fresh-node init: parent = null, color = red. Writes the WHOLE word, so it
+    // is safe on an allocated-but-uninitialized node (no read of stale color).
+    void init_parent_red() noexcept { store_parent_bits(0); }
 };
 
 // rb_node: adds the stored value
@@ -132,7 +172,7 @@ To rbtree_cast(From p) noexcept {
 
 template<class NP> // NP = node_base_ptr
 inline bool tree_is_left_child(NP x) noexcept {
-    return x == x->parent->left;
+    return x == x->get_parent_end()->left;
 }
 
 template<class NP>
@@ -157,7 +197,7 @@ EndNP tree_next_iter(NP x) noexcept {
     }
     while (!tree_is_left_child(x))
         x = x->parent_unsafe();
-    return x->parent;  // parent is end_node_ptr
+    return x->get_parent_end();  // parent is end_node_ptr
 }
 
 // tree_prev_iter: EndNP can be sentinel
@@ -179,9 +219,9 @@ void tree_left_rotate(NP x) noexcept {
     NP y = static_cast<NP>(x->right);
     x->right = y->left;
     if (x->right) static_cast<NP>(x->right)->set_parent(x);
-    y->parent = x->parent;
+    y->copy_parent_from(*x);
     if (tree_is_left_child(x))
-        x->parent->left = y;
+        x->get_parent_end()->left = y;
     else
         x->parent_unsafe()->right = y;
     y->left = x;
@@ -193,9 +233,9 @@ void tree_right_rotate(NP x) noexcept {
     NP y = static_cast<NP>(x->left);
     x->left = y->right;
     if (x->left) static_cast<NP>(x->left)->set_parent(x);
-    y->parent = x->parent;
+    y->copy_parent_from(*x);
     if (tree_is_left_child(x))
-        x->parent->left = y;
+        x->get_parent_end()->left = y;
     else
         x->parent_unsafe()->right = y;
     y->right = x;
@@ -204,39 +244,39 @@ void tree_right_rotate(NP x) noexcept {
 
 template<class NP>
 void tree_balance_after_insert(NP root, NP x) noexcept {
-    x->is_black = (x == root);
-    while (x != root && !x->parent_unsafe()->is_black) {
+    x->set_black(x == root);
+    while (x != root && !x->parent_unsafe()->black()) {
         if (tree_is_left_child(x->parent_unsafe())) {
             NP uncle = x->parent_unsafe()->parent_unsafe()->right
                      ? static_cast<NP>(x->parent_unsafe()->parent_unsafe()->right) : nullptr;
-            if (uncle && !uncle->is_black) {
-                x = x->parent_unsafe(); x->is_black = true;
-                x = x->parent_unsafe(); x->is_black = (x == root);
-                uncle->is_black = true;
+            if (uncle && !uncle->black()) {
+                x = x->parent_unsafe(); x->set_black(true);
+                x = x->parent_unsafe(); x->set_black(x == root);
+                uncle->set_black(true);
             } else {
                 if (!tree_is_left_child(x)) {
                     x = x->parent_unsafe();
                     tree_left_rotate(x);
                 }
-                x = x->parent_unsafe(); x->is_black = true;
-                x = x->parent_unsafe(); x->is_black = false;
+                x = x->parent_unsafe(); x->set_black(true);
+                x = x->parent_unsafe(); x->set_black(false);
                 tree_right_rotate(x);
                 break;
             }
         } else {
             NP uncle = x->parent_unsafe()->parent_unsafe()->left
                      ? static_cast<NP>(x->parent_unsafe()->parent_unsafe()->left) : nullptr;
-            if (uncle && !uncle->is_black) {
-                x = x->parent_unsafe(); x->is_black = true;
-                x = x->parent_unsafe(); x->is_black = (x == root);
-                uncle->is_black = true;
+            if (uncle && !uncle->black()) {
+                x = x->parent_unsafe(); x->set_black(true);
+                x = x->parent_unsafe(); x->set_black(x == root);
+                uncle->set_black(true);
             } else {
                 if (tree_is_left_child(x)) {
                     x = x->parent_unsafe();
                     tree_right_rotate(x);
                 }
-                x = x->parent_unsafe(); x->is_black = true;
-                x = x->parent_unsafe(); x->is_black = false;
+                x = x->parent_unsafe(); x->set_black(true);
+                x = x->parent_unsafe(); x->set_black(false);
                 tree_left_rotate(x);
                 break;
             }
@@ -257,88 +297,88 @@ void tree_remove(NP& root_ref, NP z) noexcept {
          : y->right ? static_cast<NP>(y->right) : nullptr;
     NP w = nullptr;
 
-    if (x) x->parent = y->parent;
+    if (x) x->copy_parent_from(*y);
     if (tree_is_left_child(y)) {
-        y->parent->left = x;
+        y->get_parent_end()->left = x;
         if (y != root) w = static_cast<NP>(y->parent_unsafe()->right);
         else           root = x;
     } else {
         y->parent_unsafe()->right = x;
-        w = static_cast<NP>(y->parent->left);
+        w = static_cast<NP>(y->get_parent_end()->left);
     }
-    bool removed_black = y->is_black;
+    bool removed_black = y->black();
     if (y != z) {
-        y->parent = z->parent;
-        if (tree_is_left_child(z)) y->parent->left = y;
+        y->copy_parent_from(*z);
+        if (tree_is_left_child(z)) y->get_parent_end()->left = y;
         else                       y->parent_unsafe()->right = y;
         y->left = z->left;
         static_cast<NP>(y->left)->set_parent(y);
         y->right = z->right;
         if (y->right) static_cast<NP>(y->right)->set_parent(y);
-        y->is_black = z->is_black;
+        y->set_black(z->black());
         if (root == z) root = y;
     }
     root_ref = root;
     if (!removed_black || root == nullptr) return;
-    if (x) { x->is_black = true; return; }
+    if (x) { x->set_black(true); return; }
 
     while (true) {
         if (!tree_is_left_child(w)) {
-            if (!w->is_black) {
-                w->is_black = true;
-                w->parent_unsafe()->is_black = false;
+            if (!w->black()) {
+                w->set_black(true);
+                w->parent_unsafe()->set_black(false);
                 tree_left_rotate(w->parent_unsafe());
                 if (root == w->left) root = w;
                 w = static_cast<NP>(static_cast<NP>(w->left)->right);
             }
-            if ((!w->left  || static_cast<NP>(w->left)->is_black) &&
-                (!w->right || static_cast<NP>(w->right)->is_black)) {
-                w->is_black = false;
+            if ((!w->left  || static_cast<NP>(w->left)->black()) &&
+                (!w->right || static_cast<NP>(w->right)->black())) {
+                w->set_black(false);
                 x = w->parent_unsafe();
-                if (x == root || !x->is_black) { x->is_black = true; break; }
+                if (x == root || !x->black()) { x->set_black(true); break; }
                 w = tree_is_left_child(x)
                   ? static_cast<NP>(x->parent_unsafe()->right)
-                  : static_cast<NP>(x->parent->left);
+                  : static_cast<NP>(x->get_parent_end()->left);
             } else {
-                if (!w->right || static_cast<NP>(w->right)->is_black) {
-                    static_cast<NP>(w->left)->is_black = true;
-                    w->is_black = false;
+                if (!w->right || static_cast<NP>(w->right)->black()) {
+                    static_cast<NP>(w->left)->set_black(true);
+                    w->set_black(false);
                     tree_right_rotate(w);
                     w = w->parent_unsafe();
                 }
-                w->is_black = w->parent_unsafe()->is_black;
-                w->parent_unsafe()->is_black = true;
-                static_cast<NP>(w->right)->is_black = true;
+                w->set_black(w->parent_unsafe()->black());
+                w->parent_unsafe()->set_black(true);
+                static_cast<NP>(w->right)->set_black(true);
                 tree_left_rotate(w->parent_unsafe());
                 if (root == w->left) root = w;
                 break;
             }
         } else {
-            if (!w->is_black) {
-                w->is_black = true;
-                w->parent_unsafe()->is_black = false;
+            if (!w->black()) {
+                w->set_black(true);
+                w->parent_unsafe()->set_black(false);
                 tree_right_rotate(w->parent_unsafe());
                 if (root == w->right) root = w;
                 w = static_cast<NP>(static_cast<NP>(w->right)->left);
             }
-            if ((!w->left  || static_cast<NP>(w->left)->is_black) &&
-                (!w->right || static_cast<NP>(w->right)->is_black)) {
-                w->is_black = false;
+            if ((!w->left  || static_cast<NP>(w->left)->black()) &&
+                (!w->right || static_cast<NP>(w->right)->black())) {
+                w->set_black(false);
                 x = w->parent_unsafe();
-                if (!x->is_black || x == root) { x->is_black = true; break; }
+                if (!x->black() || x == root) { x->set_black(true); break; }
                 w = tree_is_left_child(x)
                   ? static_cast<NP>(x->parent_unsafe()->right)
-                  : static_cast<NP>(x->parent->left);
+                  : static_cast<NP>(x->get_parent_end()->left);
             } else {
-                if (!w->left || static_cast<NP>(w->left)->is_black) {
-                    static_cast<NP>(w->right)->is_black = true;
-                    w->is_black = false;
+                if (!w->left || static_cast<NP>(w->left)->black()) {
+                    static_cast<NP>(w->right)->set_black(true);
+                    w->set_black(false);
                     tree_left_rotate(w);
                     w = w->parent_unsafe();
                 }
-                w->is_black = w->parent_unsafe()->is_black;
-                w->parent_unsafe()->is_black = true;
-                static_cast<NP>(w->left)->is_black = true;
+                w->set_black(w->parent_unsafe()->black());
+                w->parent_unsafe()->set_black(true);
+                static_cast<NP>(w->left)->set_black(true);
                 tree_right_rotate(w->parent_unsafe());
                 if (root == w->right) root = w;
                 break;
@@ -542,7 +582,7 @@ private:
         node_alloc_traits::construct(node_alloc_, addressof(np->get_value()),
                                      std::forward<Args>(args)...);
         np->left = nullptr; np->right = nullptr;
-        np->parent = nullptr; np->is_black = false;
+        np->init_parent_red();   // parent = null, color = red (whole-word write)
         return np;
     }
 
@@ -562,7 +602,7 @@ private:
     node_base_pointer copy_subtree(node_base_pointer src) {
         if (!src) return nullptr;
         node_pointer dn = alloc_node(rbtree_cast<node_pointer>(src)->get_value());
-        dn->is_black = src->is_black;
+        dn->set_black(src->black());
         node_base_pointer lc = copy_subtree(src->left);
         node_base_pointer rc = copy_subtree(src->right);
         node_base_pointer dnb = rbtree_cast<node_base_pointer>(dn);
@@ -694,7 +734,7 @@ private:
             if (np->right)
                 begin_node_ = rbtree_cast<end_node_pointer>(tree_min(rbtree_cast<node_base_pointer>(np->right)));
             else
-                begin_node_ = np->parent;
+                begin_node_ = np->get_parent_end();
         }
         node_base_pointer r = root_base();
         tree_remove(r, np);
@@ -1088,7 +1128,7 @@ public:
     node_pointer extract_node(const_iterator pos) noexcept {
         node_base_pointer np = pos.get_base();
         unlink(np);
-        np->left = nullptr; np->right = nullptr; np->parent = nullptr;
+        np->left = nullptr; np->right = nullptr; np->init_parent_red();
         return rbtree_cast<node_pointer>(np);
     }
 
