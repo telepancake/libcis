@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import config as cfg  # noqa: E402
 
 MANIFEST = "test/std/manifest.json"
+EXCLUSIONS = "tools/exclusions.json"
 SRC_DIR = "build/groups/src"
 RUN_TIMEOUT = 120  # seconds per test binary
 
@@ -58,6 +59,17 @@ def backend_flags(fl, be):
     return out
 LINK_CIS = "-nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc"
 
+# A consolidated group TU concatenates compile-only tests (.compile.pass.cpp:
+# verified by COMPILING, never run) alongside run tests.  Compile-only tests may
+# legitimately leave locally-declared symbols undefined (used only in unevaluated
+# / never-called contexts) -- fine when a file is compiled alone, but in the
+# linked group their dead code's references became "undefined reference" link
+# errors that sank the whole group.  Put every function/datum in its own section
+# and --gc-sections: the group's main() reaches only the run tests, so the unused
+# compile-only code (and its dangling references) is dropped, while a real
+# undefined symbol in a run test is still reachable and still errors.
+SECTIONS = " -ffunction-sections -fdata-sections -Wl,--gc-sections"
+
 
 def gkey(d):
     # injective: sibling dirs op++ / op= / op* collide under plain sanitizing
@@ -66,9 +78,14 @@ def gkey(d):
 
 def load_groups():
     man = json.load(open(MANIFEST))
+    # Honor exclusions.json exactly as run_files.py does: excluded tests (gcc-10
+    # compiler limits proven by the discriminator, target-impossible facilities)
+    # must not be COMPILED into a group either -- otherwise a known-unbuildable
+    # test sinks its whole consolidated TU even though it is off the verdict.
+    excl = {k for k in json.load(open(EXCLUSIONS)) if not k.startswith("_")}
     seen, groups = set(), {}
     for r in man["transferred"]:
-        if r["file"] in seen:
+        if r["file"] in seen or r["file"] in excl:
             continue
         seen.add(r["file"])
         # one TU per lib FEATURE (e.g. utilities/optional, containers/sequences),
@@ -160,7 +177,7 @@ def emit_ninja():
          "  description = RUN $in",
          ""]
     for be, (cxx, cargs, has_sup) in BACKENDS.items():
-        L += [f"cxx_{be} = {cxx}", f"cargs_{be} = {cargs}",
+        L += [f"cxx_{be} = {cxx}", f"cargs_{be} = {cargs}{SECTIONS}",
               f"rule link_{be}",
               f"  command = $cxx_{be} $cargs_{be} $flags $in $extra_{be} -o $out -MMD -MF $out.d",
               "  depfile = $out.d", "  deps = gcc",
