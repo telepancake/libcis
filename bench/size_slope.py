@@ -70,7 +70,9 @@ TARGETS = [
     ("mips32", ["mips-linux-gnu-g++"],             "mips-linux-gnu-objdump",        "g++-mips-linux-gnu"),
 ]
 CALLSITE_OPS = ["cs_vec_push_int", "cs_vec_push_H", "cs_vec_insert_H", "cs_vec_erase_H",
-                "cs_vec_assign_H", "cs_vec_sort_H", "cs_str_append", "cs_str_compare"]
+                "cs_vec_assign_H", "cs_vec_sort_H", "cs_str_append", "cs_str_compare",
+                # trivial accessors — must stay tiny; an ops-call here is a blowup
+                "cs_vec_size_i", "cs_vec_empty_i", "cs_vec_end_i", "cs_vec_index_i"]
 
 
 def sh(cmd):
