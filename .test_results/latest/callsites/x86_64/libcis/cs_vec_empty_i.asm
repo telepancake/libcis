@@ -1,26 +1,33 @@
-; call site: cs_vec_empty_i   lib=libcis   arch=x86_64   size=19 bytes
+; call site: cs_vec_empty_i   lib=libcis   arch=x86_64   size=29 bytes
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/x86_64/libcis.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/libcis.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
-00000000000002b3 <cs_vec_empty_i>:
+00000000000002a6 <cs_vec_empty_i>:
 cs_vec_empty_i():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:49
- 2b3:	f3 0f 1e fa          	endbr64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:49
+ 2a6:	f3 0f 1e fa          	endbr64
+ 2aa:	48 8b 17             	mov    (%rdi),%rdx
+_ZNKSt6vectorIiSaIiEE4sizeEv():
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:679 (discriminator 1)
+ 2ad:	31 c0                	xor    %eax,%eax
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:679
+ 2af:	48 85 d2             	test   %rdx,%rdx
+ 2b2:	74 08                	je     2bc <cs_vec_empty_i+0x16>
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:680 (discriminator 1)
+ 2b4:	48 8b 42 f8          	mov    -0x8(%rdx),%rax
+ 2b8:	48 c1 e8 02          	shr    $0x2,%rax
 _ZNKSt6vectorIiSaIiEE5emptyEv():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:691
- 2b7:	48 8b 3f             	mov    (%rdi),%rdi
- 2ba:	e8 af fd ff ff       	call   6e <_ZNKSt6vectorIiSaIiEE4sizeEv.isra.0>
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:691 (discriminator 1)
- 2bf:	48 85 c0             	test   %rax,%rax
- 2c2:	0f 94 c0             	sete   %al
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:691 (discriminator 1)
+ 2bc:	48 85 c0             	test   %rax,%rax
+ 2bf:	0f 94 c0             	sete   %al
 cs_vec_empty_i():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:49
- 2c5:	c3                   	ret
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:49
+ 2c2:	c3                   	ret
 
 Disassembly of section .text._ZNKSt19bad_optional_access4whatEv:
 
@@ -46,9 +53,9 @@ Disassembly of section .text._ZNSs9init_copyEPKcm:
 
 Disassembly of section .text._ZN1HaSERKS_.isra.0:
 
-Disassembly of section .text._ZNSt6vectorIiSaIiEE10grow_cold_Em:
+Disassembly of section .text._ZNSt6vectorIiSaIiEE12ensure_free_Em:
 
-Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE10grow_cold_Em:
+Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE12ensure_free_Em:
 
 Disassembly of section .text._ZN1HC2ERKS_:
 

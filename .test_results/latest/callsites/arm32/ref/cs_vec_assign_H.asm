@@ -2,20 +2,20 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm32/ref.o:     file format elf32-littlearm
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm32/ref.o:     file format elf32-littlearm
 
 
 Disassembly of section .text:
 
 000003e8 <cs_vec_assign_H>:
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  3e8:	e92d 47f0 	stmdb	sp!, {r4, r5, r6, r7, r8, r9, sl, lr}
 _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/vector.tcc:213
  3ec:	4288      	cmp	r0, r1
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  3ee:	4604      	mov	r4, r0
  3f0:	4688      	mov	r8, r1
 _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
@@ -86,7 +86,7 @@ _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
  43e:	443b      	add	r3, r7
  440:	6063      	str	r3, [r4, #4]
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  442:	e8bd 87f0 	ldmia.w	sp!, {r4, r5, r6, r7, r8, r9, sl, pc}
 _ZSt10_ConstructI1HJRKS0_EEvPT_DpOT0_():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/stl_construct.h:119 (discriminator 1)

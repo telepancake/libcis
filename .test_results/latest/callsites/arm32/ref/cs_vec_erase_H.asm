@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm32/ref.o:     file format elf32-littlearm
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm32/ref.o:     file format elf32-littlearm
 
 
 Disassembly of section .text:
 
 00000102 <cs_vec_erase_H>:
 cs_vec_erase_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:32
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:32
  102:	b570      	push	{r4, r5, r6, lr}
  104:	4605      	mov	r5, r0
 _ZN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS1_SaIS1_EEEC4ERKS2_():
@@ -33,7 +33,7 @@ _ZNSt6vectorI1HSaIS0_EE8_M_eraseEN9__gnu_cxx17__normal_iteratorIPS0_S2_EE():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/vector.tcc:186
  11a:	606b      	str	r3, [r5, #4]
 cs_vec_erase_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:32
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:32
  11c:	e8bd 4070 	ldmia.w	sp!, {r4, r5, r6, lr}
 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEED4Ev():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/basic_string.h:804

@@ -2,7 +2,7 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
 
 
 Disassembly of section .text:
@@ -13,7 +13,7 @@ _ZN9__gnu_cxxeqIPKiSt6vectorIiSaIiEEEEbRKNS_17__normal_iteratorIT_T0_EESB_():
   68:	a9400001 	ldp	x1, x0, [x0]
   6c:	eb00003f 	cmp	x1, x0
 cs_vec_empty_i():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:49
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:49
   70:	1a9f17e0 	cset	w0, eq	// eq = none
   74:	d65f03c0 	ret
 

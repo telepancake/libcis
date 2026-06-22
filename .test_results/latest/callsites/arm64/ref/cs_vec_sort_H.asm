@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
 
 
 Disassembly of section .text:
 
 0000000000000ad4 <cs_vec_sort_H>:
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
  ad4:	a9bd7bfd 	stp	x29, x30, [sp, #-48]!
  ad8:	910003fd 	mov	x29, sp
  adc:	a90153f3 	stp	x19, x20, [sp, #16]
@@ -17,7 +17,7 @@ _ZN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS1_SaIS1_EEEC4ERKS2_():
 /usr/aarch64-linux-gnu/include/c++/13/bits/stl_iterator.h:1077
  ae0:	f9400014 	ldr	x20, [x0]
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
  ae4:	f90013f5 	str	x21, [sp, #32]
 _ZN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS1_SaIS1_EEEC4ERKS2_():
 /usr/aarch64-linux-gnu/include/c++/13/bits/stl_iterator.h:1077
@@ -67,7 +67,7 @@ _ZSt26__unguarded_insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_
  b3c:	eb1302bf 	cmp	x21, x19
  b40:	540000a1 	b.ne	b54 <cs_vec_sort_H+0x80>  // b.any
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
  b44:	a94153f3 	ldp	x19, x20, [sp, #16]
  b48:	f94013f5 	ldr	x21, [sp, #32]
  b4c:	a8c37bfd 	ldp	x29, x30, [sp], #48
@@ -85,7 +85,7 @@ _ZSt22__final_insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS
  b64:	aa1503e1 	mov	x1, x21
  b68:	aa1403e0 	mov	x0, x20
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
  b6c:	a94153f3 	ldp	x19, x20, [sp, #16]
  b70:	f94013f5 	ldr	x21, [sp, #32]
  b74:	a8c37bfd 	ldp	x29, x30, [sp], #48

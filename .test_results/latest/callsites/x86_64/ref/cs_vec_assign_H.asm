@@ -2,21 +2,21 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
 000000000000053e <cs_vec_assign_H>:
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  53e:	f3 0f 1e fa          	endbr64
 _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
 /usr/include/c++/13/bits/vector.tcc:213
  542:	48 39 f7             	cmp    %rsi,%rdi
  545:	0f 84 94 01 00 00    	je     6df <cs_vec_assign_H+0x1a1>
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  54b:	41 57                	push   %r15
  54d:	49 89 f7             	mov    %rsi,%r15
  550:	41 56                	push   %r14
@@ -86,7 +86,7 @@ _ZNSt12_Destroy_auxILb0EE9__destroyIP1HEEvT_S4_():
  5be:	49 39 ee             	cmp    %rbp,%r14
  5c1:	74 0f                	je     5d2 <cs_vec_assign_H+0x94>
 _ZN1HD4Ev():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:20
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:20
  5c3:	48 8d 7d 08          	lea    0x8(%rbp),%rdi
 _ZNSt12_Destroy_auxILb0EE9__destroyIP1HEEvT_S4_():
 /usr/include/c++/13/bits/stl_construct.h:162 (discriminator 2)
@@ -168,7 +168,7 @@ _ZNSt12_Destroy_auxILb0EE9__destroyIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorI
  65a:	48 39 2c 24          	cmp    %rbp,(%rsp)
  65e:	74 69                	je     6c9 <cs_vec_assign_H+0x18b>
 _ZN1HD4Ev():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:20
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:20
  660:	48 8d 7d 08          	lea    0x8(%rbp),%rdi
  664:	48 83 c5 28          	add    $0x28,%rbp
 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEED4Ev():
@@ -233,7 +233,7 @@ _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
  6c9:	4c 03 23             	add    (%rbx),%r12
  6cc:	4c 89 63 08          	mov    %r12,0x8(%rbx)
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  6d0:	48 83 c4 18          	add    $0x18,%rsp
  6d4:	5b                   	pop    %rbx
  6d5:	5d                   	pop    %rbp

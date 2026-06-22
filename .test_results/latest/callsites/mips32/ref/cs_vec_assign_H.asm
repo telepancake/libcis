@@ -2,7 +2,7 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
 
 
 Disassembly of section .text:
@@ -13,13 +13,13 @@ _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
  740:	1085007b 	beq	a0,a1,930 <cs_vec_assign_H+0x1f0>
  744:	00000000 	nop
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  748:	27bdffc8 	addiu	sp,sp,-56
 _ZNKSt6vectorI1HSaIS0_EE8capacityEv():
 /usr/mips-linux-gnu/include/c++/12/bits/stl_vector.h:1077
  74c:	8c820008 	lw	v0,8(a0)
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  750:	3c1c0000 	lui	gp,0x0
  754:	afb30024 	sw	s3,36(sp)
  758:	279c0000 	addiu	gp,gp,0
@@ -34,20 +34,20 @@ _ZNKSt6vectorI1HSaIS0_EE8capacityEv():
 /usr/mips-linux-gnu/include/c++/12/bits/stl_vector.h:1077
  770:	8c920000 	lw	s2,0(a0)
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  774:	afb5002c 	sw	s5,44(sp)
  778:	00a0a825 	move	s5,a1
 _ZNKSt6vectorI1HSaIS0_EE4sizeEv():
 /usr/mips-linux-gnu/include/c++/12/bits/stl_vector.h:990
  77c:	0271a023 	subu	s4,s3,s1
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  780:	afb00018 	sw	s0,24(sp)
 _ZNKSt6vectorI1HSaIS0_EE8capacityEv():
 /usr/mips-linux-gnu/include/c++/12/bits/stl_vector.h:1077
  784:	00521023 	subu	v0,v0,s2
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  788:	afbf0034 	sw	ra,52(sp)
  78c:	afb60030 	sw	s6,48(sp)
  790:	00808025 	move	s0,a0
@@ -109,14 +109,14 @@ _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
 /usr/mips-linux-gnu/include/c++/12/bits/vector.tcc:256
  810:	8e020000 	lw	v0,0(s0)
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  814:	8fbf0034 	lw	ra,52(sp)
  818:	8fb60030 	lw	s6,48(sp)
 _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
 /usr/mips-linux-gnu/include/c++/12/bits/vector.tcc:256
  81c:	00541021 	addu	v0,v0,s4
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  820:	8fb5002c 	lw	s5,44(sp)
  824:	8fb40028 	lw	s4,40(sp)
  828:	8fb30024 	lw	s3,36(sp)
@@ -126,7 +126,7 @@ _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
 /usr/mips-linux-gnu/include/c++/12/bits/vector.tcc:256
  834:	ae020004 	sw	v0,4(s0)
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  838:	8fb00018 	lw	s0,24(sp)
  83c:	03e00008 	jr	ra
  840:	27bd0038 	addiu	sp,sp,56

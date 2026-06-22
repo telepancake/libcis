@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm32/ref.o:     file format elf32-littlearm
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm32/ref.o:     file format elf32-littlearm
 
 
 Disassembly of section .text:
 
 00000258 <cs_vec_push_H>:
 cs_vec_push_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:30
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:30
  258:	b538      	push	{r3, r4, r5, lr}
  25a:	460a      	mov	r2, r1
  25c:	4604      	mov	r4, r0
@@ -28,13 +28,13 @@ _ZNSt6vectorI1HSaIS0_EE9push_backERKS0_():
  26e:	3320      	adds	r3, #32
  270:	6063      	str	r3, [r4, #4]
 cs_vec_push_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:30
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:30
  272:	bd38      	pop	{r3, r4, r5, pc}
 _ZNSt6vectorI1HSaIS0_EE9push_backERKS0_():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/stl_vector.h:1292 (discriminator 1)
  274:	4619      	mov	r1, r3
 cs_vec_push_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:30
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:30
  276:	e8bd 4038 	ldmia.w	sp!, {r3, r4, r5, lr}
 _ZNSt6vectorI1HSaIS0_EE9push_backERKS0_():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/stl_vector.h:1292 (discriminator 1)

@@ -2,21 +2,21 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
 
 
 Disassembly of section .text:
 
 0000000000000090 <cs_vec_push_int>:
 cs_vec_push_int():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:29
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
   90:	a9be7bfd 	stp	x29, x30, [sp, #-32]!
   94:	910003fd 	mov	x29, sp
 _ZNSt6vectorIiSaIiEE9push_backERKi():
 /usr/aarch64-linux-gnu/include/c++/13/bits/stl_vector.h:1283
   98:	a9409003 	ldp	x3, x4, [x0, #8]
 cs_vec_push_int():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:29
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
   9c:	b9001fe1 	str	w1, [sp, #28]
 _ZNSt6vectorIiSaIiEE9push_backERKi():
 /usr/aarch64-linux-gnu/include/c++/13/bits/stl_vector.h:1283
@@ -29,7 +29,7 @@ _ZNSt6vectorIiSaIiEE9push_backERKi():
 /usr/aarch64-linux-gnu/include/c++/13/bits/stl_vector.h:1288
   ac:	f9000403 	str	x3, [x0, #8]
 cs_vec_push_int():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:29
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
   b0:	a8c27bfd 	ldp	x29, x30, [sp], #32
   b4:	d65f03c0 	ret
 _ZNSt6vectorIiSaIiEE9push_backERKi():
@@ -38,7 +38,7 @@ _ZNSt6vectorIiSaIiEE9push_backERKi():
   bc:	aa0303e1 	mov	x1, x3
   c0:	94000000 	bl	0 <_ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_createERmm.isra.0>
 cs_vec_push_int():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:29
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
   c4:	17fffffb 	b	b0 <cs_vec_push_int+0x20>
 
 Disassembly of section .text._ZNKSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE7compareERKS4_:

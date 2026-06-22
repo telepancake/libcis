@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
 0000000000000376 <cs_vec_insert_H>:
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  376:	f3 0f 1e fa          	endbr64
  37a:	41 55                	push   %r13
  37c:	41 54                	push   %r12
@@ -108,14 +108,14 @@ _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
  447:	00 00 
  449:	75 25                	jne    470 <cs_vec_insert_H+0xfa>
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  44b:	48 83 c4 48          	add    $0x48,%rsp
 _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
 /usr/include/c++/13/bits/vector.tcc:170 (discriminator 4)
  44f:	48 89 f2             	mov    %rsi,%rdx
  452:	48 89 ee             	mov    %rbp,%rsi
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  455:	5b                   	pop    %rbx
  456:	5d                   	pop    %rbp
  457:	41 5c                	pop    %r12
@@ -124,7 +124,7 @@ _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
 /usr/include/c++/13/bits/vector.tcc:170 (discriminator 4)
  45b:	e9 00 00 00 00       	jmp    460 <cs_vec_insert_H+0xea>
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  460:	48 8b 44 24 38       	mov    0x38(%rsp),%rax
  465:	64 48 2b 04 25 28 00 	sub    %fs:0x28,%rax
  46c:	00 00 

@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
 
 
 Disassembly of section .text:
 
 00000000000001ac <cs_vec_erase_H>:
 cs_vec_erase_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:32
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:32
  1ac:	a9bd7bfd 	stp	x29, x30, [sp, #-48]!
  1b0:	910003fd 	mov	x29, sp
  1b4:	a90153f3 	stp	x19, x20, [sp, #16]
@@ -22,7 +22,7 @@ _ZNK9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS1_SaIS1_EEEplEl():
 /usr/aarch64-linux-gnu/include/c++/13/bits/stl_iterator.h:1148
  1c4:	91014001 	add	x1, x0, #0x50
 cs_vec_erase_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:32
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:32
  1c8:	f90013f5 	str	x21, [sp, #32]
 _ZNSt6vectorI1HSaIS0_EE8_M_eraseEN9__gnu_cxx17__normal_iteratorIPS0_S2_EE():
 /usr/aarch64-linux-gnu/include/c++/13/bits/vector.tcc:184 (discriminator 3)
@@ -31,7 +31,7 @@ _ZNSt6vectorI1HSaIS0_EE8_M_eraseEN9__gnu_cxx17__normal_iteratorIPS0_S2_EE():
 /usr/aarch64-linux-gnu/include/c++/13/bits/vector.tcc:186
  1d4:	f9400680 	ldr	x0, [x20, #8]
 cs_vec_erase_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:32
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:32
  1d8:	f94013f5 	ldr	x21, [sp, #32]
 _ZNSt6vectorI1HSaIS0_EE8_M_eraseEN9__gnu_cxx17__normal_iteratorIPS0_S2_EE():
 /usr/aarch64-linux-gnu/include/c++/13/bits/vector.tcc:186
@@ -41,7 +41,7 @@ _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEED4Ev():
 /usr/aarch64-linux-gnu/include/c++/13/bits/basic_string.h:804
  1e4:	d1008000 	sub	x0, x0, #0x20
 cs_vec_erase_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:32
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:32
  1e8:	a94153f3 	ldp	x19, x20, [sp, #16]
  1ec:	a8c37bfd 	ldp	x29, x30, [sp], #48
 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEED4Ev():

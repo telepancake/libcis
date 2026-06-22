@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
 
 
 Disassembly of section .text:
 
 00000938 <cs_str_append>:
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  938:	3c1c0000 	lui	gp,0x0
  93c:	27bdffc0 	addiu	sp,sp,-64
  940:	279c0000 	addiu	gp,gp,0
@@ -19,7 +19,7 @@ _ZNSt11char_traitsIcE6lengthEPKc():
 /usr/mips-linux-gnu/include/c++/12/bits/char_traits.h:389
  94c:	8f990000 	lw	t9,0(gp)
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  950:	afb40030 	sw	s4,48(sp)
  954:	afb20028 	sw	s2,40(sp)
  958:	00a09025 	move	s2,a1
@@ -31,7 +31,7 @@ _ZNSt11char_traitsIcE6lengthEPKc():
 /usr/mips-linux-gnu/include/c++/12/bits/char_traits.h:389
  96c:	00a02025 	move	a0,a1
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  970:	afbf003c 	sw	ra,60(sp)
  974:	afb60038 	sw	s6,56(sp)
  978:	afb50034 	sw	s5,52(sp)
@@ -79,7 +79,7 @@ _ZNSt11char_traitsIcE6assignERcRKc():
 /usr/mips-linux-gnu/include/c++/12/bits/char_traits.h:348
  9f4:	8e020000 	lw	v0,0(s0)
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  9f8:	8fa3001c 	lw	v1,28(sp)
 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_lengthEj():
 /usr/mips-linux-gnu/include/c++/12/bits/basic_string.h:231
@@ -89,7 +89,7 @@ _ZNSt11char_traitsIcE6assignERcRKc():
  a00:	00561021 	addu	v0,v0,s6
  a04:	a0400000 	sb	zero,0(v0)
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  a08:	8e620000 	lw	v0,0(s3)
  a0c:	10620019 	beq	v1,v0,a74 <cs_str_append+0x13c>
  a10:	8fbf003c 	lw	ra,60(sp)
@@ -133,7 +133,7 @@ _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_mutateEjjPKcj():
  a6c:	1000ffe1 	b	9f4 <cs_str_append+0xbc>
  a70:	ae020008 	sw	v0,8(s0)
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  a74:	8fb60038 	lw	s6,56(sp)
  a78:	8fb50034 	lw	s5,52(sp)
  a7c:	8fb40030 	lw	s4,48(sp)

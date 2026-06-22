@@ -2,7 +2,7 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
 
 
 Disassembly of section .text:
@@ -14,7 +14,7 @@ _ZN9__gnu_cxxeqIPKiSt6vectorIiSaIiEEEEbRKNS_17__normal_iteratorIT_T0_EESB_():
   9c:	8c830004 	lw	v1,4(a0)
   a0:	00431026 	xor	v0,v0,v1
 cs_vec_empty_i():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:49
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:49
   a4:	03e00008 	jr	ra
   a8:	2c420001 	sltiu	v0,v0,1
 

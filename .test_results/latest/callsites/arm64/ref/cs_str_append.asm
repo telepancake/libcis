@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
 
 
 Disassembly of section .text:
 
 0000000000000830 <cs_str_append>:
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  830:	d10143ff 	sub	sp, sp, #0x50
  834:	a9017bfd 	stp	x29, x30, [sp, #16]
  838:	910043fd 	add	x29, sp, #0x10
@@ -67,7 +67,7 @@ _ZNSt11char_traitsIcE6assignERcRKc():
 /usr/aarch64-linux-gnu/include/c++/13/bits/char_traits.h:358
  8c8:	3837681f 	strb	wzr, [x0, x23]
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  8cc:	90000000 	adrp	x0, 0 <__stack_chk_guard>
  8d0:	f9400000 	ldr	x0, [x0]
  8d4:	f94007e2 	ldr	x2, [sp, #8]
@@ -113,7 +113,7 @@ _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_mutateEmmPKcm():
 /usr/aarch64-linux-gnu/include/c++/13/bits/basic_string.tcc:345
  934:	17ffffe3 	b	8c0 <cs_str_append+0x90>
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  938:	a9417bfd 	ldp	x29, x30, [sp, #16]
  93c:	a94253f3 	ldp	x19, x20, [sp, #32]
  940:	a9435bf5 	ldp	x21, x22, [sp, #48]

@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm32/ref.o:     file format elf32-littlearm
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm32/ref.o:     file format elf32-littlearm
 
 
 Disassembly of section .text:
 
 0000027e <cs_vec_insert_H>:
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  27e:	b5f0      	push	{r4, r5, r6, r7, lr}
  280:	460a      	mov	r2, r1
  282:	4d2e      	ldr	r5, [pc, #184]	@ (33c <cs_vec_insert_H+0xbe>)
@@ -22,7 +22,7 @@ _ZNK9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS1_SaIS1_EEEplEi():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/stl_iterator.h:1148
  28e:	6805      	ldr	r5, [r0, #0]
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  290:	681b      	ldr	r3, [r3, #0]
  292:	9309      	str	r3, [sp, #36]	@ 0x24
  294:	f04f 0300 	mov.w	r3, #0
@@ -49,7 +49,7 @@ _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
  2ae:	3320      	adds	r3, #32
  2b0:	6063      	str	r3, [r4, #4]
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  2b2:	4a24      	ldr	r2, [pc, #144]	@ (344 <cs_vec_insert_H+0xc6>)
  2b4:	4b22      	ldr	r3, [pc, #136]	@ (340 <cs_vec_insert_H+0xc2>)
  2b6:	447a      	add	r2, pc
@@ -122,13 +122,13 @@ _ZNSt20__copy_move_backwardILb1ELb0ESt26random_access_iterator_tagE13__copy_move
 /usr/arm-linux-gnueabihf/include/c++/13/bits/stl_algobase.h:731 (discriminator 2)
  316:	e7ed      	b.n	2f4 <cs_vec_insert_H+0x76>
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  318:	490b      	ldr	r1, [pc, #44]	@ (348 <cs_vec_insert_H+0xca>)
 _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/vector.tcc:170 (discriminator 4)
  31a:	4b09      	ldr	r3, [pc, #36]	@ (340 <cs_vec_insert_H+0xc2>)
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  31c:	4479      	add	r1, pc
 _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/vector.tcc:170 (discriminator 4)
@@ -139,13 +139,13 @@ _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
  326:	f04f 0300 	mov.w	r3, #0
  32a:	d001      	beq.n	330 <cs_vec_insert_H+0xb2>
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  32c:	f7ff fffe 	bl	0 <__stack_chk_fail>
 _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/vector.tcc:170 (discriminator 4)
  330:	4629      	mov	r1, r5
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  332:	b00b      	add	sp, #44	@ 0x2c
  334:	e8bd 40f0 	ldmia.w	sp!, {r4, r5, r6, r7, lr}
 _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():

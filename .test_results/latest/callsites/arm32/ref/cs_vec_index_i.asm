@@ -2,7 +2,7 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm32/ref.o:     file format elf32-littlearm
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm32/ref.o:     file format elf32-littlearm
 
 
 Disassembly of section .text:
@@ -12,7 +12,7 @@ _ZNSt6vectorIiSaIiEEixEj():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/stl_vector.h:1129
   5a:	6800      	ldr	r0, [r0, #0]
 cs_vec_index_i():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:51
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:51
   5c:	eb00 0081 	add.w	r0, r0, r1, lsl #2
   60:	4770      	bx	lr
 

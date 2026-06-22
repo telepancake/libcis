@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
 000000000000092e <cs_vec_sort_H>:
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
  92e:	f3 0f 1e fa          	endbr64
  932:	55                   	push   %rbp
  933:	53                   	push   %rbx
@@ -77,20 +77,20 @@ _ZN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS1_SaIS1_EEEppEv():
 /usr/include/c++/13/bits/stl_iterator.h:1112
  9be:	eb ed                	jmp    9ad <cs_vec_sort_H+0x7f>
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
  9c0:	48 83 c4 18          	add    $0x18,%rsp
 _ZSt22__final_insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_():
 /usr/include/c++/13/bits/stl_algo.h:1864
  9c4:	48 89 ee             	mov    %rbp,%rsi
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
  9c7:	5b                   	pop    %rbx
  9c8:	5d                   	pop    %rbp
 _ZSt22__final_insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_():
 /usr/include/c++/13/bits/stl_algo.h:1864
  9c9:	e9 a1 f8 ff ff       	jmp    26f <_ZSt16__insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_.isra.0>
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
  9ce:	48 83 c4 18          	add    $0x18,%rsp
  9d2:	5b                   	pop    %rbx
  9d3:	5d                   	pop    %rbp

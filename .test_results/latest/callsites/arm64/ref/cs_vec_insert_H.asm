@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
 
 
 Disassembly of section .text:
 
 0000000000000438 <cs_vec_insert_H>:
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  438:	d101c3ff 	sub	sp, sp, #0x70
  43c:	90000003 	adrp	x3, 0 <__stack_chk_guard>
  440:	f9400063 	ldr	x3, [x3]
@@ -45,7 +45,7 @@ _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
  48c:	9100a000 	add	x0, x0, #0x28
  490:	f9000660 	str	x0, [x19, #8]
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  494:	90000000 	adrp	x0, 0 <__stack_chk_guard>
  498:	f9400000 	ldr	x0, [x0]
  49c:	f9401fe2 	ldr	x2, [sp, #56]
@@ -131,14 +131,14 @@ _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
  558:	d2800003 	mov	x3, #0x0                   	// #0
  55c:	54000040 	b.eq	564 <cs_vec_insert_H+0x12c>  // b.none
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  560:	94000000 	bl	0 <__stack_chk_fail>
  564:	a9447bfd 	ldp	x29, x30, [sp, #64]
 _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
 /usr/aarch64-linux-gnu/include/c++/13/bits/vector.tcc:170 (discriminator 4)
  568:	aa1403e1 	mov	x1, x20
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  56c:	a94553f3 	ldp	x19, x20, [sp, #80]
  570:	a9465bf5 	ldp	x21, x22, [sp, #96]
  574:	9101c3ff 	add	sp, sp, #0x70

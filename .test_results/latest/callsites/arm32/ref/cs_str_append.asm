@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm32/ref.o:     file format elf32-littlearm
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm32/ref.o:     file format elf32-littlearm
 
 
 Disassembly of section .text:
 
 000004e8 <cs_str_append>:
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  4e8:	e92d 43f7 	stmdb	sp!, {r0, r1, r2, r4, r5, r6, r7, r8, r9, lr}
  4ec:	4604      	mov	r4, r0
  4ee:	4a2b      	ldr	r2, [pc, #172]	@ (59c <cs_str_append+0xb4>)
@@ -18,7 +18,7 @@ _ZNSt11char_traitsIcE6lengthEPKc():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/char_traits.h:399
  4f2:	4608      	mov	r0, r1
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  4f4:	447a      	add	r2, pc
  4f6:	460f      	mov	r7, r1
  4f8:	58d3      	ldr	r3, [r2, r3]
@@ -73,7 +73,7 @@ _ZNSt11char_traitsIcE6assignERcRKc():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/char_traits.h:358
  542:	f803 2008 	strb.w	r2, [r3, r8]
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  546:	4a18      	ldr	r2, [pc, #96]	@ (5a8 <cs_str_append+0xc0>)
  548:	4b15      	ldr	r3, [pc, #84]	@ (5a0 <cs_str_append+0xb8>)
  54a:	447a      	add	r2, pc
@@ -123,7 +123,7 @@ _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_mutateEjjPKcj():
  592:	d0f1      	beq.n	578 <cs_str_append+0x90>
  594:	e7ea      	b.n	56c <cs_str_append+0x84>
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  596:	b003      	add	sp, #12
  598:	e8bd 83f0 	ldmia.w	sp!, {r4, r5, r6, r7, r8, r9, pc}
  59c:	000000a4 	.word	0x000000a4

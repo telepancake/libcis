@@ -1,27 +1,27 @@
-; call site: cs_vec_empty_i   lib=libcis   arch=arm32   size=16 bytes
+; call site: cs_vec_empty_i   lib=libcis   arch=arm32   size=18 bytes
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm32/libcis.o:     file format elf32-littlearm
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm32/libcis.o:     file format elf32-littlearm
 
 
 Disassembly of section .text:
 
-0000023c <cs_vec_empty_i>:
-_ZNKSt6vectorIiSaIiEE5emptyEv():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:691
- 23c:	6800      	ldr	r0, [r0, #0]
+0000022c <cs_vec_empty_i>:
 cs_vec_empty_i():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:49
- 23e:	b508      	push	{r3, lr}
-_ZNKSt6vectorIiSaIiEE5emptyEv():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:691
- 240:	f7ff ff12 	bl	68 <_ZNKSt6vectorIiSaIiEE4sizeEv.isra.0>
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:49
+ 22c:	6800      	ldr	r0, [r0, #0]
+_ZNKSt6vectorIiSaIiEE4sizeEv():
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:679
+ 22e:	b110      	cbz	r0, 236 <cs_vec_empty_i+0xa>
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:680 (discriminator 1)
+ 230:	f850 0c04 	ldr.w	r0, [r0, #-4]
+ 234:	0880      	lsrs	r0, r0, #2
 cs_vec_empty_i():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:49
- 244:	fab0 f080 	clz	r0, r0
- 248:	0940      	lsrs	r0, r0, #5
- 24a:	bd08      	pop	{r3, pc}
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:49
+ 236:	fab0 f080 	clz	r0, r0
+ 23a:	0940      	lsrs	r0, r0, #5
+ 23c:	4770      	bx	lr
 
 Disassembly of section .text._ZNSt6detail17move_construct_opI1HSaIS1_EEEvPvS3_S3_:
 
@@ -41,9 +41,9 @@ Disassembly of section .text._ZNSs9init_copyEPKcj:
 
 Disassembly of section .text._ZN1HaSERKS_.isra.0:
 
-Disassembly of section .text._ZNSt6vectorIiSaIiEE10grow_cold_Ej:
+Disassembly of section .text._ZNSt6vectorIiSaIiEE12ensure_free_Ej:
 
-Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE10grow_cold_Ej:
+Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE12ensure_free_Ej:
 
 Disassembly of section .text._ZN1HC2ERKS_:
 

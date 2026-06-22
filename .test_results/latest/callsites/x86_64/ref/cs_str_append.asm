@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
 00000000000006e0 <cs_str_append>:
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  6e0:	f3 0f 1e fa          	endbr64
  6e4:	41 57                	push   %r15
  6e6:	41 56                	push   %r14
@@ -23,7 +23,7 @@ _ZNSt11char_traitsIcE6lengthEPKc():
 /usr/include/c++/13/bits/char_traits.h:399
  6f4:	48 89 f7             	mov    %rsi,%rdi
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  6f7:	48 83 ec 18          	sub    $0x18,%rsp
  6fb:	64 48 8b 04 25 28 00 	mov    %fs:0x28,%rax
  702:	00 00 
@@ -111,7 +111,7 @@ _ZNSt11char_traitsIcE6assignERcRKc():
 /usr/include/c++/13/bits/char_traits.h:358
  7b2:	42 c6 04 38 00       	movb   $0x0,(%rax,%r15,1)
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  7b7:	48 8b 44 24 08       	mov    0x8(%rsp),%rax
  7bc:	64 48 2b 04 25 28 00 	sub    %fs:0x28,%rax
  7c3:	00 00 

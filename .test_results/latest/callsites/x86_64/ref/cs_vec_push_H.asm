@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
 0000000000000349 <cs_vec_push_H>:
 cs_vec_push_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:30
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:30
  349:	f3 0f 1e fa          	endbr64
  34d:	53                   	push   %rbx
  34e:	48 89 fb             	mov    %rdi,%rbx
@@ -25,7 +25,7 @@ _ZNSt6vectorI1HSaIS0_EE9push_backERKS0_():
 /usr/include/c++/13/bits/stl_vector.h:1288
  360:	48 83 43 08 28       	addq   $0x28,0x8(%rbx)
 cs_vec_push_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:30
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:30
  365:	5b                   	pop    %rbx
  366:	c3                   	ret
 _ZNSt6vectorI1HSaIS0_EE9push_backERKS0_():
@@ -34,7 +34,7 @@ _ZNSt6vectorI1HSaIS0_EE9push_backERKS0_():
  36a:	48 89 fe             	mov    %rdi,%rsi
  36d:	48 89 df             	mov    %rbx,%rdi
 cs_vec_push_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:30
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:30
  370:	5b                   	pop    %rbx
 _ZNSt6vectorI1HSaIS0_EE9push_backERKS0_():
 /usr/include/c++/13/bits/stl_vector.h:1292 (discriminator 1)

@@ -1,70 +1,70 @@
 libcis size/memory/codegen — overhead vs non-type-erased reference (libstdc++)
-MEASURED LIBRARY: worktree-agent-a7d5311b0eded3df4 @ a5d39c3-dirty   (re-run `make size` here to verify; do not trust prose)
+MEASURED LIBRARY: claude/size-salvage @ 0e14283   (re-run `make size` here to verify; do not trust prose)
 ==============================================================================
 
 PER-METHOD CODE SIZE at -Os, vs the non-type-erased reference (x86_64).
 Size is legitimately per-call-site, so it gets a verdict. Read it method by
 method — no aggregate pass/fail. (dsize<0 = smaller = better.)
   method              dsize  bytes c/r    verdict
-  cs_vec_push_int       +81    135/54     BIGGER
-  cs_vec_push_H        +103    148/45     BIGGER
-  cs_vec_insert_H      -120    146/266    smaller
+  cs_vec_push_int       +13     67/54     BIGGER
+  cs_vec_push_H         +30     75/45     BIGGER
+  cs_vec_insert_H      -176     90/266    smaller
   cs_vec_erase_H        -39     63/102    smaller
   cs_vec_assign_H      -370     48/418    smaller
   cs_vec_sort_H        -114     53/167    smaller
   cs_str_append        -205     46/251    smaller
   cs_str_compare        +83     92/9      BIGGER
-  cs_vec_size_i          -4     12/16     smaller
-  cs_vec_empty_i         +4     19/15     BIGGER
+  cs_vec_size_i          +7     23/16     BIGGER
+  cs_vec_empty_i        +14     29/15     BIGGER
   cs_vec_end_i          +15     24/9      BIGGER
   cs_vec_index_i         +0     12/12     ~
 
 SPEED — per workload: total instructions (Ir) and WHERE they go (callgrind).
 Not a per-method multiplier. Full breakdown: .test_results/latest/speed_attribution.txt
   cs_vec_index_i   [operator[] sum over 3 parallel vector<int>[8192], 200x (SoA index loop)]
-     total Ir: libcis 13209365 vs ref 13332163 (1.0x ref)
+     total Ir: libcis 13209328 vs ref 13332163 (1.0x ref)
      libcis instructions go to: main 100%, __GI___tunables_init 0%
   cs_vec_end_i   [iterator traversal of vector<int>[8192], 200x (end() as the bound)]
-     total Ir: libcis 14790397 vs ref 9915194 (1.5x ref)
+     total Ir: libcis 14790394 vs ref 9915194 (1.5x ref)
      libcis instructions go to: main 67%
   cs_vec_push_int   [build vector<int> via push_back, 4096 elems, 80x]
-     total Ir: libcis 15935078 vs ref 4376563 (3.6x ref)
-     libcis instructions go to: vector<int, allocator<int> >::size() 25%, __memcpy_avx_unaligned_erms 9%, main 6%, _int_malloc 1%
+     total Ir: libcis 21493144 vs ref 4376577 (4.9x ref)
+     libcis instructions go to: vector<int, allocator<int> >::ensure_free_(uns 67%, __memcpy_avx_unaligned_erms 7%, main 5%, _int_malloc 0%
   cs_vec_push_H   [build vector<H{7B+std::string}> via push_back, 1024 elems, 40x]
-     total Ir: libcis 30007704 vs ref 8886641 (3.4x ref)
-     libcis instructions go to: _int_malloc 19%, _int_free 10%, malloc_consolidate 9%, detail::storage_b_resize(detail::type_ops*, vo 7%
+     total Ir: libcis 31108850 vs ref 8886627 (3.5x ref)
+     libcis instructions go to: _int_malloc 18%, _int_free 10%, malloc_consolidate 8%, detail::storage_b_resize(detail::type_ops*, vo 7%
   cs_vec_insert_H   [insert-at-begin into vector<H{string}>, 512 elems, 60x]
-     total Ir: libcis 327697608 vs ref 757452126 (0.4x ref)
+     total Ir: libcis 328120714 vs ref 757452140 (0.4x ref)
      libcis instructions go to: detail::rotate(detail::type_ops*, detail::stor 44%, string::vdeallocate() 12%, void detail::move_construct_op<H, allocator<H> 5%, void detail::destroy_op<H, allocator<H> >(void 2%
   cs_vec_erase_H   [erase-at-begin from vector<H{string}>[512] to empty, 60x]
-     total Ir: libcis 326618683 vs ref 771354033 (0.4x ref)
+     total Ir: libcis 326632372 vs ref 771354033 (0.4x ref)
      libcis instructions go to: detail::relocate_block(detail::type_ops*, void 45%, string::vdeallocate() 12%, void detail::move_construct_op<H, allocator<H> 5%, void detail::destroy_op<H, allocator<H> >(void 2%
   cs_vec_sort_H   [copy-construct 2048 H{string} + std::sort by string key, 60x]
-     total Ir: libcis 441669868 vs ref 216700507 (2.0x ref)
+     total Ir: libcis 441725019 vs ref 216899813 (2.0x ref)
      libcis instructions go to: H::operator=(H&&) 18%, __memcmp_avx2_movbe 17%, void detail::introsort<H*, less<void> >(H*, H* 13%, H::operator<(H&) 9%
   cs_str_append   [build std::string via += char, 4096 chars, 200x]
-     total Ir: libcis 20577853 vs ref 25019892 (0.8x ref)
+     total Ir: libcis 20561639 vs ref 25019878 (0.8x ref)
      libcis instructions go to: main 28%, __memcpy_avx_unaligned_erms 1%, detail::storage_b_resize(detail::type_ops*, vo 1%, _int_free 0%
 
 PER-ARCH per-call code-size overhead (libcis - that arch's libstdc++), bytes.
 Verdicts above are x86_64; direction is usually arch-stable but size is NOT —
 weight by your actual target ISA, not this one.
   method               arm32    arm64   mips32   x86_64
-  cs_vec_push_int        +52     +124     +116      +81
-  cs_vec_push_H          +74     +124     +160     +103
-  cs_vec_insert_H        -70     -164     -104     -120
+  cs_vec_push_int         +6      +12      +16      +13
+  cs_vec_push_H           +6      +16      +28      +30
+  cs_vec_insert_H       -126     -224     -180     -176
   cs_vec_erase_H         +16      -64      -20      -39
-  cs_vec_assign_H       -212     -384     -420     -370
+  cs_vec_assign_H       -214     -384     -420     -370
   cs_vec_sort_H          -16      -88      -40     -114
   cs_str_append         -172     -236     -268     -205
   cs_str_compare         +76     +104     +140      +83
-  cs_vec_size_i           -6       -8      -12       -4
-  cs_vec_empty_i          +4      +16      +16       +4
+  cs_vec_size_i           +2      +12       +8       +7
+  cs_vec_empty_i          +6      +20       +8      +14
   cs_vec_end_i           +12      +16      +24      +15
   cs_vec_index_i          +0       +0       +0       +0
 
 per-type code, demoted, NOT a gate (a sanity readout, decide per method above):
-  -102 B per added instantiation  (libcis 3781 vs ref 3882)
+  -123 B per added instantiation  (libcis 3759 vs ref 3882)
 
 MEMORY  (representative workloads)
   bench            n   intern   heap_cis   heap_ref  heap_ovh    stack

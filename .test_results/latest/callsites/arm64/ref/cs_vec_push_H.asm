@@ -2,7 +2,7 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
 
 
 Disassembly of section .text:
@@ -14,7 +14,7 @@ _ZNSt6vectorI1HSaIS0_EE9push_backERKS0_():
  3f4:	eb04007f 	cmp	x3, x4
  3f8:	540001a0 	b.eq	42c <cs_vec_push_H+0x3c>  // b.none
 cs_vec_push_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:30
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:30
  3fc:	a9be7bfd 	stp	x29, x30, [sp, #-32]!
  400:	910003fd 	mov	x29, sp
  404:	f9000bf3 	str	x19, [sp, #16]
@@ -29,7 +29,7 @@ _ZNSt6vectorI1HSaIS0_EE9push_backERKS0_():
  418:	9100a000 	add	x0, x0, #0x28
  41c:	f9000660 	str	x0, [x19, #8]
 cs_vec_push_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:30
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:30
  420:	f9400bf3 	ldr	x19, [sp, #16]
  424:	a8c27bfd 	ldp	x29, x30, [sp], #32
  428:	d65f03c0 	ret

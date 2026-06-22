@@ -2,42 +2,42 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm64/libcis.o:     file format elf64-littleaarch64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm64/libcis.o:     file format elf64-littleaarch64
 
 
 Disassembly of section .text:
 
-0000000000000624 <cs_vec_assign_H>:
+000000000000059c <cs_vec_assign_H>:
 _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:594
- 624:	eb01001f 	cmp	x0, x1
- 628:	540001c0 	b.eq	660 <cs_vec_assign_H+0x3c>  // b.none
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:594
+ 59c:	eb01001f 	cmp	x0, x1
+ 5a0:	540001c0 	b.eq	5d8 <cs_vec_assign_H+0x3c>  // b.none
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
- 62c:	a9bf7bfd 	stp	x29, x30, [sp, #-16]!
- 630:	aa0003e4 	mov	x4, x0
- 634:	910003fd 	mov	x29, sp
- 638:	f9400025 	ldr	x5, [x1]
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
+ 5a4:	a9bf7bfd 	stp	x29, x30, [sp, #-16]!
+ 5a8:	aa0003e4 	mov	x4, x0
+ 5ac:	910003fd 	mov	x29, sp
+ 5b0:	f9400025 	ldr	x5, [x1]
 _ZNKSt6vectorI1HSaIS0_EE3endEv():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:661
- 63c:	aa0503e0 	mov	x0, x5
- 640:	97fffe8e 	bl	78 <_ZNKSt6vectorI1HSaIS0_EE8end_ptr_Ev.isra.0>
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:661
+ 5b4:	aa0503e0 	mov	x0, x5
+ 5b8:	97fffeaa 	bl	60 <_ZNKSt6vectorI1HSaIS0_EE8end_ptr_Ev.isra.0>
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
- 644:	a8c17bfd 	ldp	x29, x30, [sp], #16
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
+ 5bc:	a8c17bfd 	ldp	x29, x30, [sp], #16
 _ZSt8distanceIPK1HENSt15iterator_traitsIT_E15difference_typeES4_S4_():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/iterator:1087
- 648:	cb050003 	sub	x3, x0, x5
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/iterator:1087
+ 5c0:	cb050003 	sub	x3, x0, x5
 _ZNKSt6vectorI1HSaIS0_EE3endEv():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:661
- 64c:	aa0003e2 	mov	x2, x0
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:661
+ 5c4:	aa0003e2 	mov	x2, x0
 _ZNSt6vectorI1HSaIS0_EE6assignIPKS0_EEvT_S6_():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:635
- 650:	aa0503e1 	mov	x1, x5
- 654:	9344fc63 	asr	x3, x3, #4
- 658:	aa0403e0 	mov	x0, x4
- 65c:	14000000 	b	0 <_ZNKSs8capacityEv.isra.0>
- 660:	d65f03c0 	ret
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:635
+ 5c8:	aa0503e1 	mov	x1, x5
+ 5cc:	9344fc63 	asr	x3, x3, #4
+ 5d0:	aa0403e0 	mov	x0, x4
+ 5d4:	14000000 	b	0 <_ZNKSs8capacityEv.isra.0>
+ 5d8:	d65f03c0 	ret
 
 Disassembly of section .text._ZNKSt19bad_optional_access4whatEv:
 
@@ -63,9 +63,9 @@ Disassembly of section .text._ZNSs9init_copyEPKcm:
 
 Disassembly of section .text._ZN1HaSERKS_.isra.0:
 
-Disassembly of section .text._ZNSt6vectorIiSaIiEE10grow_cold_Em:
+Disassembly of section .text._ZNSt6vectorIiSaIiEE12ensure_free_Em:
 
-Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE10grow_cold_Em:
+Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE12ensure_free_Em:
 
 Disassembly of section .text._ZN1HC2ERKS_:
 

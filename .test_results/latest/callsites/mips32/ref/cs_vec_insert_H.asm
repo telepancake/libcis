@@ -2,20 +2,20 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
 
 
 Disassembly of section .text:
 
 000004dc <cs_vec_insert_H>:
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  4dc:	3c1c0000 	lui	gp,0x0
 _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
 /usr/mips-linux-gnu/include/c++/12/bits/vector.tcc:141
  4e0:	8c830008 	lw	v1,8(a0)
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  4e4:	27bdffa8 	addiu	sp,sp,-88
  4e8:	279c0000 	addiu	gp,gp,0
  4ec:	afb3004c 	sw	s3,76(sp)
@@ -28,7 +28,7 @@ _ZNK9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS1_SaIS1_EEEplEi():
 /usr/mips-linux-gnu/include/c++/12/bits/stl_iterator.h:1144
  504:	8c910000 	lw	s1,0(a0)
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  508:	afb20048 	sw	s2,72(sp)
  50c:	afa2003c 	sw	v0,60(sp)
  510:	afb00040 	sw	s0,64(sp)
@@ -56,7 +56,7 @@ _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
  53c:	24420020 	addiu	v0,v0,32
  540:	ae020004 	sw	v0,4(s0)
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  544:	8fa3003c 	lw	v1,60(sp)
  548:	8e620000 	lw	v0,0(s3)
  54c:	14620029 	bne	v1,v0,5f4 <cs_vec_insert_H+0x118>
@@ -133,7 +133,7 @@ _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
  5ec:	10620004 	beq	v1,v0,600 <cs_vec_insert_H+0x124>
  5f0:	8fbf0054 	lw	ra,84(sp)
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  5f4:	8f990000 	lw	t9,0(gp)
  5f8:	0320f809 	jalr	t9
  5fc:	00000000 	nop
@@ -143,7 +143,7 @@ _ZNSt6vectorI1HSaIS0_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS0_S2_EERS5_():
 /usr/mips-linux-gnu/include/c++/12/bits/vector.tcc:164
  608:	02202825 	move	a1,s1
 cs_vec_insert_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:31
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:31
  60c:	8fb3004c 	lw	s3,76(sp)
  610:	8fb20048 	lw	s2,72(sp)
  614:	8fb10044 	lw	s1,68(sp)

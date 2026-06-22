@@ -2,25 +2,25 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm64/libcis.o:     file format elf64-littleaarch64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm64/libcis.o:     file format elf64-littleaarch64
 
 
 Disassembly of section .text:
 
-0000000000000348 <cs_vec_end_i>:
+0000000000000330 <cs_vec_end_i>:
 _ZNSt6vectorIiSaIiEE3endEv():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:660
- 348:	f9400000 	ldr	x0, [x0]
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:660
+ 330:	f9400000 	ldr	x0, [x0]
 _ZNKSt6vectorIiSaIiEE8end_ptr_Ev():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:113
- 34c:	b4000080 	cbz	x0, 35c <cs_vec_end_i+0x14>
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:114 (discriminator 1)
- 350:	f85f8001 	ldur	x1, [x0, #-8]
- 354:	927ef421 	and	x1, x1, #0xfffffffffffffffc
- 358:	8b010000 	add	x0, x0, x1
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:113
+ 334:	b4000080 	cbz	x0, 344 <cs_vec_end_i+0x14>
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:114 (discriminator 1)
+ 338:	f85f8001 	ldur	x1, [x0, #-8]
+ 33c:	927ef421 	and	x1, x1, #0xfffffffffffffffc
+ 340:	8b010000 	add	x0, x0, x1
 cs_vec_end_i():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:50
- 35c:	d65f03c0 	ret
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:50
+ 344:	d65f03c0 	ret
 
 Disassembly of section .text._ZNKSt19bad_optional_access4whatEv:
 
@@ -46,9 +46,9 @@ Disassembly of section .text._ZNSs9init_copyEPKcm:
 
 Disassembly of section .text._ZN1HaSERKS_.isra.0:
 
-Disassembly of section .text._ZNSt6vectorIiSaIiEE10grow_cold_Em:
+Disassembly of section .text._ZNSt6vectorIiSaIiEE12ensure_free_Em:
 
-Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE10grow_cold_Em:
+Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE12ensure_free_Em:
 
 Disassembly of section .text._ZN1HC2ERKS_:
 

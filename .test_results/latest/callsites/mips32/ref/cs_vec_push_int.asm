@@ -2,21 +2,21 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
 
 
 Disassembly of section .text:
 
 000000cc <cs_vec_push_int>:
 cs_vec_push_int():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:29
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
   cc:	27bdffe0 	addiu	sp,sp,-32
 _ZNSt6vectorIiSaIiEE9push_backERKi():
 /usr/mips-linux-gnu/include/c++/12/bits/stl_vector.h:1280
   d0:	8c820004 	lw	v0,4(a0)
   d4:	8c860008 	lw	a2,8(a0)
 cs_vec_push_int():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:29
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
   d8:	afbf001c 	sw	ra,28(sp)
 _ZNSt6vectorIiSaIiEE9push_backERKi():
 /usr/mips-linux-gnu/include/c++/12/bits/stl_vector.h:1280
@@ -30,7 +30,7 @@ _ZNSt6vectorIiSaIiEE9push_backERKi():
   e8:	24420004 	addiu	v0,v0,4
   ec:	ac820004 	sw	v0,4(a0)
 cs_vec_push_int():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:29
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
   f0:	8fbf001c 	lw	ra,28(sp)
   f4:	03e00008 	jr	ra
   f8:	27bd0020 	addiu	sp,sp,32
@@ -40,7 +40,7 @@ _ZNSt6vectorIiSaIiEE9push_backERKi():
  100:	0c000000 	jal	0 <_ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_createERjj.isra.0>
  104:	00402825 	move	a1,v0
 cs_vec_push_int():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:29
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
  108:	1000fffa 	b	f4 <cs_vec_push_int+0x28>
  10c:	8fbf001c 	lw	ra,28(sp)
 

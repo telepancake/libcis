@@ -2,7 +2,7 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
 
 
 Disassembly of section .text:
@@ -13,7 +13,7 @@ _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
  670:	eb01001f 	cmp	x0, x1
  674:	54000dc0 	b.eq	82c <cs_vec_assign_H+0x1bc>  // b.none
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  678:	a9bb7bfd 	stp	x29, x30, [sp, #-80]!
  67c:	910003fd 	mov	x29, sp
  680:	a90153f3 	stp	x19, x20, [sp, #16]
@@ -22,20 +22,20 @@ _ZNKSt6vectorI1HSaIS0_EE4sizeEv():
 /usr/aarch64-linux-gnu/include/c++/13/bits/stl_vector.h:993
  688:	f9400034 	ldr	x20, [x1]
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  68c:	a90363f7 	stp	x23, x24, [sp, #48]
  690:	aa0103f7 	mov	x23, x1
 _ZNKSt6vectorI1HSaIS0_EE8capacityEv():
 /usr/aarch64-linux-gnu/include/c++/13/bits/stl_vector.h:1080
  694:	f9400018 	ldr	x24, [x0]
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  698:	a9025bf5 	stp	x21, x22, [sp, #32]
 _ZNKSt6vectorI1HSaIS0_EE8capacityEv():
 /usr/aarch64-linux-gnu/include/c++/13/bits/stl_vector.h:1080
  69c:	f9400800 	ldr	x0, [x0, #16]
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  6a0:	f90023f9 	str	x25, [sp, #64]
 _ZNKSt6vectorI1HSaIS0_EE4sizeEv():
 /usr/aarch64-linux-gnu/include/c++/13/bits/stl_vector.h:993
@@ -96,20 +96,20 @@ _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
 /usr/aarch64-linux-gnu/include/c++/13/bits/vector.tcc:262
  70c:	f9400260 	ldr	x0, [x19]
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  710:	a94363f7 	ldp	x23, x24, [sp, #48]
 _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
 /usr/aarch64-linux-gnu/include/c++/13/bits/vector.tcc:262
  714:	8b160000 	add	x0, x0, x22
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  718:	a9425bf5 	ldp	x21, x22, [sp, #32]
  71c:	f94023f9 	ldr	x25, [sp, #64]
 _ZNSt6vectorI1HSaIS0_EEaSERKS2_():
 /usr/aarch64-linux-gnu/include/c++/13/bits/vector.tcc:262
  720:	f9000660 	str	x0, [x19, #8]
 cs_vec_assign_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:33
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:33
  724:	a94153f3 	ldp	x19, x20, [sp, #16]
  728:	a8c57bfd 	ldp	x29, x30, [sp], #80
  72c:	d65f03c0 	ret

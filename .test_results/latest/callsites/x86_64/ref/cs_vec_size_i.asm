@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
 000000000000004c <cs_vec_size_i>:
 cs_vec_size_i():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:48
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:48
   4c:	f3 0f 1e fa          	endbr64
 _ZNKSt6vectorIiSaIiEE4sizeEv():
 /usr/include/c++/13/bits/stl_vector.h:993
@@ -17,7 +17,7 @@ _ZNKSt6vectorIiSaIiEE4sizeEv():
   54:	48 2b 07             	sub    (%rdi),%rax
   57:	48 c1 f8 02          	sar    $0x2,%rax
 cs_vec_size_i():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:48
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:48
   5b:	c3                   	ret
 
 Disassembly of section .text._ZNKSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE7compareERKS4_:

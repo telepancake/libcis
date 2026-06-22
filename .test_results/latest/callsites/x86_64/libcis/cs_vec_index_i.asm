@@ -2,22 +2,22 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/x86_64/libcis.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/libcis.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
-00000000000002de <cs_vec_index_i>:
+00000000000002db <cs_vec_index_i>:
 cs_vec_index_i():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:51
- 2de:	f3 0f 1e fa          	endbr64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:51
+ 2db:	f3 0f 1e fa          	endbr64
 _ZNSt6vectorIiSaIiEEixEm():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:727
- 2e2:	48 8b 07             	mov    (%rdi),%rax
- 2e5:	48 8d 04 b0          	lea    (%rax,%rsi,4),%rax
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:727
+ 2df:	48 8b 07             	mov    (%rdi),%rax
+ 2e2:	48 8d 04 b0          	lea    (%rax,%rsi,4),%rax
 cs_vec_index_i():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:51
- 2e9:	c3                   	ret
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:51
+ 2e6:	c3                   	ret
 
 Disassembly of section .text._ZNKSt19bad_optional_access4whatEv:
 
@@ -43,9 +43,9 @@ Disassembly of section .text._ZNSs9init_copyEPKcm:
 
 Disassembly of section .text._ZN1HaSERKS_.isra.0:
 
-Disassembly of section .text._ZNSt6vectorIiSaIiEE10grow_cold_Em:
+Disassembly of section .text._ZNSt6vectorIiSaIiEE12ensure_free_Em:
 
-Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE10grow_cold_Em:
+Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE12ensure_free_Em:
 
 Disassembly of section .text._ZN1HC2ERKS_:
 

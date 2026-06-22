@@ -2,27 +2,27 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/mips32/libcis.o:     file format elf32-tradbigmips
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/mips32/libcis.o:     file format elf32-tradbigmips
 
 
 Disassembly of section .text:
 
-00000458 <cs_vec_end_i>:
+00000428 <cs_vec_end_i>:
 _ZNSt6vectorIiSaIiEE3endEv():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:660
-     458:	8c820000 	lw	v0,0(a0)
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:660
+     428:	8c820000 	lw	v0,0(a0)
 _ZNKSt6vectorIiSaIiEE8end_ptr_Ev():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:113
-     45c:	10400004 	beqz	v0,470 <cs_vec_end_i+0x18>
-     460:	2403fffc 	li	v1,-4
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:114
-     464:	8c44fffc 	lw	a0,-4(v0)
-     468:	00641824 	and	v1,v1,a0
-     46c:	00431021 	addu	v0,v0,v1
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:113
+     42c:	10400004 	beqz	v0,440 <cs_vec_end_i+0x18>
+     430:	2403fffc 	li	v1,-4
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:114
+     434:	8c44fffc 	lw	a0,-4(v0)
+     438:	00641824 	and	v1,v1,a0
+     43c:	00431021 	addu	v0,v0,v1
 cs_vec_end_i():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:50
-     470:	03e00008 	jr	ra
-     474:	00000000 	nop
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:50
+     440:	03e00008 	jr	ra
+     444:	00000000 	nop
 
 Disassembly of section .text._ZNKSt19bad_optional_access4whatEv:
 
@@ -48,15 +48,15 @@ Disassembly of section .text._ZNSs9init_copyEPKcj:
 
 Disassembly of section .text._ZN1HaSERKS_.isra.0:
 
-Disassembly of section .text._ZNSt6vectorIiSaIiEE10grow_cold_Ej:
+Disassembly of section .text._ZNSt6vectorIiSaIiEE12ensure_free_Ej:
+
+Disassembly of section .text._ZNKSt6vectorI1HSaIS0_EE9recommendEj:
+
+Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE12ensure_free_Ej:
 
 Disassembly of section .text._ZN1HC2ERKS_:
 
 Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE16construct_at_endIPKS0_S5_EEvT_T0_j.isra.0:
-
-Disassembly of section .text._ZNKSt6vectorI1HSaIS0_EE9recommendEj:
-
-Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE10grow_cold_Ej:
 
 Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE16assign_with_sizeIPKS0_S5_EEvT_T0_j:
 

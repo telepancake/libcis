@@ -2,52 +2,52 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm64/libcis.o:     file format elf64-littleaarch64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm64/libcis.o:     file format elf64-littleaarch64
 
 
 Disassembly of section .text:
 
-0000000000000edc <cs_vec_sort_H>:
+0000000000000dac <cs_vec_sort_H>:
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
- edc:	a9bf7bfd 	stp	x29, x30, [sp, #-16]!
- ee0:	910003fd 	mov	x29, sp
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
+ dac:	a9bf7bfd 	stp	x29, x30, [sp, #-16]!
+ db0:	910003fd 	mov	x29, sp
 _ZNSt6vectorI1HSaIS0_EE5beginEv():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:658
- ee4:	f9400004 	ldr	x4, [x0]
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:658
+ db4:	f9400004 	ldr	x4, [x0]
 _ZNSt6vectorI1HSaIS0_EE3endEv():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/vector:660
- ee8:	aa0403e0 	mov	x0, x4
- eec:	97fffc63 	bl	78 <_ZNKSt6vectorI1HSaIS0_EE8end_ptr_Ev.isra.0>
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/vector:660
+ db8:	aa0403e0 	mov	x0, x4
+ dbc:	97fffca9 	bl	60 <_ZNKSt6vectorI1HSaIS0_EE8end_ptr_Ev.isra.0>
 _ZSt4sortIP1HSt4lessIvEEvT_S4_T0_():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/algorithm:2103
- ef0:	eb00009f 	cmp	x4, x0
- ef4:	54000180 	b.eq	f24 <cs_vec_sort_H+0x48>  // b.none
- ef8:	aa0003e1 	mov	x1, x0
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/algorithm:2113
- efc:	cb040000 	sub	x0, x0, x4
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/algorithm:2103
+ dc0:	eb00009f 	cmp	x4, x0
+ dc4:	54000180 	b.eq	df4 <cs_vec_sort_H+0x48>  // b.none
+ dc8:	aa0003e1 	mov	x1, x0
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/algorithm:2113
+ dcc:	cb040000 	sub	x0, x0, x4
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
- f00:	a8c17bfd 	ldp	x29, x30, [sp], #16
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
+ dd0:	a8c17bfd 	ldp	x29, x30, [sp], #16
 _ZSt4sortIP1HSt4lessIvEEvT_S4_T0_():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/algorithm:2113
- f04:	9344fc00 	asr	x0, x0, #4
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/algorithm:2113
+ dd4:	9344fc00 	asr	x0, x0, #4
 _ZNSt6detail8bit_log2Ey():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/algorithm:2003
- f08:	dac01000 	clz	x0, x0
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/algorithm:2003
+ dd8:	dac01000 	clz	x0, x0
 _ZSt4sortIP1HSt4lessIvEEvT_S4_T0_():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/algorithm:2112 (discriminator 1)
- f0c:	528007e2 	mov	w2, #0x3f                  	// #63
- f10:	4b000042 	sub	w2, w2, w0
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/algorithm:2114
- f14:	52800023 	mov	w3, #0x1                   	// #1
- f18:	aa0403e0 	mov	x0, x4
- f1c:	9ac32042 	lsl	x2, x2, x3
- f20:	17fffe59 	b	884 <_ZNSt6detail9introsortIP1HSt4lessIvEEEvT_S5_RT0_NSt15iterator_traitsIS5_E15difference_typeEb.isra.0>
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/algorithm:2112 (discriminator 1)
+ ddc:	528007e2 	mov	w2, #0x3f                  	// #63
+ de0:	4b000042 	sub	w2, w2, w0
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/algorithm:2114
+ de4:	52800023 	mov	w3, #0x1                   	// #1
+ de8:	aa0403e0 	mov	x0, x4
+ dec:	9ac32042 	lsl	x2, x2, x3
+ df0:	17fffe59 	b	754 <_ZNSt6detail9introsortIP1HSt4lessIvEEEvT_S5_RT0_NSt15iterator_traitsIS5_E15difference_typeEb.isra.0>
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
- f24:	a8c17bfd 	ldp	x29, x30, [sp], #16
- f28:	d65f03c0 	ret
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
+ df4:	a8c17bfd 	ldp	x29, x30, [sp], #16
+ df8:	d65f03c0 	ret
 
 Disassembly of section .text._ZNKSt19bad_optional_access4whatEv:
 
@@ -73,9 +73,9 @@ Disassembly of section .text._ZNSs9init_copyEPKcm:
 
 Disassembly of section .text._ZN1HaSERKS_.isra.0:
 
-Disassembly of section .text._ZNSt6vectorIiSaIiEE10grow_cold_Em:
+Disassembly of section .text._ZNSt6vectorIiSaIiEE12ensure_free_Em:
 
-Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE10grow_cold_Em:
+Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE12ensure_free_Em:
 
 Disassembly of section .text._ZN1HC2ERKS_:
 

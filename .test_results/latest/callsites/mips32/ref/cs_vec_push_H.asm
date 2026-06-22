@@ -2,7 +2,7 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
 
 
 Disassembly of section .text:
@@ -15,7 +15,7 @@ _ZNSt6vectorI1HSaIS0_EE9push_backERKS0_():
  498:	1043000e 	beq	v0,v1,4d4 <cs_vec_push_H+0x44>
  49c:	00a03025 	move	a2,a1
 cs_vec_push_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:30
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:30
  4a0:	27bdffe0 	addiu	sp,sp,-32
  4a4:	afb00018 	sw	s0,24(sp)
  4a8:	00808025 	move	s0,a0
@@ -28,14 +28,14 @@ _ZNSt6vectorI1HSaIS0_EE9push_backERKS0_():
 /usr/mips-linux-gnu/include/c++/12/bits/stl_vector.h:1285
  4b8:	8e020004 	lw	v0,4(s0)
 cs_vec_push_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:30
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:30
  4bc:	8fbf001c 	lw	ra,28(sp)
 _ZNSt6vectorI1HSaIS0_EE9push_backERKS0_():
 /usr/mips-linux-gnu/include/c++/12/bits/stl_vector.h:1285
  4c0:	24420020 	addiu	v0,v0,32
  4c4:	ae020004 	sw	v0,4(s0)
 cs_vec_push_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:30
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:30
  4c8:	8fb00018 	lw	s0,24(sp)
  4cc:	03e00008 	jr	ra
  4d0:	27bd0020 	addiu	sp,sp,32

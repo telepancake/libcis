@@ -2,35 +2,35 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm64/libcis.o:     file format elf64-littleaarch64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm64/libcis.o:     file format elf64-littleaarch64
 
 
 Disassembly of section .text:
 
-000000000000053c <cs_str_append>:
+0000000000000524 <cs_str_append>:
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
- 53c:	a9be7bfd 	stp	x29, x30, [sp, #-32]!
- 540:	910003fd 	mov	x29, sp
- 544:	a90153f3 	stp	x19, x20, [sp, #16]
- 548:	aa0003f4 	mov	x20, x0
- 54c:	aa0103f3 	mov	x19, x1
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
+ 524:	a9be7bfd 	stp	x29, x30, [sp, #-32]!
+ 528:	910003fd 	mov	x29, sp
+ 52c:	a90153f3 	stp	x19, x20, [sp, #16]
+ 530:	aa0003f4 	mov	x20, x0
+ 534:	aa0103f3 	mov	x19, x1
 _ZNSt11char_traitsIcE6lengthEPKc():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string_view:104 (discriminator 1)
- 550:	aa0103e0 	mov	x0, x1
- 554:	94000000 	bl	0 <strlen>
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:104 (discriminator 1)
+ 538:	aa0103e0 	mov	x0, x1
+ 53c:	94000000 	bl	0 <strlen>
 _ZNSs6appendEPKc():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string:800 (discriminator 1)
- 558:	aa1303e1 	mov	x1, x19
- 55c:	aa0003e2 	mov	x2, x0
- 560:	aa1403e0 	mov	x0, x20
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:798 (discriminator 1)
+ 540:	aa1303e1 	mov	x1, x19
+ 544:	aa0003e2 	mov	x2, x0
+ 548:	aa1403e0 	mov	x0, x20
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:35
- 564:	a94153f3 	ldp	x19, x20, [sp, #16]
- 568:	a8c27bfd 	ldp	x29, x30, [sp], #32
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
+ 54c:	a94153f3 	ldp	x19, x20, [sp, #16]
+ 550:	a8c27bfd 	ldp	x29, x30, [sp], #32
 _ZNSs6appendEPKc():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string:800 (discriminator 1)
- 56c:	17ffff96 	b	3c4 <_ZNSs6appendEPKcm.isra.0>
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:798 (discriminator 1)
+ 554:	17ffff96 	b	3ac <_ZNSs6appendEPKcm.isra.0>
 
 Disassembly of section .text._ZNKSt19bad_optional_access4whatEv:
 
@@ -56,9 +56,9 @@ Disassembly of section .text._ZNSs9init_copyEPKcm:
 
 Disassembly of section .text._ZN1HaSERKS_.isra.0:
 
-Disassembly of section .text._ZNSt6vectorIiSaIiEE10grow_cold_Em:
+Disassembly of section .text._ZNSt6vectorIiSaIiEE12ensure_free_Em:
 
-Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE10grow_cold_Em:
+Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE12ensure_free_Em:
 
 Disassembly of section .text._ZN1HC2ERKS_:
 

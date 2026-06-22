@@ -2,20 +2,20 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm32/ref.o:     file format elf32-littlearm
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm32/ref.o:     file format elf32-littlearm
 
 
 Disassembly of section .text:
 
 00000066 <cs_vec_push_int>:
 cs_vec_push_int():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:29
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
   66:	b513      	push	{r0, r1, r4, lr}
 _ZNSt6vectorIiSaIiEE9push_backERKi():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/stl_vector.h:1283
   68:	e9d0 3401 	ldrd	r3, r4, [r0, #4]
 cs_vec_push_int():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:29
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
   6c:	9101      	str	r1, [sp, #4]
 _ZNSt6vectorIiSaIiEE9push_backERKi():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/stl_vector.h:1283
@@ -28,7 +28,7 @@ _ZNSt6vectorIiSaIiEE9push_backERKi():
 /usr/arm-linux-gnueabihf/include/c++/13/bits/stl_vector.h:1288
   76:	6043      	str	r3, [r0, #4]
 cs_vec_push_int():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:29
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
   78:	b002      	add	sp, #8
   7a:	bd10      	pop	{r4, pc}
 _ZNSt6vectorIiSaIiEE9push_backERKi():
@@ -37,7 +37,7 @@ _ZNSt6vectorIiSaIiEE9push_backERKi():
   7e:	4619      	mov	r1, r3
   80:	f7ff fffe 	bl	0 <_ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_createERjj.isra.0>
 cs_vec_push_int():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:29
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
   84:	e7f8      	b.n	78 <cs_vec_push_int+0x12>
 
 Disassembly of section .text._ZNKSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE11_M_is_localEv:

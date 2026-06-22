@@ -2,21 +2,21 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
 
 
 Disassembly of section .text:
 
 00000c48 <cs_vec_sort_H>:
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
  c48:	27bdffd0 	addiu	sp,sp,-48
  c4c:	00801025 	move	v0,a0
 _ZN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS1_SaIS1_EEEC4ERKS2_():
 /usr/mips-linux-gnu/include/c++/12/bits/stl_iterator.h:1073
  c50:	8c840000 	lw	a0,0(a0)
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
  c54:	afb10028 	sw	s1,40(sp)
  c58:	afbf002c 	sw	ra,44(sp)
  c5c:	afb00024 	sw	s0,36(sp)
@@ -67,7 +67,7 @@ _ZSt26__unguarded_insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_
  ca4:	16300006 	bne	s1,s0,cc0 <cs_vec_sort_H+0x78>
  ca8:	00000000 	nop
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
  cac:	8fbf002c 	lw	ra,44(sp)
  cb0:	8fb10028 	lw	s1,40(sp)
  cb4:	8fb00024 	lw	s0,36(sp)
@@ -82,13 +82,13 @@ _ZN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS1_SaIS1_EEEppEv():
  cc8:	1000fff6 	b	ca4 <cs_vec_sort_H+0x5c>
  ccc:	26100020 	addiu	s0,s0,32
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
  cd0:	8fbf002c 	lw	ra,44(sp)
 _ZSt22__final_insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_():
 /usr/mips-linux-gnu/include/c++/12/bits/stl_algo.h:1859
  cd4:	02202825 	move	a1,s1
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
  cd8:	8fb00024 	lw	s0,36(sp)
  cdc:	8fb10028 	lw	s1,40(sp)
 _ZSt22__final_insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_():

@@ -2,7 +2,7 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/arm64/ref.o:     file format elf64-littleaarch64
 
 
 Disassembly of section .text:
@@ -12,7 +12,7 @@ _ZNSt6vectorIiSaIiEEixEm():
 /usr/aarch64-linux-gnu/include/c++/13/bits/stl_vector.h:1129
   80:	f9400000 	ldr	x0, [x0]
 cs_vec_index_i():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:51
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:51
   84:	8b010800 	add	x0, x0, x1, lsl #2
   88:	d65f03c0 	ret
 

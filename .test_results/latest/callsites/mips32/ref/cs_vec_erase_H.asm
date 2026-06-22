@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/mips32/ref.o:     file format elf32-tradbigmips
 
 
 Disassembly of section .text:
 
 00000228 <cs_vec_erase_H>:
 cs_vec_erase_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:32
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:32
  228:	27bdffd8 	addiu	sp,sp,-40
  22c:	afb1001c 	sw	s1,28(sp)
  230:	00808825 	move	s1,a0
@@ -19,7 +19,7 @@ _ZN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS1_SaIS1_EEEC4ERKS2_():
  238:	8c840000 	lw	a0,0(a0)
  23c:	8e300004 	lw	s0,4(s1)
 cs_vec_erase_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:32
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:32
  240:	afbf0024 	sw	ra,36(sp)
 _ZNK9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS1_SaIS1_EEEplEi():
 /usr/mips-linux-gnu/include/c++/12/bits/stl_iterator.h:1144
@@ -31,14 +31,14 @@ _ZNSt6vectorI1HSaIS0_EE8_M_eraseEN9__gnu_cxx17__normal_iteratorIPS0_S2_EE():
 /usr/mips-linux-gnu/include/c++/12/bits/vector.tcc:180
  250:	8e240004 	lw	a0,4(s1)
 cs_vec_erase_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:32
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:32
  254:	8fbf0024 	lw	ra,36(sp)
  258:	8fb20020 	lw	s2,32(sp)
 _ZNSt6vectorI1HSaIS0_EE8_M_eraseEN9__gnu_cxx17__normal_iteratorIPS0_S2_EE():
 /usr/mips-linux-gnu/include/c++/12/bits/vector.tcc:180
  25c:	2482ffe0 	addiu	v0,a0,-32
 cs_vec_erase_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:32
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:32
  260:	8fb00018 	lw	s0,24(sp)
 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEED4Ev():
 /usr/mips-linux-gnu/include/c++/12/bits/basic_string.h:807
@@ -47,7 +47,7 @@ _ZNSt6vectorI1HSaIS0_EE8_M_eraseEN9__gnu_cxx17__normal_iteratorIPS0_S2_EE():
 /usr/mips-linux-gnu/include/c++/12/bits/vector.tcc:180
  268:	ae220004 	sw	v0,4(s1)
 cs_vec_erase_H():
-/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:32
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:32
  26c:	8fb1001c 	lw	s1,28(sp)
 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEED4Ev():
 /usr/mips-linux-gnu/include/c++/12/bits/basic_string.h:807
