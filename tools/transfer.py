@@ -37,12 +37,23 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config as cfg  # noqa: E402
 
+# Make the local libclang/libLLVM loadable (prepends their dir to LD_LIBRARY_PATH
+# and re-execs once) before anything dlopens them.
+cfg.ensure_libclang_runtime()
+
+# Prefer the clang python bindings (cindex.py) from the local llvm-project
+# checkout -- they match the .deb libclang exactly; fall back to a system-wide
+# `pip install libclang`.
+if os.path.isdir(cfg.CINDEX_DIR):
+    sys.path.insert(0, cfg.CINDEX_DIR)
+
 try:
     import clang.cindex as ci
 except ModuleNotFoundError:
     raise SystemExit(
-        "python libclang bindings not installed (`import clang.cindex` failed).\n"
-        "  Install them to (re-)run the transfer:  pip install libclang\n"
+        "python libclang bindings not found (`import clang.cindex` failed).\n"
+        "  Run `make bootstrap` (fetches them into toolchain/llvm-project), or\n"
+        "  `pip install libclang` system-wide.\n"
         "  (only tools/transfer.py needs them; the test gate does not.)")
 
 # libclang is global state in cindex; bind it lazily (only when we actually
@@ -98,6 +109,16 @@ PARSE_ARGS = [
 _RESOURCE_DIR = cfg.clang_resource_dir()
 if _RESOURCE_DIR:
     PARSE_ARGS += ["-resource-dir", _RESOURCE_DIR]
+
+# Point clang at the libc++ headers explicitly.  -stdlib=libc++ alone only finds
+# them when libc++ is installed at a path the clang/libclang in use knows about;
+# the bootstrapped toolchain ships them as a bare directory (the llvm-project
+# checkout), so name it with -isystem.  This goes AFTER -resource-dir: the libc++
+# search dir then precedes the builtins, so libc++'s <cstddef> #include_next finds
+# the clang <stddef.h> rather than shadowing it.
+_LIBCXX_INC = cfg.libcxx_include_dir()
+if _LIBCXX_INC:
+    PARSE_ARGS += ["-isystem", _LIBCXX_INC]
 
 # A PCH of every top-level libc++ header, built once: each of the ~10k test
 # parses (plus its verify re-parse) then skips the std headers entirely
@@ -540,6 +561,11 @@ def list_inputs(sub):
 
 
 def process_one(args):
+    # Bind libclang before the first parse.  cmd_worker does this too, but the
+    # batched path (transfer_batch -> run_batch_child) calls process_one directly,
+    # and the llvm-project cindex.py does not auto-load a library the way the pip
+    # `libclang` wheel does -- so without this the batch parse fails to dlopen.
+    _ensure_libclang()
     # cursor locations are compared by absolute path; ninja edges pass src
     # relative to the build dir
     src, rel = args
