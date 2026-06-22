@@ -43,7 +43,7 @@ SUPPORT_A := build/groups/libcis/libsupport.a
 LIB_SRCS  := $(shell find include src -type f 2>/dev/null)
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor smoke support transfer board test gate size size-record clean distclean
+.PHONY: help bootstrap doctor smoke support transfer board test gate size clean distclean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -86,11 +86,8 @@ gate: support ## Per-file CLEAN/NOT-CLEAN gate, e.g. make gate SUBTREE=thread
 	@test -n "$(SUBTREE)" || { echo "usage: make gate SUBTREE=<name>  (e.g. thread, utilities)"; exit 2; }
 	python3 tools/run_files.py $(SUBTREE)
 
-size: ## Size/memory/perf gate: marginal flash+RAM per container vs bench/size_baseline.json
+size: ## Per-call/per-type code + memory overhead vs non-type-erased ref; writes .test_results/latest/
 	python3 bench/size_slope.py
-
-size-record: ## Re-pin bench/size_baseline.json to the current tree (review the diff!)
-	python3 bench/size_slope.py --record
 
 clean: ## Remove generated build artifacts (keeps the toolchain + source tree)
 	rm -rf build/groups build/ninja build/recs build/*.ninja \

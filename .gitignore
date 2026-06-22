@@ -12,3 +12,6 @@ libstdcxx.??????
 .ninja_deps
 .ninja_log
 bench/*.bin
+
+# local harness output
+.test_results/
