@@ -29,6 +29,7 @@ import glob
 import os
 import shutil
 import subprocess
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -39,19 +40,43 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # still wins over the local toolchain, which still wins over system probing.
 # ---------------------------------------------------------------------------
 TOOLCHAIN_DIR     = os.path.join(ROOT, "toolchain")
-# g++-10 is built from source into toolchain/gcc (no portable prebuilt exists).
+# Everything below is built/checked out from source by tools/bootstrap.sh:
+#   gcc/   g++-10 built from the GNU source release         (no prebuilt exists)
+#   llvm/  clang-20 libclang + libc++ headers + clang's resource headers, built
+#          from the llvm-project source (libc++ is cmake-CONFIGURED for the host
+#          libc, so its headers match whatever C library the host actually has)
+#   llvm-project/  the source checkout: the test corpus + clang's cindex.py
 _LOCAL_GXX        = os.path.join(TOOLCHAIN_DIR, "gcc", "bin", "g++-10")
-# libclang comes from the pip/uv `libclang` wheel (a per-arch, self-contained
-# shared object + the cindex.py bindings) unpacked into toolchain/pylibs.
-PYLIBS_DIR        = os.path.join(TOOLCHAIN_DIR, "pylibs")
-_LOCAL_LIBCLANG   = os.path.join(PYLIBS_DIR, "clang", "native", "libclang.so")
-# The corpus, the libc++ headers, and clang's builtin headers are arch-agnostic
-# source from one llvm-project checkout (libc++'s two generated headers are
-# produced by tools/bootstrap.sh).
+_LLVM_PREFIX      = os.path.join(TOOLCHAIN_DIR, "llvm")
 _LOCAL_LLVM       = os.path.join(TOOLCHAIN_DIR, "llvm-project")
-_LOCAL_LIBCXX     = os.path.join(_LOCAL_LLVM, "libcxx", "test")
-_LOCAL_LIBCXX_INC = os.path.join(_LOCAL_LLVM, "libcxx", "include")
-_LOCAL_RESOURCE   = os.path.join(TOOLCHAIN_DIR, "resource")  # include/ -> clang Headers
+CINDEX_DIR        = os.path.join(_LOCAL_LLVM, "clang", "bindings", "python")
+_LOCAL_LIBCXX     = os.path.join(_LOCAL_LLVM, "libcxx", "test")            # corpus
+_LOCAL_LIBCXX_INC = os.path.join(_LLVM_PREFIX, "include", "c++", "v1")     # libc++ hdrs
+_LOCAL_LIBCLANG_GLOB = os.path.join(_LLVM_PREFIX, "lib", "libclang.so*")
+_LOCAL_RESOURCE_GLOB = os.path.join(_LLVM_PREFIX, "lib", "clang", "*", "include")
+
+
+def _local_llvm_lib_dir():
+    """Dir holding the source-built libclang/libLLVM .so (a shared-libLLVM build,
+    so the loader must be told where libLLVM.so is)."""
+    d = os.path.join(_LLVM_PREFIX, "lib")
+    return d if os.path.isdir(d) else None
+
+
+def ensure_libclang_runtime():
+    """Make the local libclang/libLLVM loadable by ctypes.  The dynamic loader
+    reads LD_LIBRARY_PATH at process start, so when the local lib dir is not on it
+    we prepend it and re-exec the interpreter once (guarded against a loop).  A
+    no-op when there is no local toolchain (system libclang is on the path)."""
+    d = _local_llvm_lib_dir()
+    if not d or os.environ.get("_LIBCIS_LDPATH_SET"):
+        return
+    parts = (os.environ.get("LD_LIBRARY_PATH") or "").split(os.pathsep)
+    if d in parts:
+        return
+    os.environ["LD_LIBRARY_PATH"] = os.pathsep.join([d] + [p for p in parts if p])
+    os.environ["_LIBCIS_LDPATH_SET"] = "1"
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 # ---------------------------------------------------------------------------
 # Compilers.  These are plain strings (no PATH probing at import time); call
@@ -128,8 +153,9 @@ def find_libclang():
         if not os.path.exists(env):
             raise SystemExit(f"LIBCLANG={env!r} does not exist")
         return env
-    if os.path.exists(_LOCAL_LIBCLANG):
-        return _LOCAL_LIBCLANG
+    local = sorted(glob.glob(_LOCAL_LIBCLANG_GLOB), reverse=True)
+    if local:
+        return local[0]
     for c in _libclang_candidates():
         if os.path.exists(c):
             return c
@@ -218,10 +244,11 @@ def clang_resource_dir():
     if env:
         return env if _has_stddef(os.path.join(env, "include")) else None
 
-    # The local toolchain ships clang's builtin headers via a symlink under
-    # toolchain/resource/include -> the llvm-project checkout's clang/lib/Headers.
-    if _has_stddef(os.path.join(_LOCAL_RESOURCE, "include")):
-        return _LOCAL_RESOURCE
+    # The local toolchain installs clang's builtin headers under
+    # toolchain/llvm/lib/clang/<ver>/include.
+    for inc in sorted(glob.glob(_LOCAL_RESOURCE_GLOB), reverse=True):
+        if _has_stddef(inc):
+            return os.path.dirname(inc)
 
     # Ask a clang binary where its resource dir is (most reliable).
     for c in (CXX_LIBCXX.split()[0], "clang++", "clang"):
