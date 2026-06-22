@@ -225,44 +225,82 @@ def module_memory(log):
 
 
 # ---------------------------------------------------------------- speed
-SPEED_OPS = ["cs_vec_index_i", "cs_vec_end_i", "cs_vec_push_int", "cs_vec_push_H",
-             "cs_vec_insert_H", "cs_vec_erase_H", "cs_vec_sort_H", "cs_str_append"]
+# Each workload is named with what it ACTUALLY does (N, element type). A speed
+# number without that context is meaningless, and a single per-"method"
+# multiplier is worse than meaningless for an algorithm: "sort 4x" hides that the
+# cost is the element's string compare/move that sort merely amortizes. So the
+# speed axis reports, per workload, the total instructions AND where they go
+# (callgrind per-function attribution) — never a bare multiplier.
+SPEED_WL = {
+    "cs_vec_index_i":  "operator[] sum over 3 parallel vector<int>[8192], 200x (SoA index loop)",
+    "cs_vec_end_i":    "iterator traversal of vector<int>[8192], 200x (end() as the bound)",
+    "cs_vec_push_int": "build vector<int> via push_back, 4096 elems, 80x",
+    "cs_vec_push_H":   "build vector<H{7B+std::string}> via push_back, 1024 elems, 40x",
+    "cs_vec_insert_H": "insert-at-begin into vector<H{string}>, 512 elems, 60x",
+    "cs_vec_erase_H":  "erase-at-begin from vector<H{string}>[512] to empty, 60x",
+    "cs_vec_sort_H":   "copy-construct 2048 H{string} + std::sort by string key, 60x",
+    "cs_str_append":   "build std::string via += char, 4096 chars, 200x",
+}
+SPEED_OPS = list(SPEED_WL)
 
 
-def cg_irefs(binary, arg):
-    """Deterministic instruction reads (Ir) for one workload, via cachegrind."""
-    out = "/tmp/cg_%s.out" % os.path.basename(binary)
-    r = sh(["valgrind", "--tool=cachegrind", "--cachegrind-out-file=" + out, binary, arg])
-    m = re.search(r"I\s+refs:\s+([\d,]+)", r.stdout)
-    return int(m.group(1).replace(",", "")) if m else None
+def cg_profile(binary, arg):
+    """Run one workload under callgrind. Return (total_Ir, [(Ir, func_label), ...])
+    self-Ir per function, descending — the attribution that says WHERE time goes."""
+    out = "/tmp/cg_%s_%s.out" % (os.path.basename(binary), arg)
+    sh(["valgrind", "--tool=callgrind", "--cache-sim=no", "--callgrind-out-file=" + out, binary, arg])
+    total = 0
+    try:
+        for line in open(out):
+            if line.startswith("summary:"):
+                total = int(line.split()[1]); break
+    except OSError:
+        pass
+    agg = {}
+    r = sh(["callgrind_annotate", "--threshold=98", "--inclusive=no", "--auto=no", out])
+    for line in r.stdout.splitlines():
+        if "=>" in line or "<=" in line:          # caller/callee breakdown lines — skip
+            continue
+        m = re.match(r"^\s*([\d,]+)\s+(?:\([\d.]+%\)\s+)?(.+?)\s+\[", line)
+        if m:
+            label = m.group(2).strip()
+            fn = label.split(":", 1)[1] if ":" in label else label   # drop file: prefix
+            for noise in ("std::", "__gnu_cxx::", " [clone .isra.0]", " const"):
+                fn = fn.replace(noise, "")
+            fn = fn.strip()[:46]
+            agg[fn] = agg.get(fn, 0) + int(m.group(1).replace(",", ""))   # dedupe clones
+    funcs = sorted(((ir, fn) for fn, ir in agg.items()), reverse=True)
+    return total, funcs
 
 
 def module_speed(log):
-    if not shutil.which("valgrind"):
-        log.append("  speed: valgrind absent — speed axis skipped (apt-get install valgrind)")
+    if not (shutil.which("valgrind") and shutil.which("callgrind_annotate")):
+        log.append("  speed: callgrind absent — speed axis skipped (apt-get install valgrind)")
         return None
     src = os.path.join(ROOT, "bench", "speedprobe.cpp")
-    res = {}
+    data = {}
     for lib, cflags, lflags in (("libcis", LIBCIS_C, LIBCIS_L), ("ref", REF_C, REF_L)):
         out = "/tmp/speed_%s" % lib
         r = sh([CXX] + BASE_CXXFLAGS + cflags + [src] + lflags + ["-o", out])
         if r.returncode != 0:
             log.append("  speed %s: BUILD FAILED\n%s" % (lib, r.stdout[-1200:]))
             return None
-        base = cg_irefs(out, "noop")            # subtract fixed startup
-        per = {}
+        noop, _ = cg_profile(out, "noop")
         for op in SPEED_OPS:
-            ir = cg_irefs(out, op)
-            if ir is not None and base is not None:
-                per[op] = ir - base             # method's own executed instructions
-        res[lib] = per
-    with open(os.path.join(RESULTS, "speed.csv"), "w", newline="") as f:
-        w = csv.writer(f); w.writerow(["op", "ir_libcis", "ir_ref", "pct"])
+            total, funcs = cg_profile(out, op)
+            data.setdefault(op, {})[lib] = (total - noop, funcs)
+    # full attribution to disk; digest keeps only the headline contributors
+    with open(os.path.join(RESULTS, "speed_attribution.txt"), "w") as f:
         for op in SPEED_OPS:
-            lc, rf = res.get("libcis", {}).get(op), res.get("ref", {}).get(op)
-            if lc is not None and rf:
-                w.writerow([op, lc, rf, "%.1f" % (100 * (lc - rf) / rf)])
-    return res
+            f.write("\n%s\n  workload: %s\n" % (op, SPEED_WL[op]))
+            for lib in ("libcis", "ref"):
+                if op in data and lib in data[op]:
+                    tot, funcs = data[op][lib]
+                    f.write("  %-6s total Ir=%d  top functions (self Ir):\n" % (lib, tot))
+                    for ir, fn in funcs[:8]:
+                        pct = 100.0 * ir / tot if tot else 0
+                        f.write("           %12d  %4.1f%%  %s\n" % (ir, pct, fn))
+    return data
 
 
 # ---------------------------------------------------------------- driver
@@ -310,34 +348,38 @@ def main():
     out.append("MEASURED LIBRARY: %s   (re-run `make size` here to verify; do not trust prose)" % prov)
     out.append("=" * 78)
 
-    out.append("\nPER-METHOD: code size AND speed at -Os, vs the non-type-erased reference.")
-    out.append("Read this method by method. There is NO aggregate pass/fail — a change that")
-    out.append("helps some methods and hurts others is half-right: keep the wins, fix the")
-    out.append("regressions, individually. WIN = better on an axis, worse on none. LOSS = the")
-    out.append("reverse. TRADE = better on one, worse on the other → a human decides if the")
-    out.append("win there is worth the loss here. (dsize<0 and dspeed<0 are improvements.)")
-    out.append("speed = cachegrind instruction reads (Ir, deterministic), startup subtracted.")
+    out.append("\nPER-METHOD CODE SIZE at -Os, vs the non-type-erased reference (x86_64).")
+    out.append("Size is legitimately per-call-site, so it gets a verdict. Read it method by")
+    out.append("method — no aggregate pass/fail. (dsize<0 = smaller = better.)")
     sx = {op: (r[2], r[3], r[4]) for r in cs if r[0] == "x86_64" for op in [r[1]]}
-    sp_c = (spd or {}).get("libcis", {}); sp_r = (spd or {}).get("ref", {})
     if sx:
-        out.append("  %-16s %7s %-11s %8s %-15s  %s" %
-                   ("method", "dsize", "size c/r", "dspeed", "kIr c/r", "verdict"))
+        out.append("  %-16s %8s  %-12s %s" % ("method", "dsize", "bytes c/r", "verdict"))
         for op in CALLSITE_OPS:
-            if op not in sx and op not in sp_c:
-                continue
             ds = sx.get(op)
-            dpc, dpr = sp_c.get(op), sp_r.get(op)
-            dsize = ds[2] if ds else None
-            dspd = (100 * (dpc - dpr) / dpr) if (dpc and dpr) else None
-            scol = ("%+7d %5d/%-5d" % (dsize, ds[0], ds[1])) if ds else "%7s %-11s" % ("-", "")
-            pcol = ("%+7.1f%% %6d/%-7d" % (dspd, dpc // 1000, dpr // 1000)) if dspd is not None else "%8s %-15s" % ("-", "")
-            # verdict from deadbanded axes (Ir is deterministic -> tight 1% band)
-            better = (dsize is not None and dsize < -2) or (dspd is not None and dspd < -1)
-            worse = (dsize is not None and dsize > 2) or (dspd is not None and dspd > 1)
-            verdict = "TRADE" if better and worse else "WIN" if better else "LOSS" if worse else "~"
-            out.append("  %-16s %s %s  %s" % (op, scol, pcol, verdict))
+            if not ds:
+                continue
+            dsize = ds[2]
+            verdict = "smaller" if dsize < -2 else "BIGGER" if dsize > 2 else "~"
+            out.append("  %-16s %+8d  %5d/%-6d %s" % (op, dsize, ds[0], ds[1], verdict))
     else:
         out.append("  (no method data — see build_log.txt)")
+
+    # SPEED is NOT a per-method multiplier. It is per-workload, and the actionable
+    # part is WHERE the instructions go. A bare ratio on an algorithm ("sort 4x")
+    # hides that the cost is the element op it amortizes. Show total + attribution.
+    if spd:
+        out.append("\nSPEED — per workload: total instructions (Ir) and WHERE they go (callgrind).")
+        out.append("Not a per-method multiplier. Full breakdown: .test_results/latest/speed_attribution.txt")
+        for op in SPEED_OPS:
+            d = spd.get(op, {})
+            if "libcis" not in d or "ref" not in d:
+                continue
+            tc, fc = d["libcis"]; tr, _ = d["ref"]
+            out.append("  %s   [%s]" % (op, SPEED_WL[op]))
+            ratio = (" (%.1fx ref)" % (tc / tr)) if tr else ""
+            out.append("     total Ir: libcis %d vs ref %d%s" % (tc, tr, ratio))
+            top = ", ".join("%s %.0f%%" % (fn, 100.0 * ir / tc) for ir, fn in fc[:4] if tc)
+            out.append("     libcis instructions go to: %s" % top)
 
     # cross-arch code-size matrix: the same verdict can differ in magnitude per ISA.
     archs = sorted({r[0] for r in cs})
@@ -374,7 +416,7 @@ def main():
     out.append("\nFULL RESULTS in .test_results/latest/ — OPEN THESE, the numbers above are a digest:")
     out.append("  callsites/<arch>/<libcis|ref>/<op>.asm   annotated disassembly of every call site")
     out.append("  per_call_overhead.csv   per-arch per-op code size, libcis vs reference")
-    out.append("  speed.csv               per-method ns/op at -Os, libcis vs reference")
+    out.append("  speed_attribution.txt   per-workload Ir + where the instructions go (callgrind)")
     out.append("  memory.csv              internal / heap / stack per workload")
     out.append("  per_type.csv, static.txt, targets.txt, env.txt" +
                (", build_log.txt (FAILURES)" if log else ""))
