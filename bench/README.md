@@ -158,3 +158,17 @@ erasure to pay — the shared core + per-type leaves + call marshalling exceed t
 inlined typed loops they replace — so the vector conversion was **not** kept on
 this branch; the probes and tables remain as the tooling to evaluate the
 technique on better-suited targets.
+
+## Provenance: the harness is authoritative, prose is not
+
+Every `make size` result stamps the exact library it measured (`MEASURED LIBRARY:
+<branch> @ <commit>` in the summary and `.test_results/latest/env.txt`). That stamp
+exists because a size/speed number is meaningless — and dangerous — without knowing
+which branch, commit, and arch produced it.
+
+Treat **every** size/perf claim in commit messages, notes, this file, or chat as an
+**unverified, perishable claim** until you re-run `make size` on the named branch and
+read `.test_results/latest/` (including the annotated `.asm`). Do not promote a
+measurement to a design rule ("never X", "the design forbids Y"): measurements are
+branch/arch/compiler-specific and expire. The re-runnable harness is the durable
+truth; words about it are a log, often stale, sometimes measured on the wrong tree.

@@ -79,6 +79,15 @@ def sh(cmd):
     return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
 
+def lib_provenance():
+    """Identify exactly which library tree this result measured — so a result can
+    never be mistaken for a different branch (the way a hand-written 'finding' can)."""
+    b = sh(["git", "-C", ROOT, "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    c = sh(["git", "-C", ROOT, "rev-parse", "--short", "HEAD"]).stdout.strip()
+    dirty = "-dirty" if sh(["git", "-C", ROOT, "status", "--porcelain", "--", "include", "src"]).stdout.strip() else ""
+    return "%s @ %s%s" % (b or "?", c or "?", dirty)
+
+
 def fresh_results():
     if os.path.exists(RESULTS):
         shutil.rmtree(RESULTS)
@@ -284,16 +293,21 @@ def main():
         for arch, hint in skipped:
             f.write("  %-8s SKIPPED — install: apt-get install %s\n" % (arch, hint))
     with open(os.path.join(RESULTS, "env.txt"), "w") as f:
-        f.write("repro: python3 bench/size_slope.py   (or: make size)\n")
+        f.write("measured library: %s\n" % lib_provenance())
+        f.write("repro: python3 bench/size_slope.py   (or: make size)  — ON THAT BRANCH\n")
         f.write("CXX=%s   %s\n" % (CXX, sh([CXX, "--version"]).stdout.splitlines()[0]))
         f.write("reference = host libstdc++ (non-type-erased), rebuilt every run\n")
+        f.write("NOTE: numbers are specific to the branch/commit/arch above. A claim quoted\n")
+        f.write("without that provenance is unverified — re-run here before believing it.\n")
     if log:
         with open(os.path.join(RESULTS, "build_log.txt"), "w") as f:
             f.write("\n".join(log))
 
     # ---- short summary (also printed) -------------------------------------
+    prov = lib_provenance()
     out = []
     out.append("libcis size/memory/codegen — overhead vs non-type-erased reference (libstdc++)")
+    out.append("MEASURED LIBRARY: %s   (re-run `make size` here to verify; do not trust prose)" % prov)
     out.append("=" * 78)
 
     out.append("\nPER-METHOD: code size AND speed at -Os, vs the non-type-erased reference.")
