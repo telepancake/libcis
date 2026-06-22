@@ -1739,10 +1739,17 @@ namespace counted_detail {
 struct counted_fn {
     template<contiguous_iterator It>
     static constexpr auto go(It it, iter_difference_t<It> count)
-        noexcept(noexcept(span(std::to_address(it), static_cast<size_t>(count))))
+        // <ranges> can only forward-declare span (the <span>/<ranges> include
+        // cycle keeps span's deduction guides out of scope here), so name the
+        // span specialization explicitly instead of relying on CTAD.  The type
+        // matches the `span(It, EndOrSize) -> span<remove_reference_t<*It>>`
+        // guide.
+        noexcept(noexcept(span<remove_reference_t<decltype(*std::to_address(it))>, dynamic_extent>(
+            std::to_address(it), static_cast<size_t>(count))))
         // Deliberately omit return-type SFINAE, because to_address is not SFINAE-friendly
     {
-        return span(std::to_address(it), static_cast<size_t>(count));
+        return span<remove_reference_t<decltype(*std::to_address(it))>, dynamic_extent>(
+            std::to_address(it), static_cast<size_t>(count));
     }
 
     template<random_access_iterator It>
@@ -4300,3 +4307,9 @@ inline constexpr auto istream = istream_detail_cpo::istream_fn<T>{};
 namespace views = ranges::views;
 
 } // namespace std
+
+// views::counted constructs a span<T> and needs the complete type (not just the
+// forward declaration above).  <span> includes <ranges> back, but by this point
+// (the very end of <ranges>, after #pragma once) every ranges symbol span needs
+// is defined, so the re-entrant include is a no-op and span completes cleanly.
+#include <span>

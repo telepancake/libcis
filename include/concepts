@@ -305,7 +305,8 @@ concept equality_comparable = detail::weakly_equality_comparable_with<T, T>;
 template<class T, class U>
 concept equality_comparable_with =
     equality_comparable<T> && equality_comparable<U> &&
-    detail::comparison_common_type_with<T, U> &&
+    common_reference_with<detail::make_const_lvalue_ref<T>,
+                          detail::make_const_lvalue_ref<U>> &&
     equality_comparable<
         common_reference_t<detail::make_const_lvalue_ref<T>,
                            detail::make_const_lvalue_ref<U>>> &&

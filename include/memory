@@ -2259,7 +2259,11 @@ allocate_shared(const Alloc& a, Args&&... args) {
     using CbAlloc = typename allocator_traits<Alloc>::template rebind_alloc<CB>;
     using CbTraits = allocator_traits<CbAlloc>;
     CbAlloc ca(a);
-    CB* cb = CbTraits::allocate(ca, 1);
+    // allocate() returns the allocator's pointer type, which may be a fancy
+    // pointer (e.g. min_allocator's min_pointer); convert to a raw CB* via
+    // addressof(*p) the way libc++'s __allocation_guard does.
+    auto cb_ptr = CbTraits::allocate(ca, 1);
+    CB* cb = std::addressof(*cb_ptr);
     ::new(static_cast<void*>(cb)) CB(a, std::forward<Args>(args)...);
     return shared_ptr<T>::create_with_control_block(cb->get_elem(), cb);
 }
