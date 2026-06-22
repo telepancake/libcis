@@ -2,44 +2,44 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/.test_results/latest/callsites/x86_64/libcis.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/libcis.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
 0000000000000bdd <cs_str_append>:
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  bdd:	f3 0f 1e fa          	endbr64
  be1:	55                   	push   %rbp
  be2:	48 89 fd             	mov    %rdi,%rbp
 _ZNSt11char_traitsIcE6lengthEPKc():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string_view:104 (discriminator 1)
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:104 (discriminator 1)
  be5:	48 89 f7             	mov    %rsi,%rdi
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  be8:	48 83 ec 10          	sub    $0x10,%rsp
 _ZNSt11char_traitsIcE6lengthEPKc():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string_view:104 (discriminator 1)
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:104 (discriminator 1)
  bec:	48 89 74 24 08       	mov    %rsi,0x8(%rsp)
  bf1:	e8 00 00 00 00       	call   bf6 <cs_str_append+0x19>
 _ZNSs6appendEPKc():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string:788 (discriminator 1)
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:788 (discriminator 1)
  bf6:	48 8b 74 24 08       	mov    0x8(%rsp),%rsi
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  bfb:	48 83 c4 10          	add    $0x10,%rsp
 _ZNSs6appendEPKc():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string:788 (discriminator 1)
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:788 (discriminator 1)
  bff:	48 89 ef             	mov    %rbp,%rdi
 _ZNSt11char_traitsIcE6lengthEPKc():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string_view:104 (discriminator 1)
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:104 (discriminator 1)
  c02:	48 89 c2             	mov    %rax,%rdx
 cs_str_append():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:35
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:35
  c05:	5d                   	pop    %rbp
 _ZNSs6appendEPKc():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string:788 (discriminator 1)
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:788 (discriminator 1)
  c06:	e9 7b fe ff ff       	jmp    a86 <_ZNSs6appendEPKcm.isra.0>
 
 Disassembly of section .text._ZNKSt19bad_optional_access4whatEv:

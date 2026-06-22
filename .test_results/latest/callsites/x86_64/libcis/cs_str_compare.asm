@@ -2,65 +2,65 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/.test_results/latest/callsites/x86_64/libcis.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/libcis.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
 00000000000001fe <cs_str_compare>:
 cs_str_compare():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:36
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:36
  1fe:	f3 0f 1e fa          	endbr64
  202:	41 54                	push   %r12
  204:	55                   	push   %rbp
  205:	48 89 f5             	mov    %rsi,%rbp
  208:	53                   	push   %rbx
 _ZNKSs7compareERKSs():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string:1329
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:1329
  209:	e8 00 00 00 00       	call   20e <cs_str_compare+0x10>
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string:1329 (discriminator 1)
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:1329 (discriminator 1)
  20e:	48 89 ef             	mov    %rbp,%rdi
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string:1329
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:1329
  211:	48 89 d3             	mov    %rdx,%rbx
  214:	49 89 c4             	mov    %rax,%r12
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string:1329 (discriminator 1)
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:1329 (discriminator 1)
  217:	e8 00 00 00 00       	call   21c <cs_str_compare+0x1e>
 _ZNSt11char_traitsIcE7compareEPKcS2_m():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string_view:98
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:98
  21c:	4c 89 e7             	mov    %r12,%rdi
 _ZNSt6detail6sv_minImEET_S1_S1_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string_view:41
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:41
  21f:	48 39 da             	cmp    %rbx,%rdx
 _ZNKSs7compareERKSs():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string:1329 (discriminator 1)
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:1329 (discriminator 1)
  222:	48 89 d5             	mov    %rdx,%rbp
 _ZNSt6detail6sv_minImEET_S1_S1_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string_view:41
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:41
  225:	48 89 da             	mov    %rbx,%rdx
 _ZNKSs7compareERKSs():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string:1329 (discriminator 1)
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:1329 (discriminator 1)
  228:	48 89 c6             	mov    %rax,%rsi
 _ZNSt6detail6sv_minImEET_S1_S1_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string_view:41
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:41
  22b:	48 0f 46 d5          	cmovbe %rbp,%rdx
 _ZNSt11char_traitsIcE7compareEPKcS2_m():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string_view:98
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:98
  22f:	e8 00 00 00 00       	call   234 <cs_str_compare+0x36>
 _ZNKSt17basic_string_viewIcSt11char_traitsIcEE7compareES2_():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string_view:696
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:696
  234:	85 c0                	test   %eax,%eax
  236:	75 10                	jne    248 <cs_str_compare+0x4a>
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string_view:697 (discriminator 1)
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:697 (discriminator 1)
  238:	83 c8 ff             	or     $0xffffffff,%eax
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string_view:697
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:697
  23b:	48 39 eb             	cmp    %rbp,%rbx
  23e:	72 08                	jb     248 <cs_str_compare+0x4a>
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/include/string_view:698
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:698
  240:	31 c0                	xor    %eax,%eax
  242:	48 39 dd             	cmp    %rbx,%rbp
  245:	0f 92 c0             	setb   %al
 cs_str_compare():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:36
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:36
  248:	5b                   	pop    %rbx
  249:	5d                   	pop    %rbp
  24a:	41 5c                	pop    %r12

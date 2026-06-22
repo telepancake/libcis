@@ -23,6 +23,9 @@
 #include <string>
 #include <algorithm>
 #include <utility>
+#include <any>
+#include <optional>
+#include <variant>
 
 #ifndef NT
 #define NT 8
@@ -36,6 +39,31 @@ struct Elem {
     bool operator<(const Elem& o) const { return s < o.s; }
 };
 
+// Cross-header type erasure over the SAME element type T. A real image that
+// stores T in a vector also routinely funnels T through an any / optional /
+// variant slot. Each of those headers needs T's copy/move/destroy leaves; if
+// every vocabulary emits its OWN copy/move/destroy body for T, the marginal
+// flash per added type is multiplied by the number of vocabularies. Unifying
+// them onto one shared type_ops leaf set collapses that multiple. Exercising
+// them here over T makes that duplication (or its removal) show in the slope.
+template <class T>
+__attribute__((noinline)) unsigned exercise_erased(const T& proto) {
+    std::any a = proto;            // any: copy/move/destroy + type_id leaves for T
+    std::any b = a;                // copy-construct erased storage
+    a = std::move(b);              // move-assign erased storage
+    std::optional<T> o = proto;    // optional<T>: copy/move/destroy of the value
+    std::optional<T> p = o;        // copy
+    o = std::move(p);              // move
+    std::variant<int, T> vt = proto;   // variant: copy/move/destroy active alt
+    std::variant<int, T> wt = vt;      // copy
+    vt = std::move(wt);                // move
+    size_t acc = 0;
+    if (auto* pa = std::any_cast<T>(&a)) acc += pa->s.size();
+    if (o) acc += o->s.size();
+    if (auto* pv = std::get_if<1>(&vt)) acc += pv->s.size();
+    return (unsigned)acc;
+}
+
 template <class T>
 __attribute__((noinline)) unsigned exercise(int seed) {
     std::vector<T> v;
@@ -48,7 +76,8 @@ __attribute__((noinline)) unsigned exercise(int seed) {
     w = v;                                                    // copy-assign range
     auto it = std::find_if(w.begin(), w.end(),
                            [](const T& x){ return x.s.size() > 3; });
-    return (unsigned)(v.size() + w.size() + (it != w.end()));
+    return (unsigned)(v.size() + w.size() + (it != w.end()))
+           + exercise_erased<T>(v.front());
 }
 
 template <int... Ns>

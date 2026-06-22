@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
 0000000000000055 <cs_vec_push_int>:
 cs_vec_push_int():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:29
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
   55:	f3 0f 1e fa          	endbr64
   59:	48 83 ec 18          	sub    $0x18,%rsp
   5d:	89 74 24 0c          	mov    %esi,0xc(%rsp)
@@ -35,7 +35,7 @@ _ZNSt6vectorIiSaIiEE9push_backERKi():
   7c:	48 8d 54 24 0c       	lea    0xc(%rsp),%rdx
   81:	e8 00 00 00 00       	call   86 <cs_vec_push_int+0x31>
 cs_vec_push_int():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:29
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:29
   86:	48 83 c4 18          	add    $0x18,%rsp
   8a:	c3                   	ret
 

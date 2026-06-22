@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
 000000000000014a <cs_vec_erase_H>:
 cs_vec_erase_H():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:32
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:32
  14a:	f3 0f 1e fa          	endbr64
  14e:	41 54                	push   %r12
  150:	55                   	push   %rbp
@@ -30,13 +30,13 @@ _ZNSt6vectorI1HSaIS0_EE8_M_eraseEN9__gnu_cxx17__normal_iteratorIPS0_S2_EE():
  165:	48 8b 7d 08          	mov    0x8(%rbp),%rdi
  169:	48 8d 47 d8          	lea    -0x28(%rdi),%rax
 _ZN1HD4Ev():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:20
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:20
  16d:	48 83 ef 20          	sub    $0x20,%rdi
 _ZNSt6vectorI1HSaIS0_EE8_M_eraseEN9__gnu_cxx17__normal_iteratorIPS0_S2_EE():
 /usr/include/c++/13/bits/vector.tcc:186
  171:	48 89 45 08          	mov    %rax,0x8(%rbp)
 cs_vec_erase_H():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:32
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:32
  175:	5b                   	pop    %rbx
  176:	5d                   	pop    %rbp
  177:	41 5c                	pop    %r12

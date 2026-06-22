@@ -2,14 +2,14 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
 000000000000004c <cs_str_compare>:
 cs_str_compare():
-/home/user/libcis/.claude/worktrees/agent-a27315e16cbfdd9f1/bench/callsites.cpp:36
+/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:36
   4c:	f3 0f 1e fa          	endbr64
   50:	e9 00 00 00 00       	jmp    55 <cs_vec_push_int>
 
