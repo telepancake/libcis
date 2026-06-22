@@ -12,7 +12,7 @@ PER-CALL CODE OVERHEAD  (bytes of code at one call site; libcis - reference)
   cs_str_append         -205
   cs_str_compare         +70
 
-per-type code overhead (demoted): +292 B per added instantiation  (libcis 4812 vs ref 4520)
+per-type code overhead (demoted): +265 B per added instantiation  (libcis 4786 vs ref 4520)
 
 MEMORY  (representative workloads)
   bench            n   intern   heap_cis   heap_ref  heap_ovh    stack

@@ -118,20 +118,15 @@ void sum_copy_construct(const sum_ops* s, void* dst, const void* src,
 void sum_move_construct(const sum_ops* s, void* dst, void* src,
                         size_t src_index);
 
-// ---- per-alternative leaf templates -------------------------------------
-// Instantiated once per T; identical bodies for the same T COMDAT-fold
-// across variant flavors. No allocator threading — variant uses ::new /
-// direct dtor / direct copy/move-construct, matching libc++'s in-place
-// visitation pattern.
-template<class T> void alt_destroy_op(void* p) {
-    static_cast<T*>(p)->~T();
-}
-template<class T> void alt_copy_construct_op(void* d, const void* s) {
-    ::new (d) T(*static_cast<const T*>(s));
-}
-template<class T> void alt_move_construct_op(void* d, void* s) {
-    ::new (d) T(static_cast<T&&>(*static_cast<T*>(s)));
-}
+// ---- per-alternative leaves ----------------------------------------------
+// These are the SHARED erased-storage leaves from bits/relocatable.h, not a
+// variant-private set: erased_destroy_op / erased_copy_construct_op /
+// erased_move_construct_op have exactly the signatures alt_ops needs and the
+// in-place semantics variant wants (move = construct-from-rvalue, src left
+// alive for the caller to destroy). Naming the shared templates here means a T
+// used in both <variant> and <any>/<functional> emits ONE destroy and ONE
+// copy_construct body, pointed at by all three vocabularies, instead of one
+// per header. No allocator threading — variant uses ::new / direct dtor.
 
 // ---- table construction --------------------------------------------------
 // Build the per-Alt table for Ts... at offset 0 (every alt overlaps at the
@@ -156,13 +151,13 @@ constexpr alt_ops make_alt_ops() {
     alt_ops a{0, nullptr, nullptr, nullptr};
     if constexpr (requires(T* p) { p->~T(); })
         if constexpr (!is_trivially_destructible_v<T>)
-            a.destroy = &alt_destroy_op<T>;
+            a.destroy = &erased_destroy_op<T>;
     if constexpr (requires(T* d, const T& s) { ::new (d) T(s); })
         if constexpr (!is_trivially_copyable_v<T>)
-            a.copy_construct = &alt_copy_construct_op<T>;
+            a.copy_construct = &erased_copy_construct_op<T>;
     if constexpr (requires(T* d, T&& s) { ::new (d) T(static_cast<T&&>(s)); })
         if constexpr (!is_trivially_copyable_v<T>)
-            a.move_construct = &alt_move_construct_op<T>;
+            a.move_construct = &erased_move_construct_op<T>;
     return a;
 }
 

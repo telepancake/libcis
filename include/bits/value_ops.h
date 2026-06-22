@@ -99,13 +99,13 @@ inline constexpr bool value_is_small =
     is_nothrow_move_constructible_v<T>;
 
 // ----- SMALL leaves --------------------------------------------------------
-// T is at the storage word's address (placement-new'd in place).
-template<class T> void destroy_small_op(void* storage) {
-    static_cast<T*>(storage)->~T();
-}
-template<class T> void copy_construct_small_op(void* dst, const void* src) {
-    ::new (dst) T(*static_cast<const T*>(src));
-}
+// T is at the storage word's address (placement-new'd in place). destroy and
+// copy_construct ARE the shared erased leaves (bits/relocatable.h): same
+// signature, same body, so <any> shares them with <variant>/<functional>
+// rather than emitting a private destroy_small_op/copy_construct_small_op per
+// T. move_construct_small_op is <any>-specific — it both moves AND ends the
+// source object's lifetime (any's small-buffer move empties the source), which
+// the shared erased_move_construct_op (src left alive) does not do.
 template<class T> void move_construct_small_op(void* dst, void* src) {
     ::new (dst) T(std::move(*static_cast<T*>(src)));
     static_cast<T*>(src)->~T();
@@ -141,8 +141,8 @@ constexpr value_ops make_value_ops() {
     if constexpr (value_is_small<T>)              o.flags |= vf_is_small;
 
     if constexpr (value_is_small<T>) {
-        o.destroy        = &destroy_small_op<T>;
-        o.copy_construct = &copy_construct_small_op<T>;
+        o.destroy        = &erased_destroy_op<T>;
+        o.copy_construct = &erased_copy_construct_op<T>;
         o.move_construct = &move_construct_small_op<T>;
     } else {
         o.destroy        = &destroy_large_op<T>;
@@ -217,15 +217,12 @@ static_assert(offsetof(callable_ops<void()>, copy_construct) == offsetof(callabl
 static_assert(offsetof(callable_ops<void()>, move_construct) == offsetof(callable_ops_base, move_construct));
 
 // ---- per-F leaves -----------------------------------------------------------
-template<class F> void func_destroy_op(void* p) {
-    static_cast<F*>(p)->~F();
-}
-template<class F> void func_copy_construct_op(void* dst, const void* src) {
-    ::new (dst) F(*static_cast<const F*>(src));
-}
-template<class F> void func_move_construct_op(void* dst, void* src) {
-    ::new (dst) F(static_cast<F&&>(*static_cast<F*>(src)));
-}
+// destroy / copy_construct / move_construct ARE the shared erased leaves from
+// bits/relocatable.h (erased_destroy_op / erased_copy_construct_op /
+// erased_move_construct_op): same signatures, same in-place semantics (the
+// function small-buffer move constructs dst and leaves src for the wrapper to
+// destroy). So a callable F that is ALSO an element/alternative/any-value type
+// shares one body across <functional>, <variant> and <any>.
 
 // invoke leaf: forwarding form. The wrapper has already validated
 // is_invocable_r_v<R, F&, A...> at the call-site that built the ops table.
@@ -267,13 +264,13 @@ struct make_callable_ops_impl<F, R(A...)> {
         o.flags = flg;
 
         if constexpr (!is_trivially_destructible_v<F>)
-            o.destroy = &func_destroy_op<F>;
+            o.destroy = &erased_destroy_op<F>;
         if constexpr (requires(F* p, const F& s) { ::new (p) F(s); })
             if constexpr (!is_trivially_copyable_v<F>)
-                o.copy_construct = &func_copy_construct_op<F>;
+                o.copy_construct = &erased_copy_construct_op<F>;
         if constexpr (requires(F* p, F&& s) { ::new (p) F(static_cast<F&&>(s)); })
             if constexpr (!is_trivially_relocatable_v<F>)
-                o.move_construct = &func_move_construct_op<F>;
+                o.move_construct = &erased_move_construct_op<F>;
 
         o.invoke = &func_invoke_op<F, R, A...>;
         return o;

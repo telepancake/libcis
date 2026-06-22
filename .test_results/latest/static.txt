@@ -1,3 +1,3 @@
 one-time shared-core flash (y-intercept; paid ONCE per image, intentionally omitted from the summary)
-  libcis        63503 B
+  libcis        63421 B
   ref             825 B
