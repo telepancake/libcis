@@ -67,13 +67,22 @@ DNO_FIX = ('  { const volatile void* __cis_p = __builtin_addressof(value);\n'
            '    asm volatile("" : : "r"(__cis_p) : "memory"); }')
 
 
+# The 18.x corpus's test_macros.h guards <version> with __has_include("<version>")
+# -- a QUOTED operand, which gcc (and clang) treat as a literal filename and so
+# always evaluate false, falling back to #include <ciso646>.  ciso646 was removed
+# in C++20 and libcis (rightly) does not ship it, so the fallback fails to find a
+# header.  Pin it to the unquoted form newer corpora use, which finds <version>.
+CISO646_BAD = '__has_include("<version>")'
+CISO646_FIX = '__has_include(<version>)'
+
+
 def patch_support():
     """Idempotently append the compat block + array-safe DoNotOptimize fix."""
     tm = os.path.join(T.DST_SUPPORT, "test_macros.h")
     if os.path.exists(tm):
         cur = open(tm).read()
-        if DNO_BAD in cur:
-            cur = cur.replace(DNO_BAD, DNO_FIX)
+        if DNO_BAD in cur or CISO646_BAD in cur:
+            cur = cur.replace(DNO_BAD, DNO_FIX).replace(CISO646_BAD, CISO646_FIX)
             open(tm, "w").write(cur)
         if "libcis compatibility" not in cur:
             open(tm, "a").write(SUPPORT_COMPAT)

@@ -1,92 +1,98 @@
 #!/usr/bin/env bash
-# Download the pinned toolchain the test pipeline needs into ./toolchain, so the
-# build does not depend on which compiler/header VERSIONS the system happens to
-# have, or where they live.  This is deliberately NOT "bazel hermetic": the
-# fetched compilers still run against the host's glibc + binutils (as/ld).  What
-# it pins locally is the version-sensitive parts:
+# Provision the toolchain the test pipeline needs into ./toolchain WITHOUT using
+# the host's package manager or any prebuilt, distro/arch-specific binaries, so
+# the build does not depend on what the host has installed or where.  Three
+# pieces, each from a portable source:
 #
-#   toolchain/root/        g++-10, clang-20 (libclang/libLLVM), libc++-20 headers
-#                          and clang's resource headers -- all extracted Ubuntu
-#                          .debs.  -> $CXX, $LIBCLANG, $LIBCXX_INCLUDE, resource
-#   toolchain/llvm-project/ the libc++ test corpus + clang's python bindings
-#                          (cindex.py), one sparse git checkout at a matching tag
+#   toolchain/gcc/         g++-10, BUILT FROM the GNU source release.  No portable
+#                          prebuilt gcc exists, so source is the only arch-neutral
+#                          way; configure detects the host arch.   -> $CXX
+#   toolchain/pylibs/      libclang -- the `libclang` wheel from PyPI via uv/pip.
+#                          Wheels are per-arch and self-contained, so pip resolves
+#                          the host CPU for us and nothing else is needed.  -> $LIBCLANG
+#   toolchain/llvm-project/ the libc++ test corpus, the libc++ headers, clang's
+#                          builtin headers, and clang's cindex.py -- one sparse
+#                          git checkout (arch-independent source).  libc++'s two
+#                          CMake-generated headers are generated here from their
+#                          .in templates (what configure_file would do).
 #
-# clang and the corpus are pinned to the SAME LLVM release: a corpus newer than
-# the parser does not parse (newer test_macros.h / headers use newer clang), and
-# the cindex.py bindings must match the libclang they drive.  We use clang-20 (=
-# the repo's reference) rather than the pip `libclang` wheel, which tops out at
-# 18.1 and would drag in an older, mismatched corpus.
+# Pins: the libclang wheel and the checkout are the same LLVM release line so the
+# parse agrees with the corpus.  tools/config.py prefers all of the above once
+# present, so `make smoke/support/gate/test` just work after this.  Each step is
+# skipped when already done; `make distclean` forces a redo.
 #
-# tools/config.py prefers all of the above automatically once present, so after
-# `make bootstrap` the rest of the pipeline (make smoke/support/gate/test) just
-# works.  Re-running this script is cheap: each step is skipped when already done.
-#
-# Requirements on the host: bash, git, dpkg-deb, and apt-get (a Debian/Ubuntu
-# host, for the .deb fetch).  No pip/uv/conda needed.
+# Host needs: bash, git, curl, tar, make, a C/C++ compiler (to build gcc), and
+# uv or pip.  No apt/dpkg/conda, no architecture assumptions.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TC="$ROOT/toolchain"
 
-# clang and the corpus are pinned together to the 20.1 line.  The .deb clang on
-# Ubuntu noble is 20.1.2; the checkout (corpus + cindex.py) is a 20.1.x tag.
-LLVM_TAG="llvmorg-20.1.8"
-
-# The .debs to extract locally:
-#   - gcc-10 core + the support libs cpp-10 needs (isl/mpc/mpfr/gmp), so it runs
-#     on a host that lacks them;
-#   - clang-20: libclang1-20 (the C library the parse uses) + libllvm20 (its
-#     backing libLLVM) + libclang-common-20-dev (clang's resource/builtin headers);
-#   - libc++-20 dev headers -- a COMPLETE set including the CMake-generated
-#     __config_site / __assertion_handler a raw source checkout lacks, so the
-#     parse finds libc++ without any system libc++.
-# Everything else (glibc, binutils) comes from the host.
-DEBS=(g++-10 gcc-10 cpp-10 gcc-10-base libgcc-10-dev libstdc++-10-dev
-      libisl23 libmpc3 libmpfr6 libgmp10
-      libclang1-20 libllvm20 libclang-common-20-dev
-      libc++-20-dev libc++abi-20-dev)
+GCC_VER=10.5.0
+LLVM_TAG=llvmorg-18.1.8
+LIBCLANG_VERSION=18.1.1   # newest `libclang` on PyPI; pins the checkout's line
 
 say() { printf '\033[36m[bootstrap]\033[0m %s\n' "$*"; }
 
-# --- compilers + headers: download + extract Ubuntu .debs into toolchain/root
-fetch_debs() {
-    if [ -x "$TC/root/usr/bin/g++-10" ] \
-       && compgen -G "$TC/root/usr/lib/llvm-*/include/c++/v1"   >/dev/null \
-       && compgen -G "$TC/root/usr/lib/*/libclang-*.so.*"       >/dev/null; then
-        say "compilers + headers already present, skipping"
-        return
-    fi
-    command -v apt-get >/dev/null || {
-        echo "bootstrap: apt-get not found; cannot fetch the .debs on this host." >&2
-        echo "  Run on a Debian/Ubuntu host, or install g++-10 + clang-20 +" >&2
-        echo "  libc++-20-dev yourself and point \$CXX/\$LIBCLANG/etc at them." >&2
-        exit 1
-    }
-    say "downloading .debs (gcc-10, clang-20, libc++-20)"
-    mkdir -p "$TC/debs" "$TC/root"
-    ( cd "$TC/debs" && apt-get download "${DEBS[@]}" )
-    say "extracting into toolchain/root"
-    for d in "$TC"/debs/*.deb; do dpkg-deb -x "$d" "$TC/root"; done
-    "$TC/root/usr/bin/g++-10" --version | head -1
+# --- g++-10: build from the GNU source release into toolchain/gcc -----------
+build_gcc() {
+    if [ -x "$TC/gcc/bin/g++-10" ]; then say "g++-10 already built, skipping"; return; fi
+    command -v make >/dev/null && command -v g++ >/dev/null || {
+        echo "bootstrap: need make + a host C/C++ compiler to build gcc." >&2; exit 1; }
+    say "building gcc-$GCC_VER from source (this takes a while)"
+    mkdir -p "$TC/src"; cd "$TC/src"
+    [ -f gcc-$GCC_VER.tar.xz ] || curl -fLO "https://ftp.gnu.org/gnu/gcc/gcc-$GCC_VER/gcc-$GCC_VER.tar.xz"
+    [ -d gcc-$GCC_VER ] || tar xf gcc-$GCC_VER.tar.xz
+    # gmp/mpfr/mpc/isl SOURCE into the tree (built in-tree; no system libs)
+    [ -d gcc-$GCC_VER/gmp ] || ( cd gcc-$GCC_VER && ./contrib/download_prerequisites )
+    rm -rf gcc-build && mkdir gcc-build && cd gcc-build
+    "$TC/src/gcc-$GCC_VER/configure" --prefix="$TC/gcc" \
+        --enable-languages=c,c++ --disable-multilib --disable-bootstrap \
+        --disable-werror --program-suffix=-10
+    make -j"$(nproc)"
+    make install
+    rm -rf "$TC/src/gcc-build"            # reclaim the build tree
+    "$TC/gcc/bin/g++-10" --version | head -1
 }
 
-# --- corpus + clang python bindings: one sparse llvm-project checkout --------
-fetch_corpus() {
-    if [ -d "$TC/llvm-project/libcxx/test/std" ] \
-       && [ -f "$TC/llvm-project/clang/bindings/python/clang/cindex.py" ]; then
-        say "llvm-project checkout already present, skipping"
-        return
+# --- libclang: the per-arch, self-contained wheel into toolchain/pylibs -----
+fetch_libclang() {
+    if [ -f "$TC/pylibs/clang/native/libclang.so" ]; then
+        say "libclang already present, skipping"; return; fi
+    say "installing libclang==$LIBCLANG_VERSION (per-arch wheel) into toolchain/pylibs"
+    if command -v uv >/dev/null; then
+        uv pip install --target "$TC/pylibs" --python python3 "libclang==$LIBCLANG_VERSION"
+    elif command -v pip >/dev/null; then
+        pip install --target "$TC/pylibs" "libclang==$LIBCLANG_VERSION"
+    else
+        echo "bootstrap: need uv or pip to fetch the libclang wheel." >&2; exit 1
     fi
-    say "cloning llvm-project @ $LLVM_TAG (sparse, blobless)"
-    rm -rf "$TC/llvm-project"
-    git clone --depth 1 --filter=blob:none --sparse --branch "$LLVM_TAG" \
-        https://github.com/llvm/llvm-project "$TC/llvm-project"
-    git -C "$TC/llvm-project" sparse-checkout set \
-        libcxx/test clang/bindings/python
+}
+
+# --- corpus + libc++/clang headers + cindex: one sparse llvm checkout -------
+fetch_sources() {
+    if [ ! -d "$TC/llvm-project/libcxx/test/std" ]; then
+        say "cloning llvm-project @ $LLVM_TAG (sparse, blobless)"
+        rm -rf "$TC/llvm-project"
+        git clone --depth 1 --filter=blob:none --sparse --branch "$LLVM_TAG" \
+            https://github.com/llvm/llvm-project "$TC/llvm-project"
+        git -C "$TC/llvm-project" sparse-checkout set \
+            libcxx/include libcxx/test libcxx/vendor clang/lib/Headers
+    else
+        say "llvm-project checkout already present, skipping clone"
+    fi
+    # Generate libc++'s two CMake-generated headers (what configure_file does for
+    # a default, hardening=none, non-Apple build) -- so no prebuilt libc++ needed.
+    say "generating libc++ __config_site + __assertion_handler"
+    python3 "$ROOT/tools/gen_libcxx_site.py" "$TC/llvm-project/libcxx/include"
+    # clang -resource-dir wants a ROOT whose include/ has stddef.h.
+    mkdir -p "$TC/resource"
+    ln -sfn ../llvm-project/clang/lib/Headers "$TC/resource/include"
 }
 
 mkdir -p "$TC"
-fetch_debs
-fetch_corpus
+build_gcc
+fetch_libclang
+fetch_sources
 touch "$TC/.bootstrap-ok"
 say "done — toolchain ready under ./toolchain"
