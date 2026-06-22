@@ -42,26 +42,29 @@ tests can validate libcis. The repo therefore has two halves: the **library**
 ## 1. Requirements
 
 The pipeline needs a **version-matched** toolchain — g++-10 for the library, and
-libclang + a same-version libc++ test corpus for the transfer (an older libclang
-cannot parse a newer corpus). Rather than make you install and version-match it,
-**`make bootstrap` provisions it into `./toolchain`** — without touching the
-host's package manager or any prebuilt distro/arch-specific binary:
+clang/libclang + a same-version libc++ (headers + test corpus) for the transfer
+(an older libclang cannot parse a newer corpus; and libc++'s headers must match
+the host's C library). Rather than make you install and version-match it,
+**`make bootstrap` builds it from source into `./toolchain`** — without touching
+the host's package manager or any prebuilt distro/arch-specific binary:
 
 ```sh
 make bootstrap        # or: tools/bootstrap.sh
 ```
 
-| Provisioned into `./toolchain` | What it is | How |
+| Built into `./toolchain` | What it is | How |
 |------|------------|-----|
-| `gcc/` — `g++-10` | the library compiler | **built from the GNU source release** (no portable prebuilt gcc exists; `configure` detects the host arch) |
-| `pylibs/` — `libclang` | the transfer's parser | the **PyPI `libclang` wheel** via `uv`/`pip` (wheels are per-arch and self-contained, so pip resolves your CPU) |
-| `llvm-project/` — corpus, libc++ headers, clang builtin headers, `cindex.py` | the transfer's inputs | one sparse **git checkout** (arch-independent source); libc++'s two generated headers are produced from their `.in` templates |
+| `gcc/` — `g++-10` | the library compiler | built from the **GNU source release** (no portable prebuilt gcc exists) |
+| `llvm/` — `libclang`, libc++ headers, clang's resource headers | the transfer's parser + headers | built from the **llvm-project source**; libc++ is **cmake-configured for the host's libc**, so its headers match whatever C library the host has (glibc, musl, …) |
+| `llvm-project/` — corpus + `cindex.py` | the transfer's inputs | the same source checkout (clang and the corpus are one LLVM release, so the parser agrees with the tests) |
 
-This is **not** "bazel hermetic": the built compiler still runs against the
-host's glibc + binutils. But it makes **no architecture or distro assumption**
-and uses **no host package manager**. The host needs `bash`, `git`, `curl`,
-`tar`, `make`, a C/C++ compiler (to build gcc), and `uv` or `pip` — that's it.
-Building gcc takes a while on the first `make bootstrap`; it is cached after.
+Building from source is what makes this **arch- and distro-agnostic**: each
+compiler's own `configure`/`cmake` adapts to the host, instead of us shipping a
+binary for one platform. It is **not** "bazel hermetic" — the built compilers
+still run against the host's glibc + binutils. The host needs `bash`, `git`,
+`curl`, `tar`, `cmake`, `ninja`, `make`, and a C/C++ compiler (to build gcc +
+llvm) — no apt/dpkg/conda, no pip. Building both compilers takes a while on the
+first `make bootstrap`; everything is cached after.
 
 The optional reference/discriminator backends are not bootstrapped:
 
