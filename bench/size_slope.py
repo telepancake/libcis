@@ -216,7 +216,22 @@ def module_memory(log):
 
 
 # ---------------------------------------------------------------- speed
+SPEED_OPS = ["cs_vec_index_i", "cs_vec_end_i", "cs_vec_push_int", "cs_vec_push_H",
+             "cs_vec_insert_H", "cs_vec_erase_H", "cs_vec_sort_H", "cs_str_append"]
+
+
+def cg_irefs(binary, arg):
+    """Deterministic instruction reads (Ir) for one workload, via cachegrind."""
+    out = "/tmp/cg_%s.out" % os.path.basename(binary)
+    r = sh(["valgrind", "--tool=cachegrind", "--cachegrind-out-file=" + out, binary, arg])
+    m = re.search(r"I\s+refs:\s+([\d,]+)", r.stdout)
+    return int(m.group(1).replace(",", "")) if m else None
+
+
 def module_speed(log):
+    if not shutil.which("valgrind"):
+        log.append("  speed: valgrind absent — speed axis skipped (apt-get install valgrind)")
+        return None
     src = os.path.join(ROOT, "bench", "speedprobe.cpp")
     res = {}
     for lib, cflags, lflags in (("libcis", LIBCIS_C, LIBCIS_L), ("ref", REF_C, REF_L)):
@@ -225,23 +240,19 @@ def module_speed(log):
         if r.returncode != 0:
             log.append("  speed %s: BUILD FAILED\n%s" % (lib, r.stdout[-1200:]))
             return None
-        best = {}
-        for _ in range(3):                       # best-of-3 process runs (least noisy)
-            run = sh([out])
-            for line in run.stdout.splitlines():
-                p = line.split()
-                if len(p) == 3 and p[0] == "SPEED":
-                    v = float(p[2])
-                    if p[1] not in best or v < best[p[1]]:
-                        best[p[1]] = v
-        res[lib] = best
-    rows = []
+        base = cg_irefs(out, "noop")            # subtract fixed startup
+        per = {}
+        for op in SPEED_OPS:
+            ir = cg_irefs(out, op)
+            if ir is not None and base is not None:
+                per[op] = ir - base             # method's own executed instructions
+        res[lib] = per
     with open(os.path.join(RESULTS, "speed.csv"), "w", newline="") as f:
-        w = csv.writer(f); w.writerow(["op", "ns_libcis", "ns_ref", "pct_slower"])
-        for op in res.get("libcis", {}):
-            lc, rf = res["libcis"][op], res["ref"].get(op)
-            if rf:
-                w.writerow([op, "%.4f" % lc, "%.4f" % rf, "%.1f" % (100 * (lc - rf) / rf)])
+        w = csv.writer(f); w.writerow(["op", "ir_libcis", "ir_ref", "pct"])
+        for op in SPEED_OPS:
+            lc, rf = res.get("libcis", {}).get(op), res.get("ref", {}).get(op)
+            if lc is not None and rf:
+                w.writerow([op, lc, rf, "%.1f" % (100 * (lc - rf) / rf)])
     return res
 
 
@@ -291,11 +302,12 @@ def main():
     out.append("regressions, individually. WIN = better on an axis, worse on none. LOSS = the")
     out.append("reverse. TRADE = better on one, worse on the other → a human decides if the")
     out.append("win there is worth the loss here. (dsize<0 and dspeed<0 are improvements.)")
+    out.append("speed = cachegrind instruction reads (Ir, deterministic), startup subtracted.")
     sx = {op: (r[2], r[3], r[4]) for r in cs if r[0] == "x86_64" for op in [r[1]]}
     sp_c = (spd or {}).get("libcis", {}); sp_r = (spd or {}).get("ref", {})
     if sx:
-        out.append("  %-16s %7s %-11s %8s %-13s  %s" %
-                   ("method", "dsize", "size c/r", "dspeed", "ns/op c/r", "verdict"))
+        out.append("  %-16s %7s %-11s %8s %-15s  %s" %
+                   ("method", "dsize", "size c/r", "dspeed", "kIr c/r", "verdict"))
         for op in CALLSITE_OPS:
             if op not in sx and op not in sp_c:
                 continue
@@ -304,10 +316,10 @@ def main():
             dsize = ds[2] if ds else None
             dspd = (100 * (dpc - dpr) / dpr) if (dpc and dpr) else None
             scol = ("%+7d %5d/%-5d" % (dsize, ds[0], ds[1])) if ds else "%7s %-11s" % ("-", "")
-            pcol = ("%+7.1f%% %5.2f/%-6.2f" % (dspd, dpc, dpr)) if dspd is not None else "%8s %-13s" % ("-", "")
-            # verdict from deadbanded axes
-            better = (dsize is not None and dsize < -2) or (dspd is not None and dspd < -4)
-            worse = (dsize is not None and dsize > 2) or (dspd is not None and dspd > 4)
+            pcol = ("%+7.1f%% %6d/%-7d" % (dspd, dpc // 1000, dpr // 1000)) if dspd is not None else "%8s %-15s" % ("-", "")
+            # verdict from deadbanded axes (Ir is deterministic -> tight 1% band)
+            better = (dsize is not None and dsize < -2) or (dspd is not None and dspd < -1)
+            worse = (dsize is not None and dsize > 2) or (dspd is not None and dspd > 1)
             verdict = "TRADE" if better and worse else "WIN" if better else "LOSS" if worse else "~"
             out.append("  %-16s %s %s  %s" % (op, scol, pcol, verdict))
     else:
