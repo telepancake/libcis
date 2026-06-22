@@ -1,0 +1,30 @@
+libcis size/memory/codegen — overhead vs non-type-erased reference (libstdc++)
+==============================================================================
+
+PER-CALL CODE OVERHEAD  (bytes of code at one call site; libcis - reference)
+  op                  x86_64
+  cs_vec_push_int         +8
+  cs_vec_push_H          +33
+  cs_vec_insert_H       -176
+  cs_vec_erase_H         -41
+  cs_vec_assign_H       -363
+  cs_vec_sort_H         -113
+  cs_str_append         -205
+  cs_str_compare         +70
+
+per-type code overhead (demoted): -17 B per added instantiation  (libcis 3866 vs ref 3882)
+
+MEMORY  (representative workloads)
+  bench            n   intern   heap_cis   heap_ref  heap_ovh    stack
+  vec_int      10000    65528      68208      67728      +480       41
+  vec_big       2000    98280     163712     116512    +47200       41
+  string       50000    66568      67520      63184     +4336       41
+  map           5000   180032     239808     239952      -144       49
+
+architectures: measured=[x86_64]  toolchain-present-but-failed=[i586]  skipped=[arm64, arm32, mips32]
+
+FULL RESULTS in .test_results/latest/ — OPEN THESE, the numbers above are a digest:
+  callsites/<arch>/<libcis|ref>/<op>.asm   annotated disassembly of every call site
+  per_call_overhead.csv   per-arch per-op code size, libcis vs reference
+  memory.csv              internal / heap / stack per workload
+  per_type.csv, static.txt, targets.txt, env.txt, build_log.txt (FAILURES)

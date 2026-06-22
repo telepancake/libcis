@@ -1,0 +1,5 @@
+bench,n,internal_libcis,internal_ref,heap_libcis,heap_ref,heap_overhead,stack_libcis,stack_ref
+vec_int,10000,65528,65560,68208,67728,480,41,41
+vec_big,2000,98280,114712,163712,116512,47200,41,25
+string,50000,66568,61473,67520,63184,4336,41,41
+map,5000,180032,180048,239808,239952,-144,49,49

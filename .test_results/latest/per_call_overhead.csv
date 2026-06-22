@@ -1,0 +1,9 @@
+arch,op,libcis_bytes,ref_bytes,overhead_bytes
+x86_64,cs_vec_push_int,62,54,8
+x86_64,cs_vec_push_H,78,45,33
+x86_64,cs_vec_insert_H,90,266,-176
+x86_64,cs_vec_erase_H,61,102,-41
+x86_64,cs_vec_assign_H,55,418,-363
+x86_64,cs_vec_sort_H,54,167,-113
+x86_64,cs_str_append,46,251,-205
+x86_64,cs_str_compare,79,9,70
