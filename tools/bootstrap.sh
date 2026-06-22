@@ -46,9 +46,12 @@ build_gcc() {
     # gmp/mpfr/mpc/isl SOURCE into the tree (built in-tree; no system libs)
     [ -d gcc-$GCC_VER/gmp ] || ( cd gcc-$GCC_VER && ./contrib/download_prerequisites )
     rm -rf gcc-build && mkdir gcc-build && cd gcc-build
+    # --disable-libsanitizer: gcc-10's bundled libsanitizer does not build against
+    # glibc >= 2.34 (it uses `struct termio`, dropped from modern <sys/ioctl.h>).
+    # libcis never uses sanitizers, so skip that runtime library entirely.
     "$TC/src/gcc-$GCC_VER/configure" --prefix="$TC/gcc" \
         --enable-languages=c,c++ --disable-multilib --disable-bootstrap \
-        --disable-werror --program-suffix=-10
+        --disable-werror --disable-libsanitizer --program-suffix=-10
     make -j"$(nproc)"
     make install
     rm -rf "$TC/src/gcc-build"            # reclaim the build tree
