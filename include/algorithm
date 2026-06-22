@@ -931,7 +931,7 @@ reverse(BidiIter first, BidiIter last) {
     while (first != last) {
         --last;
         if (first == last) break;
-        swap(*first, *last);
+        ranges::iter_swap(first, last);
         ++first;
     }
 }
@@ -955,7 +955,7 @@ namespace detail {
     rotate_forward(ForwardIter first, ForwardIter middle, ForwardIter last) {
         ForwardIter i = middle;
         while (true) {
-            swap(*first, *i);
+            ranges::iter_swap(first, i);
             ++first;
             if (++i == last) break;
             if (first == middle) middle = i;
@@ -964,7 +964,7 @@ namespace detail {
         if (first != middle) {
             i = middle;
             while (true) {
-                swap(*first, *i);
+                ranges::iter_swap(first, i);
                 ++first;
                 if (++i == last) {
                     if (first == middle) break;
@@ -1221,7 +1221,7 @@ shift_right(ForwardIter first, ForwardIter last,
                 move(first, mid, tmp);
                 return ret;
             }
-            swap(*mid, *trail);
+            ranges::iter_swap(mid, trail);
             ++mid; ++trail; ++lead;
             if (mid == ret) mid = first;
         }
@@ -1675,7 +1675,7 @@ partial_sort(RandomIter first, RandomIter middle, RandomIter last, Compare comp)
     typename iterator_traits<RandomIter>::difference_type len = middle - first;
     for (RandomIter i = middle; i != last; ++i) {
         if (comp(*i, *first)) {
-            swap(*i, *first);
+            ranges::iter_swap(i, first);
             detail::sift_down(first, comp, len, 0);
         }
     }
@@ -1732,16 +1732,16 @@ namespace detail {
     sort3(RandomIter x, RandomIter y, RandomIter z, Compare& comp) {
         if (!comp(*y, *x)) {
             if (!comp(*z, *y)) return false;
-            swap(*y, *z);
-            if (comp(*y, *x)) swap(*x, *y);
+            ranges::iter_swap(y, z);
+            if (comp(*y, *x)) ranges::iter_swap(x, y);
             return true;
         }
         if (comp(*z, *y)) {
-            swap(*x, *z);
+            ranges::iter_swap(x, z);
             return true;
         }
-        swap(*x, *y);
-        if (comp(*z, *y)) swap(*y, *z);
+        ranges::iter_swap(x, y);
+        if (comp(*z, *y)) ranges::iter_swap(y, z);
         return true;
     }
 
@@ -1767,7 +1767,7 @@ nth_element(RandomIter first, RandomIter nth, RandomIter last, Compare comp) {
         diff_t len = last - first;
         if (len <= 1) return;
         if (len == 2) {
-            if (comp(*--last, *first)) swap(*first, *last);
+            if (comp(*--last, *first)) ranges::iter_swap(first, last);
             return;
         }
         if (len == 3) {
@@ -1780,7 +1780,7 @@ nth_element(RandomIter first, RandomIter nth, RandomIter last, Compare comp) {
             RandomIter lm1 = last;
             for (--lm1; first != lm1; ++first) {
                 RandomIter mn = min_element(first, last, comp);
-                if (mn != first) swap(*first, *mn);
+                if (mn != first) ranges::iter_swap(first, mn);
             }
             return;
         }
@@ -1791,7 +1791,7 @@ nth_element(RandomIter first, RandomIter nth, RandomIter last, Compare comp) {
         RandomIter j = lm1;
         if (!comp(*i, *m)) {
             if (detail::nth_element_find_guard(i, j, m, comp)) {
-                swap(*i, *j);
+                ranges::iter_swap(i, j);
                 ++n_swaps;
             } else {
                 ++i;
@@ -1800,7 +1800,7 @@ nth_element(RandomIter first, RandomIter nth, RandomIter last, Compare comp) {
                     while (true) {
                         if (i == j) return;
                         if (comp(*first, *i)) {
-                            swap(*i, *j);
+                            ranges::iter_swap(i, j);
                             ++n_swaps;
                             ++i;
                             break;
@@ -1813,7 +1813,7 @@ nth_element(RandomIter first, RandomIter nth, RandomIter last, Compare comp) {
                     while (!comp(*first, *i)) ++i;
                     do { --j; } while (comp(*first, *j));
                     if (i >= j) break;
-                    swap(*i, *j);
+                    ranges::iter_swap(i, j);
                     ++n_swaps;
                     ++i;
                 }
@@ -1828,14 +1828,14 @@ nth_element(RandomIter first, RandomIter nth, RandomIter last, Compare comp) {
                 while (comp(*i, *m)) ++i;
                 do { --j; } while (!comp(*j, *m));
                 if (i >= j) break;
-                swap(*i, *j);
+                ranges::iter_swap(i, j);
                 ++n_swaps;
                 if (m == i) m = j;
                 ++i;
             }
         }
         if (i != m && comp(*m, *i)) {
-            swap(*i, *m);
+            ranges::iter_swap(i, m);
             ++n_swaps;
         }
         if (nth == i) return;
@@ -1943,7 +1943,7 @@ namespace detail {
             diff_t len = last - first;
             if (len < 2) return;
             if (len == 2) {
-                if (comp(*--last, *first)) swap(*first, *last);
+                if (comp(*--last, *first)) ranges::iter_swap(first, last);
                 return;
             }
             if (len == 3) {
@@ -1988,7 +1988,7 @@ namespace detail {
 
                 bool already_partitioned = (i >= j);
                 if (!already_partitioned) {
-                    swap(*i, *j);
+                    ranges::iter_swap(i, j);
                     ++i;
                 }
 
@@ -1997,7 +1997,7 @@ namespace detail {
                     while (comp(*i, pivot)) ++i;
                     do { --j; } while (!comp(*j, pivot));
                     if (i >= j) break;
-                    swap(*i, *j);
+                    ranges::iter_swap(i, j);
                     ++i;
                 }
 
@@ -2165,7 +2165,7 @@ namespace detail {
                 len11 = distance(first, m1);
             } else {
                 if (len1 == 1) {
-                    swap(*first, *middle);
+                    ranges::iter_swap(first, middle);
                     return;
                 }
                 len11 = len1 / 2;
@@ -2262,7 +2262,7 @@ namespace detail {
         using diff_t     = typename iterator_traits<RandomIter>::difference_type;
         if (len <= 1) return;
         if (len == 2) {
-            if (comp(*--last, *first)) swap(*first, *last);
+            if (comp(*--last, *first)) ranges::iter_swap(first, last);
             return;
         }
         // Threshold for insertion sort (same as libc++: trivially-copyable=>128, else 16)
@@ -2625,7 +2625,7 @@ namespace detail {
         }
         ForwardIter p = first;
         while (++p != last)
-            if (pred(*p)) { swap(*first, *p); ++first; }
+            if (pred(*p)) { ranges::iter_swap(first, p); ++first; }
         return first;
     }
 
@@ -2641,7 +2641,7 @@ namespace detail {
             do {
                 if (first == --last) return first;
             } while (!pred(*last));
-            swap(*first, *last);
+            ranges::iter_swap(first, last);
             ++first;
         }
     }
@@ -2673,7 +2673,7 @@ namespace detail {
         if (len == 1) return first;
         if (len == 2) {
             ForwardIter m = first;
-            if (pred(*++m)) { swap(*first, *m); return m; }
+            if (pred(*++m)) { ranges::iter_swap(first, m); return m; }
             return first;
         }
         if (len <= buff_size) {
@@ -2797,7 +2797,7 @@ next_permutation(BidiIter first, BidiIter last, Compare comp) {
             BidiIter j = last;
             while (!comp(*i, *--j))
                 ;
-            swap(*i, *j);
+            ranges::iter_swap(i, j);
             reverse(ip1, last);
             return true;
         }
@@ -2827,7 +2827,7 @@ prev_permutation(BidiIter first, BidiIter last, Compare comp) {
             BidiIter j = last;
             while (!comp(*--j, *i))
                 ;
-            swap(*i, *j);
+            ranges::iter_swap(i, j);
             reverse(ip1, last);
             return true;
         }
@@ -6037,6 +6037,72 @@ SampleIter sample(PopIter first, PopIter last, SampleIter out,
     return detail::sample_impl(first, last, out,
                                static_cast<CommonType>(n), g, Tag{});
 }
+
+namespace ranges {
+
+// [alg.random.sample] ranges::sample — libc++ __algorithm/ranges_sample.h.
+// Uses the same classic_gen_adaptor as ranges::shuffle to add the result_type
+// typedef the classic reservoir/selection sampler expects, then drives the core
+// loops directly (sentinel-aware, unlike std::sample's iterator/iterator form).
+namespace detail {
+    // Selection sampling: forward population range, any output (libc++
+    // __sample forward_iterator_tag path).
+    template<class I, class S, class OutIter, class Distance, class URBG>
+    OutIter sample_forward(I first, S last, OutIter out, Distance n, URBG& g) {
+        using D = uniform_int_distribution<Distance>;
+        Distance unsampled_sz = static_cast<Distance>(ranges::distance(first, last));
+        for (n = std::min(n, unsampled_sz); n != 0; ++first) {
+            Distance r = D(0, --unsampled_sz)(g);
+            if (r < n) { *out = *first; ++out; --n; }
+        }
+        return out;
+    }
+
+    // Reservoir sampling: input population range, random-access output (libc++
+    // __sample input_iterator_tag path).
+    template<class I, class S, class OutIter, class Distance, class URBG>
+    OutIter sample_input(I first, S last, OutIter out, Distance n, URBG& g) {
+        using D = uniform_int_distribution<Distance>;
+        Distance k = 0;
+        for (; first != last && k < n; ++first, (void)++k)
+            out[k] = *first;
+        Distance sz = k;
+        for (; first != last; ++first, (void)++k) {
+            Distance r = D(0, k)(g);
+            if (r < sz) out[r] = *first;
+        }
+        return out + std::min(n, k);
+    }
+} // namespace detail
+
+struct sample_fn {
+    template<input_iterator I, sentinel_for<I> S, weakly_incrementable OutIter, class Gen>
+        requires (forward_iterator<I> || random_access_iterator<OutIter>) &&
+                 indirectly_copyable<I, OutIter> &&
+                 uniform_random_bit_generator<remove_reference_t<Gen>>
+    OutIter operator()(I first, S last, OutIter out, iter_difference_t<I> n, Gen&& gen) const {
+        detail::classic_gen_adaptor<Gen> adapted_gen(gen);
+        if constexpr (forward_iterator<I>)
+            return detail::sample_forward(std::move(first), std::move(last),
+                                          std::move(out), n, adapted_gen);
+        else
+            return detail::sample_input(std::move(first), std::move(last),
+                                        std::move(out), n, adapted_gen);
+    }
+
+    template<input_range R, weakly_incrementable OutIter, class Gen>
+        requires (forward_range<R> || random_access_iterator<OutIter>) &&
+                 indirectly_copyable<iterator_t<R>, OutIter> &&
+                 uniform_random_bit_generator<remove_reference_t<Gen>>
+    OutIter operator()(R&& r, OutIter out, range_difference_t<R> n, Gen&& gen) const {
+        return (*this)(ranges::begin(r), ranges::end(r), std::move(out), n,
+                       std::forward<Gen>(gen));
+    }
+};
+
+inline constexpr sample_fn sample{};
+
+} // namespace ranges
 
 //===----------------------------------------------------------------------===//
 // vector<bool> bit_iterator fast paths for count/fill
