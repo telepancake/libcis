@@ -29,14 +29,74 @@ import glob
 import os
 import shutil
 import subprocess
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# ---------------------------------------------------------------------------
+# Local bootstrapped toolchain (tools/bootstrap.sh populates ./toolchain).
+# When present, every resolver below prefers it, so the pipeline needs nothing
+# from the system beyond glibc + binutils.  An explicit environment variable
+# still wins over the local toolchain, which still wins over system probing.
+# ---------------------------------------------------------------------------
+TOOLCHAIN_DIR     = os.path.join(ROOT, "toolchain")
+_LOCAL_ROOT       = os.path.join(TOOLCHAIN_DIR, "root")        # extracted .debs
+_LOCAL_GXX        = os.path.join(_LOCAL_ROOT, "usr", "bin", "g++-10")
+_LOCAL_LLVM       = os.path.join(TOOLCHAIN_DIR, "llvm-project")  # git checkout
+# clang's python bindings (cindex.py) come from the llvm-project checkout, so
+# they match the libclang the .deb provides exactly -- no pip dependency.
+CINDEX_DIR        = os.path.join(_LOCAL_LLVM, "clang", "bindings", "python")
+_LOCAL_LIBCXX     = os.path.join(_LOCAL_LLVM, "libcxx", "test")  # the test corpus
+# libclang/libLLVM, libc++ headers, and the clang resource dir all come from the
+# extracted clang-NN / libc++-NN-dev .debs under root/usr/lib (NN globbed).
+_LOCAL_LIBCLANG_GLOBS = [
+    os.path.join(_LOCAL_ROOT, "usr", "lib", "*", "libclang-*.so.*"),
+    os.path.join(_LOCAL_ROOT, "usr", "lib", "llvm-*", "lib", "libclang.so*"),
+]
+_LOCAL_LIBCXX_INC = os.path.join(_LOCAL_ROOT, "usr", "lib",
+                                 "llvm-*", "include", "c++", "v1")
+_LOCAL_RESOURCE_GLOB = os.path.join(_LOCAL_ROOT, "usr", "lib", "llvm-*",
+                                    "lib", "clang", "*", "include")
+
+
+def _local_llvm_lib_dirs():
+    """Dirs holding the extracted libclang/libLLVM .so files, so the dynamic
+    loader can find them (they are not in the default search path)."""
+    dirs = glob.glob(os.path.join(_LOCAL_ROOT, "usr", "lib", "x86_64-linux-gnu")) \
+        + glob.glob(os.path.join(_LOCAL_ROOT, "usr", "lib", "llvm-*", "lib"))
+    return [d for d in dirs if os.path.isdir(d)]
+
+
+def ensure_libclang_runtime():
+    """Make the local libclang/libLLVM loadable by ctypes.  The dynamic loader
+    reads LD_LIBRARY_PATH at process start, so when the local .so dirs are not on
+    it we prepend them and re-exec the interpreter once (guarded against a loop).
+    A no-op when there is no local toolchain (system libclang is on the path)."""
+    dirs = _local_llvm_lib_dirs()
+    if not dirs or os.environ.get("_LIBCIS_LDPATH_SET"):
+        return
+    cur = os.environ.get("LD_LIBRARY_PATH", "")
+    parts = cur.split(os.pathsep) if cur else []
+    if all(d in parts for d in dirs):
+        return
+    os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(dirs + parts)
+    os.environ["_LIBCIS_LDPATH_SET"] = "1"
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 # ---------------------------------------------------------------------------
 # Compilers.  These are plain strings (no PATH probing at import time); call
 # require_cxx() at the point of use to fail loudly with guidance when missing.
 # ---------------------------------------------------------------------------
-CXX_LIBCIS    = os.environ.get("CXX",           "g++-10")
+def _default_cxx():
+    """$CXX if set, else the local toolchain's g++-10, else bare `g++-10`."""
+    if os.environ.get("CXX"):
+        return os.environ["CXX"]
+    if os.path.exists(_LOCAL_GXX):
+        return _LOCAL_GXX
+    return "g++-10"
+
+
+CXX_LIBCIS    = _default_cxx()
 CXX_LIBCXX    = os.environ.get("CXX_LIBCXX",     "clang++-20")
 CXX_LIBSTDCXX = os.environ.get("CXX_LIBSTDCXX",  "g++-14")
 CXX_GCC10STD  = os.environ.get("CXX_GCC10STD",   CXX_LIBCIS)
@@ -98,6 +158,11 @@ def find_libclang():
         if not os.path.exists(env):
             raise SystemExit(f"LIBCLANG={env!r} does not exist")
         return env
+    local = []
+    for pat in _LOCAL_LIBCLANG_GLOBS:
+        local += glob.glob(pat)
+    if local:
+        return sorted(local, reverse=True)[0]
     for c in _libclang_candidates():
         if os.path.exists(c):
             return c
@@ -112,6 +177,7 @@ def find_libclang():
 # ---------------------------------------------------------------------------
 def _libcxx_test_candidates():
     return [
+        _LOCAL_LIBCXX,
         os.path.join(ROOT, "third_party", "llvm-project", "libcxx", "test"),
         os.path.expanduser("~/llvm-project/libcxx/test"),
         "/home/user/llvm-project/libcxx/test",
@@ -143,7 +209,8 @@ def libcxx_test_dir(required=True):
 # libc++ header directory used to build the transfer PCH (optimization only).
 # ---------------------------------------------------------------------------
 def _libcxx_include_candidates():
-    return sorted(glob.glob("/usr/lib/llvm-*/include/c++/v1"), reverse=True) \
+    return sorted(glob.glob(_LOCAL_LIBCXX_INC), reverse=True) \
+        + sorted(glob.glob("/usr/lib/llvm-*/include/c++/v1"), reverse=True) \
         + ["/usr/include/c++/v1"]
 
 
@@ -183,6 +250,12 @@ def clang_resource_dir():
     env = os.environ.get("CLANG_RESOURCE_DIR")
     if env:
         return env if _has_stddef(os.path.join(env, "include")) else None
+
+    # The local toolchain ships clang's builtin headers under the extracted
+    # clang-NN .deb (root/usr/lib/llvm-NN/lib/clang/NN/include).
+    for inc in sorted(glob.glob(_LOCAL_RESOURCE_GLOB), reverse=True):
+        if _has_stddef(inc):
+            return os.path.dirname(inc)
 
     # Ask a clang binary where its resource dir is (most reliable).
     for c in (CXX_LIBCXX.split()[0], "clang++", "clang"):

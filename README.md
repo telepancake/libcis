@@ -13,6 +13,7 @@ It fails loudly on the first real error (unlike the conformance board, which
 counts missing results as red):
 
 ```sh
+make bootstrap # download the pinned toolchain into ./toolchain (first run only)
 make doctor   # toolchain present AND a real smoke build of the library
 make smoke    # just: does the library compile+link+run? (no test corpus needed)
 make support  # build the mandatory libsupport.a on its own
@@ -20,8 +21,12 @@ make test     # full pipeline: transfer -> build groups -> board
 make gate SUBTREE=thread   # per-file CLEAN/NOT-CLEAN check for one subtree
 ```
 
-Override the compiler the same way the tools do: `make CXX=g++-13`. The sections
-below document each underlying stage.
+**`make bootstrap` fetches everything the pipeline needs into `./toolchain`**
+(see section 1), so you do not have to install — or version-match — g++-10,
+clang, libc++ headers, and the test corpus yourself. Every other target depends
+on it, so a bare `make test` bootstraps first. To override the library compiler
+instead of using the bootstrapped one: `make CXX=g++-13`. The sections below
+document each underlying stage.
 
 ---
 
@@ -36,44 +41,60 @@ tests can validate libcis. The repo therefore has two halves: the **library**
 
 ## 1. Requirements
 
+The pipeline needs a **version-matched** toolchain — g++-10 for the library,
+clang-20 + a clang-20-era libc++ test corpus for the transfer (an older clang
+cannot parse a newer corpus; a newer corpus's `test_macros.h` assumes headers an
+older clang lacks). Rather than make you install and version-match all of it,
+**`make bootstrap` downloads it into `./toolchain`**:
+
+```sh
+make bootstrap        # or: tools/bootstrap.sh
+```
+
+| Fetched into `./toolchain` | What it is | Source |
+|------|------------|--------|
+| `g++-10` (+ libc++-20 headers, clang-20 `libclang`/`libLLVM`, clang resource headers) | the library compiler and everything the transfer parse needs | extracted Ubuntu `.deb`s |
+| `llvm-project/libcxx/test` + `clang/bindings/python` | the test corpus and the matching `cindex.py` | one sparse git checkout at a 20.1.x tag |
+
+This is **not** "bazel hermetic": the fetched compilers still run against the
+host's glibc + binutils. What it pins are the version-sensitive parts. The host
+only needs `bash`, `git`, `dpkg-deb`, and `apt-get` (a Debian/Ubuntu host) — no
+pip/uv/conda. On a non-Debian host, install g++-10 + clang-20 + libc++-20-dev
+yourself and point `$CXX` / `$LIBCLANG` / `$LIBCXX` / `$LIBCXX_INCLUDE` at them.
+
+The optional reference/discriminator backends are not bootstrapped:
+
 | Tool | Used for | Override |
 |------|----------|----------|
-| `g++-10` (10.2) | the one supported compiler for the library and the `libcis` backend | `$CXX` |
-| `python3` + `ninja` (≥1.10) | the transfer + test build graph | — |
-| a checkout of libc++ `test/` | the source of the tests (the transfer rewrites it) | `$LIBCXX` |
-| *(optional)* `libclang` + Python bindings | `tools/transfer.py` AST rewriting (only to **re-run the transfer**) | `$LIBCLANG` |
 | *(optional)* `clang++-20`, `g++-14` | the reference/discriminator backends (`libcxx`, `libstdcxx`, `gcc10std`) | `$CXX_LIBCXX`, `$CXX_LIBSTDCXX`, `$CXX_GCC10STD` |
 
 Nothing is pinned to an absolute path: every tool reads its toolchain from
-[`tools/config.py`](tools/config.py), which resolves each item from the
-environment variable above (falling back to the default shown and then to
-autodetection). **Run the doctor first** — it reports exactly what is present,
-what is missing, and which variable to set:
+[`tools/config.py`](tools/config.py), which **prefers `./toolchain`** when
+present, then an explicit environment variable, then system autodetection. **Run
+the doctor** to see exactly what is resolved (and what, if anything, is missing):
 
 ```sh
-python3 tools/doctor.py
+make doctor        # or: python3 tools/doctor.py
 ```
-
-Only `$CXX` (the library compiler) and the libc++ test corpus are *required*;
-the reference backends, libclang, and the PCH headers are optional and only
-consulted by the tools that use them.
 
 The committed `test/std/` tree and `test/std/manifest.json` are **generated**
 (git-ignored). On a fresh checkout you must run the transfer (section 3) before
-running tests.
+running tests. `./toolchain` is git-ignored too; `make distclean` removes it to
+force a re-bootstrap.
 
-### Getting the libc++ test corpus
+### Using your own libc++ test corpus
 
-The transfer rewrites tests from a libc++ `test/` directory (it needs the
-`std/` and `support/` subtrees). Point `$LIBCXX` at one from any LLVM checkout:
+`make bootstrap` fetches a matching corpus automatically. To use a different
+one, point `$LIBCXX` at any LLVM checkout's `libcxx/test` (it needs the `std/`
+and `support/` subtrees) — but keep it in step with the clang that parses it:
 
 ```sh
-git clone --depth 1 https://github.com/llvm/llvm-project ~/llvm-project
 export LIBCXX=~/llvm-project/libcxx/test
 ```
 
-If unset, `config.py` probes `third_party/llvm-project/libcxx/test`,
-`~/llvm-project/libcxx/test`, then `/home/user/llvm-project/libcxx/test`.
+If unset, `config.py` probes `./toolchain/llvm-project/libcxx/test` (the
+bootstrapped one), then `third_party/llvm-project/libcxx/test`,
+`~/llvm-project/libcxx/test`.
 
 ---
 

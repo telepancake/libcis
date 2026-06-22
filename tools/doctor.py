@@ -115,13 +115,17 @@ def main():
                          "absent (optional) -- discriminator/reference runs disabled"))
 
     # --- libclang + bindings: only needed to RE-RUN the transfer ----------
+    # Look in the local toolchain first, exactly as transfer.py does.
+    cfg.ensure_libclang_runtime()
+    if os.path.isdir(cfg.CINDEX_DIR) and cfg.CINDEX_DIR not in sys.path:
+        sys.path.insert(0, cfg.CINDEX_DIR)
     try:
         import clang.cindex  # noqa: F401
         bindings = True
     except Exception as e:
         bindings = False
         rows.append((WARN, "python libclang bindings",
-                     f"missing ({e}); `pip install libclang` to re-run transfer"))
+                     f"missing ({e}); run `make bootstrap` to install them"))
     if bindings:
         try:
             rows.append((OK, "libclang ($LIBCLANG)", cfg.find_libclang()))
