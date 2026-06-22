@@ -424,7 +424,12 @@ struct atomic : atomic_base<T> {
     using base = atomic_base<T>;
     using value_type = T;
 
-    constexpr atomic() noexcept = default;
+    // No explicit noexcept on the PRIMARY template: libc++ (__atomic/atomic.h)
+    // leaves it `= default` so it is DEDUCED from T's default ctor -- an atomic
+    // of a type whose default ctor can throw is then not nothrow-constructible.
+    // (The integral/pointer specializations below keep noexcept; their T always
+    // is.)
+    constexpr atomic() = default;
     constexpr atomic(T v) noexcept : base(v) {}
     atomic(const atomic&) = delete;
 
