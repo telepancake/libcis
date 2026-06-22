@@ -34,3 +34,18 @@ CS void cs_vec_assign_H (std::vector<H>* a, std::vector<H>* b)  { *a = *b; }
 CS void cs_vec_sort_H   (std::vector<H>* v)                     { std::sort(v->begin(), v->end()); }
 CS void cs_str_append   (std::string* s, const char* p)        { *s += p; }
 CS int  cs_str_compare  (std::string* a, std::string* b)       { return a->compare(*b); }
+
+// Trivial accessors. These MUST stay a few inline instructions (a field read or
+// a compile-time-constant-offset load). If a type-erasure conversion routes one
+// of these through an out-of-line ops call, it is a per-call-site BLOWUP — these
+// are the most frequent call sites in any program. Probing them makes that
+// regression visible instead of invisible.
+// Probe the accessors on a TRIVIALLY-relocatable element (vector<int>): under
+// std::allocator that selects the compact 1-pointer layout, where size()/end()
+// should be ~"b ? b[-1] : 0" / "b ? b+b[-1] : null" — a couple inline insns, not
+// an out-of-line ops call. (The std::string-bearing H above takes the stored-
+// fields layout, so it would hide a 1-pointer-layout accessor regression.)
+CS unsigned long cs_vec_size_i  (std::vector<int>* v)          { return v->size(); }
+CS bool          cs_vec_empty_i (std::vector<int>* v)          { return v->empty(); }
+CS int*          cs_vec_end_i   (std::vector<int>* v)          { return &*v->end(); }
+CS int&          cs_vec_index_i (std::vector<int>* v, unsigned long n) { return (*v)[n]; }

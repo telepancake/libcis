@@ -147,15 +147,25 @@ private:
     // Strategy B = 8 B.
     [[no_unique_address]] allocator_type alloc_;
 
-    // Strategy-uniform accessors. See vector for parallel reasoning.
+    // Strategy-uniform accessors. See vector for parallel reasoning. For
+    // Strategy B the live size and usable capacity live in a two-word header
+    // immediately before begin_ and are read/written INLINE (constant-offset
+    // loads) — no out-of-line ops call, no ::malloc_usable_size per element.
+    //   header: [size_t cap_bytes][size_t live_bytes][buffer ...]  ^begin_
+    static size_t& hdr_live_(pointer b) noexcept {
+        return reinterpret_cast<size_t*>(
+            reinterpret_cast<unsigned char*>(std::to_address(b)))[-1];
+    }
+    static size_t hdr_cap_(pointer b) noexcept {
+        return reinterpret_cast<size_t*>(
+            reinterpret_cast<unsigned char*>(std::to_address(b)))[-2];
+    }
     constexpr pointer end_ptr_() const noexcept {
         if constexpr (!uses_header_layout_) {
             return this->end_;
         } else {
             if (this->begin_ == nullptr) return pointer{};
-            auto sp = detail::storage_b_data(ops_<detail::OP_DESTROY>(),
-                                             const_cast<basic_string*>(this));
-            return this->begin_ + (sp.size / sizeof(value_type));
+            return this->begin_ + (hdr_live_(this->begin_) / sizeof(value_type));
         }
     }
     constexpr pointer cap_ptr_() const noexcept {
@@ -163,19 +173,20 @@ private:
             return this->cap_;
         } else {
             if (this->begin_ == nullptr) return pointer{};
-            void* e = detail::storage_b_cap_end(ops_<detail::OP_DESTROY>(),
-                                                const_cast<basic_string*>(this));
-            const size_t total_b = static_cast<unsigned char*>(e)
-                                 - reinterpret_cast<unsigned char*>(std::to_address(this->begin_));
-            return this->begin_ + (total_b / sizeof(value_type));
+            return this->begin_ + (hdr_cap_(this->begin_) / sizeof(value_type));
         }
     }
     constexpr void set_size_elems_(size_type n) noexcept {
         if constexpr (!uses_header_layout_) {
             this->end_ = this->begin_ + n;
         } else {
-            detail::storage_b_set_size(ops_<detail::OP_DESTROY>(),
-                                       this, n * sizeof(value_type));
+            if (this->begin_ == nullptr) return;
+            // Inline header write of the live byte count. The null terminator
+            // (string's "spare slot") is written explicitly by callers
+            // (push_back, append, reallocate_grow), so no spare zero-fill is
+            // needed here — unlike the out-of-line storage_b_set_size used by
+            // the type-erased cores.
+            hdr_live_(this->begin_) = n * sizeof(value_type);
         }
     }
     constexpr void clear_storage_() noexcept {
@@ -305,6 +316,11 @@ private:
 
     // Make sure capacity() - size() >= n. Returns the address of the first
     // free slot so callers can write without re-reading size()/end_ptr_().
+    //
+    // size()/capacity() are inline constant-offset header reads in Strategy B,
+    // so the capacity check costs no out-of-line call and no malloc_usable_size
+    // — only the rare grow reallocates. Kept out of line so each append call
+    // site stays compact (force-inlining bloats per-call code for little Ir).
     pointer ensure_free_(size_type n = 1) {
         size_type sz = size();
         if (capacity() - sz < n)
@@ -618,9 +634,7 @@ public:
             return static_cast<size_type>(this->end_ - this->begin_);
         } else {
             if (this->begin_ == nullptr) return 0;
-            auto sp = detail::storage_b_data(ops_<detail::OP_DESTROY>(),
-                                             const_cast<basic_string*>(this));
-            return static_cast<size_type>(sp.size / sizeof(value_type));
+            return static_cast<size_type>(hdr_live_(this->begin_) / sizeof(value_type));
         }
     }
     [[nodiscard]] constexpr size_type length() const noexcept { return size(); }
@@ -639,11 +653,7 @@ public:
         if constexpr (!uses_header_layout_) {
             return static_cast<size_type>(this->cap_ - this->begin_) - 1;
         } else {
-            void* e = detail::storage_b_cap_end(ops_<detail::OP_DESTROY>(),
-                                                const_cast<basic_string*>(this));
-            const size_t total_b = static_cast<unsigned char*>(e)
-                                 - reinterpret_cast<unsigned char*>(std::to_address(this->begin_));
-            size_type total = static_cast<size_type>(total_b / sizeof(value_type));
+            size_type total = static_cast<size_type>(hdr_cap_(this->begin_) / sizeof(value_type));
             return total == 0 ? 0 : total - 1;
         }
     }

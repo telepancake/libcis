@@ -70,11 +70,22 @@ TARGETS = [
     ("mips32", ["mips-linux-gnu-g++"],             "mips-linux-gnu-objdump",        "g++-mips-linux-gnu"),
 ]
 CALLSITE_OPS = ["cs_vec_push_int", "cs_vec_push_H", "cs_vec_insert_H", "cs_vec_erase_H",
-                "cs_vec_assign_H", "cs_vec_sort_H", "cs_str_append", "cs_str_compare"]
+                "cs_vec_assign_H", "cs_vec_sort_H", "cs_str_append", "cs_str_compare",
+                # trivial accessors — must stay tiny; an ops-call here is a blowup
+                "cs_vec_size_i", "cs_vec_empty_i", "cs_vec_end_i", "cs_vec_index_i"]
 
 
 def sh(cmd):
     return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+
+def lib_provenance():
+    """Identify exactly which library tree this result measured — so a result can
+    never be mistaken for a different branch (the way a hand-written 'finding' can)."""
+    b = sh(["git", "-C", ROOT, "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    c = sh(["git", "-C", ROOT, "rev-parse", "--short", "HEAD"]).stdout.strip()
+    dirty = "-dirty" if sh(["git", "-C", ROOT, "status", "--porcelain", "--", "include", "src"]).stdout.strip() else ""
+    return "%s @ %s%s" % (b or "?", c or "?", dirty)
 
 
 def fresh_results():
@@ -213,6 +224,85 @@ def module_memory(log):
     return rows
 
 
+# ---------------------------------------------------------------- speed
+# Each workload is named with what it ACTUALLY does (N, element type). A speed
+# number without that context is meaningless, and a single per-"method"
+# multiplier is worse than meaningless for an algorithm: "sort 4x" hides that the
+# cost is the element's string compare/move that sort merely amortizes. So the
+# speed axis reports, per workload, the total instructions AND where they go
+# (callgrind per-function attribution) — never a bare multiplier.
+SPEED_WL = {
+    "cs_vec_index_i":  "operator[] sum over 3 parallel vector<int>[8192], 200x (SoA index loop)",
+    "cs_vec_end_i":    "iterator traversal of vector<int>[8192], 200x (end() as the bound)",
+    "cs_vec_push_int": "build vector<int> via push_back, 4096 elems, 80x",
+    "cs_vec_push_H":   "build vector<H{7B+std::string}> via push_back, 1024 elems, 40x",
+    "cs_vec_insert_H": "insert-at-begin into vector<H{string}>, 512 elems, 60x",
+    "cs_vec_erase_H":  "erase-at-begin from vector<H{string}>[512] to empty, 60x",
+    "cs_vec_sort_H":   "copy-construct 2048 H{string} + std::sort by string key, 60x",
+    "cs_str_append":   "build std::string via += char, 4096 chars, 200x",
+}
+SPEED_OPS = list(SPEED_WL)
+
+
+def cg_profile(binary, arg):
+    """Run one workload under callgrind. Return (total_Ir, [(Ir, func_label), ...])
+    self-Ir per function, descending — the attribution that says WHERE time goes."""
+    out = "/tmp/cg_%s_%s.out" % (os.path.basename(binary), arg)
+    sh(["valgrind", "--tool=callgrind", "--cache-sim=no", "--callgrind-out-file=" + out, binary, arg])
+    total = 0
+    try:
+        for line in open(out):
+            if line.startswith("summary:"):
+                total = int(line.split()[1]); break
+    except OSError:
+        pass
+    agg = {}
+    r = sh(["callgrind_annotate", "--threshold=98", "--inclusive=no", "--auto=no", out])
+    for line in r.stdout.splitlines():
+        if "=>" in line or "<=" in line:          # caller/callee breakdown lines — skip
+            continue
+        m = re.match(r"^\s*([\d,]+)\s+(?:\([\d.]+%\)\s+)?(.+?)\s+\[", line)
+        if m:
+            label = m.group(2).strip()
+            fn = label.split(":", 1)[1] if ":" in label else label   # drop file: prefix
+            for noise in ("std::", "__gnu_cxx::", " [clone .isra.0]", " const"):
+                fn = fn.replace(noise, "")
+            fn = fn.strip()[:46]
+            agg[fn] = agg.get(fn, 0) + int(m.group(1).replace(",", ""))   # dedupe clones
+    funcs = sorted(((ir, fn) for fn, ir in agg.items()), reverse=True)
+    return total, funcs
+
+
+def module_speed(log):
+    if not (shutil.which("valgrind") and shutil.which("callgrind_annotate")):
+        log.append("  speed: callgrind absent — speed axis skipped (apt-get install valgrind)")
+        return None
+    src = os.path.join(ROOT, "bench", "speedprobe.cpp")
+    data = {}
+    for lib, cflags, lflags in (("libcis", LIBCIS_C, LIBCIS_L), ("ref", REF_C, REF_L)):
+        out = "/tmp/speed_%s" % lib
+        r = sh([CXX] + BASE_CXXFLAGS + cflags + [src] + lflags + ["-o", out])
+        if r.returncode != 0:
+            log.append("  speed %s: BUILD FAILED\n%s" % (lib, r.stdout[-1200:]))
+            return None
+        noop, _ = cg_profile(out, "noop")
+        for op in SPEED_OPS:
+            total, funcs = cg_profile(out, op)
+            data.setdefault(op, {})[lib] = (total - noop, funcs)
+    # full attribution to disk; digest keeps only the headline contributors
+    with open(os.path.join(RESULTS, "speed_attribution.txt"), "w") as f:
+        for op in SPEED_OPS:
+            f.write("\n%s\n  workload: %s\n" % (op, SPEED_WL[op]))
+            for lib in ("libcis", "ref"):
+                if op in data and lib in data[op]:
+                    tot, funcs = data[op][lib]
+                    f.write("  %-6s total Ir=%d  top functions (self Ir):\n" % (lib, tot))
+                    for ir, fn in funcs[:8]:
+                        pct = 100.0 * ir / tot if tot else 0
+                        f.write("           %12d  %4.1f%%  %s\n" % (ir, pct, fn))
+    return data
+
+
 # ---------------------------------------------------------------- driver
 def main():
     fresh_results()
@@ -228,6 +318,7 @@ def main():
     cs = module_callsites(present, log)
     pt = module_pertype(log)
     mem = module_memory(log)
+    spd = module_speed(log)
 
     with open(os.path.join(RESULTS, "targets.txt"), "w") as f:
         f.write("architectures this run:\n")
@@ -240,34 +331,74 @@ def main():
         for arch, hint in skipped:
             f.write("  %-8s SKIPPED — install: apt-get install %s\n" % (arch, hint))
     with open(os.path.join(RESULTS, "env.txt"), "w") as f:
-        f.write("repro: python3 bench/size_slope.py   (or: make size)\n")
+        f.write("measured library: %s\n" % lib_provenance())
+        f.write("repro: python3 bench/size_slope.py   (or: make size)  — ON THAT BRANCH\n")
         f.write("CXX=%s   %s\n" % (CXX, sh([CXX, "--version"]).stdout.splitlines()[0]))
         f.write("reference = host libstdc++ (non-type-erased), rebuilt every run\n")
+        f.write("NOTE: numbers are specific to the branch/commit/arch above. A claim quoted\n")
+        f.write("without that provenance is unverified — re-run here before believing it.\n")
     if log:
         with open(os.path.join(RESULTS, "build_log.txt"), "w") as f:
             f.write("\n".join(log))
 
     # ---- short summary (also printed) -------------------------------------
+    prov = lib_provenance()
     out = []
     out.append("libcis size/memory/codegen — overhead vs non-type-erased reference (libstdc++)")
+    out.append("MEASURED LIBRARY: %s   (re-run `make size` here to verify; do not trust prose)" % prov)
     out.append("=" * 78)
 
-    out.append("\nPER-CALL CODE OVERHEAD  (bytes of code at one call site; libcis - reference)")
-    archs = sorted({r[0] for r in cs})
-    if archs:
-        out.append("  %-16s %s" % ("op", "  ".join("%9s" % a for a in archs)))
+    out.append("\nPER-METHOD CODE SIZE at -Os, vs the non-type-erased reference (x86_64).")
+    out.append("Size is legitimately per-call-site, so it gets a verdict. Read it method by")
+    out.append("method — no aggregate pass/fail. (dsize<0 = smaller = better.)")
+    sx = {op: (r[2], r[3], r[4]) for r in cs if r[0] == "x86_64" for op in [r[1]]}
+    if sx:
+        out.append("  %-16s %8s  %-12s %s" % ("method", "dsize", "bytes c/r", "verdict"))
         for op in CALLSITE_OPS:
-            cells = []
+            ds = sx.get(op)
+            if not ds:
+                continue
+            dsize = ds[2]
+            verdict = "smaller" if dsize < -2 else "BIGGER" if dsize > 2 else "~"
+            out.append("  %-16s %+8d  %5d/%-6d %s" % (op, dsize, ds[0], ds[1], verdict))
+    else:
+        out.append("  (no method data — see build_log.txt)")
+
+    # SPEED is NOT a per-method multiplier. It is per-workload, and the actionable
+    # part is WHERE the instructions go. A bare ratio on an algorithm ("sort 4x")
+    # hides that the cost is the element op it amortizes. Show total + attribution.
+    if spd:
+        out.append("\nSPEED — per workload: total instructions (Ir) and WHERE they go (callgrind).")
+        out.append("Not a per-method multiplier. Full breakdown: .test_results/latest/speed_attribution.txt")
+        for op in SPEED_OPS:
+            d = spd.get(op, {})
+            if "libcis" not in d or "ref" not in d:
+                continue
+            tc, fc = d["libcis"]; tr, _ = d["ref"]
+            out.append("  %s   [%s]" % (op, SPEED_WL[op]))
+            ratio = (" (%.1fx ref)" % (tc / tr)) if tr else ""
+            out.append("     total Ir: libcis %d vs ref %d%s" % (tc, tr, ratio))
+            top = ", ".join("%s %.0f%%" % (fn, 100.0 * ir / tc) for ir, fn in fc[:4] if tc)
+            out.append("     libcis instructions go to: %s" % top)
+
+    # cross-arch code-size matrix: the same verdict can differ in magnitude per ISA.
+    archs = sorted({r[0] for r in cs})
+    if len(archs) > 1:
+        out.append("\nPER-ARCH per-call code-size overhead (libcis - that arch's libstdc++), bytes.")
+        out.append("Verdicts above are x86_64; direction is usually arch-stable but size is NOT —")
+        out.append("weight by your actual target ISA, not this one.")
+        out.append("  %-16s %s" % ("method", "".join("%9s" % a for a in archs)))
+        for op in CALLSITE_OPS:
+            cells = ""
             for a in archs:
                 v = next((r[4] for r in cs if r[0] == a and r[1] == op), None)
-                cells.append("%+9d" % v if v is not None else "%9s" % "-")
-            out.append("  %-16s %s" % (op, "  ".join(cells)))
-    else:
-        out.append("  (no architecture produced call sites — see build_log.txt)")
+                cells += ("%+9d" % v) if v is not None else "%9s" % "-"
+            if cells.strip():
+                out.append("  %-16s %s" % (op, cells))
 
     if pt:
-        out.append("\nper-type code overhead (demoted): %+.0f B per added instantiation  "
-                   "(libcis %.0f vs ref %.0f)" %
+        out.append("\nper-type code, demoted, NOT a gate (a sanity readout, decide per method above):")
+        out.append("  %+.0f B per added instantiation  (libcis %.0f vs ref %.0f)" %
                    (pt["per_type_overhead"], pt["per_type_libcis"], pt["per_type_ref"]))
 
     if mem:
@@ -285,6 +416,7 @@ def main():
     out.append("\nFULL RESULTS in .test_results/latest/ — OPEN THESE, the numbers above are a digest:")
     out.append("  callsites/<arch>/<libcis|ref>/<op>.asm   annotated disassembly of every call site")
     out.append("  per_call_overhead.csv   per-arch per-op code size, libcis vs reference")
+    out.append("  speed_attribution.txt   per-workload Ir + where the instructions go (callgrind)")
     out.append("  memory.csv              internal / heap / stack per workload")
     out.append("  per_type.csv, static.txt, targets.txt, env.txt" +
                (", build_log.txt (FAILURES)" if log else ""))

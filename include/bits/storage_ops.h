@@ -26,13 +26,17 @@
 //               stateful / non-glibc allocators. sizeof = 24 B + alloc EBO.
 //
 //   Strategy B: container stores ONLY begin_. The allocation has a tiny
-//               header at begin_ - header_size storing the live byte count;
-//               capacity is recovered via ::malloc_usable_size. Empty:
-//               begin_ == nullptr. sizeof = 8 B. Restricted to the system
-//               malloc-equivalent allocator (std::allocator on glibc) — the
-//               header offset breaks generic allocator deallocate contracts,
-//               so the strategy bypasses allocator_traits and goes straight
-//               to ::malloc/::free.
+//               header at begin_ - header_size storing BOTH the live byte
+//               count AND the usable capacity in bytes (two size_t). Both are
+//               inline constant-offset reads off begin_ — no out-of-line ops
+//               call and no ::malloc_usable_size on the per-element path.
+//               ::malloc_usable_size is consulted ONCE per (re)allocation to
+//               claim the slack the allocator handed back, written into the
+//               header capacity field. Empty: begin_ == nullptr. sizeof = 8 B.
+//               Restricted to the system malloc-equivalent allocator
+//               (std::allocator on glibc) — the header offset breaks generic
+//               allocator deallocate contracts, so the strategy bypasses
+//               allocator_traits and goes straight to ::malloc/::free.
 //
 // Strategy selection: `allocator_with_usable_size<A>` plus stateless + raw-
 // pointer constraints. std::allocator on glibc matches; min_allocator / pmr /
@@ -216,16 +220,32 @@ inline constexpr storage_ops storage_ops_a{
 // ============================================================================
 // Strategy B — 1-pointer layout
 // ============================================================================
-// Container stores only begin_. The allocation has a small header storing the
-// live byte count; capacity comes from malloc_usable_size. Empty: begin_ == nullptr.
+// Container stores only begin_. The allocation has a small header storing BOTH
+// the live byte count AND the usable capacity in bytes; both are inline reads.
+// Empty: begin_ == nullptr.
 //
 // Restricted to allocators equivalent to system malloc — the strategy bypasses
 // the allocator API on the free path because the recorded pointer is offset
 // from the allocator's allocate() return.
 //
-// Header layout:
-//     [header: size_t live_bytes][value_type buffer ...]
-//   header_size = max(sizeof(size_t), alignof(value_type))
+// Header layout (two size_t immediately before begin_):
+//     [size_t cap_bytes][size_t live_bytes][value_type buffer ...]
+//                                          ^ begin_
+//   header_size = max(2*sizeof(size_t), alignof(value_type))
+//   live_bytes lives at begin_[-1]-word (base + H - sizeof(size_t))
+//   cap_bytes  lives at begin_[-2]-word (base + H - 2*sizeof(size_t))
+//   cap_bytes = the usable element-buffer span = malloc_usable_size(base) - H,
+//   computed ONCE at (re)allocation; size()/capacity()/end() read it inline.
+
+// Compile-time Strategy-B header size for a value type with the given size
+// (unused) and alignment. Two size_t (size + capacity) rounded up to the
+// element alignment. This is the SAME value the out-of-line helpers recover
+// from tops->align at runtime; the containers use this constexpr form so their
+// accessors become inline constant-offset loads off begin_.
+inline constexpr size_t storage_b_header_bytes(size_t align) noexcept {
+    constexpr size_t two_words = 2 * sizeof(size_t);
+    return two_words > align ? two_words : align;
+}
 //
 // Concept: must be the system `std::allocator<T>` exactly. Generic stateless
 // raw-pointer allocators that *happen* to expose value_type* (e.g.
@@ -254,8 +274,8 @@ concept allocator_with_usable_size =
 // `storage_ops` table for Strategy B becomes a single shared constant rather
 // than a per-`C` template.
 //
-// header_size = max(sizeof(size_t), tops->align). Header layout:
-//     [header: size_t live_bytes][value_type buffer ...]
+// header_size = max(2*sizeof(size_t), tops->align). Header layout:
+//     [size_t cap_bytes][size_t live_bytes][value_type buffer ...]
 byte_span storage_b_data    (const type_ops* tops, void* st_ctx);
 void      storage_b_set_size(const type_ops* tops, void* st_ctx, size_t bytes);
 void*     storage_b_cap_end (const type_ops* tops, void* st_ctx);

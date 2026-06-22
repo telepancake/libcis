@@ -1,70 +1,80 @@
-; call site: cs_str_compare   lib=libcis   arch=x86_64   size=79 bytes
+; call site: cs_str_compare   lib=libcis   arch=x86_64   size=92 bytes
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/libcis.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/x86_64/libcis.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
-00000000000001fe <cs_str_compare>:
+000000000000024b <cs_str_compare>:
 cs_str_compare():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:36
- 1fe:	f3 0f 1e fa          	endbr64
- 202:	41 54                	push   %r12
- 204:	55                   	push   %rbp
- 205:	48 89 f5             	mov    %rsi,%rbp
- 208:	53                   	push   %rbx
-_ZNKSs7compareERKSs():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:1329
- 209:	e8 00 00 00 00       	call   20e <cs_str_compare+0x10>
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:1329 (discriminator 1)
- 20e:	48 89 ef             	mov    %rbp,%rdi
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:1329
- 211:	48 89 d3             	mov    %rdx,%rbx
- 214:	49 89 c4             	mov    %rax,%r12
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:1329 (discriminator 1)
- 217:	e8 00 00 00 00       	call   21c <cs_str_compare+0x1e>
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:36
+ 24b:	f3 0f 1e fa          	endbr64
+ 24f:	55                   	push   %rbp
+ 250:	53                   	push   %rbx
+ 251:	51                   	push   %rcx
+ 252:	48 8b 3f             	mov    (%rdi),%rdi
+_ZNKSs4sizeEv():
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string:638
+ 255:	48 85 ff             	test   %rdi,%rdi
+ 258:	74 06                	je     260 <cs_str_compare+0x15>
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string:639 (discriminator 1)
+ 25a:	48 8b 5f f8          	mov    -0x8(%rdi),%rbx
+_ZNKSs4dataEv():
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string:742
+ 25e:	eb 09                	jmp    269 <cs_str_compare+0x1e>
+_ZNKSs4sizeEv():
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string:638 (discriminator 1)
+ 260:	31 db                	xor    %ebx,%ebx
+_ZNKSs4dataEv():
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string:743 (discriminator 2)
+ 262:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 269 <cs_str_compare+0x1e>
+_ZNSt17basic_string_viewIcSt11char_traitsIcEEC4EPKcm():
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string_view:603
+ 269:	48 8b 36             	mov    (%rsi),%rsi
+_ZNKSs4sizeEv():
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string:638
+ 26c:	48 85 f6             	test   %rsi,%rsi
+ 26f:	74 06                	je     277 <cs_str_compare+0x2c>
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string:639 (discriminator 1)
+ 271:	48 8b 6e f8          	mov    -0x8(%rsi),%rbp
+_ZNKSs4dataEv():
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string:742
+ 275:	eb 09                	jmp    280 <cs_str_compare+0x35>
+_ZNKSs4sizeEv():
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string:638 (discriminator 1)
+ 277:	31 ed                	xor    %ebp,%ebp
+_ZNKSs4dataEv():
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string:743 (discriminator 2)
+ 279:	48 8d 35 00 00 00 00 	lea    0x0(%rip),%rsi        # 280 <cs_str_compare+0x35>
+_ZNSt6detail6sv_minImEET_S1_S1_():
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string_view:41
+ 280:	48 39 eb             	cmp    %rbp,%rbx
+ 283:	48 89 ea             	mov    %rbp,%rdx
+ 286:	48 0f 46 d3          	cmovbe %rbx,%rdx
 _ZNSt11char_traitsIcE7compareEPKcS2_m():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:98
- 21c:	4c 89 e7             	mov    %r12,%rdi
-_ZNSt6detail6sv_minImEET_S1_S1_():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:41
- 21f:	48 39 da             	cmp    %rbx,%rdx
-_ZNKSs7compareERKSs():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:1329 (discriminator 1)
- 222:	48 89 d5             	mov    %rdx,%rbp
-_ZNSt6detail6sv_minImEET_S1_S1_():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:41
- 225:	48 89 da             	mov    %rbx,%rdx
-_ZNKSs7compareERKSs():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string:1329 (discriminator 1)
- 228:	48 89 c6             	mov    %rax,%rsi
-_ZNSt6detail6sv_minImEET_S1_S1_():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:41
- 22b:	48 0f 46 d5          	cmovbe %rbp,%rdx
-_ZNSt11char_traitsIcE7compareEPKcS2_m():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:98
- 22f:	e8 00 00 00 00       	call   234 <cs_str_compare+0x36>
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string_view:98
+ 28a:	e8 00 00 00 00       	call   28f <cs_str_compare+0x44>
 _ZNKSt17basic_string_viewIcSt11char_traitsIcEE7compareES2_():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:696
- 234:	85 c0                	test   %eax,%eax
- 236:	75 10                	jne    248 <cs_str_compare+0x4a>
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:697 (discriminator 1)
- 238:	83 c8 ff             	or     $0xffffffff,%eax
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:697
- 23b:	48 39 eb             	cmp    %rbp,%rbx
- 23e:	72 08                	jb     248 <cs_str_compare+0x4a>
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/include/string_view:698
- 240:	31 c0                	xor    %eax,%eax
- 242:	48 39 dd             	cmp    %rbx,%rbp
- 245:	0f 92 c0             	setb   %al
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string_view:696
+ 28f:	85 c0                	test   %eax,%eax
+ 291:	75 10                	jne    2a3 <cs_str_compare+0x58>
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string_view:697 (discriminator 1)
+ 293:	83 c8 ff             	or     $0xffffffff,%eax
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string_view:697
+ 296:	48 39 eb             	cmp    %rbp,%rbx
+ 299:	72 08                	jb     2a3 <cs_str_compare+0x58>
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/include/string_view:698
+ 29b:	31 c0                	xor    %eax,%eax
+ 29d:	48 39 dd             	cmp    %rbx,%rbp
+ 2a0:	0f 92 c0             	setb   %al
 cs_str_compare():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:36
- 248:	5b                   	pop    %rbx
- 249:	5d                   	pop    %rbp
- 24a:	41 5c                	pop    %r12
- 24c:	c3                   	ret
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:36
+ 2a3:	5a                   	pop    %rdx
+ 2a4:	5b                   	pop    %rbx
+ 2a5:	5d                   	pop    %rbp
+ 2a6:	c3                   	ret
 
 Disassembly of section .text._ZNKSt19bad_optional_access4whatEv:
 
@@ -78,46 +88,26 @@ Disassembly of section .text._ZN20libcis_atomic_detail15atomic_spinlock4lockEv:
 
 Disassembly of section .text._ZN20libcis_atomic_detail15atomic_spinlock6unlockEv:
 
-Disassembly of section .text._ZNKSs8end_ptr_Ev:
-
-Disassembly of section .text._ZNKSs4sizeEv:
-
-Disassembly of section .text._ZStssIcSt11char_traitsIcESaIcEEDaRKSbIT_T0_T1_ES8_:
-
 Disassembly of section .text._ZNK1HltERKS_:
 
 Disassembly of section .text._ZNSs11vdeallocateEv:
 
 Disassembly of section .text._ZNSt6detail10destroy_opI1HSaIS1_EEEvPvS3_:
 
-Disassembly of section .text._ZNKSt6vectorI1HSaIS0_EE8end_ptr_Ev:
-
-Disassembly of section .text._ZNKSscvSt17basic_string_viewIcSt11char_traitsIcEEEv:
-
 Disassembly of section .text._ZNSs9vallocateEm:
 
 Disassembly of section .text._ZNSs9init_copyEPKcm:
 
-Disassembly of section .text._ZNKSt6vectorIiSaIiEE4sizeEv:
+Disassembly of section .text._ZN1HaSERKS_.isra.0:
 
-Disassembly of section .text._ZNSt6vectorIiSaIiEE12ensure_free_Em:
+Disassembly of section .text._ZNSt6vectorIiSaIiEE10grow_cold_Em:
 
-Disassembly of section .text._ZNKSt6vectorI1HSaIS0_EE4sizeEv:
-
-Disassembly of section .text._ZNKSt6vectorI1HSaIS0_EE8capacityEv:
-
-Disassembly of section .text._ZNKSt6vectorI1HSaIS0_EE9recommendEm:
-
-Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE12ensure_free_Em:
+Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE10grow_cold_Em:
 
 Disassembly of section .text._ZN1HC2ERKS_:
 
 Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE16construct_at_endIPKS0_S5_EEvT_T0_m.isra.0:
 
-Disassembly of section .text._ZSt4swapI1HENSt9enable_ifIXaa23is_move_constructible_vIT_E20is_move_assignable_vIS2_EEvE4typeERS2_S5_:
-
-Disassembly of section .text._ZNKSs8capacityEv:
-
-Disassembly of section .text._ZN1HaSERKS_.isra.0:
-
 Disassembly of section .text._ZNSt6vectorI1HSaIS0_EE16assign_with_sizeIPKS0_S5_EEvT_T0_m:
+
+Disassembly of section .text._ZSt4swapI1HENSt9enable_ifIXaa23is_move_constructible_vIT_E20is_move_assignable_vIS2_EEvE4typeERS2_S5_:

@@ -1,6 +1,6 @@
 architectures this run:
   x86_64   measured
   i586     toolchain present but compile FAILED — see build_log.txt
-  arm64    SKIPPED — install: apt-get install g++-aarch64-linux-gnu
-  arm32    SKIPPED — install: apt-get install g++-arm-linux-gnueabihf
-  mips32   SKIPPED — install: apt-get install g++-mips-linux-gnu
+  arm64    measured
+  arm32    measured
+  mips32   measured

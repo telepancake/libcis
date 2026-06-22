@@ -2,99 +2,99 @@
 ; (source-annotated; this is the actual code emitted at one use)
 
 
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/.test_results/latest/callsites/x86_64/ref.o:     file format elf64-x86-64
 
 
 Disassembly of section .text:
 
-00000000000008fa <cs_vec_sort_H>:
+000000000000092e <cs_vec_sort_H>:
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
- 8fa:	f3 0f 1e fa          	endbr64
- 8fe:	55                   	push   %rbp
- 8ff:	53                   	push   %rbx
- 900:	48 83 ec 18          	sub    $0x18,%rsp
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+ 92e:	f3 0f 1e fa          	endbr64
+ 932:	55                   	push   %rbp
+ 933:	53                   	push   %rbx
+ 934:	48 83 ec 18          	sub    $0x18,%rsp
 _ZN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS1_SaIS1_EEEC4ERKS2_():
 /usr/include/c++/13/bits/stl_iterator.h:1077
- 904:	48 8b 6f 08          	mov    0x8(%rdi),%rbp
- 908:	48 8b 3f             	mov    (%rdi),%rdi
+ 938:	48 8b 6f 08          	mov    0x8(%rdi),%rbp
+ 93c:	48 8b 3f             	mov    (%rdi),%rdi
 _ZSt6__sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_():
 /usr/include/c++/13/bits/stl_algo.h:1945 (discriminator 1)
- 90b:	48 39 ef             	cmp    %rbp,%rdi
- 90e:	0f 84 86 00 00 00    	je     99a <cs_vec_sort_H+0xa0>
+ 93f:	48 39 ef             	cmp    %rbp,%rdi
+ 942:	0f 84 86 00 00 00    	je     9ce <cs_vec_sort_H+0xa0>
 _ZN9__gnu_cxxmiIP1HSt6vectorIS1_SaIS1_EEEENS_17__normal_iteratorIT_T0_E15difference_typeERKS9_SC_():
 /usr/include/c++/13/bits/stl_iterator.h:1337 (discriminator 2)
- 914:	48 89 eb             	mov    %rbp,%rbx
+ 948:	48 89 eb             	mov    %rbp,%rbx
 _ZSt6__sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_():
 /usr/include/c++/13/bits/stl_algo.h:1947
- 917:	48 89 ee             	mov    %rbp,%rsi
- 91a:	48 89 7c 24 08       	mov    %rdi,0x8(%rsp)
+ 94b:	48 89 ee             	mov    %rbp,%rsi
+ 94e:	48 89 7c 24 08       	mov    %rdi,0x8(%rsp)
 _ZN9__gnu_cxxmiIP1HSt6vectorIS1_SaIS1_EEEENS_17__normal_iteratorIT_T0_E15difference_typeERKS9_SC_():
 /usr/include/c++/13/bits/stl_iterator.h:1337 (discriminator 2)
- 91f:	48 ba cd cc cc cc cc 	movabs $0xcccccccccccccccd,%rdx
- 926:	cc cc cc 
- 929:	48 29 fb             	sub    %rdi,%rbx
- 92c:	48 89 d8             	mov    %rbx,%rax
- 92f:	48 c1 f8 03          	sar    $0x3,%rax
- 933:	48 0f af c2          	imul   %rdx,%rax
+ 953:	48 ba cd cc cc cc cc 	movabs $0xcccccccccccccccd,%rdx
+ 95a:	cc cc cc 
+ 95d:	48 29 fb             	sub    %rdi,%rbx
+ 960:	48 89 d8             	mov    %rbx,%rax
+ 963:	48 c1 f8 03          	sar    $0x3,%rax
+ 967:	48 0f af c2          	imul   %rdx,%rax
 _ZSt13__countl_zeroImEiT_():
 /usr/include/c++/13/bit:215
- 937:	48 0f bd d0          	bsr    %rax,%rdx
- 93b:	48 83 f2 3f          	xor    $0x3f,%rdx
- 93f:	48 85 c0             	test   %rax,%rax
- 942:	b8 40 00 00 00       	mov    $0x40,%eax
- 947:	0f 45 c2             	cmovne %edx,%eax
+ 96b:	48 0f bd d0          	bsr    %rax,%rdx
+ 96f:	48 83 f2 3f          	xor    $0x3f,%rdx
+ 973:	48 85 c0             	test   %rax,%rax
+ 976:	b8 40 00 00 00       	mov    $0x40,%eax
+ 97b:	0f 45 c2             	cmovne %edx,%eax
 _ZSt4__lgIlET_S0_():
 /usr/include/c++/13/bits/stl_algobase.h:1518 (discriminator 1)
- 94a:	ba 3f 00 00 00       	mov    $0x3f,%edx
- 94f:	29 c2                	sub    %eax,%edx
- 951:	48 63 d2             	movslq %edx,%rdx
+ 97e:	ba 3f 00 00 00       	mov    $0x3f,%edx
+ 983:	29 c2                	sub    %eax,%edx
+ 985:	48 63 d2             	movslq %edx,%rdx
 _ZSt6__sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_():
 /usr/include/c++/13/bits/stl_algo.h:1947
- 954:	48 01 d2             	add    %rdx,%rdx
- 957:	e8 4b fe ff ff       	call   7a7 <_ZSt16__introsort_loopIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEElNS0_5__ops15_Iter_less_iterEEvT_SA_T0_T1_.isra.0>
+ 988:	48 01 d2             	add    %rdx,%rdx
+ 98b:	e8 4b fe ff ff       	call   7db <_ZSt16__introsort_loopIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEElNS0_5__ops15_Iter_less_iterEEvT_SA_T0_T1_.isra.0>
 _ZSt22__final_insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_():
 /usr/include/c++/13/bits/stl_algo.h:1857 (discriminator 1)
- 95c:	48 81 fb 80 02 00 00 	cmp    $0x280,%rbx
- 963:	48 8b 7c 24 08       	mov    0x8(%rsp),%rdi
- 968:	7e 22                	jle    98c <cs_vec_sort_H+0x92>
+ 990:	48 81 fb 80 02 00 00 	cmp    $0x280,%rbx
+ 997:	48 8b 7c 24 08       	mov    0x8(%rsp),%rdi
+ 99c:	7e 22                	jle    9c0 <cs_vec_sort_H+0x92>
 _ZNK9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS1_SaIS1_EEEplEl():
 /usr/include/c++/13/bits/stl_iterator.h:1148
- 96a:	48 8d 9f 80 02 00 00 	lea    0x280(%rdi),%rbx
+ 99e:	48 8d 9f 80 02 00 00 	lea    0x280(%rdi),%rbx
 _ZSt22__final_insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_():
 /usr/include/c++/13/bits/stl_algo.h:1859 (discriminator 1)
- 971:	48 89 de             	mov    %rbx,%rsi
- 974:	e8 c2 f8 ff ff       	call   23b <_ZSt16__insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_.isra.0>
+ 9a5:	48 89 de             	mov    %rbx,%rsi
+ 9a8:	e8 c2 f8 ff ff       	call   26f <_ZSt16__insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_.isra.0>
 _ZSt26__unguarded_insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_():
 /usr/include/c++/13/bits/stl_algo.h:1839 (discriminator 1)
- 979:	48 39 dd             	cmp    %rbx,%rbp
- 97c:	74 1c                	je     99a <cs_vec_sort_H+0xa0>
+ 9ad:	48 39 dd             	cmp    %rbx,%rbp
+ 9b0:	74 1c                	je     9ce <cs_vec_sort_H+0xa0>
 /usr/include/c++/13/bits/stl_algo.h:1840
- 97e:	48 89 df             	mov    %rbx,%rdi
- 981:	48 83 c3 28          	add    $0x28,%rbx
- 985:	e8 26 f8 ff ff       	call   1b0 <_ZSt25__unguarded_linear_insertIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops14_Val_less_iterEEvT_T0_.isra.0>
+ 9b2:	48 89 df             	mov    %rbx,%rdi
+ 9b5:	48 83 c3 28          	add    $0x28,%rbx
+ 9b9:	e8 26 f8 ff ff       	call   1e4 <_ZSt25__unguarded_linear_insertIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops14_Val_less_iterEEvT_T0_.isra.0>
 _ZN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS1_SaIS1_EEEppEv():
 /usr/include/c++/13/bits/stl_iterator.h:1112
- 98a:	eb ed                	jmp    979 <cs_vec_sort_H+0x7f>
+ 9be:	eb ed                	jmp    9ad <cs_vec_sort_H+0x7f>
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
- 98c:	48 83 c4 18          	add    $0x18,%rsp
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+ 9c0:	48 83 c4 18          	add    $0x18,%rsp
 _ZSt22__final_insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_():
 /usr/include/c++/13/bits/stl_algo.h:1864
- 990:	48 89 ee             	mov    %rbp,%rsi
+ 9c4:	48 89 ee             	mov    %rbp,%rsi
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
- 993:	5b                   	pop    %rbx
- 994:	5d                   	pop    %rbp
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+ 9c7:	5b                   	pop    %rbx
+ 9c8:	5d                   	pop    %rbp
 _ZSt22__final_insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_():
 /usr/include/c++/13/bits/stl_algo.h:1864
- 995:	e9 a1 f8 ff ff       	jmp    23b <_ZSt16__insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_.isra.0>
+ 9c9:	e9 a1 f8 ff ff       	jmp    26f <_ZSt16__insertion_sortIN9__gnu_cxx17__normal_iteratorIP1HSt6vectorIS2_SaIS2_EEEENS0_5__ops15_Iter_less_iterEEvT_SA_T0_.isra.0>
 cs_vec_sort_H():
-/home/user/libcis/.claude/worktrees/agent-af79cffdad00a4237/bench/callsites.cpp:34
- 99a:	48 83 c4 18          	add    $0x18,%rsp
- 99e:	5b                   	pop    %rbx
- 99f:	5d                   	pop    %rbp
- 9a0:	c3                   	ret
+/home/user/libcis/.claude/worktrees/agent-a7d5311b0eded3df4/bench/callsites.cpp:34
+ 9ce:	48 83 c4 18          	add    $0x18,%rsp
+ 9d2:	5b                   	pop    %rbx
+ 9d3:	5d                   	pop    %rbp
+ 9d4:	c3                   	ret
 
 Disassembly of section .text._ZNKSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE7compareERKS4_:
 

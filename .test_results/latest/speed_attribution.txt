@@ -1,0 +1,140 @@
+
+cs_vec_index_i
+  workload: operator[] sum over 3 parallel vector<int>[8192], 200x (SoA index loop)
+  libcis total Ir=13209365  top functions (self Ir):
+               13181369  99.8%  main
+                  51322   0.4%  __GI___tunables_init
+  ref    total Ir=13332163  top functions (self Ir):
+               13181377  98.9%  main
+                 481052   3.6%  do_lookup_x
+                 181290   1.4%  _dl_lookup_symbol_x
+                 147450   1.1%  vector<int, allocator<int> >::vector(unsigned 
+                 145199   1.1%  _dl_relocate_object
+                 110026   0.8%  check_match
+
+cs_vec_end_i
+  workload: iterator traversal of vector<int>[8192], 200x (end() as the bound)
+  libcis total Ir=14790397  top functions (self Ir):
+                9864214  66.7%  main
+  ref    total Ir=9915194  top functions (self Ir):
+                8225616  83.0%  main
+                 481052   4.9%  do_lookup_x
+                 181290   1.8%  _dl_lookup_symbol_x
+                 145199   1.5%  _dl_relocate_object
+                 110026   1.1%  check_match
+                  62106   0.6%  strcmp
+                  51322   0.5%  __GI___tunables_init
+
+cs_vec_push_int
+  workload: build vector<int> via push_back, 4096 elems, 80x
+  libcis total Ir=15935078  top functions (self Ir):
+                3938080  24.7%  vector<int, allocator<int> >::size()
+                1444880   9.1%  __memcpy_avx_unaligned_erms
+                 983729   6.2%  main
+                  81323   0.5%  _int_malloc
+                  58720   0.4%  detail::storage_b_resize(detail::type_ops*, vo
+                  51322   0.3%  __GI___tunables_init
+                  47440   0.3%  _int_free
+                  42008   0.3%  malloc
+  ref    total Ir=4376563  top functions (self Ir):
+                 984370  22.5%  main
+                 481052  11.0%  do_lookup_x
+                 181290   4.1%  _dl_lookup_symbol_x
+                 145199   3.3%  _dl_relocate_object
+                 139520   3.2%  __memcpy_avx_unaligned_erms
+                 110026   2.5%  check_match
+                  62106   1.4%  strcmp
+                  59411   1.4%  _int_malloc
+
+cs_vec_push_H
+  workload: build vector<H{7B+std::string}> via push_back, 1024 elems, 40x
+  libcis total Ir=30007704  top functions (self Ir):
+                5571540  18.6%  _int_malloc
+                3085215  10.3%  _int_free
+                2583531   8.6%  malloc_consolidate
+                2036240   6.8%  detail::storage_b_resize(detail::type_ops*, vo
+                1966840   6.6%  H& vector<H, allocator<H> >::emplace_back<H>(H
+                1860608   6.2%  malloc
+                1369760   4.6%  string::vdeallocate()
+                1158080   3.9%  free
+  ref    total Ir=8886641  top functions (self Ir):
+                2211120  24.9%  __cxx11::basic_string<char, char_traits<char>,
+                1228200  13.8%  H::H(H&&)
+                 574406   6.5%  __strlen_avx2
+                 512000   5.8%  H::H(int)
+                 481052   5.4%  do_lookup_x
+                 369080   4.2%  H& vector<H, allocator<H> >::emplace_back<H>(H
+                 246534   2.8%  main
+                 181290   2.0%  _dl_lookup_symbol_x
+
+cs_vec_insert_H
+  workload: insert-at-begin into vector<H{string}>, 512 elems, 60x
+  libcis total Ir=327697608  top functions (self Ir):
+              144593880  44.1%  detail::rotate(detail::type_ops*, detail::stor
+               40503120  12.4%  string::vdeallocate()
+               15881760   4.8%  void detail::move_construct_op<H, allocator<H>
+                7971600   2.4%  void detail::destroy_op<H, allocator<H> >(void
+                4086846   1.2%  _int_malloc
+                3697020   1.1%  detail::relocate_block(detail::type_ops*, void
+                2321315   0.7%  _int_free
+                1544640   0.5%  detail::storage_b_resize(detail::type_ops*, vo
+  ref    total Ir=757452126  top functions (self Ir):
+              562917600  74.3%  H::operator=(H&&)
+               79104000  10.4%  __cxx11::basic_string<char, char_traits<char>,
+
+cs_vec_erase_H
+  workload: erase-at-begin from vector<H{string}>[512] to empty, 60x
+  libcis total Ir=326618683  top functions (self Ir):
+              145434270  44.5%  detail::relocate_block(detail::type_ops*, void
+               40213617  12.3%  string::vdeallocate()
+               15822074   4.8%  void detail::move_construct_op<H, allocator<H>
+                7942269   2.4%  void detail::destroy_op<H, allocator<H> >(void
+                4286954   1.3%  _int_malloc
+                3345720   1.0%  detail::rotate(detail::type_ops*, detail::stor
+                2336419   0.7%  _int_free
+                1534864   0.5%  detail::storage_b_resize(detail::type_ops*, vo
+  ref    total Ir=771354033  top functions (self Ir):
+              565125120  73.3%  H::operator=(H&&)
+               78812150  10.2%  __cxx11::basic_string<char, char_traits<char>,
+
+cs_vec_sort_H
+  workload: copy-construct 2048 H{string} + std::sort by string key, 60x
+  libcis total Ir=441669868  top functions (self Ir):
+               78107040  17.7%  H::operator=(H&&)
+               76831542  17.4%  __memcmp_avx2_movbe
+               55628940  12.6%  void detail::introsort<H*, less<void> >(H*, H*
+               40025400   9.1%  H::operator<(H&)
+               17058473   3.9%  _int_malloc
+               10938023   2.5%  string::vdeallocate()
+                9363663   2.1%  _int_free
+                8005080   1.8%  0x000000000010c5c0
+  ref    total Ir=216700507  top functions (self Ir):
+               71098560  32.8%  H::operator=(H&&)
+               22172094  10.2%  __cxx11::basic_string<char, char_traits<char>,
+               21836908  10.1%  __memcmp_avx2_movbe
+               12077520   5.6%  enable_if<__and_<__not_<__is_tuple_like<H> >, 
+               11812680   5.5%  void __introsort_loop<__normal_iterator<H*, ve
+                8867040   4.1%  H::operator<(H&)
+                8373825   3.9%  H::H(H&&)
+                4074840   1.9%  void __unguarded_linear_insert<__normal_iterat
+
+cs_str_append
+  workload: build std::string via += char, 4096 chars, 200x
+  libcis total Ir=20577853  top functions (self Ir):
+                5735874  27.9%  main
+                 184800   0.9%  __memcpy_avx_unaligned_erms
+                 116000   0.6%  detail::storage_b_resize(detail::type_ops*, vo
+                 101400   0.5%  _int_free
+                  92003   0.4%  _int_malloc
+                  88208   0.4%  malloc
+                  56000   0.3%  free
+                  54600   0.3%  string::grow_cold_(unsigned long)
+  ref    total Ir=25019892  top functions (self Ir):
+                5735275  22.9%  main
+                4106000  16.4%  __cxx11::basic_string<char, char_traits<char>,
+                 481052   1.9%  do_lookup_x
+                 181290   0.7%  _dl_lookup_symbol_x
+                 145199   0.6%  _dl_relocate_object
+                 110026   0.4%  check_match
+                  92002   0.4%  _int_malloc
+                  90600   0.4%  _int_free

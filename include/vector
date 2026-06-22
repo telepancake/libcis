@@ -87,16 +87,31 @@ private:
 
     // Strategy-uniform accessors. begin_ is inherited from the layout base;
     // refer to it through this->begin_ (dependent base). end_/cap_ only exist
-    // as data members in Strategy A; the accessors below read/write through
-    // storage_ops in Strategy B.
+    // as data members in Strategy A; for Strategy B the live size and usable
+    // capacity live in a two-word header immediately before begin_ and are
+    // read/written INLINE here (constant-offset loads) — no out-of-line ops
+    // call and no ::malloc_usable_size on the per-element path. See
+    // bits/storage_ops.h.
+    //
+    //   header: [size_t cap_bytes][size_t live_bytes][buffer ...]
+    //                                                ^ begin_
+    // live_bytes at begin_[-1 word]; cap_bytes (usable element span past
+    // begin_, in bytes) at begin_[-2 word]. The capacity word is written once
+    // at (re)allocation by storage_b_resize from ::malloc_usable_size.
+    static size_t& hdr_live_(pointer b) noexcept {
+        return reinterpret_cast<size_t*>(
+            reinterpret_cast<unsigned char*>(std::to_address(b)))[-1];
+    }
+    static size_t hdr_cap_(pointer b) noexcept {
+        return reinterpret_cast<size_t*>(
+            reinterpret_cast<unsigned char*>(std::to_address(b)))[-2];
+    }
     constexpr pointer end_ptr_() const noexcept {
         if constexpr (!uses_header_layout_) {
             return this->end_;
         } else {
             if (this->begin_ == nullptr) return pointer{};
-            auto sp = detail::storage_b_data(ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>(),
-                                             const_cast<vector*>(this));
-            return this->begin_ + (sp.size / sizeof(value_type));
+            return this->begin_ + (hdr_live_(this->begin_) / sizeof(value_type));
         }
     }
     constexpr pointer cap_ptr_() const noexcept {
@@ -104,19 +119,21 @@ private:
             return this->cap_;
         } else {
             if (this->begin_ == nullptr) return pointer{};
-            void* e = detail::storage_b_cap_end(ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>(),
-                                                const_cast<vector*>(this));
-            const size_t total_b = static_cast<unsigned char*>(e)
-                                 - reinterpret_cast<unsigned char*>(std::to_address(this->begin_));
-            return this->begin_ + (total_b / sizeof(value_type));
+            return this->begin_ + (hdr_cap_(this->begin_) / sizeof(value_type));
         }
     }
     constexpr void set_size_elems_(size_type n) noexcept {
         if constexpr (!uses_header_layout_) {
             this->end_ = this->begin_ + n;
         } else {
-            detail::storage_b_set_size(ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>(),
-                                       this, n * sizeof(value_type));
+            if (this->begin_ == nullptr) return;
+            // Inline header write of the live byte count. Unlike the
+            // out-of-line storage_b_set_size (used by the type-erased cores),
+            // this does NOT zero the spare slot: vector never reads
+            // uninitialized capacity, and string writes its own null
+            // terminator explicitly at every mutation. Dropping the spare
+            // memset keeps the per-element path a single store.
+            hdr_live_(this->begin_) = n * sizeof(value_type);
         }
     }
     constexpr void set_capacity_elems_(size_type n) noexcept {
@@ -660,9 +677,7 @@ public:
             return static_cast<size_type>(this->end_ - this->begin_);
         } else {
             if (this->begin_ == nullptr) return 0;
-            auto sp = detail::storage_b_data(ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>(),
-                                             const_cast<vector*>(this));
-            return static_cast<size_type>(sp.size / sizeof(value_type));
+            return static_cast<size_type>(hdr_live_(this->begin_) / sizeof(value_type));
         }
     }
     [[nodiscard]] constexpr size_type capacity() const noexcept {
@@ -670,11 +685,7 @@ public:
             return static_cast<size_type>(this->cap_ - this->begin_);
         } else {
             if (this->begin_ == nullptr) return 0;
-            void* e = detail::storage_b_cap_end(ops_<detail::OP_DESTROY | detail::OP_MOVE_CONSTRUCT>(),
-                                                const_cast<vector*>(this));
-            const size_t total_b = static_cast<unsigned char*>(e)
-                                 - reinterpret_cast<unsigned char*>(std::to_address(this->begin_));
-            return static_cast<size_type>(total_b / sizeof(value_type));
+            return static_cast<size_type>(hdr_cap_(this->begin_) / sizeof(value_type));
         }
     }
     [[nodiscard]] constexpr bool empty() const noexcept { return size() == 0; }
@@ -759,6 +770,13 @@ public:
     // ensure_free_(n) guarantees at least n free slots at end and returns the
     // address of the first free slot. The caller can write *p = x directly
     // without re-reading the (potentially expensive) size()/end_ptr_() chain.
+    //
+    // size()/capacity() are inline constant-offset header reads in Strategy B,
+    // so the capacity check costs no out-of-line call and no malloc_usable_size
+    // — only the rare grow reallocates. Kept as a regular (out-of-line at -Os)
+    // member so each push_back/append call site stays compact: force-inlining
+    // it duplicates the size/capacity reads at every push and bloats the
+    // per-call code (+80B) for a smaller marginal Ir win — not worth it.
     pointer ensure_free_(size_type n = 1) {
         size_type sz = size();
         if (capacity() - sz < n)

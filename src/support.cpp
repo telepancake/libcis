@@ -142,39 +142,65 @@ void grow(const type_ops* tops, const storage_ops* sops,
 // field, and the layout base is the container's only base — the empty
 // allocator collapses under [[no_unique_address]]), so `*(void**)st_ctx` is
 // the live data pointer. Element size comes from `tops->size`; header_size
-// from max(sizeof(size_t), tops->align). See bits/storage_ops.h for the
+// from max(2*sizeof(size_t), tops->align). See bits/storage_ops.h for the
 // design comment.
+//
+// Header (two size_t immediately before begin_):
+//     [size_t cap_bytes][size_t live_bytes][value_type buffer ...]
+//                                          ^ begin_  (= base + H)
+//   live_bytes at begin_ - sizeof(size_t)
+//   cap_bytes  at begin_ - 2*sizeof(size_t)  == base + H - 2*sizeof(size_t)
+//   cap_bytes is the usable ELEMENT-buffer span (malloc_usable_size - H),
+//   written ONCE per (re)allocation here so size()/capacity()/end() are inline.
+//
+// These out-of-line helpers remain for the type-erased cores (rotate, grow,
+// vdeallocate) that thread a const storage_ops*; the per-element/accessor hot
+// paths in <vector>/<string> read the same header fields inline instead.
 // ---------------------------------------------------------------------------
 static inline size_t storage_b_header_size(const type_ops* tops) noexcept {
-    const size_t a = tops->align;
-    return sizeof(size_t) > a ? sizeof(size_t) : a;
+    return storage_b_header_bytes(tops->align);
 }
 
-byte_span storage_b_data(const type_ops* tops, void* st_ctx) {
+// Read the two header words. live at b[-1 word], cap at b[-2 word].
+static inline size_t storage_b_live(unsigned char* b) noexcept {
+    size_t live;
+    __builtin_memcpy(&live, b - sizeof(size_t), sizeof(size_t));
+    return live;
+}
+static inline size_t storage_b_cap(unsigned char* b) noexcept {
+    size_t cap;
+    __builtin_memcpy(&cap, b - 2 * sizeof(size_t), sizeof(size_t));
+    return cap;
+}
+static inline void storage_b_store_live(unsigned char* b, size_t v) noexcept {
+    __builtin_memcpy(b - sizeof(size_t), &v, sizeof(size_t));
+}
+static inline void storage_b_store_cap(unsigned char* b, size_t v) noexcept {
+    __builtin_memcpy(b - 2 * sizeof(size_t), &v, sizeof(size_t));
+}
+
+byte_span storage_b_data(const type_ops* /*tops*/, void* st_ctx) {
     auto* b = *static_cast<unsigned char**>(st_ctx);
     if (b == nullptr) return { nullptr, 0 };
-    size_t live;
-    __builtin_memcpy(&live, b - storage_b_header_size(tops), sizeof(size_t));
-    return { b, live };
+    return { b, storage_b_live(b) };
 }
 
-void* storage_b_cap_end(const type_ops* tops, void* st_ctx) {
+void* storage_b_cap_end(const type_ops* /*tops*/, void* st_ctx) {
     auto* b = *static_cast<unsigned char**>(st_ctx);
     if (b == nullptr) return nullptr;
-    unsigned char* base = b - storage_b_header_size(tops);
-    return base + ::malloc_usable_size(base);
+    // cap_bytes is the element-buffer span starting at begin_.
+    return b + storage_b_cap(b);
 }
 
 void storage_b_set_size(const type_ops* tops, void* st_ctx, size_t bytes) {
     auto* b = *static_cast<unsigned char**>(st_ctx);
     if (b == nullptr) return;
-    const size_t H = storage_b_header_size(tops);
-    __builtin_memcpy(b - H, &bytes, sizeof(size_t));
-    unsigned char* base = b - H;
-    unsigned char* cap  = base + ::malloc_usable_size(base);
+    storage_b_store_live(b, bytes);
     unsigned char* new_end = b + bytes;
     const size_t es = tops->size;
-    if (new_end + es <= cap)
+    // The cached capacity already excludes the header; the spare slot fits
+    // when new_end + es <= begin_ + cap_bytes.
+    if (bytes + es <= storage_b_cap(b))
         __builtin_memset(new_end, 0, es);
 }
 
@@ -193,9 +219,7 @@ void* storage_b_resize(const type_ops* tops, void* st_ctx, size_t min_bytes) {
     auto** slot = static_cast<unsigned char**>(st_ctx);
     const size_t H = storage_b_header_size(tops);
     unsigned char* old_begin = *slot;
-    size_t live = 0;
-    if (old_begin)
-        __builtin_memcpy(&live, old_begin - H, sizeof(size_t));
+    size_t live = old_begin ? storage_b_live(old_begin) : 0;
 
     auto* base = static_cast<unsigned char*>(::malloc(H + min_bytes));
     if (!base) __builtin_trap();
@@ -211,12 +235,17 @@ void* storage_b_resize(const type_ops* tops, void* st_ctx, size_t min_bytes) {
     }
     if (old_begin) ::free(old_begin - H);
 
-    __builtin_memcpy(base, &live, sizeof(size_t));
     *slot = nb;
+    storage_b_store_live(nb, live);
+    // Claim the allocator's slack ONCE here: cap_bytes is the usable element
+    // span past begin_. This is the only ::malloc_usable_size call left on any
+    // Strategy-B path; size()/capacity()/end()/push fast-path all read it back
+    // inline from the header.
+    const size_t usable = ::malloc_usable_size(base);
+    storage_b_store_cap(nb, usable - H);
 
-    unsigned char* cap = base + ::malloc_usable_size(base);
     const size_t es = tops->size;
-    if (nb + live + es <= cap)
+    if (live + es <= usable - H)
         __builtin_memset(nb + live, 0, es);
 
     return nb;
