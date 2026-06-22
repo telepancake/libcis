@@ -22,7 +22,10 @@ namespace std {
 // dynamic_extent
 //===----------------------------------------------------------------------===//
 
+#ifndef _LIBCIS_DYNAMIC_EXTENT_DECLARED
+#define _LIBCIS_DYNAMIC_EXTENT_DECLARED
 inline constexpr size_t dynamic_extent = static_cast<size_t>(-1);
+#endif
 
 //===----------------------------------------------------------------------===//
 // Forward declaration of span

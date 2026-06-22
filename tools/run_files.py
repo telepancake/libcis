@@ -34,12 +34,26 @@ LINK = "build/groups/libcis/libsupport.a -nodefaultlibs -lpthread -lm -lc -lgcc_
 # would silently revert those adaptations; re-applying them here makes the
 # gate self-healing regardless of transfer order.
 OVR = os.path.join(ROOT, "tools", "test_overrides")
+# The override files hardcode `libcis_ns_<slug>`, but slug_for() hashes the path
+# into the slug, so an override's namespace must be rewritten to the slug the
+# manifest actually recorded for that path -- otherwise the gate driver calls
+# `libcis_ns_<hashed>::main()` while the override declares `libcis_ns_<old>`.
+_ovr_slug = {}
+_ovr_man = os.path.join(ROOT, "test/std/manifest.json")
+if os.path.exists(_ovr_man):
+    _ovr_slug = {r["file"]: r["slug"]
+                 for r in json.load(open(_ovr_man))["transferred"] if r.get("slug")}
 for dirp, _, files in os.walk(OVR):
     for fn in files:
         src = os.path.join(dirp, fn)
-        dst = os.path.join(ROOT, "test/std", os.path.relpath(src, OVR))
-        if os.path.exists(dst) and open(src).read() != open(dst).read():
-            open(dst, "w").write(open(src).read())
+        rel = os.path.relpath(src, OVR)
+        dst = os.path.join(ROOT, "test/std", rel)
+        text = open(src).read()
+        slug = _ovr_slug.get(rel)
+        if slug:
+            text = re.sub(r"libcis_ns_\w+", "libcis_ns_" + slug, text)
+        if os.path.exists(dst) and open(dst).read() != text:
+            open(dst, "w").write(text)
 
 # ---------------------------------------------------------------------------
 # Per-test ADDITIONAL_COMPILE_FLAGS.  Most are libc++-only -D_LIBCPP_* knobs that

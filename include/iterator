@@ -1719,7 +1719,9 @@ template<class T>
 concept member_begin =
     access_detail::can_borrow<T> &&
     requires(T&& t) {
-        { t.begin() } -> input_or_output_iterator;
+        // _LIBCPP_AUTO_CAST: decay-copy the iterator so member begin() returning
+        // a reference (e.g. int*&) is checked/returned as a prvalue (int*).
+        { static_cast<decay_t<decltype((t.begin()))>>(t.begin()) } -> input_or_output_iterator;
     };
 
 template<class T>
@@ -1728,7 +1730,7 @@ concept adl_begin =
     access_detail::can_borrow<T> &&
     access_detail::class_or_enum<remove_cvref_t<T>> &&
     requires(T&& t) {
-        { begin(t) } -> input_or_output_iterator;
+        { static_cast<decay_t<decltype((begin(t)))>>(begin(t)) } -> input_or_output_iterator;
     };
 
 struct begin_fn {
@@ -1741,17 +1743,15 @@ struct begin_fn {
     template<class T>
         requires member_begin<T>
     [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(t.begin()))
-        -> decltype(t.begin()) {
-        return t.begin();
+        noexcept(noexcept(static_cast<decay_t<decltype((t.begin()))>>(t.begin()))) {
+        return static_cast<decay_t<decltype((t.begin()))>>(t.begin());
     }
     // ADL begin(t)
     template<class T>
         requires adl_begin<T>
     [[nodiscard]] constexpr auto operator()(T&& t) const
-        noexcept(noexcept(begin(t)))
-        -> decltype(begin(t)) {
-        return begin(t);
+        noexcept(noexcept(static_cast<decay_t<decltype((begin(t)))>>(begin(t)))) {
+        return static_cast<decay_t<decltype((begin(t)))>>(begin(t));
     }
 };
 } // namespace begin_detail
