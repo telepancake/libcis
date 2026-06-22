@@ -43,7 +43,7 @@ SUPPORT_A := build/groups/libcis/libsupport.a
 LIB_SRCS  := $(shell find include src -type f 2>/dev/null)
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor smoke support transfer board test test-single single gate clean distclean
+.PHONY: help bootstrap doctor smoke support transfer board test test-single single gate size clean distclean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -96,6 +96,9 @@ test-single: ## Full pipeline using the single-ELF fast path
 	python3 tools/gen_groups.py --ninja
 	ninja -f build/groups.ninja single -k0
 	@echo "single-ELF result: build/groups/libcis/all_tests.result"
+
+size: ## Per-call/per-type code + memory overhead vs non-type-erased ref; writes .test_results/latest/
+	python3 bench/size_slope.py
 
 gate: support ## Per-file CLEAN/NOT-CLEAN gate, e.g. make gate SUBTREE=thread
 	@test -n "$(SUBTREE)" || { echo "usage: make gate SUBTREE=<name>  (e.g. thread, utilities)"; exit 2; }
