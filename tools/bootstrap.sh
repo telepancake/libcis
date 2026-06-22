@@ -102,5 +102,7 @@ mkdir -p "$TC"
 fetch_sources
 build_gcc
 build_llvm
-touch "$TC/.bootstrap-ok"
+# No completion stamp: the Makefile keys on a real produced artifact
+# (toolchain/llvm/include/c++/v1/__config_site), and each step above already
+# skips itself when its real outputs are present.
 say "done — toolchain ready under ./toolchain"

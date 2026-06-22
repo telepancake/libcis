@@ -19,9 +19,12 @@
 # the same way every tools/ script does:  make CXX=g++-13
 
 # The bootstrapped toolchain (tools/bootstrap.sh); tools/config.py prefers it.
+# Key the bootstrap on a REAL produced artifact (the libc++ headers, installed
+# last by bootstrap.sh) rather than a content-free stamp -- so wiping any part of
+# ./toolchain re-triggers it -- and depend on the generator script itself.
 TOOLCHAIN    := $(CURDIR)/toolchain
-BOOTSTRAP_OK := $(TOOLCHAIN)/.bootstrap-ok
 LOCAL_GXX    := $(TOOLCHAIN)/gcc/bin/g++-10
+BOOTSTRAP_OK := $(TOOLCHAIN)/llvm/include/c++/v1/__config_site
 
 # Default the library compiler to the local g++-10 when it has been bootstrapped.
 # Guard on origin: GNU make pre-defines CXX=g++ (origin "default"), which a plain
@@ -49,9 +52,10 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
 	  awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-10s\033[0m %s\n",$$1,$$2}'
 
-bootstrap: $(BOOTSTRAP_OK) ## Download the pinned toolchain into ./toolchain
-$(BOOTSTRAP_OK):
+bootstrap: $(BOOTSTRAP_OK) ## Build the pinned toolchain into ./toolchain
+$(BOOTSTRAP_OK): tools/bootstrap.sh
 	tools/bootstrap.sh
+	touch $@   # record completion: the idempotent skip-path won't re-touch it
 
 doctor: $(BOOTSTRAP_OK) ## Probe the toolchain AND smoke-build the library (real check)
 	python3 tools/doctor.py
