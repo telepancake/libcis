@@ -1,4 +1,4 @@
-// transferred+adapted from libc++ by tools/transfer.py (slug=experimental_utilities_propagate_const_propagate_const_class_swap_f70398be).
+// transferred+adapted from libc++ by tools/transfer.py (slug=experimental_utilities_propagate_const_propagate_const_class_swap).
 //===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -18,11 +18,16 @@
 #include "propagate_const_helpers.h"
 #include <cassert>
 
+bool swap_called = false;  // libcis: hoisted with swap (below)
+
+// libcis: hoisted to global scope -- the transfer wrapped this ADL
+// customization in libcis_ns_* but X is global, so member swap's
+// `using std::swap; swap(x_, ...)` could not find it via ADL.
+void swap(X &, X &) { swap_called = true; }
+
+
 namespace libcis_ns_experimental_utilities_propagate_const_propagate_const_class_swap_f70398be { // libcis
 using std::experimental::propagate_const;
-
-bool swap_called = false;
-void swap(X &, X &) { swap_called = true; }
 
 int main(int, char**) {
   typedef propagate_const<X> P;
@@ -32,8 +37,6 @@ int main(int, char**) {
   assert(swap_called);
 
   return 0;
-
-    return 0;
 }
 } // libcis_ns_experimental_utilities_propagate_const_propagate_const_class_swap_f70398be (libcis)
 

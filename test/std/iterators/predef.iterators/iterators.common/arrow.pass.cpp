@@ -1,4 +1,4 @@
-// transferred+adapted from libc++ by tools/transfer.py (slug=iterators_predef_iterators_iterators_common_arrow_857cb8ec).
+// transferred+adapted from libc++ by tools/transfer.py (slug=iterators_predef_iterators_iterators_common_arrow).
 //===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -13,6 +13,7 @@
 //   requires see below;
 
 #include <iterator>
+#include <type_traits> // libcis
 #include <cassert>
 #include <concepts>
 
@@ -30,11 +31,13 @@ void test() {
       using Common = std::common_iterator<Iterator, sentinel_wrapper<Iterator>>;
 
       Common common(iter);
-      std::same_as<Iterator> decltype(auto) result = common.operator->();
+      decltype(auto) result = common.operator->(); // libcis: gcc-10 rejects constrained placeholder with dependent constraint arg
+      static_assert(std::is_same_v<decltype(result), Iterator>);
       assert(base(result) == buffer);
 
       Common const ccommon(iter);
-      std::same_as<Iterator> decltype(auto) cresult = ccommon.operator->();
+      decltype(auto) cresult = ccommon.operator->(); // libcis: gcc-10 rejects constrained placeholder with dependent constraint arg
+      static_assert(std::is_same_v<decltype(cresult), Iterator>);
       assert(base(cresult) == buffer);
     };
 
@@ -50,11 +53,13 @@ void test() {
       using Common = std::common_iterator<Iterator, sentinel_type<int*>>;
 
       Common common(iter);
-      std::same_as<int*> decltype(auto) result = common.operator->();
+      decltype(auto) result = common.operator->(); // libcis: gcc-10 rejects constrained placeholder with dependent constraint arg
+      static_assert(std::is_same_v<decltype(result), int*>);
       assert(result == buffer);
 
       Common const ccommon(iter);
-      std::same_as<int*> decltype(auto) cresult = ccommon.operator->();
+      decltype(auto) cresult = ccommon.operator->(); // libcis: gcc-10 rejects constrained placeholder with dependent constraint arg
+      static_assert(std::is_same_v<decltype(cresult), int*>);
       assert(cresult == buffer);
     };
 
@@ -75,13 +80,15 @@ void test() {
 
       Common common(iter);
       auto proxy                                     = common.operator->();
-      std::same_as<int const*> decltype(auto) result = proxy.operator->();
+      decltype(auto) result = proxy.operator->(); // libcis: gcc-10 rejects constrained placeholder with dependent constraint arg
+      static_assert(std::is_same_v<decltype(result), int const*>);
       assert(result != buffer); // we copied to a temporary proxy
       assert(*result == *buffer);
 
       Common const ccommon(iter);
       auto cproxy                                     = ccommon.operator->();
-      std::same_as<int const*> decltype(auto) cresult = cproxy.operator->();
+      decltype(auto) cresult = cproxy.operator->(); // libcis: gcc-10 rejects constrained placeholder with dependent constraint arg
+      static_assert(std::is_same_v<decltype(cresult), int const*>);
       assert(cresult != buffer); // we copied to a temporary proxy
       assert(*cresult == *buffer);
     };
@@ -95,8 +102,6 @@ int main(int, char**) {
   test();
 
   return 0;
-
-    return 0;
 }
 } // libcis_ns_iterators_predef_iterators_iterators_common_arrow_857cb8ec (libcis)
 

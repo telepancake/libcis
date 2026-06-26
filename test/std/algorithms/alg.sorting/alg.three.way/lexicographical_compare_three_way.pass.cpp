@@ -1,4 +1,4 @@
-// transferred+adapted from libc++ by tools/transfer.py (slug=algorithms_alg_sorting_alg_three_way_lexicographical_compare_three_way_0329b77d).
+// transferred+adapted from libc++ by tools/transfer.py (slug=algorithms_alg_sorting_alg_three_way_lexicographical_compare_three_way).
 //===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -29,8 +29,12 @@
 namespace libcis_ns_algorithms_alg_sorting_alg_three_way_lexicographical_compare_three_way_0329b77d { // libcis
 template <typename Iter1, typename Iter2, typename C1, typename C2, typename Order>
 constexpr void test_lexicographical_compare(C1 a, C2 b, Order expected) {
-  std::same_as<Order> decltype(auto) result = std::lexicographical_compare_three_way(
+  auto result = std::lexicographical_compare_three_way(
       Iter1{a.data()}, Iter1{a.data() + a.size()}, Iter2{b.data()}, Iter2{b.data() + b.size()});
+  // libcis: gcc-10 cannot parse a constrained placeholder with a dependent
+  // constraint argument ('std::same_as<T> auto x = expr;'  -- proven defect,
+  // see tools/test_overrides); the type check is kept via static_assert.
+  static_assert(std::is_same_v<decltype(result), Order>);
   assert(expected == result);
 }
 
@@ -130,8 +134,6 @@ int main(int, char**) {
   static_assert(test());
 
   return 0;
-
-    return 0;
 }
 } // libcis_ns_algorithms_alg_sorting_alg_three_way_lexicographical_compare_three_way_0329b77d (libcis)
 

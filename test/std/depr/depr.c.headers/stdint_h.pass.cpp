@@ -1,4 +1,4 @@
-// transferred+adapted from libc++ by tools/transfer.py (slug=depr_depr_c_headers_stdint_h_b5b09a23).
+// transferred+adapted from libc++ by tools/transfer.py (slug=depr_depr_c_headers_stdint_h).
 //===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -10,6 +10,23 @@
 // test <stdint.h>
 
 #include <stdint.h>
+
+// libcis: hoisted out of the wrapping namespace -- the transfer tool
+// swallowed these directives, so the C headers' textual contents (e.g.
+// stddef.h's `typedef ... size_t`) landed inside libcis_ns_* instead of
+// global scope, breaking <cstddef>'s `using ::size_t`.
+#include <cstddef>
+#include <csignal>
+#include <climits>
+#include <type_traits>
+#include <limits>
+#include <cassert>
+
+#include "test_macros.h"
+
+#ifndef TEST_HAS_NO_WIDE_CHARACTERS
+#   include <cwctype>
+#endif
 
 namespace libcis_ns_depr_depr_c_headers_stdint_h_b5b09a23 { // libcis
 void use() {
@@ -49,19 +66,6 @@ void use() {
     (void)sizeof(intmax_t);
     (void)sizeof(uintmax_t);
 }
-
-#include <cstddef>
-#include <csignal>
-#include <climits>
-#include <type_traits>
-#include <limits>
-#include <cassert>
-
-#include "test_macros.h"
-
-#ifndef TEST_HAS_NO_WIDE_CHARACTERS
-#   include <cwctype>
-#endif
 
 int main(int, char**) {
     // typedef int8_t
@@ -278,8 +282,6 @@ int main(int, char**) {
 #ifndef UINTMAX_C
 #error UINTMAX_C not defined
 #endif
-
-    return 0;
 
     return 0;
 }

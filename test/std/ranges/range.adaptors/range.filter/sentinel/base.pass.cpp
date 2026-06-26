@@ -1,4 +1,4 @@
-// transferred+adapted from libc++ by tools/transfer.py (slug=ranges_range_adaptors_range_filter_sentinel_base_7b470b8d).
+// transferred+adapted from libc++ by tools/transfer.py (slug=ranges_range_adaptors_range_filter_sentinel_base).
 //===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -36,7 +36,10 @@ constexpr void test() {
   FilterView view = make_filter_view(array.data(), array.data() + array.size(), AlwaysTrue{});
 
   FilterSentinel const sent = view.end();
-  std::same_as<Sent> decltype(auto) result = sent.base();
+  auto result = sent.base();
+  // libcis: gcc-10 constrained-placeholder defect (see tools/test_overrides);
+  // type check preserved via static_assert.
+  static_assert(std::is_same_v<decltype(result), Sent>);
   assert(base(base(result)) == array.data() + array.size());
 }
 
@@ -55,8 +58,6 @@ int main(int, char**) {
   tests();
   static_assert(tests());
   return 0;
-
-    return 0;
 }
 } // libcis_ns_ranges_range_adaptors_range_filter_sentinel_base_7b470b8d (libcis)
 

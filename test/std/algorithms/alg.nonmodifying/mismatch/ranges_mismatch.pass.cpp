@@ -1,4 +1,4 @@
-// transferred+adapted from libc++ by tools/transfer.py (slug=algorithms_alg_nonmodifying_mismatch_ranges_mismatch_d34fcb91).
+// transferred+adapted from libc++ by tools/transfer.py (slug=algorithms_alg_nonmodifying_mismatch_ranges_mismatch).
 //===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -33,8 +33,12 @@ namespace libcis_ns_algorithms_alg_nonmodifying_mismatch_ranges_mismatch_d34fcb9
 template <class Iter1, class Iter2>
 constexpr void test_iterators(Iter1 begin1, Iter1 end1, Iter2 begin2, Iter2 end2, int* expected1, int* expected2) {
   using Expected = std::ranges::mismatch_result<Iter1, Iter2>;
-  std::same_as<Expected> auto ret = std::ranges::mismatch(std::move(begin1), sentinel_wrapper<Iter1>(std::move(end1)),
+  auto ret = std::ranges::mismatch(std::move(begin1), sentinel_wrapper<Iter1>(std::move(end1)),
                                                           std::move(begin2), sentinel_wrapper<Iter2>(std::move(end2)));
+  // libcis: gcc-10 cannot parse a constrained placeholder with a dependent
+  // constraint argument ('std::same_as<T> auto x = expr;'  -- proven defect,
+  // see tools/test_overrides); the type check is kept via static_assert.
+  static_assert(std::is_same_v<decltype(ret), Expected>);
   assert(base(ret.in1) == expected1);
   assert(base(ret.in2) == expected2);
 }
@@ -108,7 +112,11 @@ constexpr bool test() {
     std::array<int, 5> a = {1, 2, 3, 4, 5};
     std::array<int, 5> b = {1, 2, 3, 5, 4};
     using Expected = std::ranges::mismatch_result<std::array<int, 5>::iterator, std::array<int, 5>::iterator>;
-    std::same_as<Expected> auto ret = std::ranges::mismatch(a, b);
+    auto ret = std::ranges::mismatch(a, b);
+    // libcis: gcc-10 cannot parse a constrained placeholder with a dependent
+    // constraint argument ('std::same_as<T> auto x = expr;'  -- proven defect,
+    // see tools/test_overrides); the type check is kept via static_assert.
+    static_assert(std::is_same_v<decltype(ret), Expected>);
     assert(ret.in1 == a.begin() + 3);
     assert(ret.in2 == b.begin() + 3);
   }
@@ -121,7 +129,11 @@ constexpr bool test() {
     using Sentinel = sentinel_wrapper<Iter>;
     using Expected = std::ranges::mismatch_result<Iter, Iter>;
 
-    std::same_as<Expected> auto r = std::ranges::mismatch(Iter(a), Sentinel(a + 5), Iter(b), Sentinel(b + 5));
+    auto r = std::ranges::mismatch(Iter(a), Sentinel(a + 5), Iter(b), Sentinel(b + 5));
+    // libcis: gcc-10 cannot parse a constrained placeholder with a dependent
+    // constraint argument ('std::same_as<T> auto x = expr;'  -- proven defect,
+    // see tools/test_overrides); the type check is kept via static_assert.
+    static_assert(std::is_same_v<decltype(r), Expected>);
     assert(r.in1 == a + 3);
     assert(r.in2 == b + 3);
   }
@@ -132,7 +144,11 @@ constexpr bool test() {
       int b[] = {1, 2};
       test_iterators(a, a + 3, b, b + 2, a + 2, b + 2);
       using Expected = std::ranges::mismatch_result<int*, int*>;
-      std::same_as<Expected> auto ret = std::ranges::mismatch(a, b);
+      auto ret = std::ranges::mismatch(a, b);
+      // libcis: gcc-10 cannot parse a constrained placeholder with a dependent
+      // constraint argument ('std::same_as<T> auto x = expr;'  -- proven defect,
+      // see tools/test_overrides); the type check is kept via static_assert.
+      static_assert(std::is_same_v<decltype(ret), Expected>);
       assert(ret.in1 == a + 2);
       assert(ret.in2 == b + 2);
     }
@@ -141,7 +157,11 @@ constexpr bool test() {
       int b[] = {1, 2, 3};
       test_iterators(a, a + 2, b, b + 3, a + 2, b + 2);
       using Expected = std::ranges::mismatch_result<int*, int*>;
-      std::same_as<Expected> auto ret = std::ranges::mismatch(a, b);
+      auto ret = std::ranges::mismatch(a, b);
+      // libcis: gcc-10 cannot parse a constrained placeholder with a dependent
+      // constraint argument ('std::same_as<T> auto x = expr;'  -- proven defect,
+      // see tools/test_overrides); the type check is kept via static_assert.
+      static_assert(std::is_same_v<decltype(ret), Expected>);
       assert(ret.in1 == a + 2);
       assert(ret.in2 == b + 2);
     }
@@ -153,17 +173,29 @@ constexpr bool test() {
 
     using Expected = std::ranges::mismatch_result<int*, int*>;
     {
-      std::same_as<Expected> auto ret = std::ranges::mismatch(r1, std::views::all(r2));
+      auto ret = std::ranges::mismatch(r1, std::views::all(r2));
+      // libcis: gcc-10 cannot parse a constrained placeholder with a dependent
+      // constraint argument ('std::same_as<T> auto x = expr;'  -- proven defect,
+      // see tools/test_overrides); the type check is kept via static_assert.
+      static_assert(std::is_same_v<decltype(ret), Expected>);
       assert(ret.in1 == r1 + 3);
       assert(ret.in2 == r2 + 3);
     }
     {
-      std::same_as<Expected> auto ret = std::ranges::mismatch(std::views::all(r1), r2);
+      auto ret = std::ranges::mismatch(std::views::all(r1), r2);
+      // libcis: gcc-10 cannot parse a constrained placeholder with a dependent
+      // constraint argument ('std::same_as<T> auto x = expr;'  -- proven defect,
+      // see tools/test_overrides); the type check is kept via static_assert.
+      static_assert(std::is_same_v<decltype(ret), Expected>);
       assert(ret.in1 == r1 + 3);
       assert(ret.in2 == r2 + 3);
     }
     {
-      std::same_as<Expected> auto ret = std::ranges::mismatch(std::views::all(r1), std::views::all(r2));
+      auto ret = std::ranges::mismatch(std::views::all(r1), std::views::all(r2));
+      // libcis: gcc-10 cannot parse a constrained placeholder with a dependent
+      // constraint argument ('std::same_as<T> auto x = expr;'  -- proven defect,
+      // see tools/test_overrides); the type check is kept via static_assert.
+      static_assert(std::is_same_v<decltype(ret), Expected>);
       assert(ret.in1 == r1 + 3);
       assert(ret.in2 == r2 + 3);
     }
@@ -292,8 +324,6 @@ int main(int, char**) {
   static_assert(test());
 
   return 0;
-
-    return 0;
 }
 } // libcis_ns_algorithms_alg_nonmodifying_mismatch_ranges_mismatch_d34fcb91 (libcis)
 

@@ -1,4 +1,4 @@
-// transferred+adapted from libc++ by tools/transfer.py (slug=input_output_syncstream_syncbuf_syncstream_syncbuf_assign_assign_40bff386).
+// transferred+adapted from libc++ by tools/transfer.py (slug=input_output_syncstream_syncbuf_syncstream_syncbuf_assign_assign).
 //===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -171,8 +171,11 @@ static void test_basic() {
   { // Test properties
     std::basic_syncbuf<CharT> sync_buf1(nullptr);
     std::basic_syncbuf<CharT> sync_buf2(nullptr);
-    [[maybe_unused]] std::same_as<std::basic_syncbuf<CharT>&> decltype(auto) ret =
+    [[maybe_unused]] decltype(auto) ret =
         sync_buf1.operator=(std::move(sync_buf2));
+    // libcis: gcc-10 constrained-placeholder defect (dependent constraint
+    // arg); proven -- type check kept as static_assert.
+    static_assert(std::is_same_v<decltype(ret), std::basic_syncbuf<CharT>&>);
   }
 
   std::basic_stringbuf<CharT> sstr1;
@@ -398,8 +401,6 @@ int main(int, char**) {
 #endif
 
   return 0;
-
-    return 0;
 }
 } // libcis_ns_input_output_syncstream_syncbuf_syncstream_syncbuf_assign_assign_40bff386 (libcis)
 

@@ -1,4 +1,4 @@
-// transferred+adapted from libc++ by tools/transfer.py (slug=localization_locale_categories_category_time_locale_time_get_byname_get_date_a4dc6ee4).
+// transferred+adapted from libc++ by tools/transfer.py (slug=localization_locale_categories_category_time_locale_time_get_byname_get_date).
 //===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -23,6 +23,13 @@
 // get_date(iter_type s, iter_type end, ios_base& str,
 //          ios_base::iostate& err, tm* t) const;
 
+//
+// libcis: this port reproduces libc++'s time_get iterator semantics (on a
+// month out of range, get_month consumes BOTH digits, leaving the iterator at
+// the separator -> in+2), not libstdc++'s (in+1).  The transferred test gates
+// that expectation on _LIBCPP_VERSION, which this port intentionally does NOT
+// define; the libc++ branch is the correct one for our behaviour, so the two
+// "#if 1 /* libcis: force libc++ branch */" guards are forced on here.
 #include <locale>
 #include <cassert>
 #include "test_macros.h"
@@ -112,7 +119,7 @@ int main(int, char**)
         err = std::ios_base::goodbit;
         t = std::tm();
         I i = f.get_date(I(in), I(in+sizeof(in)/sizeof(in[0])-1), ios, err, &t);
-#if defined(_LIBCPP_VERSION)
+#if 1 /* libcis: force libc++ branch */
           // libc++ points to the '/' after the month.
           assert(base(i) == in+2);
 #else
@@ -131,7 +138,7 @@ int main(int, char**)
         err = std::ios_base::goodbit;
         t = std::tm();
         I i = f.get_date(I(in), I(in+sizeof(in)/sizeof(in[0])-1), ios, err, &t);
-#if defined(_LIBCPP_VERSION)
+#if 1 /* libcis: force libc++ branch */
           // libc++ points to the '/' after the month.
           assert(base(i) == in+2);
 #else
@@ -158,8 +165,6 @@ int main(int, char**)
         assert(err == std::ios_base::eofbit);
     }
   return 0;
-
-    return 0;
 }
 } // libcis_ns_localization_locale_categories_category_time_locale_time_get_byname_get_date_a4dc6ee4 (libcis)
 

@@ -1,4 +1,4 @@
-// transferred+adapted from libc++ by tools/transfer.py (slug=iterators_iterator_primitives_range_iter_ops_range_iter_ops_next_iterator_ab11c6fb).
+// transferred+adapted from libc++ by tools/transfer.py (slug=iterators_iterator_primitives_range_iter_ops_range_iter_ops_next_iterator).
 //===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -15,6 +15,7 @@
 
 #include <cassert>
 #include <concepts>
+#include <type_traits> // libcis
 #include <utility>
 
 #include "test_iterators.h"
@@ -23,7 +24,8 @@ namespace libcis_ns_iterators_iterator_primitives_range_iter_ops_range_iter_ops_
 template <class It>
 constexpr void check(int* first, int* expected) {
   It it(first);
-  std::same_as<It> auto result = std::ranges::next(std::move(it));
+  auto result = std::ranges::next(std::move(it)); // libcis: gcc-10 rejects constrained placeholder with dependent constraint arg here
+  static_assert(std::is_same_v<decltype(result), It>);
   assert(base(result) == expected);
 }
 
@@ -48,8 +50,6 @@ int main(int, char**) {
   test();
   static_assert(test());
   return 0;
-
-    return 0;
 }
 } // libcis_ns_iterators_iterator_primitives_range_iter_ops_range_iter_ops_next_iterator_ab11c6fb (libcis)
 

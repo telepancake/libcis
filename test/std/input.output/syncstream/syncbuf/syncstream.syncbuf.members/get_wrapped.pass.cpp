@@ -1,4 +1,4 @@
-// transferred+adapted from libc++ by tools/transfer.py (slug=input_output_syncstream_syncbuf_syncstream_syncbuf_members_get_wrapped_deb45f29).
+// transferred+adapted from libc++ by tools/transfer.py (slug=input_output_syncstream_syncbuf_syncstream_syncbuf_members_get_wrapped).
 //===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -31,7 +31,10 @@ void test() {
   test_buf<T> base(42);
   const std::allocator<T> alloc;
   const test_syncbuf<T> buff(&base, alloc);
-  std::same_as<std::basic_streambuf<T>*> auto wrapped = buff.get_wrapped();
+  auto wrapped = buff.get_wrapped();
+  // libcis: gcc-10 constrained-placeholder defect (dependent constraint
+  // arg); proven -- type check kept as static_assert.
+  static_assert(std::is_same_v<decltype(wrapped), std::basic_streambuf<T>*>);
   assert(static_cast<test_buf<T>*>(wrapped)->id == 42);
   ASSERT_NOEXCEPT(buff.get_wrapped());
 }
@@ -43,8 +46,6 @@ int main(int, char**) {
 #endif
 
   return 0;
-
-    return 0;
 }
 } // libcis_ns_input_output_syncstream_syncbuf_syncstream_syncbuf_members_get_wrapped_deb45f29 (libcis)
 

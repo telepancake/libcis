@@ -1,4 +1,4 @@
-// transferred+adapted from libc++ by tools/transfer.py (slug=iterators_iterator_primitives_range_iter_ops_range_iter_ops_prev_iterator_count_sentinel_d115e8a8).
+// transferred+adapted from libc++ by tools/transfer.py (slug=iterators_iterator_primitives_range_iter_ops_range_iter_ops_prev_iterator_count_sentinel).
 //===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -15,6 +15,7 @@
 
 #include <cassert>
 #include <concepts>
+#include <type_traits> // libcis
 #include <utility>
 
 #include "test_iterators.h"
@@ -25,7 +26,8 @@ constexpr void check(int* first, int* last, std::iter_difference_t<It> n, int* e
   It it(last);
   It sent(first); // for std::ranges::prev, the sentinel *must* have the same type as the iterator
 
-  std::same_as<It> auto result = std::ranges::prev(std::move(it), n, std::move(sent));
+  auto result = std::ranges::prev(std::move(it), n, std::move(sent)); // libcis: gcc-10 rejects constrained placeholder with dependent constraint arg here
+  static_assert(std::is_same_v<decltype(result), It>);
   assert(base(result) == expected);
 }
 
@@ -49,8 +51,6 @@ int main(int, char**) {
   assert(test());
   static_assert(test());
   return 0;
-
-    return 0;
 }
 } // libcis_ns_iterators_iterator_primitives_range_iter_ops_range_iter_ops_prev_iterator_count_sentinel_d115e8a8 (libcis)
 

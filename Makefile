@@ -86,6 +86,7 @@ $(SUPPORT_A): $(LIB_SRCS) | $(GCC_OK)
 transfer: $(XFER_OK) ## Regenerate test/std/ from the corpus (then commit it)
 	python3 tools/gen_transfer.py $(SUBTREE)
 	ninja -f build/build.ninja              # transfer -> manifest -> tripwire
+	python3 tools/apply_overrides.py        # bake in the gcc-10 test_overrides
 	@echo "transfer: regenerated test/std/ -- 'git add test/std' and commit so"
 	@echo "          'make test' can build the tests directly."
 

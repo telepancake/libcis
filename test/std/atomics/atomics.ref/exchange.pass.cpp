@@ -1,4 +1,4 @@
-// transferred+adapted from libc++ by tools/transfer.py (slug=atomics_atomics_ref_exchange_730c7033).
+// transferred+adapted from libc++ by tools/transfer.py (slug=atomics_atomics_ref_exchange).
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -30,13 +30,21 @@ struct TestExchange {
       std::atomic_ref<T> const a(x);
 
       {
-        std::same_as<T> decltype(auto) y = a.exchange(T(2));
+        decltype(auto) y = a.exchange(T(2));
+        // libcis: gcc-10 cannot parse a constrained placeholder with a
+        // dependent constraint argument ('std::same_as<T> decltype(auto) x =');
+        // proven defect (see tools/test_overrides) -- type check kept as static_assert.
+        static_assert(std::is_same_v<decltype(y), T>);
         assert(y == T(1));
         ASSERT_NOEXCEPT(a.exchange(T(2)));
       }
 
       {
-        std::same_as<T> decltype(auto) y = a.exchange(T(3), std::memory_order_seq_cst);
+        decltype(auto) y = a.exchange(T(3), std::memory_order_seq_cst);
+        // libcis: gcc-10 cannot parse a constrained placeholder with a
+        // dependent constraint argument ('std::same_as<T> decltype(auto) x =');
+        // proven defect (see tools/test_overrides) -- type check kept as static_assert.
+        static_assert(std::is_same_v<decltype(y), T>);
         assert(y == T(2));
         ASSERT_NOEXCEPT(a.exchange(T(3), std::memory_order_seq_cst));
       }
@@ -67,8 +75,6 @@ struct TestExchange {
 int main(int, char**) {
   TestEachAtomicType<TestExchange>()();
   return 0;
-
-    return 0;
 }
 } // libcis_ns_atomics_atomics_ref_exchange_730c7033 (libcis)
 

@@ -1,4 +1,4 @@
-// transferred+adapted from libc++ by tools/transfer.py (slug=atomics_atomics_ref_assign_ab92123a).
+// transferred+adapted from libc++ by tools/transfer.py (slug=atomics_atomics_ref_assign).
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -29,7 +29,11 @@ struct TestAssign {
       T x(T(1));
       std::atomic_ref<T> const a(x);
 
-      std::same_as<T> decltype(auto) y = (a = T(2));
+      decltype(auto) y = (a = T(2));
+      // libcis: gcc-10 cannot parse a constrained placeholder with a
+      // dependent constraint argument ('std::same_as<T> decltype(auto) x =');
+      // proven defect (see tools/test_overrides) -- type check kept as static_assert.
+      static_assert(std::is_same_v<decltype(y), T>);
       assert(y == T(2));
       assert(x == T(2));
 
@@ -50,8 +54,6 @@ struct TestAssign {
 int main(int, char**) {
   TestEachAtomicType<TestAssign>()();
   return 0;
-
-    return 0;
 }
 } // libcis_ns_atomics_atomics_ref_assign_ab92123a (libcis)
 
