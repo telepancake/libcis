@@ -1,0 +1,75 @@
+// transferred+adapted from libc++ by tools/transfer.py (slug=input_output_string_streams_stringbuf_stringbuf_assign_member_swap_768a9b4f).
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// <sstream>
+
+// template <class charT, class traits = char_traits<charT>, class Allocator = allocator<charT> >
+// class basic_stringbuf
+
+// void swap(basic_stringbuf& rhs);
+
+#include <sstream>
+#include <cassert>
+
+#include "test_macros.h"
+
+namespace libcis_ns_input_output_string_streams_stringbuf_stringbuf_assign_member_swap_768a9b4f { // libcis
+int main(int, char**)
+{
+    {
+        std::stringbuf buf1("testing");
+        std::stringbuf buf;
+        buf.swap(buf1);
+        assert(buf.str() == "testing");
+        assert(buf1.str() == "");
+    }
+    {
+        std::stringbuf buf1("testing", std::ios_base::in);
+        std::stringbuf buf;
+        buf.swap(buf1);
+        assert(buf.str() == "testing");
+        assert(buf1.str() == "");
+    }
+    {
+        std::stringbuf buf1("testing", std::ios_base::out);
+        std::stringbuf buf;
+        buf.swap(buf1);
+        assert(buf.str() == "testing");
+        assert(buf1.str() == "");
+    }
+#ifndef TEST_HAS_NO_WIDE_CHARACTERS
+    {
+        std::wstringbuf buf1(L"testing");
+        std::wstringbuf buf;
+        buf.swap(buf1);
+        assert(buf.str() == L"testing");
+        assert(buf1.str() == L"");
+    }
+    {
+        std::wstringbuf buf1(L"testing", std::ios_base::in);
+        std::wstringbuf buf;
+        buf.swap(buf1);
+        assert(buf.str() == L"testing");
+        assert(buf1.str() == L"");
+    }
+    {
+        std::wstringbuf buf1(L"testing", std::ios_base::out);
+        std::wstringbuf buf;
+        buf.swap(buf1);
+        assert(buf.str() == L"testing");
+        assert(buf1.str() == L"");
+    }
+#endif // TEST_HAS_NO_WIDE_CHARACTERS
+
+  return 0;
+
+    return 0;
+}
+} // libcis_ns_input_output_string_streams_stringbuf_stringbuf_assign_member_swap_768a9b4f (libcis)
+

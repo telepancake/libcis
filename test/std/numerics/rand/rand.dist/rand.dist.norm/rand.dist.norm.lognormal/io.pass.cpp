@@ -1,0 +1,52 @@
+// transferred+adapted from libc++ by tools/transfer.py (slug=numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_lognormal_io_fdcc790e).
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// UNSUPPORTED: no-localization
+
+// <random>
+
+// template<class RealType = double>
+// class lognormal_distribution
+
+// template <class CharT, class Traits, class RealType>
+// basic_ostream<CharT, Traits>&
+// operator<<(basic_ostream<CharT, Traits>& os,
+//            const lognormal_distribution<RealType>& x);
+
+// template <class CharT, class Traits, class RealType>
+// basic_istream<CharT, Traits>&
+// operator>>(basic_istream<CharT, Traits>& is,
+//            lognormal_distribution<RealType>& x);
+
+#include <random>
+#include <sstream>
+#include <cassert>
+
+#include "test_macros.h"
+
+namespace libcis_ns_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_lognormal_io_fdcc790e { // libcis
+int main(int, char**)
+{
+    {
+        typedef std::lognormal_distribution<> D;
+        D d1(7, 5);
+        std::ostringstream os;
+        os << d1;
+        std::istringstream is(os.str());
+        D d2;
+        is >> d2;
+        assert(d1 == d2);
+    }
+
+  return 0;
+
+    return 0;
+}
+} // libcis_ns_numerics_rand_rand_dist_rand_dist_norm_rand_dist_norm_lognormal_io_fdcc790e (libcis)
+

@@ -1,0 +1,50 @@
+// transferred+adapted from libc++ by tools/transfer.py (slug=depr_depr_str_strstreams_depr_strstreambuf_depr_strstreambuf_virtuals_seekpos_91294670).
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// ADDITIONAL_COMPILE_FLAGS: -D_LIBCPP_DISABLE_DEPRECATION_WARNINGS -D_LIBCPP_ENABLE_CXX26_REMOVED_STRSTREAM
+
+// <strstream>
+
+// class strstreambuf
+
+// pos_type seekpos(pos_type sp,
+//                  ios_base::openmode which = ios_base::in | ios_base::out);
+
+#include <strstream>
+#include <cassert>
+
+#include "test_macros.h"
+
+namespace libcis_ns_depr_depr_str_strstreams_depr_strstreambuf_depr_strstreambuf_virtuals_seekpos_91294670 { // libcis
+int main(int, char**)
+{
+    {
+        char buf[] = "0123456789";
+        std::strstreambuf sb(buf, 0);
+        assert(sb.pubseekpos(3, std::ios_base::out) == -1);
+        assert(sb.pubseekpos(3, std::ios_base::in | std::ios_base::out) == -1);
+        assert(sb.pubseekpos(3, std::ios_base::in) == 3);
+        assert(sb.sgetc() == '3');
+    }
+    {
+        char buf[] = "0123456789";
+        std::strstreambuf sb(buf, 0, buf);
+        assert(sb.pubseekpos(3, std::ios_base::in) == 3);
+        assert(sb.pubseekpos(3, std::ios_base::out | std::ios_base::in) == 3);
+        assert(sb.pubseekpos(3, std::ios_base::out) == 3);
+        assert(sb.sputc('a') == 'a');
+        assert(sb.str() == std::string("012a456789"));
+    }
+
+  return 0;
+
+    return 0;
+}
+} // libcis_ns_depr_depr_str_strstreams_depr_strstreambuf_depr_strstreambuf_virtuals_seekpos_91294670 (libcis)
+

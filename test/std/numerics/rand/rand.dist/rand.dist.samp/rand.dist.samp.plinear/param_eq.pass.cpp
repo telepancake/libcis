@@ -1,0 +1,50 @@
+// transferred+adapted from libc++ by tools/transfer.py (slug=numerics_rand_rand_dist_rand_dist_samp_rand_dist_samp_plinear_param_eq_98a7fdf0).
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// <random>
+
+// template<class RealType = double>
+// class piecewise_linear_distribution
+// {
+//     class param_type;
+
+#include <random>
+#include <limits>
+#include <cassert>
+
+#include "test_macros.h"
+
+namespace libcis_ns_numerics_rand_rand_dist_rand_dist_samp_rand_dist_samp_plinear_param_eq_98a7fdf0 { // libcis
+int main(int, char**)
+{
+    {
+        typedef std::piecewise_linear_distribution<> D;
+        typedef D::param_type P;
+        double b[] = {10, 14, 16, 17};
+        double p[] = {25, 62.5, 12.5, 0};
+        P p1(b, b+4, p);
+        P p2(b, b+4, p);
+        assert(p1 == p2);
+    }
+    {
+        typedef std::piecewise_linear_distribution<> D;
+        typedef D::param_type P;
+        double b[] = {10, 14, 16, 17};
+        double p[] = {25, 62.5, 12.5, 0};
+        P p1(b, b+3, p);
+        P p2(b, b+4, p);
+        assert(p1 != p2);
+    }
+
+  return 0;
+
+    return 0;
+}
+} // libcis_ns_numerics_rand_rand_dist_rand_dist_samp_rand_dist_samp_plinear_param_eq_98a7fdf0 (libcis)
+

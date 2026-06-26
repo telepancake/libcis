@@ -1,0 +1,44 @@
+// transferred+adapted from libc++ by tools/transfer.py (slug=thread_futures_futures_shared_future_default_546c99eb).
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// UNSUPPORTED: no-threads
+
+// <future>
+
+// class shared_future<R>
+
+// shared_future();
+
+#include <future>
+#include <cassert>
+
+#include "test_macros.h"
+
+namespace libcis_ns_thread_futures_futures_shared_future_default_546c99eb { // libcis
+int main(int, char**)
+{
+    {
+        std::shared_future<int> f;
+        assert(!f.valid());
+    }
+    {
+        std::shared_future<int&> f;
+        assert(!f.valid());
+    }
+    {
+        std::shared_future<void> f;
+        assert(!f.valid());
+    }
+
+  return 0;
+
+    return 0;
+}
+} // libcis_ns_thread_futures_futures_shared_future_default_546c99eb (libcis)
+

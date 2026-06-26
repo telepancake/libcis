@@ -1,0 +1,37 @@
+// transferred+adapted from libc++ by tools/transfer.py (slug=diagnostics_syserr_syserr_syserr_syserr_syserr_members_ctor_error_code_211db680).
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// <system_error>
+
+// class system_error
+
+// system_error(error_code ec);
+
+// Test is slightly non-portable
+
+#include <system_error>
+#include <string>
+#include <cassert>
+
+#include "test_macros.h"
+
+namespace libcis_ns_diagnostics_syserr_syserr_syserr_syserr_syserr_members_ctor_error_code_211db680 { // libcis
+int main(int, char**) {
+    std::system_error se(static_cast<int>(std::errc::not_a_directory),
+                         std::generic_category(), "some text");
+    assert(se.code() == std::make_error_code(std::errc::not_a_directory));
+    std::string what_message(se.what());
+    assert(what_message.find("Not a directory") != std::string::npos);
+
+    return 0;
+
+    return 0;
+}
+} // libcis_ns_diagnostics_syserr_syserr_syserr_syserr_syserr_members_ctor_error_code_211db680 (libcis)
+

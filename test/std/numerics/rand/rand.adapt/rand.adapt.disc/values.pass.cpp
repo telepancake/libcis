@@ -1,0 +1,79 @@
+// transferred+adapted from libc++ by tools/transfer.py (slug=numerics_rand_rand_adapt_rand_adapt_disc_values_416a923c).
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// <random>
+
+// template<class Engine, size_t p, size_t r>
+// class discard_block_engine
+// {
+// public:
+//     // types
+//     typedef typename Engine::result_type result_type;
+//
+//     // engine characteristics
+//     static constexpr size_t block_size = p;
+//     static constexpr size_t used_block = r;
+//     static constexpr result_type min() { return Engine::min(); }
+//     static constexpr result_type max() { return Engine::max(); }
+
+#include <random>
+#include <type_traits>
+#include <cassert>
+
+#include "test_macros.h"
+
+namespace libcis_ns_numerics_rand_rand_adapt_rand_adapt_disc_values_416a923c { // libcis
+template <class T>
+void where(const T &) {}
+
+void
+test1()
+{
+    typedef std::ranlux24 E;
+    static_assert((E::block_size == 223), "");
+    static_assert((E::used_block == 23), "");
+#if TEST_STD_VER >= 11
+    static_assert((E::min() == 0), "");
+    static_assert((E::max() == 0xFFFFFF), "");
+#else
+    assert((E::min() == 0));
+    assert((E::max() == 0xFFFFFF));
+#endif
+    where(E::block_size);
+    where(E::used_block);
+}
+
+void
+test2()
+{
+    typedef std::ranlux48 E;
+    static_assert((E::block_size == 389), "");
+    static_assert((E::used_block == 11), "");
+#if TEST_STD_VER >= 11
+    static_assert((E::min() == 0), "");
+    static_assert((E::max() == 0xFFFFFFFFFFFFull), "");
+#else
+    assert((E::min() == 0));
+    assert((E::max() == 0xFFFFFFFFFFFFull));
+#endif
+    where(E::block_size);
+    where(E::used_block);
+}
+
+int main(int, char**)
+{
+    test1();
+    test2();
+
+  return 0;
+
+    return 0;
+}
+} // libcis_ns_numerics_rand_rand_adapt_rand_adapt_disc_values_416a923c (libcis)
+

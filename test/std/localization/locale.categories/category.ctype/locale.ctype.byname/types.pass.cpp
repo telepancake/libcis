@@ -1,0 +1,72 @@
+// transferred+adapted from libc++ by tools/transfer.py (slug=localization_locale_categories_category_ctype_locale_ctype_byname_types_91b2ee10).
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// REQUIRES: locale.en_US.UTF-8
+
+// <locale>
+
+// template <class CharT>
+// class ctype_byname
+//     : public ctype<CharT>
+// {
+// public:
+//     explicit ctype_byname(const char*, size_t = 0);
+//     explicit ctype_byname(const string&, size_t = 0);
+//
+// protected:
+//     ~ctype_byname();
+// };
+
+#include <locale>
+#include <type_traits>
+#include <cassert>
+
+#include "test_macros.h"
+#include "platform_support.h" // locale name macros
+
+namespace libcis_ns_localization_locale_categories_category_ctype_locale_ctype_byname_types_91b2ee10 { // libcis
+int main(int, char**)
+{
+    {
+        std::locale l(LOCALE_en_US_UTF_8);
+        {
+            assert(std::has_facet<std::ctype_byname<char> >(l));
+            assert(&std::use_facet<std::ctype<char> >(l)
+                == &std::use_facet<std::ctype_byname<char> >(l));
+        }
+#ifndef TEST_HAS_NO_WIDE_CHARACTERS
+        {
+            assert(std::has_facet<std::ctype_byname<wchar_t> >(l));
+            assert(&std::use_facet<std::ctype<wchar_t> >(l)
+                == &std::use_facet<std::ctype_byname<wchar_t> >(l));
+        }
+#endif
+    }
+    {
+        std::locale l("C");
+        {
+            assert(std::has_facet<std::ctype_byname<char> >(l));
+            assert(&std::use_facet<std::ctype<char> >(l)
+                == &std::use_facet<std::ctype_byname<char> >(l));
+        }
+#ifndef TEST_HAS_NO_WIDE_CHARACTERS
+        {
+            assert(std::has_facet<std::ctype_byname<wchar_t> >(l));
+            assert(&std::use_facet<std::ctype<wchar_t> >(l)
+                == &std::use_facet<std::ctype_byname<wchar_t> >(l));
+        }
+#endif
+    }
+
+  return 0;
+
+    return 0;
+}
+} // libcis_ns_localization_locale_categories_category_ctype_locale_ctype_byname_types_91b2ee10 (libcis)
+

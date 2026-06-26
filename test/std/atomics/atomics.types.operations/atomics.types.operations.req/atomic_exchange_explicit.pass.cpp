@@ -1,0 +1,60 @@
+// transferred+adapted from libc++ by tools/transfer.py (slug=atomics_atomics_types_operations_atomics_types_operations_req_atomic_exchange_explicit_d4fa7738).
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// XFAIL: !has-1024-bit-atomics
+
+// <atomic>
+
+// template <class T>
+//     T
+//     atomic_exchange_explicit(volatile atomic<T>*, atomic<T>::value_type,
+//                              memory_order) noexcept;
+//
+// template <class T>
+//     T
+//     atomic_exchange_explicit(atomic<T>*, atomic<T>::value_type,
+//                              memory_order) noexcept;
+
+#include <atomic>
+#include <type_traits>
+#include <cassert>
+
+#include "test_macros.h"
+#include "atomic_helpers.h"
+
+namespace libcis_ns_atomics_atomics_types_operations_atomics_types_operations_req_atomic_exchange_explicit_d4fa7738 { // libcis
+template <class T>
+struct TestFn {
+  void operator()() const {
+    typedef std::atomic<T> A;
+    A t(T(1));
+    assert(std::atomic_exchange_explicit(&t, T(2), std::memory_order_seq_cst)
+           == T(1));
+    assert(t == T(2));
+    volatile A vt(T(3));
+    assert(std::atomic_exchange_explicit(&vt, T(4), std::memory_order_seq_cst)
+           == T(3));
+    assert(vt == T(4));
+
+    ASSERT_NOEXCEPT(std::atomic_exchange_explicit(&t, T(2), std::memory_order_seq_cst));
+    ASSERT_NOEXCEPT(std::atomic_exchange_explicit(&vt, T(4), std::memory_order_seq_cst));
+  }
+};
+
+
+int main(int, char**)
+{
+    TestEachAtomicType<TestFn>()();
+
+  return 0;
+
+    return 0;
+}
+} // libcis_ns_atomics_atomics_types_operations_atomics_types_operations_req_atomic_exchange_explicit_d4fa7738 (libcis)
+

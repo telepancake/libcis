@@ -1,0 +1,51 @@
+// transferred+adapted from libc++ by tools/transfer.py (slug=thread_thread_mutex_thread_lock_thread_lock_shared_thread_lock_shared_cons_mutex_adopt_lock_0cf90838).
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// UNSUPPORTED: no-threads
+// UNSUPPORTED: c++03, c++11
+
+// <shared_mutex>
+
+// template <class Mutex> class shared_lock;
+
+// shared_lock(mutex_type& m, adopt_lock_t);
+
+#include <shared_mutex>
+#include <cassert>
+#include <mutex>
+#include "nasty_containers.h"
+
+#include "test_macros.h"
+
+namespace libcis_ns_thread_thread_mutex_thread_lock_thread_lock_shared_thread_lock_shared_cons_mutex_adopt_lock_0cf90838 { // libcis
+int main(int, char**)
+{
+    {
+    typedef std::shared_timed_mutex M;
+    M m;
+    m.lock();
+    std::unique_lock<M> lk(m, std::adopt_lock);
+    assert(lk.mutex() == std::addressof(m));
+    assert(lk.owns_lock() == true);
+    }
+    {
+    typedef nasty_mutex M;
+    M m;
+    m.lock();
+    std::unique_lock<M> lk(m, std::adopt_lock);
+    assert(lk.mutex() == std::addressof(m));
+    assert(lk.owns_lock() == true);
+    }
+
+  return 0;
+
+    return 0;
+}
+} // libcis_ns_thread_thread_mutex_thread_lock_thread_lock_shared_thread_lock_shared_cons_mutex_adopt_lock_0cf90838 (libcis)
+

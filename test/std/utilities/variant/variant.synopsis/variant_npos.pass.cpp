@@ -1,0 +1,29 @@
+// transferred+adapted from libc++ by tools/transfer.py (slug=utilities_variant_variant_synopsis_variant_npos_dd6179c5).
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// UNSUPPORTED: c++03, c++11, c++14
+
+// <variant>
+
+// constexpr size_t variant_npos = -1;
+
+#include <variant>
+
+#include "test_macros.h"
+
+namespace libcis_ns_utilities_variant_variant_synopsis_variant_npos_dd6179c5 { // libcis
+int main(int, char**) {
+  static_assert(std::variant_npos == static_cast<std::size_t>(-1), "");
+
+  return 0;
+
+    return 0;
+}
+} // libcis_ns_utilities_variant_variant_synopsis_variant_npos_dd6179c5 (libcis)
+

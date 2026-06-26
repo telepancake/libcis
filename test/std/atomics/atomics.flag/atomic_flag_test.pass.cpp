@@ -1,0 +1,45 @@
+// transferred+adapted from libc++ by tools/transfer.py (slug=atomics_atomics_flag_atomic_flag_test_674dfeb0).
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// <atomic>
+
+// struct atomic_flag
+
+// bool atomic_flag_test(const volatile atomic_flag*);
+// bool atomic_flag_test(const atomic_flag*);
+
+#include <atomic>
+#include <cassert>
+
+#include "test_macros.h"
+
+namespace libcis_ns_atomics_atomics_flag_atomic_flag_test_674dfeb0 { // libcis
+int main(int, char**)
+{
+    {
+        std::atomic_flag f;
+        f.clear();
+        assert(std::atomic_flag_test(&f) == 0);
+        assert(f.test_and_set() == 0);
+        assert(std::atomic_flag_test(&f) == 1);
+    }
+    {
+        volatile std::atomic_flag f;
+        f.clear();
+        assert(std::atomic_flag_test(&f) == 0);
+        assert(f.test_and_set() == 0);
+        assert(std::atomic_flag_test(&f) == 1);
+    }
+
+    return 0;
+
+    return 0;
+}
+} // libcis_ns_atomics_atomics_flag_atomic_flag_test_674dfeb0 (libcis)
+

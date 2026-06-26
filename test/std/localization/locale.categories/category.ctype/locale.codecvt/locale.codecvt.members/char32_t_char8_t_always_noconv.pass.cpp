@@ -1,0 +1,34 @@
+// transferred+adapted from libc++ by tools/transfer.py (slug=localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_char8_t_always_noconv_cd823a90).
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+// UNSUPPORTED: c++03, c++11, c++14, c++17
+
+// XFAIL: availability-char8_t_support-missing
+
+// <locale>
+
+// template <> class codecvt<char32_t, char8_t, mbstate_t>
+
+// bool always_noconv() const noexcept;
+
+#include <cassert>
+#include <locale>
+
+namespace libcis_ns_localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_char8_t_always_noconv_cd823a90 { // libcis
+int main(int, char**) {
+  using F = std::codecvt<char32_t, char8_t, std::mbstate_t>;
+  const F& f = std::use_facet<F>(std::locale::classic());
+  assert(!f.always_noconv());
+  static_assert(noexcept(f.always_noconv()));
+  return 0;
+
+    return 0;
+}
+} // libcis_ns_localization_locale_categories_category_ctype_locale_codecvt_locale_codecvt_members_char32_t_char8_t_always_noconv_cd823a90 (libcis)
+
