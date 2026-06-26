@@ -125,30 +125,42 @@ PCH_PATH = cfg.PCH_PATH
 PER_FILE_TIMEOUT = 60  # seconds; a stuck/crashed libclang parse must not stall the suite
 
 
+def _save_empty_pch(idx, mega, why):
+    """Degrade to a VALID but empty PCH (preloads nothing).  Keeps the ninja pch
+    edge's output present and lets the workers run -- they include the PCH only
+    when it exists (which it now does) and parse without the std-header preload
+    (slower, identical output).  Built with the same PARSE_ARGS so clang accepts
+    it on consumption."""
+    print(f"PCH: {why}; building an empty PCH (parses run without the "
+          "std-header preload)", flush=True)
+    open(mega, "w").write("")
+    tu = idx.parse(mega, args=["-x", "c++-header"] + PARSE_ARGS,
+                   options=ci.TranslationUnit.PARSE_INCOMPLETE)
+    tu.save(PCH_PATH)
+    return ["-include-pch", PCH_PATH]
+
+
 def build_pch():
     _ensure_libclang()
+    idx = ci.Index.create()
+    mega = os.path.join(ROOT, "build", "transfer_mega.h")
+    os.makedirs(os.path.dirname(mega), exist_ok=True)
     inc_dir = cfg.libcxx_include_dir()
     if inc_dir is None:
-        print("PCH: no libc++ headers found (set LIBCXX_INCLUDE); "
-              "parsing without PCH", flush=True)
-        return []
+        return _save_empty_pch(idx, mega, "no libc++ headers found (set LIBCXX_INCLUDE)")
     hdrs = sorted(h for h in os.listdir(inc_dir)
                   if "." not in h and not h.startswith("__")
                   and os.path.isfile(os.path.join(inc_dir, h)))
-    mega = os.path.join(ROOT, "build", "transfer_mega.h")
-    os.makedirs(os.path.dirname(mega), exist_ok=True)
     with open(mega, "w") as fh:
         fh.write("".join(f"#include <{h}>\n" for h in hdrs))
         fh.write('#include "test_macros.h"\n')
-    idx = ci.Index.create()
     # -x c++-header: libclang would otherwise treat the .h as a C header,
     # which is fatal together with -std=gnu++2c.
     tu = idx.parse(mega, args=["-x", "c++-header"] + PARSE_ARGS,
                    options=ci.TranslationUnit.PARSE_INCOMPLETE)
     hard = [d for d in tu.diagnostics if d.severity >= ci.Diagnostic.Error]
     if hard:
-        print(f"PCH: build failed ({hard[0]}); parsing without PCH", flush=True)
-        return []
+        return _save_empty_pch(idx, mega, f"build failed ({hard[0]})")
     tu.save(PCH_PATH)
     return ["-include-pch", PCH_PATH]
 
@@ -280,6 +292,20 @@ HOSTILE = {
 MAX_EXCISIONS = 25
 
 
+def _safe_kind(cur):
+    """cindex.py raises ValueError for CXCursorKind values its (version-bound)
+    CursorKind table doesn't list -- e.g. clang's ConceptSpecializationExpr (153)
+    / RequiresExpr (154), absent from pre-20 bindings but present in concepts
+    tests.  An unrecognized kind is by definition none of our HOSTILE kinds, so
+    return None and let the walk treat it as a plain node instead of aborting the
+    whole file.  Under matched (clang-20) bindings every kind resolves and this
+    is a no-op."""
+    try:
+        return cur.kind
+    except ValueError:
+        return None
+
+
 def find_hostile(tu, path):
     """[(stmt_cursor_to_remove, why)] for every unguarded hostile construct in
     the main file; raises TransformError if one is not inside a removable
@@ -292,20 +318,21 @@ def find_hostile(tu, path):
         # smallest ancestor (or node itself) whose parent is a CompoundStmt
         chain = stack + [node]
         for i in range(len(chain) - 1, 0, -1):
-            if chain[i - 1].kind == ci.CursorKind.COMPOUND_STMT:
+            if _safe_kind(chain[i - 1]) == ci.CursorKind.COMPOUND_STMT:
                 return chain[i]
         return None
 
     def walk(cur):
         stack.append(cur)
         for ch in cur.get_children():
-            if ch.kind in HOSTILE:
+            k = _safe_kind(ch)
+            if k in HOSTILE:
                 stmt = enclosing_stmt(ch)
                 if stmt is None:
                     raise TransformError(
-                        f"unremovable {HOSTILE[ch.kind]} construct at "
+                        f"unremovable {HOSTILE[k]} construct at "
                         f"{ch.location.line}:{ch.location.column}")
-                out.append((stmt, HOSTILE[ch.kind]))
+                out.append((stmt, HOSTILE[k]))
                 continue  # whole statement goes; no need to descend
             walk(ch)
         stack.pop()

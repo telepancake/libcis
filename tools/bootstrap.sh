@@ -56,6 +56,8 @@ build_gcc() {
         --disable-werror --disable-libsanitizer --program-suffix=-10
     make -j"$(nproc)"
     make install
+    cd "$ROOT"   # leave gcc-build BEFORE removing it, or the next step inherits a
+                 # deleted CWD ("Unable to read current working directory").
     rm -rf "$TC/src/gcc-build" "$TC/src/gcc-$GCC_VER"   # reclaim space (keep tarball)
     "$TC/gcc/bin/g++-10" --version | head -1
 }
