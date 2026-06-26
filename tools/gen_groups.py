@@ -121,7 +121,22 @@ def group_source(members):
                     inc.append(ln if ln.endswith("\n") else ln + "\n")
             else:
                 body.append(ln)
-        bodies.append("".join(body) + "\n")
+        # Per-file macro isolation.  #define/#undef are preprocessor-global, so a
+        # helper macro one test defines (e.g. `#define SV(S) ...`) leaks into the
+        # next test concatenated into this TU and hijacks its own `SV` (a type,
+        # a different-arity macro, ...) -- spurious errors that never occur when
+        # the file is compiled alone.  Bracket each file's body with push_macro/
+        # pop_macro for every name it defines or undefs, restoring the macro
+        # state (defined-by-a-header or undefined) the next file expects.
+        touched, seen_t = [], set()
+        for ln in body:
+            m = re.match(r"\s*#\s*(?:define|undef)\s+([A-Za-z_]\w*)", ln)
+            if m and m.group(1) not in seen_t:
+                seen_t.add(m.group(1))
+                touched.append(m.group(1))
+        push = "".join(f'#pragma push_macro("{n}")\n' for n in touched)
+        pop = "".join(f'#pragma pop_macro("{n}")\n' for n in touched)
+        bodies.append(push + "".join(body) + "\n" + pop + "\n")
         if r["kind"] == "run" and r.get("entry"):
             # fork-per-test: each test runs in its own child, so an abort/
             # crash (assert, segfault, throw-under-fno-exceptions) is contained
