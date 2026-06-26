@@ -98,9 +98,25 @@ build_llvm() {
     ls "$TC"/llvm/lib/libclang.so*
 }
 
+# Two scopes.  The library + the COMMITTED tests only need g++-10, so that is
+# the default (`bootstrap.sh` / `make bootstrap`).  The transfer additionally
+# needs clang/libclang + the libc++ corpus, built only on demand
+# (`bootstrap.sh transfer` / `make bootstrap-transfer`) -- the expensive half
+# the committed test/std/ lets the common case skip entirely.
+MODE="${1:-gcc}"
+
 mkdir -p "$TC"
-fetch_sources
 build_gcc
-build_llvm
-touch "$TC/.bootstrap-ok"
-say "done — toolchain ready under ./toolchain"
+touch "$TC/.gcc-ok"
+case "$MODE" in
+    gcc)
+        say "done — library/test toolchain (g++-10) ready under ./toolchain"
+        say "  (run 'tools/bootstrap.sh transfer' to add the transfer toolchain)" ;;
+    transfer|full)
+        fetch_sources
+        build_llvm
+        touch "$TC/.bootstrap-ok"
+        say "done — full toolchain (g++-10 + transfer) ready under ./toolchain" ;;
+    *)
+        echo "usage: tools/bootstrap.sh [gcc|transfer]" >&2; exit 2 ;;
+esac

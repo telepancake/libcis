@@ -206,8 +206,13 @@ def emit_ninja():
     for d in sorted(groups):
         key = gkey(d)
         src = f"{SRC_DIR}/{key}.cpp"
-        recs = " ".join(f"build/recs/{r['file']}.rec.json" for r in groups[d])
-        L += [f"build {src}: gengroup {recs} | tools/gen_groups.py {MANIFEST}",
+        # Depend on the COMMITTED test sources, not the transfer's build/recs/
+        # byproducts: group_source() reads test/std/<file> directly and the recs
+        # only ever carried the same info the manifest already has.  This keeps
+        # build/groups.ninja self-contained -- buildable from a checkout that has
+        # only the committed test/std/ (no corpus, no libclang, no transfer run).
+        srcs = " ".join(f"test/std/{r['file']}" for r in groups[d])
+        L += [f"build {src}: gengroup {srcs} | tools/gen_groups.py {MANIFEST} {EXCLUSIONS}",
               f"  key = {key}"]
         for be in BACKENDS:
             dep = f" | {suplib}" if be == "libcis" else ""

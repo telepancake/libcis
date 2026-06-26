@@ -13,20 +13,30 @@ It fails loudly on the first real error (unlike the conformance board, which
 counts missing results as red):
 
 ```sh
-make bootstrap # download the pinned toolchain into ./toolchain (first run only)
-make doctor   # toolchain present AND a real smoke build of the library
+make bootstrap # build the library/test toolchain (g++-10) into ./toolchain (first run only)
 make smoke    # just: does the library compile+link+run? (no test corpus needed)
 make support  # build the mandatory libsupport.a on its own
-make test     # full pipeline: transfer -> build groups -> board
+make test     # build the COMMITTED tests + conformance board (no transfer)
 make gate SUBTREE=thread   # per-file CLEAN/NOT-CLEAN check for one subtree
 ```
 
-**`make bootstrap` fetches everything the pipeline needs into `./toolchain`**
-(see section 1), so you do not have to install — or version-match — g++-10,
-clang, libc++ headers, and the test corpus yourself. Every other target depends
-on it, so a bare `make test` bootstraps first. To override the library compiler
-instead of using the bootstrapped one: `make CXX=g++-13`. The sections below
-document each underlying stage.
+The transferred tests (`test/std/`) are **committed**, so the everyday path —
+`make bootstrap` then `make test` — needs only **g++-10** and never runs the
+transfer. `make bootstrap` builds just that compiler from source into
+`./toolchain` (no install, no version-matching). To override the library
+compiler instead of using the bootstrapped one: `make CXX=g++-13`.
+
+You only need the heavier **transfer toolchain** (clang/libclang + the libc++
+corpus) to *regenerate* the tests — when the corpus or the transfer tool itself
+changes:
+
+```sh
+make bootstrap-transfer    # add clang + the libc++ corpus to ./toolchain
+make transfer              # rewrite test/std/ from the corpus...
+git add test/std && git commit -m "transfer: regenerate tests"   # ...then commit it
+```
+
+The sections below document each underlying stage.
 
 ---
 
@@ -81,10 +91,13 @@ the doctor** to see exactly what is resolved (and what, if anything, is missing)
 make doctor        # or: python3 tools/doctor.py
 ```
 
-The committed `test/std/` tree and `test/std/manifest.json` are **generated**
-(git-ignored). On a fresh checkout you must run the transfer (section 3) before
-running tests. `./toolchain` is git-ignored too; `make distclean` removes it to
-force a re-bootstrap.
+The `test/std/` tree and `test/std/manifest.json` are **generated** by the
+transfer (section 3) but **committed**, so a fresh checkout can build and run the
+tests with g++-10 alone — no corpus, no libclang. Regenerate and recommit them
+(`make transfer`) only when the corpus or the transfer tool changes; the build
+graph that consumes them depends on the committed sources, not on the transfer's
+`build/recs/` byproducts. `./toolchain` is git-ignored; `make distclean` removes
+it to force a re-bootstrap.
 
 ### Using your own libc++ test corpus
 
@@ -134,11 +147,14 @@ g++-10 -std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -nostdinc++ -Iinclude
 
 ---
 
-## 3. Running the transfer (generating the tests)
+## 3. Running the transfer (regenerating the tests)
 
-The transfer turns `$LIBCXX/std/**` (the libc++ test corpus, section 1) into
-`test/std/**` plus `test/std/manifest.json` (the list of transferred tests with
-their recorded entry points). It is wired as an incremental ninja graph.
+`test/std/` is committed, so you only run this to **regenerate** it — after
+bumping the corpus or editing the transfer tool. It needs the transfer toolchain
+(`make bootstrap-transfer`). The transfer turns `$LIBCXX/std/**` (the libc++ test
+corpus, section 1) into `test/std/**` plus `test/std/manifest.json` (the list of
+transferred tests with their recorded entry points). It is wired as an
+incremental ninja graph.
 
 ```sh
 # 1. Generate the build graph (build/build.ninja + build/transfer.ninja).
@@ -149,17 +165,14 @@ python3 tools/gen_transfer.py thread time     # just these
 # 2. Run the transfer: rewrites the tests, writes the manifest, runs tripwire.
 ninja -f build/build.ninja
 
-# 3. Build + run the consolidated "group" binaries.  THIS IS A SEPARATE STEP:
-#    build/build.ninja pulls groups.ninja in via `subninja`, and ninja only
-#    regenerates the TOP-LEVEL -f file, never a subninja'd one -- so the
-#    gengroups edge in build/build.ninja never fires on its own and the groups
-#    stage is silently skipped (you'll see "ninja: no work to do" with no
-#    libsupport.a).  Drive it explicitly:
-python3 tools/gen_groups.py --ninja           # materialize the real groups.ninja
-ninja -f build/groups.ninja libcis            # libsupport.a + every group result
+# 3. Commit the regenerated sources so `make test` can build them directly.
+git add test/std && git commit -m "transfer: regenerate tests"
 ```
 
-> The whole sequence above is what `make test` runs for you.
+> Steps 1–2 are what `make transfer` runs for you. Building the committed tests
+> afterwards (`gen_groups.py --ninja` → `ninja -f build/groups.ninja libcis`) is a
+> separate stage that needs no corpus — it is what `make test` runs, and it reads
+> the committed `test/std/` directly rather than the transfer's `build/recs/`.
 
 What the steps do, in order:
 
@@ -313,7 +326,7 @@ See `bench/README.md` for both.
 include/        the library (header-only; user headers + bits/ internals)
 src/support.cpp runtime glue: operator new/delete etc. (linked as libsupport.a)
 bench/          compiled code-size benchmark + size journal (see bench/README.md)
-test/std/       generated: transferred tests + manifest.json + support/  (git-ignored)
+test/std/       committed: transferred tests + manifest.json + support/ (regen: make transfer)
 tools/
   config.py          single source of truth for toolchain/paths (env-overridable)
   doctor.py          probe the toolchain; report what's present/missing + the fix
