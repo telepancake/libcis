@@ -1,0 +1,583 @@
+// <deque> — lean profile. Block-based deque with a small control object.
+// Target: gcc-10.2, -std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti
+//
+// Representation
+// --------------
+// The container object holds exactly three words:
+//     T**    table_;   // lean block of block pointers (bits/lean.h); null = none
+//     size_t off_;     // absolute index of the front element (from table_[0])
+//     size_t size_;    // element count
+// => sizeof(deque) == 3 * sizeof(void*) == 24 (static_assert'd below).
+//
+// Blocks hold a fixed BYTE budget (512, at least one element):
+//     be = max(1, 512 / sizeof(T))   // constexpr; == detail::lean_deque_block_elems
+// The block table's occupancy is DERIVED, never stored in the object: the live
+// blocks are table slots [off_/be, (off_+size_-1)/be]; the table's own capacity
+// comes from malloc_usable_size (bits/lean.h). Table front/back spare is just
+// the unused slots below / above that range.
+//
+// A push at either end never relocates an element: it may add a block and, when
+// the table is full on that side, memmove the block *pointers* to recentre —
+// the blocks (and thus every element address) stay put. Reference stability at
+// both ends therefore holds exactly, as the standard requires. Iterators are an
+// (owner, logical-index) pair: O(1) random access, and — unlike element
+// references — invalidated by end insertions (also standard-conforming).
+//
+// Deviations from the standard (per lean/README.md): only std::allocator<T> is
+// supported (static_assert); over-aligned T is rejected (static_assert); no pmr
+// alias; container operations are not constexpr; allocation failure traps.
+#pragma once
+
+#include <bits/lean_deque.h>
+#include <list>   // detail::container_is_allocator_v (shared with <list>)
+#include <memory>
+#include <iterator>
+#include <algorithm>
+#include <compare>
+#include <initializer_list>
+#include <limits>
+#include <utility>
+#include <type_traits>
+#include <cstddef>
+
+namespace std {
+
+//===----------------------------------------------------------------------===//
+// deque<T, Allocator>
+//===----------------------------------------------------------------------===//
+
+template<class T, class Allocator = allocator<T>>
+class deque {
+    static_assert(detail::lean_allocator_ok<T, Allocator>,
+        "lean deque supports only std::allocator<T>");
+    static_assert(alignof(T) <= alignof(max_align_t),
+        "lean deque rejects over-aligned element types");
+
+public:
+    using value_type      = T;
+    using allocator_type  = Allocator;
+    using size_type       = size_t;
+    using difference_type = ptrdiff_t;
+    using reference       = value_type&;
+    using const_reference = const value_type&;
+    using pointer         = value_type*;
+    using const_pointer   = const value_type*;
+
+private:
+    // Elements per block; MUST match detail::lean_deque_block_elems(sizeof(T)).
+    static constexpr size_type be =
+        sizeof(T) > detail::lean_deque_block_bytes
+            ? size_type(1)
+            : detail::lean_deque_block_bytes / sizeof(T);
+
+    static const detail::lean_ops& ops() noexcept { return detail::lean_ops_for<T>; }
+
+    T**       table_;
+    size_type off_;
+    size_type size_;
+
+    // --- element address for absolute index `abs` (abs in [0, table span)) ---
+    T* addr(size_type abs) const noexcept {
+        return static_cast<T*>(table_[abs / be]) + abs % be;
+    }
+    // --- structural helpers (thin per-T wrappers over the erased kernels) ---
+
+    // Establish table + a single centred block for the first element; the
+    // caller then constructs at addr(off_) and sets size_ = 1.
+    void init_first() {
+        if (!table_)
+            table_ = reinterpret_cast<T**>(detail::lean_deque_table_alloc(8));
+        size_type cap = detail::lean_deque_table_cap(reinterpret_cast<void**>(table_));
+        size_type lo = cap / 2;
+        table_[lo] = static_cast<T*>(detail::lean_deque_alloc_block(&ops()));
+        off_ = lo * be + be / 2;
+    }
+
+    void apply_shift(long shift) noexcept {
+        off_ = static_cast<size_type>(static_cast<long>(off_) + shift * static_cast<long>(be));
+    }
+
+    // Guarantee the slot for absolute index off_-1 owns a block (extend front).
+    void reserve_front_cell() {
+        if (off_ % be != 0)
+            return;                                   // room in current front block
+        size_type lo = off_ / be;
+        if (lo == 0) {
+            size_type last = (off_ + size_ - 1) / be;
+            detail::lean_deque_reserve r = detail::lean_deque_reserve_front(
+                reinterpret_cast<void**>(table_), lo, last - lo + 1);
+            table_ = reinterpret_cast<T**>(r.table);
+            apply_shift(r.shift);
+            lo = off_ / be;                           // now >= 1
+        }
+        table_[lo - 1] = static_cast<T*>(detail::lean_deque_alloc_block(&ops()));
+    }
+
+    // Guarantee the slot for absolute index off_+size_ owns a block (extend back).
+    void reserve_back_cell() {
+        size_type back_slot = (off_ + size_ - 1) / be;
+        if ((off_ + size_) / be == back_slot)
+            return;                                   // room in current back block
+        size_type lo = off_ / be;
+        detail::lean_deque_reserve r = detail::lean_deque_reserve_back(
+            reinterpret_cast<void**>(table_), lo, back_slot - lo + 1);
+        table_ = reinterpret_cast<T**>(r.table);
+        apply_shift(r.shift);
+        table_[(off_ + size_) / be] =
+            static_cast<T*>(detail::lean_deque_alloc_block(&ops()));
+    }
+
+    void destroy_all_and_free_blocks() noexcept {
+        if (size_) {
+            detail::lean_deque_destroy_all(reinterpret_cast<void**>(table_),
+                                           off_, size_, &ops());
+            detail::lean_deque_free_blocks(reinterpret_cast<void**>(table_),
+                                           off_ / be, (off_ + size_ - 1) / be);
+        }
+    }
+
+    // Append n default- or copy-constructed elements (used by resize/ctors).
+    void append_default(size_type n) { while (n--) emplace_back(); }
+    void append_value(size_type n, const value_type& v) { while (n--) push_back(v); }
+    template<class It>
+    void append_range(It f, It l) { for (; f != l; ++f) emplace_back(*f); }
+
+public:
+    //===------------------------------------------------------------------===//
+    // Iterator — (owner, logical index). Random access; deref does the table
+    // lookup. Kept small (pointer + index) and non-templated on constness via a
+    // bool so const/non-const share one class.
+    //===------------------------------------------------------------------===//
+    template<class Dq, bool Const>
+    class iter_impl {
+        using deque_ptr = conditional_t<Const, const Dq*, Dq*>;
+        deque_ptr d;
+        size_type i;
+        friend class deque;
+        template<class, bool> friend class iter_impl;
+        iter_impl(deque_ptr dq, size_type idx) noexcept : d(dq), i(idx) {}
+
+    public:
+        using value_type        = T;
+        using difference_type    = ptrdiff_t;
+        using reference          = conditional_t<Const, const T&, T&>;
+        using pointer            = conditional_t<Const, const T*, T*>;
+        using iterator_category  = random_access_iterator_tag;
+
+        iter_impl() noexcept : d(nullptr), i(0) {}
+        // non-const -> const conversion
+        template<bool C2, class = enable_if_t<Const && !C2>>
+        iter_impl(const iter_impl<Dq, C2>& o) noexcept : d(o.d), i(o.i) {}
+
+        reference operator*()  const noexcept { return *d->addr(d->off_ + i); }
+        pointer   operator->() const noexcept { return d->addr(d->off_ + i); }
+        reference operator[](difference_type n) const noexcept {
+            return *d->addr(d->off_ + i + n);
+        }
+
+        iter_impl& operator++() noexcept { ++i; return *this; }
+        iter_impl& operator--() noexcept { --i; return *this; }
+        iter_impl  operator++(int) noexcept { iter_impl t = *this; ++i; return t; }
+        iter_impl  operator--(int) noexcept { iter_impl t = *this; --i; return t; }
+        iter_impl& operator+=(difference_type n) noexcept {
+            i = static_cast<size_type>(static_cast<difference_type>(i) + n); return *this;
+        }
+        iter_impl& operator-=(difference_type n) noexcept { return *this += -n; }
+        iter_impl  operator+(difference_type n) const noexcept { iter_impl t=*this; t+=n; return t; }
+        iter_impl  operator-(difference_type n) const noexcept { iter_impl t=*this; t-=n; return t; }
+        friend iter_impl operator+(difference_type n, const iter_impl& it) noexcept { return it + n; }
+        friend difference_type operator-(const iter_impl& a, const iter_impl& b) noexcept {
+            return static_cast<difference_type>(a.i) - static_cast<difference_type>(b.i);
+        }
+
+        friend bool operator==(const iter_impl& a, const iter_impl& b) noexcept { return a.i == b.i; }
+        friend bool operator!=(const iter_impl& a, const iter_impl& b) noexcept { return a.i != b.i; }
+        friend bool operator< (const iter_impl& a, const iter_impl& b) noexcept { return a.i <  b.i; }
+        friend bool operator> (const iter_impl& a, const iter_impl& b) noexcept { return a.i >  b.i; }
+        friend bool operator<=(const iter_impl& a, const iter_impl& b) noexcept { return a.i <= b.i; }
+        friend bool operator>=(const iter_impl& a, const iter_impl& b) noexcept { return a.i >= b.i; }
+    };
+
+    using iterator               = iter_impl<deque, false>;
+    using const_iterator         = iter_impl<deque, true>;
+    using reverse_iterator       = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+    //--- Construct / copy / destroy ---
+
+    deque() noexcept : table_(nullptr), off_(0), size_(0) {}
+    explicit deque(const allocator_type&) noexcept : table_(nullptr), off_(0), size_(0) {}
+
+    explicit deque(size_type n) : table_(nullptr), off_(0), size_(0) {
+        append_default(n);
+    }
+
+    template<class Alloc2 = Allocator,
+             enable_if_t<detail::container_is_allocator_v<Alloc2>, int> = 0>
+    explicit deque(size_type n, const allocator_type&)
+        : table_(nullptr), off_(0), size_(0) { append_default(n); }
+
+    deque(size_type n, const value_type& v) : table_(nullptr), off_(0), size_(0) {
+        append_value(n, v);
+    }
+
+    template<class Alloc2 = Allocator,
+             enable_if_t<detail::container_is_allocator_v<Alloc2>, int> = 0>
+    deque(size_type n, const value_type& v, const allocator_type&)
+        : table_(nullptr), off_(0), size_(0) { append_value(n, v); }
+
+    template<class InputIter>
+        requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    deque(InputIter f, InputIter l) : table_(nullptr), off_(0), size_(0) {
+        append_range(f, l);
+    }
+
+    template<class InputIter>
+        requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    deque(InputIter f, InputIter l, const allocator_type&)
+        : table_(nullptr), off_(0), size_(0) { append_range(f, l); }
+
+    deque(initializer_list<value_type> il) : table_(nullptr), off_(0), size_(0) {
+        append_range(il.begin(), il.end());
+    }
+    deque(initializer_list<value_type> il, const allocator_type&)
+        : table_(nullptr), off_(0), size_(0) { append_range(il.begin(), il.end()); }
+
+    deque(const deque& c) : table_(nullptr), off_(0), size_(0) {
+        append_range(c.begin(), c.end());
+    }
+    deque(const deque& c, const type_identity_t<allocator_type>&)
+        : table_(nullptr), off_(0), size_(0) { append_range(c.begin(), c.end()); }
+
+    deque(deque&& c) noexcept
+        : table_(c.table_), off_(c.off_), size_(c.size_) {
+        c.table_ = nullptr; c.off_ = 0; c.size_ = 0;
+    }
+    deque(deque&& c, const type_identity_t<allocator_type>&)
+        : table_(c.table_), off_(c.off_), size_(c.size_) {
+        c.table_ = nullptr; c.off_ = 0; c.size_ = 0;
+    }
+
+    ~deque() {
+        destroy_all_and_free_blocks();
+        detail::lean_deque_table_free(reinterpret_cast<void**>(table_));
+    }
+
+    deque& operator=(const deque& c) {
+        if (this != addressof(c))
+            assign(c.begin(), c.end());
+        return *this;
+    }
+
+    deque& operator=(deque&& c) noexcept {
+        if (this != addressof(c)) {
+            destroy_all_and_free_blocks();
+            detail::lean_deque_table_free(reinterpret_cast<void**>(table_));
+            table_ = c.table_; off_ = c.off_; size_ = c.size_;
+            c.table_ = nullptr; c.off_ = 0; c.size_ = 0;
+        }
+        return *this;
+    }
+
+    deque& operator=(initializer_list<value_type> il) {
+        assign(il.begin(), il.end());
+        return *this;
+    }
+
+    template<class InputIter>
+        requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    void assign(InputIter f, InputIter l) {
+        clear();
+        append_range(f, l);
+    }
+    void assign(size_type n, const value_type& v) { clear(); append_value(n, v); }
+    void assign(initializer_list<value_type> il) { assign(il.begin(), il.end()); }
+
+    allocator_type get_allocator() const noexcept { return allocator_type(); }
+
+    //--- Iterators ---
+
+    [[nodiscard]] iterator begin() noexcept { return iterator(this, 0); }
+    [[nodiscard]] const_iterator begin() const noexcept { return const_iterator(this, 0); }
+    [[nodiscard]] iterator end() noexcept { return iterator(this, size_); }
+    [[nodiscard]] const_iterator end() const noexcept { return const_iterator(this, size_); }
+
+    [[nodiscard]] reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
+    [[nodiscard]] const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
+    [[nodiscard]] reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
+    [[nodiscard]] const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
+
+    [[nodiscard]] const_iterator cbegin() const noexcept { return begin(); }
+    [[nodiscard]] const_iterator cend() const noexcept { return end(); }
+    [[nodiscard]] const_reverse_iterator crbegin() const noexcept { return const_reverse_iterator(end()); }
+    [[nodiscard]] const_reverse_iterator crend() const noexcept { return const_reverse_iterator(begin()); }
+
+    //--- Capacity ---
+
+    [[nodiscard]] size_type size() const noexcept { return size_; }
+    [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
+    [[nodiscard]] size_type max_size() const noexcept {
+        return numeric_limits<difference_type>::max();
+    }
+
+    void resize(size_type n) {
+        if (n < size_) erase_to_size(n);
+        else if (n > size_) append_default(n - size_);
+    }
+    void resize(size_type n, const value_type& v) {
+        if (n < size_) erase_to_size(n);
+        else if (n > size_) append_value(n - size_, v);
+    }
+
+    void shrink_to_fit() noexcept {
+        if (size_ == 0) {
+            detail::lean_deque_table_free(reinterpret_cast<void**>(table_));
+            table_ = nullptr; off_ = 0;
+            return;
+        }
+        size_type lo = off_ / be, last = (off_ + size_ - 1) / be, nb = last - lo + 1;
+        if (lo != 0) {
+            ::memmove(table_, table_ + lo, nb * sizeof(T*));
+            off_ -= lo * be;
+        }
+        table_ = reinterpret_cast<T**>(
+            detail::lean_realloc(reinterpret_cast<void*>(table_), alignof(void*),
+                                 nb * sizeof(void*)));
+    }
+
+    //--- Element access ---
+
+    [[nodiscard]] reference operator[](size_type i) noexcept { return *addr(off_ + i); }
+    [[nodiscard]] const_reference operator[](size_type i) const noexcept { return *addr(off_ + i); }
+
+    [[nodiscard]] reference at(size_type i) {
+        if (i >= size_) __builtin_trap();          // would throw std::out_of_range
+        return *addr(off_ + i);
+    }
+    [[nodiscard]] const_reference at(size_type i) const {
+        if (i >= size_) __builtin_trap();          // would throw std::out_of_range
+        return *addr(off_ + i);
+    }
+
+    [[nodiscard]] reference front() noexcept { return *addr(off_); }
+    [[nodiscard]] const_reference front() const noexcept { return *addr(off_); }
+    [[nodiscard]] reference back() noexcept { return *addr(off_ + size_ - 1); }
+    [[nodiscard]] const_reference back() const noexcept { return *addr(off_ + size_ - 1); }
+
+    //--- Modifiers: ends ---
+
+    template<class... Args>
+    reference emplace_back(Args&&... args) {
+        if (size_ == 0) {
+            init_first();
+            ::new (static_cast<void*>(addr(off_))) T(std::forward<Args>(args)...);
+            size_ = 1;
+            return *addr(off_);
+        }
+        reserve_back_cell();
+        T* slot = addr(off_ + size_);
+        ::new (static_cast<void*>(slot)) T(std::forward<Args>(args)...);
+        ++size_;
+        return *slot;
+    }
+
+    template<class... Args>
+    reference emplace_front(Args&&... args) {
+        if (size_ == 0) {
+            init_first();
+            ::new (static_cast<void*>(addr(off_))) T(std::forward<Args>(args)...);
+            size_ = 1;
+            return *addr(off_);
+        }
+        reserve_front_cell();
+        T* slot = addr(off_ - 1);
+        ::new (static_cast<void*>(slot)) T(std::forward<Args>(args)...);
+        --off_;
+        ++size_;
+        return *slot;
+    }
+
+    void push_back(const value_type& v) { emplace_back(v); }
+    void push_back(value_type&& v) { emplace_back(std::move(v)); }
+    void push_front(const value_type& v) { emplace_front(v); }
+    void push_front(value_type&& v) { emplace_front(std::move(v)); }
+
+    void pop_back() noexcept {
+        size_type back_abs = off_ + size_ - 1;
+        addr(back_abs)->~T();
+        size_type old_slot = back_abs / be;
+        --size_;
+        if (size_ == 0) { detail::lean_deque_free_block(table_[old_slot]); off_ = 0; return; }
+        size_type new_slot = (off_ + size_ - 1) / be;
+        if (new_slot != old_slot)
+            detail::lean_deque_free_block(table_[old_slot]);
+    }
+
+    void pop_front() noexcept {
+        addr(off_)->~T();
+        size_type old_slot = off_ / be;
+        ++off_;
+        --size_;
+        if (size_ == 0) { detail::lean_deque_free_block(table_[old_slot]); off_ = 0; return; }
+        size_type new_slot = off_ / be;
+        if (new_slot != old_slot)
+            detail::lean_deque_free_block(table_[old_slot]);
+    }
+
+    //--- Modifiers: middle ---
+
+    template<class... Args>
+    iterator emplace(const_iterator p, Args&&... args) {
+        return emplace_at(static_cast<size_type>(p - cbegin()), std::forward<Args>(args)...);
+    }
+    iterator insert(const_iterator p, const value_type& v) {
+        return emplace_at(static_cast<size_type>(p - cbegin()), v);
+    }
+    iterator insert(const_iterator p, value_type&& v) {
+        return emplace_at(static_cast<size_type>(p - cbegin()), std::move(v));
+    }
+    iterator insert(const_iterator p, size_type n, const value_type& v) {
+        size_type pos = static_cast<size_type>(p - cbegin());
+        if (n == 0) return begin() + pos;
+        size_type old = size_;
+        append_value(n, v);
+        std::rotate(begin() + pos, begin() + old, end());
+        return begin() + pos;
+    }
+    template<class InputIter>
+        requires requires { typename iterator_traits<InputIter>::iterator_category; }
+    iterator insert(const_iterator p, InputIter f, InputIter l) {
+        size_type pos = static_cast<size_type>(p - cbegin());
+        size_type old = size_;
+        append_range(f, l);
+        std::rotate(begin() + pos, begin() + old, end());
+        return begin() + pos;
+    }
+    iterator insert(const_iterator p, initializer_list<value_type> il) {
+        return insert(p, il.begin(), il.end());
+    }
+
+    iterator erase(const_iterator p) {
+        size_type pos = static_cast<size_type>(p - cbegin());
+        if (pos <= (size_ - 1) / 2) {
+            std::move_backward(begin(), begin() + pos, begin() + pos + 1);
+            pop_front();
+        } else {
+            std::move(begin() + pos + 1, end(), begin() + pos);
+            pop_back();
+        }
+        return begin() + pos;
+    }
+
+    iterator erase(const_iterator f, const_iterator l) {
+        size_type pos = static_cast<size_type>(f - cbegin());
+        size_type n = static_cast<size_type>(l - f);
+        if (n == 0) return begin() + pos;
+        if (pos <= size_ - pos - n) {
+            std::move_backward(begin(), begin() + pos, begin() + pos + n);
+            for (size_type k = 0; k < n; ++k) pop_front();
+        } else {
+            std::move(begin() + pos + n, end(), begin() + pos);
+            for (size_type k = 0; k < n; ++k) pop_back();
+        }
+        return begin() + pos;
+    }
+
+    void swap(deque& c) noexcept {
+        std::swap(table_, c.table_);
+        std::swap(off_, c.off_);
+        std::swap(size_, c.size_);
+    }
+
+    void clear() noexcept {
+        destroy_all_and_free_blocks();
+        size_ = 0;
+        off_ = 0;
+    }
+
+private:
+    void erase_to_size(size_type n) noexcept {
+        while (size_ > n) pop_back();
+    }
+
+    // Insert one element at logical position `pos`, shifting toward the nearer
+    // end (O(min(pos, size-pos)) element moves; no element relocation on grow).
+    template<class... Args>
+    iterator emplace_at(size_type pos, Args&&... args) {
+        if (pos == 0) { emplace_front(std::forward<Args>(args)...); return begin(); }
+        if (pos == size_) { emplace_back(std::forward<Args>(args)...); return begin() + pos; }
+        value_type tmp(std::forward<Args>(args)...);   // hold value (handles aliasing)
+        if (pos <= size_ - pos) {
+            emplace_front(std::move(*begin()));         // new front = value of old front
+            // old front is now moved-from at index 1; shift old[1..pos-1]
+            // (physical indices 2..pos) down into indices 1..pos-1.
+            std::move(begin() + 2, begin() + pos + 1, begin() + 1);
+            *(begin() + pos) = std::move(tmp);
+        } else {
+            emplace_back(std::move(*(end() - 1)));       // new back = value of old back
+            // old back is now moved-from at index size_-2; shift old[pos..end-2]
+            // up by one into indices pos+1..size_-2.
+            std::move_backward(begin() + pos, begin() + size_ - 2, end() - 1);
+            *(begin() + pos) = std::move(tmp);
+        }
+        return begin() + pos;
+    }
+};
+
+//--- sizeof contract ---
+static_assert(sizeof(deque<int>) <= 24, "lean deque control object must be <= 24 bytes");
+
+//===----------------------------------------------------------------------===//
+// Deduction guides (C++17)
+//===----------------------------------------------------------------------===//
+
+template<class InputIter,
+         class Alloc = allocator<typename iterator_traits<InputIter>::value_type>>
+    requires requires { typename iterator_traits<InputIter>::iterator_category; } &&
+             detail::container_is_allocator_v<Alloc>
+deque(InputIter, InputIter) -> deque<typename iterator_traits<InputIter>::value_type, Alloc>;
+
+template<class InputIter, class Alloc>
+    requires requires { typename iterator_traits<InputIter>::iterator_category; } &&
+             detail::container_is_allocator_v<Alloc>
+deque(InputIter, InputIter, Alloc) -> deque<typename iterator_traits<InputIter>::value_type, Alloc>;
+
+//===----------------------------------------------------------------------===//
+// Comparisons / swap / erase
+//===----------------------------------------------------------------------===//
+
+template<class T, class A>
+inline bool operator==(const deque<T,A>& x, const deque<T,A>& y) {
+    return x.size() == y.size() && std::equal(x.begin(), x.end(), y.begin());
+}
+
+template<class T, class A>
+inline detail::synth_three_way_result<T>
+operator<=>(const deque<T,A>& x, const deque<T,A>& y) {
+    return lexicographical_compare_three_way(x.begin(), x.end(),
+                                             y.begin(), y.end(),
+                                             detail::synth_three_way);
+}
+
+template<class T, class A>
+inline void swap(deque<T,A>& x, deque<T,A>& y) noexcept(noexcept(x.swap(y))) {
+    x.swap(y);
+}
+
+template<class T, class A, class U>
+inline typename deque<T,A>::size_type
+erase(deque<T,A>& c, const U& value) {
+    auto old = c.size();
+    c.erase(std::remove(c.begin(), c.end(), value), c.end());
+    return old - c.size();
+}
+
+template<class T, class A, class Predicate>
+inline typename deque<T,A>::size_type
+erase_if(deque<T,A>& c, Predicate pred) {
+    auto old = c.size();
+    c.erase(std::remove_if(c.begin(), c.end(), pred), c.end());
+    return old - c.size();
+}
+
+} // namespace std
