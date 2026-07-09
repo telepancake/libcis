@@ -77,7 +77,10 @@ transfer: $(BOOTSTRAP_OK) ## Run the transfer + build/run all group binaries
 	python3 tools/gen_groups.py --ninja    # materialize the real groups.ninja
 	# -k0 builds every group it can; a red group is a missing .result that the
 	# board counts, NOT a reason to abort before the board runs.  The leading `-`
-	# lets `make test` proceed to `board` (whose own exit reflects conformance).
+	# lets `make test` proceed to `board`.  NOTE: the board always exits 0 -- it
+	# reports conformance (red groups, no-verdict tests) loudly in its OUTPUT,
+	# not its exit code, so `make test` succeeding means "pipeline ran", not
+	# "everything passed".
 	-ninja -f build/groups.ninja $(BACKEND) -k0  # libsupport.a + all group results
 
 board: ## Print the conformance board (meaningful only after a build)

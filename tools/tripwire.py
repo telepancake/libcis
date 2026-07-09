@@ -42,9 +42,44 @@ if r:
 
 # 2. suite-level: a copy-regression zeroes these
 runs = sum(1 for r in man["transferred"] if r["kind"] == "run")
-entries = sum(1 for r in man["transferred"] if r.get("entry"))
 check(runs >= 5000, f"only {runs} run-kind tests (copy regression?)")
-check(entries >= runs, f"{entries} entries < {runs} run tests")
+
+# 3. LOUD, non-fatal notes -- tests that silently left the verdict's
+# denominator.  The build goes on, but each one is a test with NO verdict, so
+# they must be impossible to miss in the build log.
+WARN = []
+
+# a .pass.cpp whose entry point was not found is recorded kind="compile": it
+# still compiles in its group but never RUNS -- a silent run->compile downgrade.
+downgraded = [r["file"] for r in man["transferred"]
+              if r["kind"] == "compile"
+              and not r["file"].endswith(".compile.pass.cpp")]
+if downgraded:
+    WARN.append(f"{len(downgraded)} run tests downgraded to compile-only "
+                "(no entry recorded -- they will never RUN):")
+    WARN += [f"    {f}" for f in downgraded[:20]]
+    if len(downgraded) > 20:
+        WARN.append(f"    ... and {len(downgraded) - 20} more")
+
+# transfer errors (libclang crash/hang/parse failure): recorded in the
+# manifest but absent from every denominator downstream.
+errors = man.get("errors", [])
+if errors:
+    stages = {}
+    for e in errors:
+        stages[e["stage"]] = stages.get(e["stage"], 0) + 1
+    WARN.append(f"{len(errors)} transfer errors (these tests are in NO "
+                "denominator): "
+                + " ".join(f"{s}={n}" for s, n in sorted(stages.items())))
+    WARN += [f"    [{e['stage']}] {e['file']}" for e in errors[:20]]
+    if len(errors) > 20:
+        WARN.append(f"    ... and {len(errors) - 20} more")
+
+if WARN:
+    print(f"TRIPWIRE WARN (build continues; {len(downgraded) + len(errors)} "
+          "tests have NO verdict):")
+    for m in WARN:
+        print("  !", m)
 
 if FAIL:
     print("TRIPWIRE FAILED:")
@@ -52,4 +87,6 @@ if FAIL:
         print("  -", m)
     sys.exit(1)
 open(sys.argv[1], "w").write("ok\n")
-print(f"tripwire: ok ({runs} run tests, adaptation live)")
+print(f"tripwire: ok ({runs} run tests, adaptation live, "
+      f"skipped={len(man.get('skipped', []))} errors={len(errors)} "
+      f"downgraded={len(downgraded)})")

@@ -135,9 +135,11 @@ def group_source(members):
         "  ++libcis_total;\n"
         "  ::pid_t p = ::fork();\n"
         "  if (p == 0) { ::alarm(30); ::_exit(f()); }  // per-test wall clock + own exit code\n"
-        "  int st = 0; ::waitpid(p, &st, 0);\n"
-        "  bool ok = WIFEXITED(st) && WEXITSTATUS(st) == 0;\n"
-        "  if (!ok) { ++libcis_fails; ::fprintf(stderr, \"LIBCIS-FAIL %s (status=%d)\\n\", name, st); }\n"
+        "  // a failed fork/waitpid leaves st==0, which would read as a PASS --\n"
+        "  // require the fork and the reap to have actually happened.\n"
+        "  int st = 0;\n"
+        "  bool ok = p > 0 && ::waitpid(p, &st, 0) == p && WIFEXITED(st) && WEXITSTATUS(st) == 0;\n"
+        "  if (!ok) { ++libcis_fails; ::fprintf(stderr, \"LIBCIS-FAIL %s (%s, status=%d)\\n\", name, p > 0 ? \"exit\" : \"fork\", st); }\n"
         "}\n")
     # the trailing LIBCIS-DONE line lets the board count per-TEST and detect
     # groups that crashed/hung before finishing (no DONE line == incomplete).

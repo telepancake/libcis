@@ -11,12 +11,13 @@ Two granularities, both honest:
             finishing -> all its run-tests (from the manifest) count red.
 """
 import collections
+import json
 import os
 import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gen_groups import gkey, load_groups  # noqa: E402
+from gen_groups import EXCLUSIONS, MANIFEST, gkey, load_groups  # noqa: E402
 
 be = sys.argv[1] if len(sys.argv) > 1 else "libcis"
 groups = load_groups()
@@ -52,6 +53,29 @@ for sub in sorted(grp):
     print(f"{sub:<18} {a:>4}/{b:<4}  {c:>5}/{d2}")
 print(f"{'TOTAL':<18} {gg:>4}/{gt:<4}  {tg:>5}/{tt}")
 print(f"incomplete groups (crash/hang/compile-fail, no per-test signal): {len(incomplete)}")
+
+# Tests with NO verdict at all -- not in any numerator OR denominator above.
+# The counts stay loud here so a shrinking denominator can't read as progress.
+man = json.load(open(MANIFEST))
+excl = sum(1 for k in json.load(open(EXCLUSIONS)) if not k.startswith("_"))
+downgraded = [r["file"] for r in man["transferred"]
+              if r["kind"] == "compile"
+              and not r["file"].endswith(".compile.pass.cpp")]
+errors = man.get("errors", [])
+print(f"off the board: excluded(justified)={excl} "
+      f"lit-skipped={len(man.get('skipped', []))} "
+      f"transfer-errors={len(errors)} run->compile-downgraded={len(downgraded)}")
+for f in downgraded[:20]:
+    print("  ! never RUNS (no entry recorded):", f)
+if len(downgraded) > 20:
+    print(f"  ! ... and {len(downgraded) - 20} more downgraded")
+for e in errors[:20]:
+    print(f"  ! no verdict (transfer {e['stage']}):", e["file"])
+if len(errors) > 20:
+    print(f"  ! ... and {len(errors) - 20} more transfer errors")
+
 if "-v" in sys.argv:
     for d in red:
         print("RED", d)
+    for d in incomplete:
+        print("INCOMPLETE", d)
