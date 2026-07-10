@@ -24,6 +24,7 @@
 #include <bits/lean_deque.h>
 #include <bits/lean_sort.h>
 #include <bits/lean_sp.h>
+#include <bits/lean_fn.h>
 #include <list>
 #pragma GCC visibility pop
 
@@ -185,6 +186,34 @@ sp_cb* sp_lock(sp_cb* cb) noexcept {
 
 uint32_t sp_use_count(sp_cb* cb) noexcept {
   return __atomic_load_n(&cb->strong, __ATOMIC_RELAXED);
+}
+
+// ===========================================================================
+// std::function — heap-block clone / free engine (bits/lean_fn.h)
+//
+// The type-INDEPENDENT half of the lean std::function mode-4 (heap) path.  A
+// heap target lives in one malloc block: an fn_heap_base header followed by the
+// payload at `payoff`.  These two non-template kernels do the malloc/memcpy/free
+// and defer the single type-dependent step (copy-construct / destruct the
+// payload) to the block's own thunk pointers — so every heap callable type adds
+// only three tiny thunks in <functional>, never a copy of the malloc/free code.
+// NO templates, NO per-type code here.
+// ===========================================================================
+
+void* fn_block_clone(const void* src) noexcept {
+  const fn_heap_base* s = static_cast<const fn_heap_base*>(src);
+  char* b = static_cast<char*>(::malloc(s->size));
+  if (!b) __builtin_trap();
+  __builtin_memcpy(b, src, sizeof(fn_heap_base));           // header (thunks + size + payoff)
+  s->copy_ctor(static_cast<const char*>(src) + s->payoff,   // copy-construct the payload
+               b + s->payoff);
+  return b;
+}
+
+void fn_block_free(void* blk) noexcept {
+  fn_heap_base* s = static_cast<fn_heap_base*>(blk);
+  s->dtor(static_cast<char*>(blk) + s->payoff);             // destruct the payload
+  ::free(blk);                                              // free header + payload
 }
 
 // ===========================================================================

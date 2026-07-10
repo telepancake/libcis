@@ -111,6 +111,46 @@ binary carries only the kernels it actually reaches.
    always `charT()`, so no thread observes a wrong value, but it is a race per
    `[intro.races]`). Non-empty strings, and any write other than `charT()`,
    are unaffected (they force a heap allocation first).
+9. **Two-word `std::function` with a small-object budget of one word.**
+   `sizeof(function<...>) == 2 * sizeof(void*)` (`{ ctx, invoke }`), and the
+   inline (heap-free) storage budget is exactly **one word**. This buys several
+   deliberate departures from `[func.wrap.func]`:
+   - **A `>=`-word-sized capture allocates.** Only a *one-word*, trivially
+     copyable, ≤`alignof(void*)`-aligned callable is stored inline (plus plain
+     function pointers, capture-less lambdas, and the extension ctor below).
+     Any capture larger than one word — including a genuine **two-word**
+     `[a, b]` capture — a non-trivially-copyable capture (e.g. a `std::string`
+     by value), or an over-aligned one goes to a `malloc` block. This is the
+     small-buffer trade for the two-word object, stated exactly like `string`'s
+     SSO trade: the object shrinks, and the callables that no longer fit inline
+     cost one `malloc`. (The budget is pointer-width-relative: an
+     `[int, int]` capture is one word on LP64 but two words — hence heap — on
+     ILP32.)
+   - **`target()` / `target_type()` are omitted** — they require `typeid`
+     (RTTI), which is off (`-fno-rtti`), exactly as the base library omits them.
+   - **A lean extension constructor** `function(R (*fn)(T*, Args...), T* obj)`
+     stores `obj` in `ctx` and uses `fn` *itself* as the invoker (reinterpreted
+     to `R(*)(void*, Args...)`): zero per-type code, zero indirection hops. This
+     is the GCC bound-pointer-to-member-function cast shape; it relies on `T*`
+     and `void*` sharing an argument ABI (the same de-facto contract the GCC pmf
+     cast relies on). `static_assert(is_object_v<T>)`.
+   - **Mutating targets keep standard semantics** — at the cost of a heap
+     block: the inline one-word mode is gated on *const-invocability*, so a
+     `mutable` lambda (any callable whose call operator is non-const) routes to
+     the heap block and mutates in place, even when its state is one word.
+     Residual (undetectable) caveat: a const-invocable trivially-copyable
+     one-word functor that mutates a `mutable` **member** inside its const call
+     operator is invoked on a by-value copy and loses those mutations.
+   - **Calling an empty `function` traps** (`__builtin_trap`), consistent with
+     the `-fno-exceptions` profile — no `bad_function_call` is thrown (the type
+     is still defined).
+   - **Hidden-visibility DSO caveat.** The heap-mode discriminator is a single
+     address compare of `invoke` against the per-signature `heap_invoke`
+     trampoline, whose one-address-program-wide guarantee comes from C++ vague
+     linkage. Passing a `function` object into a DSO that built `<functional>`
+     under *hidden* visibility would give `heap_invoke` a second address and
+     defeat the compare; the lean headers are compiled default-visibility so this
+     never happens in-tree. Documented, not worked around.
 
 Everything else — iterator categories, complexity guarantees, reference
 stability of node containers, the public API surface — follows the standard.
@@ -149,6 +189,7 @@ Every array-like lean container stores **one pointer** to the payload of a
 | `deque<T>` | small control | fixed-byte blocks + block table; reference stability at both ends per the standard |
 | `shared_ptr<T>` | 1 pointer | a single pointer to a control block (`bits/lean_sp.h`); null = empty. The block is `{ void* elem; uint32_t strong; uint32_t weak; void(*dispose)(cb) }` = **24 B on LP64** (16 B on ILP32). `elem` is first so `get()`/`*`/`->` load it at zero displacement. `make_shared<T>` places `T` inline in the SAME allocation right after the block |
 | `weak_ptr<T>` | 1 pointer | the same one-pointer handle onto the same control block; holds a weak reference. `enable_shared_from_this<T>` embeds one `weak_ptr<T>`, so it too is one pointer |
+| `function<R(Args...)>` | 2 pointers | `{ void* ctx; R (*invoke)(void*, Args...) }` = **16 B on LP64** (8 B on ILP32); empty = `invoke == nullptr`. `operator()` is `invoke(ctx, args...)` after a null check — **no vtable in the hot path**. Four storage modes, discriminated only by `invoke`'s identity (never by pointer tag bits — unsafe on Thumb): (1) a one-word trivially-copyable callable (`[this]`/`[ptr]`/`[int]`) lives in `ctx`, `invoke` a per-type invoker; (2) a plain fn pointer / capture-less lambda: `ctx` is the fn pointer, `invoke` one shared per-signature trampoline; (3) the lean extension ctor `function(R(*)(T*,Args...), T*)`: `ctx` is the object, the user fn IS the invoker (zero per-type code, zero hops); (4) anything larger/over-aligned/non-trivially-copyable (incl. `>=2`-word captures) is a `malloc` block reached through `ctx`. Trivially relocatable |
 
 ### Type erasure (`bits/lean.h` type ops + the algorithm kernels)
 
@@ -178,6 +219,15 @@ stay inline).
   *descent* (comparator in a loop) stays a thin template; only the
   type-independent rebalancing is erased — that is exactly the split libstdc++
   ships in its .so.
+- `std::function` erases a *callable* rather than a container operation, so it
+  follows the same rule from the other side: its **hot path is a single indirect
+  call** (`invoke(ctx, args...)`), never routed through a kernel, while only the
+  cold heap-block clone/free (the fat, type-independent `malloc`/`memcpy`/`free`)
+  is out-of-line in `kernels.cpp` as `detail::fn_block_clone` / `fn_block_free`.
+  Each heap-stored callable type adds only three tiny thunks (copy-construct,
+  destruct, invoke); the two shared kernels are one copy per binary. Inline
+  callables (the one-word, fn-pointer and extension-ctor modes) reach `malloc`
+  never and `kernels.cpp` not at all.
 
 ### Smart pointers (`bits/lean_sp.h` control block + the `sp_*` kernels)
 
