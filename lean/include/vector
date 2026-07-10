@@ -48,8 +48,6 @@ class vector {
     static_assert(detail::lean_allocator_ok<T, Allocator>,
         "lean vector supports only std::allocator<T> (custom allocators are a "
         "documented deviation of the lean profile)");
-    static_assert(alignof(T) <= alignof(max_align_t),
-        "lean vector does not support over-aligned element types");
 
 public:
     using value_type             = T;
@@ -69,7 +67,14 @@ private:
     // The lone data member: sizeof(vector) == sizeof(void*).
     void* p_ = nullptr;
 
-    static const detail::lean_ops* ops() noexcept { return &detail::lean_ops_for<T>; }
+    static const detail::lean_ops* ops() noexcept {
+        // Over-alignment guard (deviation 4), deferred to the allocation funnel
+        // so the container can still be NAMED with an incomplete element type
+        // ([container.requirements.general] allows vector<IncompleteT>).
+        static_assert(alignof(T) <= alignof(max_align_t),
+            "lean vector does not support over-aligned element types");
+        return &detail::lean_ops_for<T>;
+    }
 
     // The `used` counter lives inside the block; only valid when p_ != null.
     void set_size(size_type n) noexcept { detail::lean_used(p_) = n; }

@@ -34,9 +34,7 @@
 //     parameter is kept for source compatibility but static_assert-ed to be
 //     std::allocator<value_type>.
 //   - No node_handle / extract / merge, no pmr aliases.
-//   - Local bucket API reduced to bucket_count/load_factor/max_load_factor/
-//     rehash/reserve (no bucket(k)/bucket_size(n)/local_iterator).
-//   - unordered_multimap / unordered_multiset are not provided in this profile.
+//   - Full local bucket API (bucket/bucket_size/local_iterator provided).
 //   - Container members are not constexpr.
 //
 // Target: gcc-10.2, -std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti.
@@ -140,6 +138,76 @@ void hash_destroy_all(hash_control* ctl, void (*destroy)(hnode_base*)) noexcept;
 
 #pragma GCC visibility pop
 
+// ---------------------------------------------------------------------------
+// Equivalent-key (multi) rehash. The shared hash_rehash_into kernel is the
+// UniqueKeys branch of libc++'s __do_rehash: it groups by bucket but may
+// REORDER — and thus un-adjacent — equal-key runs that become interleaved when
+// a bucket splits on growth. unordered_multimap/_multiset need equal keys to
+// stay ADJACENT (count()/equal_range() walk a contiguous run), so they use this
+// header-local variant instead of the kernel (kept out of kernels.cpp, which is
+// a shared file; the extra code materializes only in binaries that actually use
+// a multi container). It mirrors libc++'s multi branch, but skips equal groups
+// by CACHED-HASH equality rather than key_eq (equal keys always share a full
+// hash; grouping the rare distinct-key full-hash collision together too is
+// harmless — equal_range still bounds the run with the real predicate).
+inline void ht_multi_rehash_into(hash_control* ctl) noexcept {
+    size_t nbc = ctl->bucket_count;
+    size_t mask = nbc - 1;
+    hnode_base** buckets = hash_buckets(ctl);
+    hnode_base* pp = &ctl->first;
+    hnode_base* cp = pp->next;
+    if (cp == nullptr)
+        return;
+    size_t chash = cp->hash & mask;
+    buckets[chash] = pp;
+    size_t phash = chash;
+    for (pp = cp, cp = cp->next; cp != nullptr; cp = pp->next) {
+        chash = cp->hash & mask;
+        if (chash == phash) {
+            pp = cp;
+        } else if (buckets[chash] == nullptr) {
+            buckets[chash] = pp;
+            pp = cp;
+            phash = chash;
+        } else {
+            // Splice the WHOLE equal-hash group [cp .. np] to the front of the
+            // bucket's existing run in one move, preserving intra-group order.
+            hnode_base* np = cp;
+            while (np->next != nullptr && np->next->hash == cp->hash)
+                np = np->next;
+            pp->next = np->next;
+            np->next = buckets[chash]->next;
+            buckets[chash]->next = cp;
+        }
+    }
+}
+
+// Grow/shrink a multi container's block to `nbc` buckets (power of two), then
+// rebuild the bucket array with ht_multi_rehash_into. Mirror of the kernel
+// hash_set_bucket_count with the multi-safe rehash.
+inline hash_control* ht_multi_set_bucket_count(hash_control* ctl, size_t nbc) noexcept {
+    size_t bytes = sizeof(hash_control) + nbc * sizeof(hnode_base*);
+    if (ctl == nullptr) {
+        ctl = static_cast<hash_control*>(::malloc(bytes));
+        if (ctl == nullptr)
+            __builtin_trap();
+        ctl->size = 0;
+        ctl->max_load_factor = 1.0f;
+        ctl->first.next = nullptr;
+        ctl->first.hash = 0;
+    } else {
+        ctl = static_cast<hash_control*>(::realloc(ctl, bytes));
+        if (ctl == nullptr)
+            __builtin_trap();
+    }
+    ctl->bucket_count = nbc;
+    hnode_base** buckets = hash_buckets(ctl);
+    for (size_t i = 0; i < nbc; ++i)
+        buckets[i] = nullptr;
+    ht_multi_rehash_into(ctl);
+    return ctl;
+}
+
 // ===========================================================================
 // Node (templated thin part: holds the value; created/destroyed per type).
 // ===========================================================================
@@ -196,6 +264,56 @@ inline bool operator==(const hiter<T, C1>& a, const hiter<T, C2>& b) noexcept {
 }
 template<class T, bool C1, bool C2>
 inline bool operator!=(const hiter<T, C1>& a, const hiter<T, C2>& b) noexcept {
+    return a.node_ != b.node_;
+}
+
+// ===========================================================================
+// Local iterator (forward; walks ONE bucket's contiguous run). ++ falls off the
+// end of the run (becomes null) when the next node's constrained hash leaves the
+// bucket — the run is contiguous in the single intrusive list by construction.
+// ===========================================================================
+
+template<class T, bool IsConst>
+struct hlocal_iter {
+    hnode_base* node_ = nullptr;
+    size_t      mask_ = 0;
+    size_t      bkt_  = 0;
+
+    using value_type        = T;
+    using reference         = conditional_t<IsConst, const T&, T&>;
+    using pointer           = conditional_t<IsConst, const T*, T*>;
+    using difference_type   = ptrdiff_t;
+    using iterator_category = forward_iterator_tag;
+
+    hlocal_iter() = default;
+    hlocal_iter(hnode_base* n, size_t mask, size_t bkt) noexcept
+        : node_(n), mask_(mask), bkt_(bkt) {}
+    template<bool C = IsConst, class = enable_if_t<C>>
+    hlocal_iter(const hlocal_iter<T, false>& o) noexcept
+        : node_(o.node_), mask_(o.mask_), bkt_(o.bkt_) {}
+
+    reference operator*() const { return static_cast<hnode<T>*>(node_)->value; }
+    pointer operator->() const { return std::addressof(static_cast<hnode<T>*>(node_)->value); }
+
+    hlocal_iter& operator++() noexcept {
+        node_ = node_->next;
+        if (node_ != nullptr && (node_->hash & mask_) != bkt_)
+            node_ = nullptr;
+        return *this;
+    }
+    hlocal_iter operator++(int) noexcept {
+        hlocal_iter t = *this;
+        ++*this;
+        return t;
+    }
+};
+
+template<class T, bool C1, bool C2>
+inline bool operator==(const hlocal_iter<T, C1>& a, const hlocal_iter<T, C2>& b) noexcept {
+    return a.node_ == b.node_;
+}
+template<class T, bool C1, bool C2>
+inline bool operator!=(const hlocal_iter<T, C1>& a, const hlocal_iter<T, C2>& b) noexcept {
     return a.node_ != b.node_;
 }
 
@@ -288,8 +406,10 @@ public:
     using size_type       = size_t;
     using difference_type = ptrdiff_t;
 
-    using iterator       = detail::hiter<T, false>;
-    using const_iterator = detail::hiter<T, true>;
+    using iterator             = detail::hiter<T, false>;
+    using const_iterator       = detail::hiter<T, true>;
+    using local_iterator       = detail::hlocal_iter<T, false>;
+    using const_local_iterator = detail::hlocal_iter<T, true>;
 
     using node = detail::hnode<T>;
 
@@ -312,6 +432,10 @@ private:
 
     template<class... Args>
     node* create_node(size_t hash, Args&&... args) {
+        // Over-alignment guard (deviation 4), deferred to node creation so the
+        // container can still be NAMED with an incomplete element type.
+        static_assert(alignof(T) <= alignof(max_align_t),
+            "lean unordered containers reject over-aligned element types");
         void* mem = ::malloc(sizeof(node));
         if (mem == nullptr)
             __builtin_trap();
@@ -345,6 +469,20 @@ private:
         }
     }
 
+    // As reserve_for_one_more, but growth uses the adjacency-preserving multi
+    // rehash (equivalent-key containers).
+    void reserve_for_one_more_multi() {
+        size_t bc = bucket_count();
+        float mlf = max_load_factor();
+        if (bc == 0 || float(size() + 1) > float(bc) * mlf) {
+            size_t need = size_t(__builtin_ceilf(float(size() + 1) / mlf));
+            size_t want = 2 * bc;
+            if (need > want)
+                want = need;
+            ctl_ = detail::ht_multi_set_bucket_count(ctl_, detail::hash_pow2_ceil(want));
+        }
+    }
+
     template<class K>
     base* find_node(size_t hash, const K& k) const {
         if (ctl_ == nullptr)
@@ -358,6 +496,44 @@ private:
                     return nd;
         }
         return nullptr;
+    }
+
+    // Multi-key link: place `nd` (already hashed; block already grown by
+    // reserve_for_one_more) so that elements with EQUIVALENT keys stay ADJACENT
+    // in the intrusive list — the [unord.req] invariant count()/equal_range()
+    // rely on. The new element is spliced right behind the first equivalent
+    // element already present, or at the front of its bucket run when the key is
+    // not yet present (mirroring hash_link_unique's front-splice).
+    void link_multi(base* nd) noexcept {
+        size_t mask = ctl_->bucket_count - 1;
+        size_t chash = nd->hash & mask;
+        base** buckets = detail::hash_buckets(ctl_);
+        base* pn = buckets[chash];
+        if (pn == nullptr) {
+            base* head = &ctl_->first;
+            nd->next = head->next;
+            head->next = nd;
+            buckets[chash] = head;
+            if (nd->next != nullptr)
+                buckets[nd->next->hash & mask] = nd;
+        } else {
+            base* prev = pn;   // front of the run by default
+            for (base* cur = pn->next; cur != nullptr && (cur->hash & mask) == chash;
+                 cur = cur->next) {
+                if (cur->hash == nd->hash && eq_(node_value(cur), node_value(nd))) {
+                    prev = cur;    // splice right behind the first equivalent element
+                    break;
+                }
+            }
+            nd->next = prev->next;
+            prev->next = nd;
+            if (nd->next != nullptr) {
+                size_t nhash = nd->next->hash & mask;
+                if (nhash != chash)
+                    buckets[nhash] = nd;   // nd is now the tail of this bucket run
+            }
+        }
+        ++ctl_->size;
     }
 
 public:
@@ -428,6 +604,22 @@ public:
         clear();
         for (; first != last; ++first)
             insert_unique(*first);
+    }
+
+    // Copy-assign for the equivalent-key containers: unlike operator=, this
+    // preserves duplicates (insert_multi, not insert_unique).
+    void assign_from_multi(const hash_table& u) {
+        if (this == &u)
+            return;
+        free_all();
+        hasher_ = u.hasher_;
+        eq_ = u.eq_;
+        if (u.ctl_ != nullptr) {
+            ctl_ = detail::hash_set_bucket_count(nullptr, u.ctl_->bucket_count);
+            ctl_->max_load_factor = u.ctl_->max_load_factor;
+            for (const_iterator i = u.begin(), e = u.end(); i != e; ++i)
+                insert_multi(*i);
+        }
     }
 
     allocator_type node_alloc() const noexcept { return allocator_type(); }
@@ -527,6 +719,34 @@ public:
     }
 
     // ------------------------------------------------------------------
+    // Insert / emplace (equivalent keys — unordered_multimap / _multiset)
+    // ------------------------------------------------------------------
+
+    template<class... Args>
+    iterator emplace_multi(Args&&... args) {
+        node* nd = create_node(0, std::forward<Args>(args)...);
+        nd->hash = hasher_(nd->value);
+        reserve_for_one_more_multi();
+        link_multi(nd);
+        return iterator(nd);
+    }
+
+    iterator insert_multi(const value_type& x) { return emplace_multi(x); }
+    iterator insert_multi(value_type&& x) { return emplace_multi(std::move(x)); }
+    template<class P, enable_if_t<!is_same_v<remove_cv_t<remove_reference_t<P>>, value_type>,
+                                  int> = 0>
+    iterator insert_multi(P&& x) {
+        return emplace_multi(std::forward<P>(x));
+    }
+
+    template<class It>
+    void assign_multi(It first, It last) {
+        clear();
+        for (; first != last; ++first)
+            insert_multi(*first);
+    }
+
+    // ------------------------------------------------------------------
     // Erase
     // ------------------------------------------------------------------
 
@@ -554,6 +774,24 @@ public:
             return 0;
         erase(i);
         return 1;
+    }
+
+    // Erase every element with a key equivalent to k (contiguous run).
+    template<class K>
+    size_type erase_multi(const K& k) {
+        base* cur = find_node(hasher_(k), k);
+        if (cur == nullptr)
+            return 0;
+        size_type n = 0;
+        size_t h = cur->hash;
+        while (cur != nullptr && cur->hash == h && eq_(node_value(cur), k)) {
+            base* nx = cur->next;
+            detail::hash_unlink(ctl_, cur);
+            destroy_node(cur);
+            cur = nx;
+            ++n;
+        }
+        return n;
     }
 
     void clear() noexcept {
@@ -596,12 +834,86 @@ public:
         return pair<const_iterator, const_iterator>(i, j);
     }
 
+    template<class K>
+    size_type count_multi(const K& k) const {
+        base* nd = find_node(hasher_(k), k);
+        if (nd == nullptr)
+            return 0;
+        size_type n = 0;
+        size_t h = nd->hash;
+        for (; nd != nullptr && nd->hash == h && eq_(node_value(nd), k); nd = nd->next)
+            ++n;
+        return n;
+    }
+
+    template<class K>
+    pair<iterator, iterator> equal_range_multi(const K& k) {
+        base* first = find_node(hasher_(k), k);
+        if (first == nullptr)
+            return pair<iterator, iterator>(end(), end());
+        base* last = first->next;
+        size_t h = first->hash;
+        while (last != nullptr && last->hash == h && eq_(node_value(last), k))
+            last = last->next;
+        return pair<iterator, iterator>(iterator(first), iterator(last));
+    }
+    template<class K>
+    pair<const_iterator, const_iterator> equal_range_multi(const K& k) const {
+        base* first = find_node(hasher_(k), k);
+        if (first == nullptr)
+            return pair<const_iterator, const_iterator>(end(), end());
+        base* last = first->next;
+        size_t h = first->hash;
+        while (last != nullptr && last->hash == h && eq_(node_value(last), k))
+            last = last->next;
+        return pair<const_iterator, const_iterator>(const_iterator(first), const_iterator(last));
+    }
+
     // ------------------------------------------------------------------
     // Hash policy (reduced local-bucket API per the lean contract)
     // ------------------------------------------------------------------
 
     size_type bucket_count() const noexcept { return ctl_ != nullptr ? ctl_->bucket_count : 0; }
     size_type max_bucket_count() const noexcept { return max_size(); }
+
+    // Local (per-bucket) access. A bucket's run is contiguous in the intrusive
+    // list, spanning buckets[n]->next while the constrained hash stays == n.
+    template<class K>
+    size_type bucket(const K& k) const {
+        size_type bc = bucket_count();
+        return bc != 0 ? (hasher_(k) & (bc - 1)) : 0;
+    }
+    size_type bucket_size(size_type n) const noexcept {
+        if (ctl_ == nullptr)
+            return 0;
+        size_t mask = ctl_->bucket_count - 1;
+        base* pn = detail::hash_buckets(ctl_)[n];
+        size_type c = 0;
+        if (pn != nullptr)
+            for (base* nd = pn->next; nd != nullptr && (nd->hash & mask) == n; nd = nd->next)
+                ++c;
+        return c;
+    }
+    local_iterator lbegin(size_type n) noexcept {
+        if (ctl_ == nullptr)
+            return local_iterator(nullptr, 0, n);
+        size_t mask = ctl_->bucket_count - 1;
+        base* pn = detail::hash_buckets(ctl_)[n];
+        return local_iterator(pn ? pn->next : nullptr, mask, n);
+    }
+    const_local_iterator lbegin(size_type n) const noexcept {
+        if (ctl_ == nullptr)
+            return const_local_iterator(nullptr, 0, n);
+        size_t mask = ctl_->bucket_count - 1;
+        base* pn = detail::hash_buckets(ctl_)[n];
+        return const_local_iterator(pn ? pn->next : nullptr, mask, n);
+    }
+    local_iterator lend(size_type n) noexcept {
+        return local_iterator(nullptr, ctl_ ? ctl_->bucket_count - 1 : 0, n);
+    }
+    const_local_iterator lend(size_type n) const noexcept {
+        return const_local_iterator(nullptr, ctl_ ? ctl_->bucket_count - 1 : 0, n);
+    }
 
     float load_factor() const noexcept {
         size_type bc = bucket_count();
@@ -631,6 +943,22 @@ public:
     }
     void reserve_unique(size_type n) {
         rehash_unique(size_type(__builtin_ceilf(float(n) / max_load_factor())));
+    }
+
+    // Adjacency-preserving rehash/reserve for the equivalent-key containers.
+    void rehash_multi(size_type n) {
+        size_t minb = size_t(__builtin_ceilf(float(size()) / max_load_factor()));
+        if (n < minb)
+            n = minb;
+        if (n == 0)
+            return;
+        size_t nbc = detail::hash_pow2_ceil(n);
+        if (ctl_ != nullptr && nbc == ctl_->bucket_count)
+            return;
+        ctl_ = detail::ht_multi_set_bucket_count(ctl_, nbc);
+    }
+    void reserve_multi(size_type n) {
+        rehash_multi(size_type(__builtin_ceilf(float(n) / max_load_factor())));
     }
 
     // ------------------------------------------------------------------

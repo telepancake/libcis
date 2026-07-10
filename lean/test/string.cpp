@@ -831,7 +831,41 @@ void test_stress() {
   CHECK(moved.c_str()[ref.len] == '\0');
 }
 
+// ---------------------------------------------------------------------------
+// constexpr EMPTY-string slice (regression): lean has no constexpr heap and no
+// SSO, but the EMPTY std::string points at the shared static rep, whose ADDRESS
+// is a constant expression — so default/empty construction and the read-only
+// accessors are constexpr, exactly matching the empty slice base gets via SSO.
+// Non-empty constexpr construction remains a documented deviation (excluded).
+// This mirrors what libc++'s constexpr string tests touch for the empty case.
+// ---------------------------------------------------------------------------
+constexpr bool constexpr_empty_slice() {
+  string s;                                   // constexpr default ctor
+  bool ok = s.empty() && s.size() == 0 && s.length() == 0 && s.capacity() == 0;
+  ok = ok && s.begin() == s.end() && s.cbegin() == s.cend();
+  ok = ok && s.data() == s.c_str();
+  string s2("");                              // empty-literal ctor
+  ok = ok && s2.empty();
+  string s3(s);                               // copy of empty
+  ok = ok && s3.empty();
+  string s4(std::move(s3));                   // move of empty
+  ok = ok && s4.empty();
+  s4.swap(s2);
+  ok = ok && s4.empty() && s2.empty();
+  ok = ok && (s == s4) && !(s < s4) && s.compare(s4) == 0;
+  ok = ok && s.starts_with('x') == false && s.ends_with('x') == false;
+  string_view sv = s;                         // constexpr conversion operator
+  ok = ok && sv.size() == 0 && sv.data() == s.data();
+  return ok;
+}
+static_assert(constexpr_empty_slice(), "lean empty std::string must be constexpr");
+
+static void test_constexpr_empty() {
+  CHECK(constexpr_empty_slice());             // also exercise the runtime path
+}
+
 int main() {
+  test_constexpr_empty();
   test_empty_invariants();
   test_construct();
   test_copy_move();

@@ -220,8 +220,6 @@ public:
     static_assert(detail::lean_allocator_ok<T, Allocator>,
         "lean std::list supports only std::allocator<T>; this profile drops "
         "custom allocators (allocator parameter kept for source compatibility)");
-    static_assert(alignof(T) <= alignof(max_align_t),
-        "lean std::list rejects over-aligned element types");
 
     using reference              = value_type&;
     using const_reference        = const value_type&;
@@ -259,6 +257,10 @@ private:
 
     template<class... Args>
     node_base_type* make_node(Args&&... args) {
+        // Over-alignment guard (deviation 4), deferred to node creation so the
+        // container can still be NAMED with an incomplete element type.
+        static_assert(alignof(T) <= alignof(max_align_t),
+            "lean std::list rejects over-aligned element types");
         void* mem = ::malloc(sizeof(node_type));
         if (!mem)
             __builtin_trap();

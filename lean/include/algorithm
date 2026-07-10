@@ -1783,7 +1783,15 @@ partial_sort_copy(InputIter first, InputIter last,
     if (r != result_last) {
         for (; first != last && r != result_last; ++first, (void)++r)
             *r = *first;
-        make_heap(result_first, r, comp);
+        // partial_sort_copy is not a fat kernel-routed entry point; it stays
+        // constexpr (its middle already uses the constexpr sift_down). Route
+        // the heap build/drain through the constexpr fallbacks under constant
+        // evaluation, and through the de-constexpr'd (kernel-routing) public
+        // make_heap/sort_heap at runtime so the code-size win is preserved.
+        if (is_constant_evaluated())
+            detail::make_heap_fallback(result_first, r, comp);
+        else
+            make_heap(result_first, r, comp);
         typename iterator_traits<RandomIter>::difference_type len = r - result_first;
         for (; first != last; ++first) {
             if (comp(*first, *result_first)) {
@@ -1791,7 +1799,10 @@ partial_sort_copy(InputIter first, InputIter last,
                 detail::sift_down(result_first, comp, len, 0);
             }
         }
-        sort_heap(result_first, r, comp);
+        if (is_constant_evaluated())
+            detail::sort_heap_fallback(result_first, r, comp);
+        else
+            sort_heap(result_first, r, comp);
     }
     return r;
 }
@@ -5737,7 +5748,13 @@ struct partial_sort_copy_fn {
         if (r != result_last) {
             for (; first != last && r != result_last; ++first, (void)++r)
                 *r = *first;
-            std::make_heap(result_first, r, pc2);
+            // See std::partial_sort_copy: constexpr-safe heap build/drain
+            // (constexpr fallback under constant evaluation, kernel-routing
+            // public entry points at runtime).
+            if (std::is_constant_evaluated())
+                std::detail::make_heap_fallback(result_first, r, pc2);
+            else
+                std::make_heap(result_first, r, pc2);
             iter_difference_t<I2> len = r - result_first;
             for (; first != last; ++first) {
                 if (std::invoke(comp, std::invoke(proj1, *first),
@@ -5747,7 +5764,10 @@ struct partial_sort_copy_fn {
                                            iter_difference_t<I2>(0));
                 }
             }
-            std::sort_heap(result_first, r, pc2);
+            if (std::is_constant_evaluated())
+                std::detail::sort_heap_fallback(result_first, r, pc2);
+            else
+                std::sort_heap(result_first, r, pc2);
         }
         // Consume the rest of the input range.
         while (first != last)

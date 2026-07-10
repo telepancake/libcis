@@ -62,8 +62,6 @@ public:
 
     static_assert(detail::lean_allocator_ok<value_type, Alloc>,
         "lean map supports only std::allocator<pair<const Key,T>>");
-    static_assert(alignof(value_type) <= alignof(max_align_t),
-        "lean map rejects over-aligned value types");
 
     // value_compare: compares by key, and heterogeneously against a bare key or
     // (when the comparator is transparent) any comparable K, so the tree can
@@ -518,8 +516,6 @@ public:
 
     static_assert(detail::lean_allocator_ok<value_type, Alloc>,
         "lean multimap supports only std::allocator<pair<const Key,T>>");
-    static_assert(alignof(value_type) <= alignof(max_align_t),
-        "lean multimap rejects over-aligned value types");
 
     class value_compare {
         friend class multimap;

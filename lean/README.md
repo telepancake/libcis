@@ -92,7 +92,13 @@ binary carries only the kernels it actually reaches.
      the library `__builtin_trap()`s. Zero-offset conversions (all single
      inheritance — the overwhelming case) are free. `weak_ptr` conversions run the
      same check on the pointer *value* only, never dereferencing the (possibly
-     dead) object.
+     dead) object — with one carve-out: converting to a **virtual** base has a
+     statically-unknowable offset that can only be computed by reading the
+     object's vtable, so it traps via the offset check while the object is
+     alive, and converting a **dangling** `weak_ptr` to a virtual base is
+     undefined behavior (the check itself would read the dead object). A
+     standard two-word handle captures the adjusted pointer at construction;
+     the one-pointer handle has nowhere to keep it.
    - **No array support** (`shared_ptr<T[]>`, `make_shared<T[]>`, `operator[]`): the
      element count needed to destroy an array does not fit the fixed four-field
      block without a negative-offset trick judged not clean enough to ship.

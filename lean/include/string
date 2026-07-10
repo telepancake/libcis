@@ -132,10 +132,18 @@ private:
 
     static constexpr size_type elem_size = sizeof(value_type);
 
-    void set_empty() noexcept {
-        ptr_ = static_cast<pointer>(detail::lean_str_empty_payload());
+    constexpr void set_empty() noexcept {
+        // For char the empty-rep payload is already char* == pointer, so a plain
+        // assignment (constant-evaluable) points at the shared static rep.  For
+        // wide char types the reinterpret is runtime-only: there is no constexpr
+        // empty wide string (a char*->wchar_t* cast is not constexpr), which is
+        // acceptable — the constexpr slice lean supports is the char empty string.
+        if constexpr (is_same_v<value_type, char>)
+            ptr_ = detail::lean_str_empty_payload();
+        else
+            ptr_ = reinterpret_cast<pointer>(detail::lean_str_empty_payload());
     }
-    bool is_static() const noexcept { return detail::lean_str_is_static(ptr_); }
+    constexpr bool is_static() const noexcept { return detail::lean_str_is_static(ptr_); }
     value_type* raw_data() noexcept { return ptr_; }
     const value_type* raw_data() const noexcept { return ptr_; }
 
@@ -171,7 +179,12 @@ private:
         return *this;
     }
 
-    void init_from(const value_type* s, size_type n) {
+    // constexpr for the EMPTY slice only: n==0 never touches the (non-constexpr)
+    // splice kernel, so a default/empty-literal construction is a constant
+    // expression; a non-empty n makes the enclosing constant evaluation fail
+    // (the documented no-constexpr-heap deviation), exactly as base would need
+    // SSO to avoid.
+    constexpr void init_from(const value_type* s, size_type n) {
         set_empty();
         if (n) do_replace(0, 0, s, n);
     }
@@ -185,22 +198,22 @@ public:
     // Constructors
     // =========================================================================
 
-    basic_string() noexcept { set_empty(); }
+    constexpr basic_string() noexcept { set_empty(); }
 
-    explicit basic_string(const allocator_type&) noexcept { set_empty(); }
+    explicit constexpr basic_string(const allocator_type&) noexcept { set_empty(); }
 
-    basic_string(const basic_string& other) { init_from(other.data(), other.size()); }
+    constexpr basic_string(const basic_string& other) { init_from(other.data(), other.size()); }
 
-    basic_string(const basic_string& other, const allocator_type&) {
+    constexpr basic_string(const basic_string& other, const allocator_type&) {
         init_from(other.data(), other.size());
     }
 
-    basic_string(basic_string&& other) noexcept {
+    constexpr basic_string(basic_string&& other) noexcept {
         ptr_ = other.ptr_;
         other.set_empty();
     }
 
-    basic_string(basic_string&& other, const allocator_type&) noexcept {
+    constexpr basic_string(basic_string&& other, const allocator_type&) noexcept {
         ptr_ = other.ptr_;
         other.set_empty();
     }
@@ -221,11 +234,11 @@ public:
         if (size() > len) erase(len, npos);
     }
 
-    basic_string(const value_type* s, const allocator_type& = allocator_type()) {
+    constexpr basic_string(const value_type* s, const allocator_type& = allocator_type()) {
         init_from(s, traits_type::length(s));
     }
 
-    basic_string(const value_type* s, size_type n, const allocator_type& = allocator_type()) {
+    constexpr basic_string(const value_type* s, size_type n, const allocator_type& = allocator_type()) {
         init_from(s, n);
     }
 
@@ -292,7 +305,7 @@ public:
         init_from(il.begin(), il.size());
     }
 
-    ~basic_string() {
+    constexpr ~basic_string() {
         if (!is_static())
             detail::lean_free(ptr_, elem_size);
     }
@@ -333,7 +346,7 @@ public:
 
     basic_string& operator=(nullptr_t) = delete;
 
-    operator basic_string_view<CharT, Traits>() const noexcept {
+    constexpr operator basic_string_view<CharT, Traits>() const noexcept {
         return basic_string_view<CharT, Traits>(data(), size());
     }
 
@@ -341,35 +354,44 @@ public:
     // Iterators
     // =========================================================================
 
-    iterator       begin()        noexcept { return ptr_; }
-    const_iterator begin()  const noexcept { return ptr_; }
-    iterator       end()          noexcept { return ptr_ + size(); }
-    const_iterator end()    const noexcept { return ptr_ + size(); }
+    constexpr iterator       begin()        noexcept { return ptr_; }
+    constexpr const_iterator begin()  const noexcept { return ptr_; }
+    constexpr iterator       end()          noexcept { return ptr_ + size(); }
+    constexpr const_iterator end()    const noexcept { return ptr_ + size(); }
 
-    reverse_iterator       rbegin()       noexcept { return reverse_iterator(end()); }
-    const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
-    reverse_iterator       rend()         noexcept { return reverse_iterator(begin()); }
-    const_reverse_iterator rend()   const noexcept { return const_reverse_iterator(begin()); }
+    constexpr reverse_iterator       rbegin()       noexcept { return reverse_iterator(end()); }
+    constexpr const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
+    constexpr reverse_iterator       rend()         noexcept { return reverse_iterator(begin()); }
+    constexpr const_reverse_iterator rend()   const noexcept { return const_reverse_iterator(begin()); }
 
-    const_iterator         cbegin()  const noexcept { return begin(); }
-    const_iterator         cend()    const noexcept { return end(); }
-    const_reverse_iterator crbegin() const noexcept { return rbegin(); }
-    const_reverse_iterator crend()   const noexcept { return rend(); }
+    constexpr const_iterator         cbegin()  const noexcept { return begin(); }
+    constexpr const_iterator         cend()    const noexcept { return end(); }
+    constexpr const_reverse_iterator crbegin() const noexcept { return rbegin(); }
+    constexpr const_reverse_iterator crend()   const noexcept { return rend(); }
 
     // =========================================================================
     // Capacity
     // =========================================================================
 
-    [[nodiscard]] size_type size()   const noexcept { return detail::lean_used(ptr_); }
-    [[nodiscard]] size_type length() const noexcept { return size(); }
-    [[nodiscard]] bool empty() const noexcept { return size() == 0; }
+    // The `used` header read is a reinterpret_cast (not constexpr-legal); but in
+    // constant evaluation the ONLY string that can exist is the shared empty rep
+    // (no constexpr heap, no SSO — README deviations 2 & 3), so its length is a
+    // literal 0.  The runtime path is unchanged.
+    [[nodiscard]] constexpr size_type size() const noexcept {
+        if (__builtin_is_constant_evaluated()) return 0;
+        return detail::lean_used(ptr_);
+    }
+    [[nodiscard]] constexpr size_type length() const noexcept { return size(); }
+    [[nodiscard]] constexpr bool empty() const noexcept { return size() == 0; }
 
-    [[nodiscard]] size_type max_size() const noexcept {
+    [[nodiscard]] constexpr size_type max_size() const noexcept {
         return (numeric_limits<size_type>::max() - detail::lean_offset(elem_size))
                / elem_size - 1;
     }
 
-    [[nodiscard]] size_type capacity() const noexcept {
+    [[nodiscard]] constexpr size_type capacity() const noexcept {
+        // Empty rep has capacity 0; in constant evaluation that is the only rep.
+        if (__builtin_is_constant_evaluated()) return 0;
         return is_static() ? 0 : detail::lean_str_cap(ptr_, elem_size);
     }
 
@@ -408,8 +430,8 @@ public:
     // Element access
     // =========================================================================
 
-    [[nodiscard]] const_reference operator[](size_type pos) const noexcept { return ptr_[pos]; }
-    [[nodiscard]] reference       operator[](size_type pos)       noexcept { return ptr_[pos]; }
+    [[nodiscard]] constexpr const_reference operator[](size_type pos) const noexcept { return ptr_[pos]; }
+    [[nodiscard]] constexpr reference       operator[](size_type pos)       noexcept { return ptr_[pos]; }
 
     [[nodiscard]] const_reference at(size_type pos) const {
         if (pos >= size()) __builtin_trap(); // would throw out_of_range
@@ -425,11 +447,11 @@ public:
     [[nodiscard]] reference       back()        noexcept { return ptr_[size() - 1]; }
     [[nodiscard]] const_reference back()  const noexcept { return ptr_[size() - 1]; }
 
-    [[nodiscard]] const value_type* c_str() const noexcept { return ptr_; }
-    [[nodiscard]] const value_type* data()  const noexcept { return ptr_; }
-    [[nodiscard]]       value_type* data()        noexcept { return ptr_; }
+    [[nodiscard]] constexpr const value_type* c_str() const noexcept { return ptr_; }
+    [[nodiscard]] constexpr const value_type* data()  const noexcept { return ptr_; }
+    [[nodiscard]] constexpr       value_type* data()        noexcept { return ptr_; }
 
-    allocator_type get_allocator() const noexcept { return allocator_type(); }
+    constexpr allocator_type get_allocator() const noexcept { return allocator_type(); }
 
     // =========================================================================
     // push/pop
@@ -730,7 +752,7 @@ public:
         return basic_string(move(*this), pos, n);
     }
 
-    void swap(basic_string& other) noexcept {
+    constexpr void swap(basic_string& other) noexcept {
         pointer t = ptr_;
         ptr_ = other.ptr_;
         other.ptr_ = t;
@@ -854,47 +876,47 @@ public:
     // compare
     // =========================================================================
 
-    int compare(const basic_string& str) const noexcept {
+    constexpr int compare(const basic_string& str) const noexcept {
         return basic_string_view<CharT, Traits>(*this).compare(
                basic_string_view<CharT, Traits>(str));
     }
-    int compare(size_type pos1, size_type n1, const basic_string& str) const {
+    constexpr int compare(size_type pos1, size_type n1, const basic_string& str) const {
         return basic_string_view<CharT, Traits>(*this).substr(pos1, n1).compare(
                basic_string_view<CharT, Traits>(str));
     }
-    int compare(size_type pos1, size_type n1, const basic_string& str,
+    constexpr int compare(size_type pos1, size_type n1, const basic_string& str,
                 size_type pos2, size_type n2 = npos) const {
         return basic_string_view<CharT, Traits>(*this).substr(pos1, n1).compare(
                basic_string_view<CharT, Traits>(str).substr(pos2, n2));
     }
-    int compare(const value_type* s) const noexcept {
+    constexpr int compare(const value_type* s) const noexcept {
         return basic_string_view<CharT, Traits>(*this).compare(
                basic_string_view<CharT, Traits>(s));
     }
-    int compare(size_type pos1, size_type n1, const value_type* s) const {
+    constexpr int compare(size_type pos1, size_type n1, const value_type* s) const {
         return basic_string_view<CharT, Traits>(*this).substr(pos1, n1).compare(
                basic_string_view<CharT, Traits>(s));
     }
-    int compare(size_type pos1, size_type n1, const value_type* s, size_type n2) const {
+    constexpr int compare(size_type pos1, size_type n1, const value_type* s, size_type n2) const {
         return basic_string_view<CharT, Traits>(*this).substr(pos1, n1).compare(
                basic_string_view<CharT, Traits>(s, n2));
     }
     template<class T>
         requires detail::sv_compatible_v<CharT, Traits, T>
-    int compare(const T& t) const noexcept {
+    constexpr int compare(const T& t) const noexcept {
         basic_string_view<CharT, Traits> sv = t;
         return basic_string_view<CharT, Traits>(*this).compare(sv);
     }
     template<class T>
         requires detail::sv_compatible_v<CharT, Traits, T>
-    int compare(size_type pos1, size_type n1, const T& t) const {
+    constexpr int compare(size_type pos1, size_type n1, const T& t) const {
         basic_string_view<CharT, Traits> sv = t;
         return basic_string_view<CharT, Traits>(*this).substr(pos1, n1).compare(sv);
     }
     template<class T>
         requires (detail::sv_compatible_v<CharT, Traits, T> &&
                   !is_same_v<remove_cvref_t<T>, basic_string>)
-    int compare(size_type pos1, size_type n1, const T& t,
+    constexpr int compare(size_type pos1, size_type n1, const T& t,
                 size_type pos2, size_type n2 = npos) const {
         basic_string_view<CharT, Traits> sv = t;
         return basic_string_view<CharT, Traits>(*this).substr(pos1, n1)
@@ -905,31 +927,31 @@ public:
     // starts_with / ends_with / contains
     // =========================================================================
 
-    [[nodiscard]] bool starts_with(basic_string_view<CharT, Traits> sv) const noexcept {
+    [[nodiscard]] constexpr bool starts_with(basic_string_view<CharT, Traits> sv) const noexcept {
         return basic_string_view<CharT, Traits>(*this).starts_with(sv);
     }
-    [[nodiscard]] bool starts_with(value_type c) const noexcept {
+    [[nodiscard]] constexpr bool starts_with(value_type c) const noexcept {
         return !empty() && traits_type::eq(front(), c);
     }
-    [[nodiscard]] bool starts_with(const value_type* s) const noexcept {
+    [[nodiscard]] constexpr bool starts_with(const value_type* s) const noexcept {
         return starts_with(basic_string_view<CharT, Traits>(s));
     }
 
-    [[nodiscard]] bool ends_with(basic_string_view<CharT, Traits> sv) const noexcept {
+    [[nodiscard]] constexpr bool ends_with(basic_string_view<CharT, Traits> sv) const noexcept {
         return basic_string_view<CharT, Traits>(*this).ends_with(sv);
     }
-    [[nodiscard]] bool ends_with(value_type c) const noexcept {
+    [[nodiscard]] constexpr bool ends_with(value_type c) const noexcept {
         return !empty() && traits_type::eq(back(), c);
     }
-    [[nodiscard]] bool ends_with(const value_type* s) const noexcept {
+    [[nodiscard]] constexpr bool ends_with(const value_type* s) const noexcept {
         return ends_with(basic_string_view<CharT, Traits>(s));
     }
 
-    [[nodiscard]] bool contains(basic_string_view<CharT, Traits> sv) const noexcept {
+    [[nodiscard]] constexpr bool contains(basic_string_view<CharT, Traits> sv) const noexcept {
         return find(sv.data(), 0, sv.size()) != npos;
     }
-    [[nodiscard]] bool contains(value_type c) const noexcept { return find(c) != npos; }
-    [[nodiscard]] bool contains(const value_type* s) const noexcept { return find(s) != npos; }
+    [[nodiscard]] constexpr bool contains(value_type c) const noexcept { return find(c) != npos; }
+    [[nodiscard]] constexpr bool contains(const value_type* s) const noexcept { return find(s) != npos; }
 }; // class basic_string
 
 static_assert(sizeof(basic_string<char>) == sizeof(void*),
@@ -963,7 +985,7 @@ basic_string(basic_string_view<CharT, Traits>, size_t, size_t, const Alloc& = Al
 //=============================================================================
 
 template<class CharT, class Traits, class Alloc>
-[[nodiscard]] bool
+[[nodiscard]] constexpr bool
 operator==(const basic_string<CharT, Traits, Alloc>& lhs,
            const basic_string<CharT, Traits, Alloc>& rhs) noexcept {
     if (lhs.size() != rhs.size()) return false;
@@ -971,13 +993,13 @@ operator==(const basic_string<CharT, Traits, Alloc>& lhs,
 }
 
 template<class CharT, class Traits, class Alloc>
-[[nodiscard]] bool
+[[nodiscard]] constexpr bool
 operator==(const basic_string<CharT, Traits, Alloc>& lhs, const CharT* rhs) noexcept {
     return lhs.compare(rhs) == 0;
 }
 
 template<class CharT, class Traits, class Alloc>
-[[nodiscard]] auto
+[[nodiscard]] constexpr auto
 operator<=>(const basic_string<CharT, Traits, Alloc>& lhs,
             const basic_string<CharT, Traits, Alloc>& rhs) noexcept {
     int r = Traits::compare(lhs.data(), rhs.data(),
@@ -990,7 +1012,7 @@ operator<=>(const basic_string<CharT, Traits, Alloc>& lhs,
 }
 
 template<class CharT, class Traits, class Alloc>
-[[nodiscard]] auto
+[[nodiscard]] constexpr auto
 operator<=>(const basic_string<CharT, Traits, Alloc>& lhs, const CharT* rhs) noexcept {
     int r = lhs.compare(rhs);
     if constexpr (requires { typename Traits::comparison_category; })
@@ -1111,7 +1133,7 @@ operator+(basic_string<CharT, Traits, Alloc>&& lhs, CharT rhs) {
 //=============================================================================
 
 template<class CharT, class Traits, class Alloc>
-void swap(basic_string<CharT, Traits, Alloc>& x,
+constexpr void swap(basic_string<CharT, Traits, Alloc>& x,
           basic_string<CharT, Traits, Alloc>& y) noexcept(noexcept(x.swap(y))) {
     x.swap(y);
 }

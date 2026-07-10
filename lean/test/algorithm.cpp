@@ -263,6 +263,48 @@ void test_partial_sort() {
 }
 
 // --------------------------------------------------------------------------
+// partial_sort_copy — NOT a rerouted fat kernel entry point (it never routes
+// to a lean_sort kernel; it is a pure copy template), so unlike sort/heap/
+// nth_element it MUST stay constexpr. Regression: it used to call the
+// de-constexpr'd public make_heap/sort_heap and thereby lost constant-
+// evaluability even though it is declared constexpr. Exercised here in
+// constant evaluation (static_assert) over a raw-pointer result range — which
+// is lean_sort_ok, so it drives the is_constant_evaluated() fallback arm — and
+// at runtime against the independent reference.
+// --------------------------------------------------------------------------
+constexpr bool partial_sort_copy_cx() {
+    int src[8] = {5, 3, 8, 1, 9, 2, 7, 4};
+    int dst[4] = {0, 0, 0, 0};
+    int* e = std::partial_sort_copy(src, src + 8, dst, dst + 4);
+    if (e != dst + 4) return false;
+    if (!(dst[0] == 1 && dst[1] == 2 && dst[2] == 3 && dst[3] == 4)) return false;
+    // comparator overload, descending: the 4 LARGEST, sorted descending
+    int dst2[4] = {0, 0, 0, 0};
+    std::partial_sort_copy(src, src + 8, dst2, dst2 + 4, std::greater<int>{});
+    return dst2[0] == 9 && dst2[1] == 8 && dst2[2] == 7 && dst2[3] == 5;
+}
+static_assert(partial_sort_copy_cx(),
+              "partial_sort_copy must remain usable in constant evaluation");
+
+void test_partial_sort_copy() {
+    CHECK(partial_sort_copy_cx());                       // runtime arm of the same body
+    rng_reset(23);
+    for (size_t n = 0; n <= 65; ++n)
+        for (int p = 0; p < 5; ++p) {
+            vector<int> v = gen(n, p);
+            vector<int> ref = v;
+            ref_merge_sort(ref);
+            for (size_t m = 0; m <= n; m += (n / 4 + 1)) {
+                vector<int> out(m, 0);
+                int* e = std::partial_sort_copy(v.begin(), v.end(),
+                                                out.begin(), out.end());
+                CHECK(e == out.begin() + m);
+                for (size_t i = 0; i < m; ++i) CHECK(out[i] == ref[i]);
+            }
+        }
+}
+
+// --------------------------------------------------------------------------
 // heap family: make/push/pop/sort_heap
 // --------------------------------------------------------------------------
 void test_heap_family() {
@@ -545,6 +587,7 @@ int main() {
     test_stable_sort_stability();
     test_nth_element();
     test_partial_sort();
+    test_partial_sort_copy();
     test_heap_family();
     test_inplace_merge();
     test_string_sort_kernel();

@@ -8,9 +8,7 @@
 //   - std::allocator<value_type> only (static_assert); get_allocator() returns
 //     a default-constructed allocator; no pmr aliases.
 //   - No node_handle: no extract / insert(node) / merge.
-//   - Local bucket API reduced to bucket_count/load_factor/max_load_factor/
-//     rehash/reserve (no bucket()/bucket_size()/begin(n)/end(n)).
-//   - unordered_multimap is not provided in this profile.
+//   - Full local bucket API (bucket/bucket_size/local_iterator/begin(n)/end(n)).
 //   - Members are not constexpr.
 //
 // Target: gcc-10.2, -std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti
@@ -22,6 +20,7 @@
 #include <utility>
 #include <tuple>
 #include <iterator>
+#include <algorithm>
 #include <initializer_list>
 #include <type_traits>
 
@@ -124,8 +123,6 @@ public:
                   "Allocator::value_type must be same type as value_type");
     static_assert(detail::lean_allocator_ok<value_type, allocator_type>,
                   "lean unordered_map supports only std::allocator<value_type>");
-    static_assert(alignof(value_type) <= alignof(max_align_t),
-                  "lean unordered_map rejects over-aligned element types");
 
 private:
     using table_hasher = detail::unordered_map_hasher<key_type, value_type, hasher, key_equal>;
@@ -144,8 +141,10 @@ public:
     using size_type       = typename table::size_type;
     using difference_type = typename table::difference_type;
 
-    using iterator       = typename table::iterator;
-    using const_iterator = typename table::const_iterator;
+    using iterator             = typename table::iterator;
+    using const_iterator       = typename table::const_iterator;
+    using local_iterator       = typename table::local_iterator;
+    using const_local_iterator = typename table::const_local_iterator;
 
     // ------------------------------------------------------------------
     // Constructors
@@ -443,6 +442,14 @@ public:
 
     size_type bucket_count() const noexcept { return table_.bucket_count(); }
     size_type max_bucket_count() const noexcept { return table_.max_bucket_count(); }
+    size_type bucket_size(size_type n) const { return table_.bucket_size(n); }
+    size_type bucket(const key_type& k) const { return table_.bucket(k); }
+    local_iterator begin(size_type n) { return table_.lbegin(n); }
+    const_local_iterator begin(size_type n) const { return table_.lbegin(n); }
+    local_iterator end(size_type n) { return table_.lend(n); }
+    const_local_iterator end(size_type n) const { return table_.lend(n); }
+    const_local_iterator cbegin(size_type n) const { return table_.lbegin(n); }
+    const_local_iterator cend(size_type n) const { return table_.lend(n); }
 
     float load_factor() const noexcept { return table_.load_factor(); }
     float max_load_factor() const noexcept { return table_.max_load_factor(); }
@@ -563,6 +570,417 @@ bool operator==(const unordered_map<Key, T, Hash, Pred, Alloc>& x,
         const_iterator j = y.find(i->first);
         if (j == ey || !(*i == *j))
             return false;
+    }
+    return true;
+}
+
+// ============================================================================
+// unordered_multimap — equivalent keys allowed. Same one-pointer control block
+// and hash_table engine as unordered_map, but every insert stores a new element
+// (equivalent keys kept adjacent so count()/equal_range() are the standard
+// contiguous run). No operator[]/at/try_emplace/insert_or_assign (unique-only).
+// ============================================================================
+
+template<class Key, class T,
+         class Hash  = hash<Key>,
+         class Pred  = equal_to<Key>,
+         class Alloc = allocator<pair<const Key, T>>>
+class unordered_multimap {
+public:
+    using key_type        = Key;
+    using mapped_type     = T;
+    using hasher          = type_identity_t<Hash>;
+    using key_equal       = type_identity_t<Pred>;
+    using allocator_type  = type_identity_t<Alloc>;
+    using value_type      = pair<const key_type, mapped_type>;
+    using reference       = value_type&;
+    using const_reference = const value_type&;
+    static_assert(is_same_v<value_type, typename allocator_type::value_type>,
+                  "Allocator::value_type must be same type as value_type");
+    static_assert(detail::lean_allocator_ok<value_type, allocator_type>,
+                  "lean unordered_multimap supports only std::allocator<value_type>");
+
+private:
+    using table_hasher = detail::unordered_map_hasher<key_type, value_type, hasher, key_equal>;
+    using table_key_equal = detail::unordered_map_equal<key_type, value_type, key_equal, hasher>;
+
+    using table = hash_table<value_type, table_hasher, table_key_equal, allocator_type>;
+
+    table table_;
+
+    template<class, class, class, class, class>
+    friend class unordered_multimap;
+
+public:
+    using pointer         = typename allocator_traits<allocator_type>::pointer;
+    using const_pointer   = typename allocator_traits<allocator_type>::const_pointer;
+    using size_type       = typename table::size_type;
+    using difference_type = typename table::difference_type;
+
+    using iterator             = typename table::iterator;
+    using const_iterator       = typename table::const_iterator;
+    using local_iterator       = typename table::local_iterator;
+    using const_local_iterator = typename table::const_local_iterator;
+
+    // ------------------------------------------------------------------
+    // Constructors
+    // ------------------------------------------------------------------
+
+    unordered_multimap() noexcept(is_nothrow_default_constructible_v<table>) {}
+
+    explicit unordered_multimap(size_type n, const hasher& hf = hasher(),
+                                const key_equal& eql = key_equal())
+        : table_(hf, eql) {
+        table_.rehash_unique(n);
+    }
+
+    unordered_multimap(size_type n, const hasher& hf, const key_equal& eql,
+                       const allocator_type& a)
+        : table_(hf, eql, a) {
+        table_.rehash_unique(n);
+    }
+
+    template<class InputIterator>
+    unordered_multimap(InputIterator first, InputIterator last) {
+        insert(first, last);
+    }
+
+    template<class InputIterator>
+    unordered_multimap(InputIterator first, InputIterator last, size_type n,
+                       const hasher& hf = hasher(), const key_equal& eql = key_equal())
+        : table_(hf, eql) {
+        table_.rehash_unique(n);
+        insert(first, last);
+    }
+
+    template<class InputIterator>
+    unordered_multimap(InputIterator first, InputIterator last, size_type n,
+                       const hasher& hf, const key_equal& eql, const allocator_type& a)
+        : table_(hf, eql, a) {
+        table_.rehash_unique(n);
+        insert(first, last);
+    }
+
+    explicit unordered_multimap(const allocator_type& a) : table_(a) {}
+
+    unordered_multimap(const unordered_multimap& u) : table_(u.table_) {
+        insert(u.begin(), u.end());
+    }
+
+    unordered_multimap(const unordered_multimap& u, const allocator_type& a) : table_(u.table_, a) {
+        insert(u.begin(), u.end());
+    }
+
+    unordered_multimap(unordered_multimap&& u) noexcept(is_nothrow_move_constructible_v<table>)
+        : table_(std::move(u.table_)) {}
+
+    unordered_multimap(unordered_multimap&& u, const allocator_type& a)
+        : table_(std::move(u.table_), a) {}
+
+    unordered_multimap(initializer_list<value_type> il) { insert(il.begin(), il.end()); }
+
+    unordered_multimap(initializer_list<value_type> il, size_type n,
+                       const hasher& hf = hasher(), const key_equal& eql = key_equal())
+        : table_(hf, eql) {
+        table_.rehash_unique(n);
+        insert(il.begin(), il.end());
+    }
+
+    unordered_multimap(initializer_list<value_type> il, size_type n,
+                       const hasher& hf, const key_equal& eql, const allocator_type& a)
+        : table_(hf, eql, a) {
+        table_.rehash_unique(n);
+        insert(il.begin(), il.end());
+    }
+
+    unordered_multimap(size_type n, const allocator_type& a)
+        : unordered_multimap(n, hasher(), key_equal(), a) {}
+    unordered_multimap(size_type n, const hasher& hf, const allocator_type& a)
+        : unordered_multimap(n, hf, key_equal(), a) {}
+    template<class InputIterator>
+    unordered_multimap(InputIterator first, InputIterator last, size_type n,
+                       const allocator_type& a)
+        : unordered_multimap(first, last, n, hasher(), key_equal(), a) {}
+    template<class InputIterator>
+    unordered_multimap(InputIterator first, InputIterator last, size_type n, const hasher& hf,
+                       const allocator_type& a)
+        : unordered_multimap(first, last, n, hf, key_equal(), a) {}
+    unordered_multimap(initializer_list<value_type> il, size_type n, const allocator_type& a)
+        : unordered_multimap(il, n, hasher(), key_equal(), a) {}
+    unordered_multimap(initializer_list<value_type> il, size_type n, const hasher& hf,
+                       const allocator_type& a)
+        : unordered_multimap(il, n, hf, key_equal(), a) {}
+
+    ~unordered_multimap() = default;
+
+    // ------------------------------------------------------------------
+    // Assignment
+    // ------------------------------------------------------------------
+
+    unordered_multimap& operator=(const unordered_multimap& u) {
+        table_.assign_from_multi(u.table_);
+        return *this;
+    }
+
+    unordered_multimap& operator=(unordered_multimap&& u)
+        noexcept(is_nothrow_move_assignable_v<table>) {
+        table_ = std::move(u.table_);
+        return *this;
+    }
+
+    unordered_multimap& operator=(initializer_list<value_type> il) {
+        table_.assign_multi(il.begin(), il.end());
+        return *this;
+    }
+
+    allocator_type get_allocator() const noexcept { return allocator_type(); }
+
+    // ------------------------------------------------------------------
+    // Capacity / iterators
+    // ------------------------------------------------------------------
+
+    [[nodiscard]] bool empty() const noexcept { return table_.size() == 0; }
+    size_type size() const noexcept { return table_.size(); }
+    size_type max_size() const noexcept { return table_.max_size(); }
+
+    iterator begin() noexcept { return table_.begin(); }
+    iterator end() noexcept { return table_.end(); }
+    const_iterator begin() const noexcept { return table_.begin(); }
+    const_iterator end() const noexcept { return table_.end(); }
+    const_iterator cbegin() const noexcept { return table_.begin(); }
+    const_iterator cend() const noexcept { return table_.end(); }
+
+    // ------------------------------------------------------------------
+    // Modifiers
+    // ------------------------------------------------------------------
+
+    iterator insert(const value_type& x) { return table_.insert_multi(x); }
+    iterator insert(value_type&& x) { return table_.insert_multi(std::move(x)); }
+    iterator insert(const_iterator, const value_type& x) { return table_.insert_multi(x); }
+    iterator insert(const_iterator, value_type&& x) { return table_.insert_multi(std::move(x)); }
+
+    template<class P, enable_if_t<is_constructible_v<value_type, P>, int> = 0>
+    iterator insert(P&& x) {
+        return table_.insert_multi(std::forward<P>(x));
+    }
+    template<class P, enable_if_t<is_constructible_v<value_type, P>, int> = 0>
+    iterator insert(const_iterator, P&& x) {
+        return table_.insert_multi(std::forward<P>(x));
+    }
+
+    template<class InputIterator>
+    void insert(InputIterator first, InputIterator last) {
+        for (; first != last; ++first)
+            table_.insert_multi(*first);
+    }
+
+    void insert(initializer_list<value_type> il) { insert(il.begin(), il.end()); }
+
+    template<class... Args>
+    iterator emplace(Args&&... args) {
+        return table_.emplace_multi(std::forward<Args>(args)...);
+    }
+    template<class... Args>
+    iterator emplace_hint(const_iterator, Args&&... args) {
+        return table_.emplace_multi(std::forward<Args>(args)...);
+    }
+
+    iterator erase(const_iterator p) { return table_.erase(p); }
+    iterator erase(iterator p) { return table_.erase(const_iterator(p)); }
+    size_type erase(const key_type& k) { return table_.erase_multi(k); }
+    iterator erase(const_iterator first, const_iterator last) {
+        return table_.erase(first, last);
+    }
+    void clear() noexcept { table_.clear(); }
+
+    void swap(unordered_multimap& u) noexcept(is_nothrow_swappable_v<table>) {
+        table_.swap(u.table_);
+    }
+
+    // ------------------------------------------------------------------
+    // Observers
+    // ------------------------------------------------------------------
+
+    hasher hash_function() const { return table_.hash_function().hash_function(); }
+    key_equal key_eq() const { return table_.key_eq().key_eq(); }
+
+    // ------------------------------------------------------------------
+    // Lookup
+    // ------------------------------------------------------------------
+
+    iterator find(const key_type& k) { return table_.find(k); }
+    const_iterator find(const key_type& k) const { return table_.find(k); }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    iterator find(const K2& k) { return table_.find(k); }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    const_iterator find(const K2& k) const { return table_.find(k); }
+
+    size_type count(const key_type& k) const { return table_.count_multi(k); }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    size_type count(const K2& k) const { return table_.count_multi(k); }
+
+    bool contains(const key_type& k) const { return find(k) != end(); }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    bool contains(const K2& k) const { return find(k) != end(); }
+
+    pair<iterator, iterator> equal_range(const key_type& k) {
+        return table_.equal_range_multi(k);
+    }
+    pair<const_iterator, const_iterator> equal_range(const key_type& k) const {
+        return table_.equal_range_multi(k);
+    }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    pair<iterator, iterator> equal_range(const K2& k) {
+        return table_.equal_range_multi(k);
+    }
+    template<class K2, enable_if_t<detail::ht_is_transparent_v<hasher, K2> &&
+                                   detail::ht_is_transparent_v<key_equal, K2>>* = nullptr>
+    pair<const_iterator, const_iterator> equal_range(const K2& k) const {
+        return table_.equal_range_multi(k);
+    }
+
+    // ------------------------------------------------------------------
+    // Hash policy (reduced local-bucket API — see the deviations note)
+    // ------------------------------------------------------------------
+
+    size_type bucket_count() const noexcept { return table_.bucket_count(); }
+    size_type max_bucket_count() const noexcept { return table_.max_bucket_count(); }
+    size_type bucket_size(size_type n) const { return table_.bucket_size(n); }
+    size_type bucket(const key_type& k) const { return table_.bucket(k); }
+    local_iterator begin(size_type n) { return table_.lbegin(n); }
+    const_local_iterator begin(size_type n) const { return table_.lbegin(n); }
+    local_iterator end(size_type n) { return table_.lend(n); }
+    const_local_iterator end(size_type n) const { return table_.lend(n); }
+    const_local_iterator cbegin(size_type n) const { return table_.lbegin(n); }
+    const_local_iterator cend(size_type n) const { return table_.lend(n); }
+
+    float load_factor() const noexcept { return table_.load_factor(); }
+    float max_load_factor() const noexcept { return table_.max_load_factor(); }
+    void max_load_factor(float mlf) { table_.max_load_factor(mlf); }
+    void rehash(size_type n) { table_.rehash_multi(n); }
+    void reserve(size_type n) { table_.reserve_multi(n); }
+};
+
+static_assert(sizeof(unordered_multimap<int, int>) == sizeof(void*),
+              "lean unordered_multimap must be exactly one pointer");
+
+// Deduction guides
+template<class InputIterator,
+         class Hash      = hash<detail::ht_iter_key_type<InputIterator>>,
+         class Pred      = equal_to<detail::ht_iter_key_type<InputIterator>>,
+         class Allocator = allocator<detail::ht_iter_to_alloc_type<InputIterator>>,
+         class           = void_t<detail::ht_iter_category_t<InputIterator>>,
+         class           = enable_if_t<!detail::ht_is_allocator_v<Hash>>,
+         class           = enable_if_t<!is_integral_v<Hash>>,
+         class           = enable_if_t<!detail::ht_is_allocator_v<Pred>>,
+         class           = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_multimap(InputIterator, InputIterator,
+                   typename allocator_traits<Allocator>::size_type = 0,
+                   Hash = Hash(), Pred = Pred(), Allocator = Allocator())
+    -> unordered_multimap<detail::ht_iter_key_type<InputIterator>,
+                          detail::ht_iter_mapped_type<InputIterator>, Hash, Pred, Allocator>;
+
+template<class Key, class Tp,
+         class Hash      = hash<remove_const_t<Key>>,
+         class Pred      = equal_to<remove_const_t<Key>>,
+         class Allocator = allocator<pair<const Key, Tp>>,
+         class           = enable_if_t<!detail::ht_is_allocator_v<Hash>>,
+         class           = enable_if_t<!is_integral_v<Hash>>,
+         class           = enable_if_t<!detail::ht_is_allocator_v<Pred>>,
+         class           = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_multimap(initializer_list<pair<Key, Tp>>,
+                   typename allocator_traits<Allocator>::size_type = 0,
+                   Hash = Hash(), Pred = Pred(), Allocator = Allocator())
+    -> unordered_multimap<remove_const_t<Key>, Tp, Hash, Pred, Allocator>;
+
+template<class InputIterator, class Allocator,
+         class = void_t<detail::ht_iter_category_t<InputIterator>>,
+         class = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_multimap(InputIterator, InputIterator, typename allocator_traits<Allocator>::size_type,
+                   Allocator)
+    -> unordered_multimap<detail::ht_iter_key_type<InputIterator>,
+                          detail::ht_iter_mapped_type<InputIterator>,
+                          hash<detail::ht_iter_key_type<InputIterator>>,
+                          equal_to<detail::ht_iter_key_type<InputIterator>>, Allocator>;
+
+template<class InputIterator, class Allocator,
+         class = void_t<detail::ht_iter_category_t<InputIterator>>,
+         class = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_multimap(InputIterator, InputIterator, Allocator)
+    -> unordered_multimap<detail::ht_iter_key_type<InputIterator>,
+                          detail::ht_iter_mapped_type<InputIterator>,
+                          hash<detail::ht_iter_key_type<InputIterator>>,
+                          equal_to<detail::ht_iter_key_type<InputIterator>>, Allocator>;
+
+template<class InputIterator, class Hash, class Allocator,
+         class = void_t<detail::ht_iter_category_t<InputIterator>>,
+         class = enable_if_t<!detail::ht_is_allocator_v<Hash>>,
+         class = enable_if_t<!is_integral_v<Hash>>,
+         class = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_multimap(InputIterator, InputIterator, typename allocator_traits<Allocator>::size_type,
+                   Hash, Allocator)
+    -> unordered_multimap<detail::ht_iter_key_type<InputIterator>,
+                          detail::ht_iter_mapped_type<InputIterator>, Hash,
+                          equal_to<detail::ht_iter_key_type<InputIterator>>, Allocator>;
+
+template<class Key, class Tp, class Allocator,
+         class = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_multimap(initializer_list<pair<Key, Tp>>,
+                   typename allocator_traits<Allocator>::size_type, Allocator)
+    -> unordered_multimap<remove_const_t<Key>, Tp, hash<remove_const_t<Key>>,
+                          equal_to<remove_const_t<Key>>, Allocator>;
+
+template<class Key, class Tp, class Allocator,
+         class = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_multimap(initializer_list<pair<Key, Tp>>, Allocator)
+    -> unordered_multimap<remove_const_t<Key>, Tp, hash<remove_const_t<Key>>,
+                          equal_to<remove_const_t<Key>>, Allocator>;
+
+template<class Key, class Tp, class Hash, class Allocator,
+         class = enable_if_t<!detail::ht_is_allocator_v<Hash>>,
+         class = enable_if_t<!is_integral_v<Hash>>,
+         class = enable_if_t<detail::ht_is_allocator_v<Allocator>>>
+unordered_multimap(initializer_list<pair<Key, Tp>>,
+                   typename allocator_traits<Allocator>::size_type, Hash, Allocator)
+    -> unordered_multimap<remove_const_t<Key>, Tp, Hash, equal_to<remove_const_t<Key>>, Allocator>;
+
+template<class Key, class T, class Hash, class Pred, class Alloc>
+inline void swap(unordered_multimap<Key, T, Hash, Pred, Alloc>& x,
+                 unordered_multimap<Key, T, Hash, Pred, Alloc>& y) noexcept(noexcept(x.swap(y))) {
+    x.swap(y);
+}
+
+template<class Key, class T, class Hash, class Pred, class Alloc, class Predicate>
+inline typename unordered_multimap<Key, T, Hash, Pred, Alloc>::size_type
+erase_if(unordered_multimap<Key, T, Hash, Pred, Alloc>& c, Predicate pred) {
+    typename unordered_multimap<Key, T, Hash, Pred, Alloc>::size_type old_size = c.size();
+    for (auto i = c.begin(), last = c.end(); i != last;) {
+        if (pred(*i))
+            i = c.erase(i);
+        else
+            ++i;
+    }
+    return old_size - c.size();
+}
+
+template<class Key, class T, class Hash, class Pred, class Alloc>
+bool operator==(const unordered_multimap<Key, T, Hash, Pred, Alloc>& x,
+                const unordered_multimap<Key, T, Hash, Pred, Alloc>& y) {
+    if (x.size() != y.size())
+        return false;
+    using const_iterator = typename unordered_multimap<Key, T, Hash, Pred, Alloc>::const_iterator;
+    for (const_iterator i = x.begin(), ex = x.end(); i != ex;) {
+        pair<const_iterator, const_iterator> xeq = x.equal_range(i->first);
+        pair<const_iterator, const_iterator> yeq = y.equal_range(i->first);
+        if (std::distance(xeq.first, xeq.second) != std::distance(yeq.first, yeq.second) ||
+            !std::is_permutation(xeq.first, xeq.second, yeq.first))
+            return false;
+        i = xeq.second;
     }
     return true;
 }

@@ -258,6 +258,12 @@ private:
 
     template<class... Args>
     node_base* create_node(Args&&... args) {
+        // Over-alignment guard (deviation 4). Deferred to node creation — which
+        // needs a complete T anyway — so the container can still be NAMED with an
+        // incomplete element type ([container.requirements.general] allows map/
+        // set/multimap/multiset to be instantiated on an incomplete value_type).
+        static_assert(alignof(T) <= alignof(max_align_t),
+            "lean associative containers reject over-aligned element types");
         void* mem = ::malloc(detail::tree_value_offset<T> + sizeof(T));
         if (!mem) __builtin_trap();
         node_base* n = static_cast<node_base*>(mem);

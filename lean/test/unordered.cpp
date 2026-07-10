@@ -721,7 +721,59 @@ void test_hash_pow2_ceil_boundaries() {
     CHECK(hash_pow2_ceil(SIZE_MAX) == top);   // no bad shift
 }
 
+// Regression: unordered_multimap / unordered_multiset (previously absent from
+// the lean profile). Equivalent keys must be stored, kept ADJACENT so count()/
+// equal_range() see a contiguous run, and that adjacency must survive rehash
+// (the adjacency-preserving multi rehash, not the unique kernel).
+static void test_multi_containers() {
+    std::unordered_multiset<int> s;
+    for (int r = 0; r < 40; ++r) { s.insert(7); s.insert(100 + r); s.insert(7); }
+    CHECK(s.size() == 120);
+    CHECK(s.count(7) == 80);
+    for (int r = 0; r < 40; ++r) CHECK(s.count(100 + r) == 1);
+    // equal_range spans exactly the 80 sevens, contiguously.
+    auto er = s.equal_range(7);
+    size_t n = 0;
+    for (auto i = er.first; i != er.second; ++i) { CHECK(*i == 7); ++n; }
+    CHECK(n == 80);
+    s.rehash(2);   CHECK(s.count(7) == 80);   // shrink attempt -> adjacency holds
+    s.rehash(512); CHECK(s.count(7) == 80);   // grow          -> adjacency holds
+    CHECK(s.erase(7) == 80);
+    CHECK(s.count(7) == 0 && s.size() == 40);
+
+    std::unordered_multimap<int, int> m;
+    m.insert({1, 10}); m.insert({1, 11}); m.emplace(1, 12); m.insert({2, 20});
+    CHECK(m.size() == 4 && m.count(1) == 3 && m.count(2) == 1);
+    int sum = 0; auto mr = m.equal_range(1);
+    for (auto i = mr.first; i != mr.second; ++i) { CHECK(i->first == 1); sum += i->second; }
+    CHECK(sum == 33);
+    // copy-assign preserves duplicates (not deduped).
+    std::unordered_multimap<int, int> m2; m2.insert({9, 9});
+    m2 = m; CHECK(m2.size() == 4 && m2.count(1) == 3 && m2.count(9) == 0);
+    CHECK(m2 == m);
+}
+
+// Regression: the local (per-bucket) API — bucket(), bucket_size(),
+// local_iterator, begin(n)/end(n) — now provided over the intrusive-list run.
+static void test_local_iterators() {
+    std::unordered_set<int> s;
+    for (int i = 0; i < 200; ++i) s.insert(i);
+    size_t total = 0;
+    for (size_t b = 0; b < s.bucket_count(); ++b) {
+        size_t bs = 0;
+        for (auto it = s.begin(b); it != s.end(b); ++it) {
+            CHECK(s.bucket(*it) == b);   // every element lands in bucket b
+            ++bs;
+        }
+        CHECK(bs == s.bucket_size(b));
+        total += bs;
+    }
+    CHECK(total == s.size());
+}
+
 int main() {
+    test_multi_containers();
+    test_local_iterators();
     test_hash_pow2_ceil_boundaries();
     test_map_basic();
     test_set_basic();

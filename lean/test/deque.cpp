@@ -458,7 +458,31 @@ void test_stress_vs_reference() {
     r.done();
 }
 
+// Regression: pop_front()/pop_back() must NOT invalidate iterators/references
+// to surviving elements ([deque.modifiers]). The lean iterator stores an
+// ABSOLUTE index, so an iterator taken before a pop still denotes the same
+// element (and address) afterward. (Previously the index was off_-relative, so
+// pop_front silently repointed every live iterator — fixed.)
+static void test_pop_iterator_stability() {
+    deque<int> d;
+    for (int i = 0; i < 4098; ++i) d.push_back(i);
+    while (d.size() > 2) {
+        deque<int>::iterator it1 = d.begin() + 1;
+        deque<int>::iterator it2 = d.end() - 1;
+        int  v1 = *it1;  int* a1 = &*it1;
+        int  v2 = *it2;  int* a2 = &*it2;
+        d.pop_front();
+        CHECK(it1 == d.begin());           // same element, now the front
+        CHECK(*it1 == v1 && &*it1 == a1);  // reference/address preserved
+        CHECK(it2 == d.end() - 1);         // back untouched by pop_front
+        CHECK(*it2 == v2 && &*it2 == a2);
+        d.pop_back();                      // pop_back must not move the front
+        CHECK(*d.begin() == v1 && &*d.begin() == a1);
+    }
+}
+
 int main() {
+    test_pop_iterator_stability();
     test_block_size();
     test_basic_ends();
     test_emplace_ends_return();

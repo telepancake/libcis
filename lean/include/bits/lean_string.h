@@ -56,13 +56,23 @@ struct lean_str_empty_rep {
 extern const lean_str_empty_rep lean_str_empty;
 #pragma GCC visibility pop
 
-inline void* lean_str_empty_payload() noexcept {
+// constexpr-usable: the ADDRESS of an extern-const static-storage object is a
+// constant expression even though its VALUE (defined in kernels.cpp) is not, so
+// the empty-rep payload pointer can be formed at compile time.  This is the one
+// thing a lean string CAN do in constant evaluation — hold the shared empty rep
+// (see lean/README.md deviations 2 & 3: no constexpr heap, no SSO, but the empty
+// string is a compile-time constant just like base's SSO-empty).  The const_cast
+// forms a mutable pointer value (never written through in constant evaluation).
+constexpr char* lean_str_empty_payload() noexcept {
   // terminator sits sizeof(size_t) bytes above `used`; payload[-1] therefore
-  // reads the real `used` size_t object.
+  // reads the real `used` size_t object.  Returns char* (not void*) so the char
+  // instantiation of basic_string can assign it to its char* member with no cast
+  // at all — a void*->char* static_cast is not permitted in constant evaluation,
+  // but a same-type assignment is.
   return const_cast<char*>(lean_str_empty.terminator);
 }
 
-inline bool lean_str_is_static(const void* p) noexcept {
+constexpr bool lean_str_is_static(const void* p) noexcept {
   return p == lean_str_empty_payload();
 }
 

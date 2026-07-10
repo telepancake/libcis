@@ -1,0 +1,30 @@
+{
+  "_comment": "Lean-layer exclusions for the algorithms/ subtree. Every entry traces to a DOCUMENTED lean deviation in lean/README.md. Audited: do not add an unfixed bug here.",
+
+  "_dev2_de_constexpr_fat_entry_points": "README deviation 2 + the <algorithm> section: the fat entry points (sort, stable_sort, nth_element, partial_sort, inplace_merge, make_heap/push_heap/pop_heap/sort_heap) DROP the constexpr specifier so they can route into the type-erased single-instance kernels (bits/lean_sort.h). The runtime arm of each test compiles and passes; only the C++20 `static_assert(test<...>())` constant-evaluation arm is rejected (`call to non-'constexpr' function`). The de-constexpr is deliberate and applies even on the non-pointer fallback path (the public signature itself lacks constexpr).",
+
+  "algorithms/alg.sorting/alg.sort/sort/sort_constexpr.pass.cpp": "README deviation 2: std::sort is de-constexpr'd (routes to the lean_sort introsort kernel). Runtime test<>() arms pass; only the static_assert(test<>()) constant-evaluation arms fail. Lost: constant-evaluation coverage of sort; runtime coverage retained.",
+  "algorithms/alg.sorting/alg.sort/sort/sort_constexpr_comp.pass.cpp": "README deviation 2: std::sort (with comparator) is de-constexpr'd (lean_sort kernel). Only the static_assert constexpr arms fail; runtime arms pass.",
+
+  "algorithms/alg.sorting/alg.sort/partial.sort/partial_sort.pass.cpp": "README deviation 2: std::partial_sort is de-constexpr'd (routes to the lean_partial_sort kernel). Only the static_assert(test<>()) constant-evaluation arm fails; the runtime arm compiles and passes.",
+  "algorithms/alg.sorting/alg.sort/partial.sort/partial_sort_comp.pass.cpp": "README deviation 2: std::partial_sort (with comparator) is de-constexpr'd. Only the static_assert constexpr arm fails; runtime arm passes.",
+
+  "algorithms/alg.sorting/alg.nth.element/nth_element.pass.cpp": "README deviation 2: std::nth_element is de-constexpr'd (routes to the lean_nth_element quickselect kernel). Only the static_assert(test<>()) constant-evaluation arm fails; the runtime arm compiles and passes.",
+  "algorithms/alg.sorting/alg.nth.element/nth_element_comp.pass.cpp": "README deviation 2: std::nth_element (with comparator) is de-constexpr'd. Only the static_assert constexpr arm fails; runtime arm passes.",
+
+  "algorithms/alg.sorting/alg.heap.operations/make.heap/make_heap.pass.cpp": "README deviation 2: std::make_heap is a de-constexpr'd fat entry point (lean_make_heap kernel). Only the static_assert(test<>()) constant-evaluation arm fails; the runtime arm compiles and passes.",
+  "algorithms/alg.sorting/alg.heap.operations/make.heap/make_heap_comp.pass.cpp": "README deviation 2: std::make_heap (with comparator) is de-constexpr'd. Only the static_assert constexpr arm fails; runtime arm passes.",
+  "algorithms/alg.sorting/alg.heap.operations/push.heap/push_heap.pass.cpp": "README deviation 2: std::push_heap is a de-constexpr'd fat entry point (lean_push_heap kernel). Only the static_assert constant-evaluation arm fails; runtime arm passes.",
+  "algorithms/alg.sorting/alg.heap.operations/push.heap/push_heap_comp.pass.cpp": "README deviation 2: std::push_heap (with comparator) is de-constexpr'd. Only the static_assert constexpr arm fails; runtime arm passes.",
+  "algorithms/alg.sorting/alg.heap.operations/pop.heap/pop_heap.pass.cpp": "README deviation 2: std::pop_heap is a de-constexpr'd fat entry point (lean_pop_heap kernel). Only the static_assert constant-evaluation arm fails; runtime arm passes.",
+  "algorithms/alg.sorting/alg.heap.operations/pop.heap/pop_heap_comp.pass.cpp": "README deviation 2: std::pop_heap (with comparator) is de-constexpr'd. Only the static_assert constexpr arm fails; runtime arm passes.",
+  "algorithms/alg.sorting/alg.heap.operations/sort.heap/sort_heap.pass.cpp": "README deviation 2: std::sort_heap is a de-constexpr'd fat entry point (lean_sort_heap kernel). Only the static_assert constant-evaluation arm fails; runtime arm passes.",
+  "algorithms/alg.sorting/alg.heap.operations/sort.heap/sort_heap_comp.pass.cpp": "README deviation 2: std::sort_heap (with comparator) is de-constexpr'd. Only the static_assert constexpr arm fails; runtime arm passes.",
+
+  "algorithms/ranges_robust_against_omitting_invoke.pass.cpp": "README deviation 2: the runtime test_all() arm passes, but static_assert(test_all()) constant-evaluates std::ranges::{sort,make_heap,push_heap,pop_heap,sort_heap,partial_sort,nth_element} directly — all de-constexpr'd fat entry points routing to the lean_* kernels. (The test already guards the malloc-temp algorithms stable_sort/stable_partition/inplace_merge behind !is_constant_evaluated().) Lost: constant-evaluation coverage of projection-without-invoke; runtime coverage retained.",
+
+  "_dev2_non_literal_containers": "README deviation 2: lean container operations are not constexpr, so a lean std::vector is a non-literal type. A TEST_CONSTEXPR_CXX20 function that declares a std::vector local is ill-formed in C++20 (`variable of non-literal type in constexpr function only available with -std=c++2b`), which fails the whole TU to compile — the runtime coverage cannot be salvaged without modifying the test.",
+
+  "algorithms/alg.nonmodifying/alg.find/find.pass.cpp": "README deviation 2 (constexpr containers): the TEST_CONSTEXPR_CXX20 test() body declares a `std::vector<std::vector<int>>` local (views::join + find block, compiled because we are not _LIBCPP_VERSION). Lean's vector is a non-literal type, so the constexpr function is ill-formed in C++20 and the whole TU fails to compile. Lost: all of find.pass.cpp's coverage in this profile (irreducible — inherent to the non-constexpr container deviation).",
+  "algorithms/alg.sorting/alg.three.way/lexicographical_compare_three_way.pass.cpp": "README deviation 2 (constexpr containers): a TEST_CONSTEXPR_CXX20 function declares a `std::vector<bool>` local; lean's vector is a non-literal type, so the constexpr function is ill-formed in C++20 and the TU fails to compile. Lost: lexicographical_compare_three_way coverage in this profile (irreducible)."
+}

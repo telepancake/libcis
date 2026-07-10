@@ -49,8 +49,6 @@ public:
 
     static_assert(detail::lean_allocator_ok<value_type, Alloc>,
         "lean set supports only std::allocator<Key>");
-    static_assert(alignof(value_type) <= alignof(max_align_t),
-        "lean set rejects over-aligned key types");
 
 private:
     using tree_type = rb_tree<Key, Compare, Alloc>;
@@ -345,8 +343,6 @@ public:
 
     static_assert(detail::lean_allocator_ok<value_type, Alloc>,
         "lean multiset supports only std::allocator<Key>");
-    static_assert(alignof(value_type) <= alignof(max_align_t),
-        "lean multiset rejects over-aligned key types");
 
 private:
     using tree_type = rb_tree<Key, Compare, Alloc>;

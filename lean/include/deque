@@ -144,9 +144,15 @@ private:
 
 public:
     //===------------------------------------------------------------------===//
-    // Iterator — (owner, logical index). Random access; deref does the table
-    // lookup. Kept small (pointer + index) and non-templated on constness via a
-    // bool so const/non-const share one class.
+    // Iterator — (owner, ABSOLUTE index). Random access; deref does the table
+    // lookup. The index is absolute (measured from table_[0]), NOT relative to
+    // off_: pop_front/pop_back move off_ but leave every surviving element's
+    // absolute index — and hence every iterator/reference to it — unchanged, as
+    // [deque.modifiers] requires (only iterators/references to the erased
+    // element are invalidated). End insertions still invalidate all iterators
+    // (a recentre shifts absolute indices), also standard-conforming. Kept small
+    // (pointer + index) and non-templated on constness via a bool so const/
+    // non-const share one class.
     //===------------------------------------------------------------------===//
     template<class Dq, bool Const>
     class iter_impl {
@@ -169,10 +175,10 @@ public:
         template<bool C2, class = enable_if_t<Const && !C2>>
         iter_impl(const iter_impl<Dq, C2>& o) noexcept : d(o.d), i(o.i) {}
 
-        reference operator*()  const noexcept { return *d->addr(d->off_ + i); }
-        pointer   operator->() const noexcept { return d->addr(d->off_ + i); }
+        reference operator*()  const noexcept { return *d->addr(i); }
+        pointer   operator->() const noexcept { return d->addr(i); }
         reference operator[](difference_type n) const noexcept {
-            return *d->addr(d->off_ + i + n);
+            return *d->addr(i + n);
         }
 
         iter_impl& operator++() noexcept { ++i; return *this; }
@@ -297,10 +303,10 @@ public:
 
     //--- Iterators ---
 
-    [[nodiscard]] iterator begin() noexcept { return iterator(this, 0); }
-    [[nodiscard]] const_iterator begin() const noexcept { return const_iterator(this, 0); }
-    [[nodiscard]] iterator end() noexcept { return iterator(this, size_); }
-    [[nodiscard]] const_iterator end() const noexcept { return const_iterator(this, size_); }
+    [[nodiscard]] iterator begin() noexcept { return iterator(this, off_); }
+    [[nodiscard]] const_iterator begin() const noexcept { return const_iterator(this, off_); }
+    [[nodiscard]] iterator end() noexcept { return iterator(this, off_ + size_); }
+    [[nodiscard]] const_iterator end() const noexcept { return const_iterator(this, off_ + size_); }
 
     [[nodiscard]] reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
     [[nodiscard]] const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
