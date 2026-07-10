@@ -27,16 +27,23 @@ FLAGS = ("-std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -Os -w "
          "-ffunction-sections -fdata-sections").split()
 GC = ["-Wl,--gc-sections"]
 LINK_TAIL = "-nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc".split()
-# The lean profile links the out-of-line kernels TU (bits/lean_*.h declare, one
-# copy per system); the base profile has no such file. gc-sections drops the
-# unused kernels from every binary that does not reach them.
+# Three deployment shapes are measured:
+#   base    — the base library (no kernels TU exists).
+#   lean    — kernels statically linked into the binary (gc-sections keeps only
+#             the reached slice): the per-BINARY cost on a static/single-image
+#             target.
+#   lean-so — kernels resolved from liblean.so (built once below): the
+#             per-binary cost when the kernels ship once per SYSTEM.
+LEAN_INC = ["-nostdinc++", "-Ilean/include", "-Iinclude"]
 LINKS = {
     "base": ["src/support.cpp"] + GC + LINK_TAIL,
     "lean": ["src/support.cpp", "lean/src/kernels.cpp"] + GC + LINK_TAIL,
+    "lean-so": None,  # filled in main() once liblean.so is built
 }
 ORDERS = {
     "base": ["-nostdinc++", "-Iinclude"],
-    "lean": ["-nostdinc++", "-Ilean/include", "-Iinclude"],
+    "lean": LEAN_INC,
+    "lean-so": LEAN_INC,
 }
 
 COMMON = r"""
@@ -219,8 +226,22 @@ def tdb(exe):
     return int(f[0]), int(f[1]), int(f[2])
 
 
+def build_liblean_so(tmp):
+    so = os.path.join(tmp, "liblean.so")
+    p = subprocess.run([CXX] + FLAGS + LEAN_INC +
+                       ["-fPIC", "-shared", "lean/src/kernels.cpp", "-o", so],
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        sys.exit(f"liblean.so build failed:\n{p.stderr}")
+    return so
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="lean_size_")
+    so = build_liblean_so(tmp)
+    # rpath so the measured binaries also RUN (the report executes them).
+    LINKS["lean-so"] = (["src/support.cpp", so, f"-Wl,-rpath,{tmp}"]
+                        + GC + LINK_TAIL)
     rows = []       # (prog, {order: (marginal_text, marginal_data, marginal_bss) | error})
     baselines = {}
     failures = []
@@ -252,9 +273,9 @@ def main():
         rows.append((prog, row))
 
     sizeofs = {}
-    for order, inc in ORDERS.items():
+    for order in ("base", "lean"):  # lean-so has identical layouts to lean
         exe = os.path.join(tmp, f"sizeof_{order}")
-        err = build(SIZEOF_PROBE, inc, LINKS[order], exe)
+        err = build(SIZEOF_PROBE, ORDERS[order], LINKS[order], exe)
         sizeofs[order] = ("BUILD FAILED" if err else
                           subprocess.run([exe], capture_output=True, text=True).stdout.strip())
 
@@ -264,23 +285,26 @@ def main():
          f"Compiler: `{CXX}`. text+data+bss from `size(1)`, minus the same "
          "include-order's empty-`main` baseline. Every binary is linked with "
          "`-ffunction-sections -fdata-sections -Wl,--gc-sections`, so a program "
-         "carries only the kernels it reaches (the lean profile links the "
-         "out-of-line kernels TU `lean/src/kernels.cpp`; the base profile has no "
-         "such file). A FAIL row means that program did not build/run — a "
-         "missing number is a defect, not a zero.\n",
-         "| program | base text+data+bss | lean text+data+bss | delta |",
-         "|---|---|---|---|"]
+         "carries only the kernels it reaches. `lean` links the kernels TU "
+         "statically (per-binary cost, single-image targets); `lean-so` links "
+         "against `liblean.so` (per-binary cost when the kernels ship once per "
+         "system). A FAIL row means that program did not build/run — a missing "
+         "number is a defect, not a zero.\n",
+         "| program | base | lean (static) | delta | lean-so (shared kernels) | delta |",
+         "|---|---|---|---|---|---|"]
     for prog, row in rows:
         cells = {}
         for order in ORDERS:
             v = row[order]
             cells[order] = "FAIL" if v is None else f"{sum(v)} ({v[0]}+{v[1]}+{v[2]})"
-        if row["base"] and row["lean"]:
-            b, l = sum(row["base"]), sum(row["lean"])
-            delta = f"{100.0 * (l - b) / b:+.0f}%" if b else "-"
-        else:
-            delta = "-"
-        L.append(f"| {prog} | {cells['base']} | {cells['lean']} | {delta} |")
+
+        def delta(order):
+            if not (row["base"] and row[order]):
+                return "-"
+            b, l = sum(row["base"]), sum(row[order])
+            return f"{100.0 * (l - b) / b:+.0f}%" if b else "-"
+        L.append(f"| {prog} | {cells['base']} | {cells['lean']} | {delta('lean')} "
+                 f"| {cells['lean-so']} | {delta('lean-so')} |")
     L += ["\n## liblean kernels object (one copy per SYSTEM)\n",
           "The out-of-line structural/algorithm kernels compile to a single "
           "translation unit, shipped once as `liblean.a` / `liblean.so`. With "
@@ -290,7 +314,7 @@ def main():
           f"- `lean/src/kernels.cpp` .o text: "
           f"`{'BUILD FAILED' if kern_text is None else kern_text} bytes`"]
     L += ["\n## sizeof (bytes)\n"]
-    for order in ORDERS:
+    for order in sizeofs:
         L.append(f"- {order}: `{sizeofs[order]}`")
     if failures:
         L.append("\n## FAILURES (loud, not hidden)\n")
