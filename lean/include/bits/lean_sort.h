@@ -34,12 +34,20 @@ bool lean_less_thunk(const void* a, const void* b, void* ctx) {
                                          *static_cast<const T*>(b));
 }
 
-// Gate: a raw pointer to a trivially-relocatable, non-const, <=256-byte element.
+// Gate: a raw pointer to a trivially-relocatable, non-const, <=256-byte element
+// whose alignment does not exceed max_align_t. The kernels hold an element in a
+// stack scratch buffer aligned only to max_align_t (see below); an over-aligned
+// element (alignof > alignof(max_align_t), e.g. a raw array of an alignas(32)
+// type) would be reified from that buffer at a misaligned address — UB. Such
+// types take the base templated fallback in <algorithm> instead. In-contract
+// container elements always satisfy alignof(T) <= alignof(max_align_t)
+// (vector's static_assert), so they still reach the kernel.
 template<class Iter>
 inline constexpr bool lean_sort_ok = false;
 template<class T>
 inline constexpr bool lean_sort_ok<T*> =
-    is_trivially_relocatable_v<T> && !is_const_v<T> && sizeof(T) <= 256;
+    is_trivially_relocatable_v<T> && !is_const_v<T> && sizeof(T) <= 256 &&
+    alignof(T) <= alignof(max_align_t);
 
 // Max scratch element size handled on the stack. Elements above this never
 // reach the kernels (lean_sort_ok caps sizeof at 256).
@@ -112,21 +120,21 @@ inline void lean_sift_up(char* base, size_t elem, size_t n,
 inline void lean_make_heap(char* base, size_t n, size_t elem,
                            lean_less_fn less, void* ctx) {
     if (n < 2) return;
-    char tmp[lean_sort_max_elem];
+    alignas(max_align_t) char tmp[lean_sort_max_elem];
     for (size_t i = n / 2; i-- > 0;)
         lean_sift_down(base, elem, n, i, less, ctx, tmp);
 }
 
 inline void lean_push_heap(char* base, size_t n, size_t elem,
                            lean_less_fn less, void* ctx) {
-    char tmp[lean_sort_max_elem];
+    alignas(max_align_t) char tmp[lean_sort_max_elem];
     lean_sift_up(base, elem, n, less, ctx, tmp);
 }
 
 inline void lean_pop_heap(char* base, size_t n, size_t elem,
                           lean_less_fn less, void* ctx) {
     if (n < 2) return;
-    char tmp[lean_sort_max_elem];
+    alignas(max_align_t) char tmp[lean_sort_max_elem];
     lean_swap_bytes(base, lean_elt(base, n - 1, elem), elem, tmp);
     lean_sift_down(base, elem, n - 1, 0, less, ctx, tmp);
 }
@@ -143,7 +151,7 @@ inline void lean_sort_heap_range(char* base, size_t n, size_t elem,
 
 inline void lean_sort_heap(char* base, size_t n, size_t elem,
                            lean_less_fn less, void* ctx) {
-    char tmp[lean_sort_max_elem];
+    alignas(max_align_t) char tmp[lean_sort_max_elem];
     lean_sort_heap_range(base, n, elem, less, ctx, tmp);
 }
 
@@ -232,8 +240,8 @@ inline void lean_introsort(char* base, size_t n, size_t elem,
 inline void lean_sort(char* base, size_t n, size_t elem,
                       lean_less_fn less, void* ctx) {
     if (n < 2) return;
-    char tmp[lean_sort_max_elem];
-    char pivot[lean_sort_max_elem];
+    alignas(max_align_t) char tmp[lean_sort_max_elem];
+    alignas(max_align_t) char pivot[lean_sort_max_elem];
     lean_introsort(base, n, elem, less, ctx, 2 * lean_log2(n), tmp, pivot);
 }
 
@@ -244,7 +252,7 @@ inline void lean_sort(char* base, size_t n, size_t elem,
 inline void lean_partial_sort(char* base, size_t m, size_t n, size_t elem,
                               lean_less_fn less, void* ctx) {
     if (m == 0) return;
-    char tmp[lean_sort_max_elem];
+    alignas(max_align_t) char tmp[lean_sort_max_elem];
     for (size_t i = m / 2; i-- > 0;)
         lean_sift_down(base, elem, m, i, less, ctx, tmp);
     for (size_t i = m; i < n; ++i) {
@@ -261,8 +269,8 @@ inline void lean_partial_sort(char* base, size_t m, size_t n, size_t elem,
 inline void lean_nth_element(char* base, size_t nth, size_t n, size_t elem,
                              lean_less_fn less, void* ctx) {
     if (n < 2 || nth >= n) return;
-    char tmp[lean_sort_max_elem];
-    char pivot[lean_sort_max_elem];
+    alignas(max_align_t) char tmp[lean_sort_max_elem];
+    alignas(max_align_t) char pivot[lean_sort_max_elem];
     size_t depth = 2 * lean_log2(n);
     const size_t cutoff = 16;
     while (n > cutoff) {
@@ -308,7 +316,7 @@ inline void lean_merge_runs(const char* src, char* dst,
 inline void lean_stable_sort(char* base, size_t n, size_t elem,
                              lean_less_fn less, void* ctx) {
     if (n < 2) return;
-    char tmp[lean_sort_max_elem];
+    alignas(max_align_t) char tmp[lean_sort_max_elem];
     const size_t run = 16;
     for (size_t i = 0; i < n; i += run) {
         size_t len = n - i < run ? n - i : run;

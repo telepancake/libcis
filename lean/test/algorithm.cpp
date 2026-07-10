@@ -90,6 +90,14 @@ struct MoveOnly {
 struct Big   { int key; char pad[300]; };   // trivially copyable but sizeof > 256
 struct Mid   { int key; char pad[60]; };    // 64 bytes, trivially copyable
 struct KV    { int key; int seq; };         // 8 bytes, trivially copyable
+// In-contract over-aligned element: alignof == alignof(max_align_t) (legal
+// vector element), sizeof 16, trivially copyable. Reaches the kernel; the
+// scratch buffers must hold it at a correctly aligned address.
+struct alignas(16) Align16 { long long a, b; };
+// Truly over-aligned (alignof > max_align_t): NOT a legal container element,
+// but std::sort can be called on a raw array of it. Must take the fallback,
+// because the kernel scratch buffers are only aligned to max_align_t.
+struct alignas(2 * alignof(std::max_align_t)) Over { long long a, b; };
 }
 
 using std::detail::lean_sort_ok;
@@ -99,6 +107,10 @@ static_assert(lean_sort_ok<std::string*>,    "string is trivially relocatable, s
 static_assert(lean_sort_ok<KV*>,             "8-byte POD reaches the kernel");
 static_assert(lean_sort_ok<Mid*>,            "64-byte POD reaches the kernel");
 static_assert(sizeof(Big) > 256 && !lean_sort_ok<Big*>, "sizeof>256 must fall back");
+static_assert(alignof(Align16) == alignof(std::max_align_t) && lean_sort_ok<Align16*>,
+              "in-contract alignof==max_align_t element reaches the kernel");
+static_assert(alignof(Over) > alignof(std::max_align_t) && !lean_sort_ok<Over*>,
+              "over-aligned element (alignof > max_align_t) must fall back");
 static_assert(!lean_sort_ok<MoveOnly*>,      "move-only (non-trivially-copyable) falls back");
 static_assert(!lean_sort_ok<SelfRef*>,       "self-referential type must fall back");
 static_assert(!lean_sort_ok<const int*>,     "const element cannot be sorted in place");
@@ -420,6 +432,53 @@ void test_mid_element_kernel() {
 }
 
 // --------------------------------------------------------------------------
+// Over-aligned in-contract element (alignof == alignof(max_align_t)): reaches
+// the kernel, and the comparator must never receive a reference to a
+// misaligned scratch slot. The kernel holds the pivot / the sifted element in
+// stack buffers (lean_partition's `pivot`, the sift/insertion `tmp`) and hands
+// their address to the comparator thunk, which reifies a `const Align16&`.
+// Those buffers must be aligned to at least alignof(Align16), else the
+// reference is bound to an under-aligned address (UB, [basic.align]/1). Without
+// the alignas(max_align_t) on the buffers the pivot/tmp can land 8-aligned and
+// this check fails (observed at -Os).
+// --------------------------------------------------------------------------
+static bool g_saw_misaligned = false;
+static bool align16_cmp(const Align16& a, const Align16& b) {
+    if (reinterpret_cast<std::uintptr_t>(&a) % alignof(Align16)) g_saw_misaligned = true;
+    if (reinterpret_cast<std::uintptr_t>(&b) % alignof(Align16)) g_saw_misaligned = true;
+    return a.a < b.a;
+}
+
+void test_overaligned_element_kernel() {
+    rng_reset(53);
+    const size_t n = 5000;
+    vector<Align16> v(n);
+    for (size_t i = 0; i < n; ++i) {
+        v[i].a = (long long)(xrand() % 100000);
+        v[i].b = (long long)i;
+    }
+    g_saw_misaligned = false;
+    std::sort(v.begin(), v.end(), align16_cmp);          // routes into the kernel
+    CHECK(!g_saw_misaligned);                            // every comparator arg aligned
+    CHECK(std::is_sorted(v.begin(), v.end(), align16_cmp));
+    for (size_t i = 1; i < n; ++i) CHECK(v[i - 1].a <= v[i].a);
+
+    // Exercise every kernel entry point that stashes an element in a scratch
+    // buffer, so the alignment of pivot/tmp is checked on each path.
+    { vector<Align16> w = v; g_saw_misaligned = false;
+      std::stable_sort(w.begin(), w.end(), align16_cmp); CHECK(!g_saw_misaligned); }
+    { vector<Align16> w = v; g_saw_misaligned = false;
+      std::nth_element(w.begin(), w.begin() + n / 2, w.end(), align16_cmp);
+      CHECK(!g_saw_misaligned); }
+    { vector<Align16> w = v; g_saw_misaligned = false;
+      std::partial_sort(w.begin(), w.begin() + n / 3, w.end(), align16_cmp);
+      CHECK(!g_saw_misaligned); }
+    { vector<Align16> w = v; g_saw_misaligned = false;
+      std::make_heap(w.begin(), w.end(), align16_cmp);
+      std::sort_heap(w.begin(), w.end(), align16_cmp); CHECK(!g_saw_misaligned); }
+}
+
+// --------------------------------------------------------------------------
 // is_sorted / is_sorted_until agreement (unchanged templated algorithms).
 // --------------------------------------------------------------------------
 void test_is_sorted_agreement() {
@@ -492,6 +551,7 @@ int main() {
     test_selfref_fallback();
     test_moveonly_fallback();
     test_mid_element_kernel();
+    test_overaligned_element_kernel();
     test_is_sorted_agreement();
     test_stress_mirror();
     return 0;

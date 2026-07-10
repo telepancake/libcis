@@ -148,9 +148,15 @@ private:
     }
 
     // The two structural primitives every mutator routes through.  n_del is the
-    // caller's responsibility to clamp to size()-pos.
+    // caller's responsibility to clamp to size()-pos.  Both guard the resulting
+    // length against max_size() (overflow-safe: size()-n_del is the retained
+    // prefix+suffix, always <= size() <= max_size()) and trap when it would be
+    // exceeded — mirroring reserve()/resize() and the standard's length_error.
+    // Without this the (new_used+1)*elem byte computation in the splice kernels
+    // wraps for a huge n_add, yielding an undersized malloc and an OOB write.
     basic_string& do_replace(size_type pos, size_type n_del,
                              const value_type* s, size_type n_add) {
+        if (n_add > max_size() - (size() - n_del)) __builtin_trap(); // length_error
         ptr_ = static_cast<pointer>(
             detail::lean_str_splice(ptr_, elem_size, pos, n_del, s, n_add));
         fix_term();
@@ -158,6 +164,7 @@ private:
     }
     basic_string& do_replace_fill(size_type pos, size_type n_del,
                                   size_type n_add, value_type c) {
+        if (n_add > max_size() - (size() - n_del)) __builtin_trap(); // length_error
         ptr_ = static_cast<pointer>(
             detail::lean_str_splice_fill(ptr_, elem_size, pos, n_del, n_add, &c));
         fix_term();

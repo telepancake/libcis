@@ -13,6 +13,9 @@
 #include <string_view>
 #include <cstring>
 #include <cstdint>
+#include <csignal>       // SIGILL — the __builtin_trap signal, for the death tests
+#include <sys/wait.h>    // fork/waitpid death tests for the length_error paths
+#include <unistd.h>
 #include "lean_test.h"
 
 using namespace std;
@@ -328,6 +331,52 @@ void test_capacity() {
   CHECK(emptyable.data() == string().data());
   emptyable.append("reuse");       // works after reverting to static
   check_eq(emptyable, "reuse");
+}
+
+// ---------------------------------------------------------------------------
+// Length-error paths: a request whose resulting length exceeds max_size() must
+// TRAP (the -fno-exceptions expression of length_error), NOT overflow the
+// (new_used+1)*elem byte computation into an undersized malloc + OOB write.
+// __builtin_trap raises SIGILL; a heap overflow would instead die with SIGSEGV
+// (or corrupt memory silently), so each check demands SIGILL exactly.  Every
+// mutator that adds characters routes through do_replace/do_replace_fill, so we
+// exercise the fill ctor, append(n,c)/append(ptr,n), assign, insert, replace,
+// resize and push_back-at-max entry points.
+static int death_signal(void (*fn)()) {
+  pid_t pid = fork();
+  CHECK(pid >= 0);
+  if (pid == 0) { fn(); _exit(0); }   // if fn returns, child exits 0 (no trap)
+  int st = 0;
+  CHECK(waitpid(pid, &st, 0) == pid);
+  return WIFSIGNALED(st) ? WTERMSIG(st) : -1;
+}
+
+// The overflowing count is materialised through a volatile so the compiler
+// cannot fold the whole child body away as pure UB.
+static volatile size_t g_huge = static_cast<size_t>(-1);
+
+static void death_fill_ctor()   { string big(g_huge, 'x'); (void)big; }
+static void death_append_fill() { string s = "hi"; s.append(g_huge, 'y'); }
+static void death_append_ptr()  { string s = "hi"; s.append("z", g_huge); }
+static void death_assign_fill() { string s = "hi"; s.assign(g_huge, 'q'); }
+static void death_insert_fill() { string s = "hi"; s.insert(1, g_huge, 'w'); }
+static void death_replace_fill(){ string s = "hello"; s.replace(1, 2, g_huge, 'r'); }
+static void death_ms_plus_one() { string s; string big(s.max_size() + 1, 'z'); (void)big; }
+
+void test_length_error_traps() {
+  // A well-formed small mutation must NOT trap (guards are overflow-safe and
+  // never fire on legitimate sizes): it returns and the child exits 0.
+  CHECK(death_signal([]{ string s = "hi"; s.append(3, '!'); }) == -1);
+  CHECK(death_signal([]{ string s; s.insert(0, "ok", 2); }) == -1);
+
+  // Every over-max request must die with SIGILL (the trap), never SIGSEGV.
+  CHECK(death_signal(death_fill_ctor)    == SIGILL);
+  CHECK(death_signal(death_append_fill)  == SIGILL);
+  CHECK(death_signal(death_append_ptr)   == SIGILL);
+  CHECK(death_signal(death_assign_fill)  == SIGILL);
+  CHECK(death_signal(death_insert_fill)  == SIGILL);
+  CHECK(death_signal(death_replace_fill) == SIGILL);
+  CHECK(death_signal(death_ms_plus_one)  == SIGILL);
 }
 
 // ---------------------------------------------------------------------------
@@ -792,6 +841,7 @@ int main() {
   test_aliasing();
   test_aliasing_replace_exact();
   test_capacity();
+  test_length_error_traps();
   test_access_iterators();
   test_substr_swap();
   test_find();
