@@ -130,6 +130,49 @@ __attribute__((noinline)) long site_t{k}_c{j}(Recv{k}* r, int n) {{
     return "\n".join(L)
 
 
+def gen_variant_program(types, callsites):
+    """std::variant workload: T structurally-identical variant types x C noinline
+    callsites, each exercising the special members the lean engine erases —
+    copy/move-construct, cross- and same-index assign, destroy — plus a visit.
+    Every type has ONE non-trivial (string-member) alternative, so the variant
+    is NOT trivially copyable and the table-driven engine is exercised; long and
+    double are the trivial alternatives. Modelled on the coordinator's probe."""
+    L = ["#include <variant>", "#include <string>", "#include <cstdlib>",
+         "template<class V> void sink(V v) { volatile V s = v; (void)s; }"]
+    for k in range(types):
+        # distinct non-trivial alternative per type: string member + salt
+        L.append(f"struct Alt{k} {{ std::string s; long tag = {k}; }};")
+    for k in range(types):
+        for j in range(callsites):
+            salt = k * 1000 + j + 1
+            L.append(f"""
+__attribute__((noinline)) long site_v{k}_c{j}(const char* a, int n) {{
+  using V = std::variant<long, Alt{k}, double>;
+  V v = long({salt});
+  long acc = 0;
+  for (int i = 0; i < n; ++i) {{
+    v = Alt{k}{{std::string(a) + char('a' + i % 26), i + {salt}}};   // non-trivial assign
+    V c = v;                                                        // copy switch
+    V m = std::move(c);                                             // move switch
+    acc += std::visit([](const auto& x) -> long {{                  // visit table
+      if constexpr (std::is_same_v<std::decay_t<decltype(x)>, Alt{k}>)
+        return x.tag + (long)x.s.size();
+      else
+        return (long)x;
+    }}, m);
+    v = double(i) + {salt};                                         // cross-index assign
+    v = long(i);                                                    // cross-index assign
+  }}
+  return acc;
+}}""")
+    L.append("int main(int argc, char** argv) {\n  int n = argc > 1 ? std::atoi(argv[1]) : 50;\n  long t = 0;")
+    for k in range(types):
+        for j in range(callsites):
+            L.append(f"  t += site_v{k}_c{j}(argv[0], n);")
+    L.append("  sink(t);\n  return 0;\n}")
+    return "\n".join(L)
+
+
 def run(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
@@ -315,6 +358,19 @@ def main():
         "plain-fn-pointer function and a copy — the dominant callable shapes.",
         Sf, decf, so_text)
 
+    Sv = measure_sizes(tmp, links, gen_variant_program, "var")
+    decv = {o: decompose(Sv[o]) for o in ORDERS}
+    L += size_section(
+        "std::variant: size decomposition (bytes)",
+        "Workload: T variant types (variant<long, Alt_k, double> with a distinct "
+        "string-member Alt_k per type — non-trivial, so the table-driven engine "
+        "is exercised) x C noinline callsites, each doing cross- and same-index "
+        "assign, copy, move and a visit. The per-type slice is the special-member "
+        "machinery lean erases; the per-callsite slice is the user visitor lambda "
+        "(not a lean target — the visitor cannot be erased without losing its "
+        "typed result).",
+        Sv, decv, so_text)
+
     if quick:
         L.append("\n(callgrind skipped: --quick)")
     else:
@@ -324,6 +380,9 @@ def main():
         cgf = callgrind(tmp, links, gen_fn_program, "fn", CG_N * 4)
         L += cg_section("std::function: deterministic performance", cgf,
                         f"function workload, F={CG_T} G={CG_C} n={CG_N * 4}")
+        cgv = callgrind(tmp, links, gen_variant_program, "var", CG_N)
+        L += cg_section("std::variant: deterministic performance", cgv,
+                        f"variant workload, T={CG_T} C={CG_C} n={CG_N}")
     L.append("")
     open("lean/OVERHEAD.md", "w").write("\n".join(L))
     print("\n".join(L))

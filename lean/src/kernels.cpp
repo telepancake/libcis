@@ -25,6 +25,7 @@
 #include <bits/lean_sort.h>
 #include <bits/lean_sp.h>
 #include <bits/lean_fn.h>
+#include <bits/lean_variant.h>
 #include <list>
 #pragma GCC visibility pop
 
@@ -214,6 +215,81 @@ void fn_block_free(void* blk) noexcept {
   fn_heap_base* s = static_cast<fn_heap_base*>(blk);
   s->dtor(static_cast<char*>(blk) + s->payoff);             // destruct the payload
   ::free(blk);                                              // free header + payload
+}
+
+// ===========================================================================
+// variant — type-erased special-member walkers (bits/lean_variant.h)
+//
+// These replace base <variant>'s per-instantiation N-way visit switches. Each
+// walker takes the union storage, the active alternative index, the per-type
+// detail::vt_entry table and the storage byte size. A null op in the table
+// means the alternative is trivial for it: the walker moves the raw storage
+// bytes (memcpy) or, for destroy, does nothing. Every alternative's value sits
+// at offset 0 of the recursive union storage, so the storage pointer is the
+// value pointer the per-type thunks act on. NO templates, NO per-type code.
+// ===========================================================================
+
+static constexpr size_t variant_npos_k = static_cast<size_t>(-1);
+
+void variant_destroy(void* storage, size_t index, const vt_op_fn* table) noexcept {
+  if (index == variant_npos_k)
+    return;                                   // valueless: nothing to destroy
+  if (table[index])
+    table[index](VT_DESTROY, storage, nullptr);
+}
+
+void variant_copy_construct(void* dst, const void* src, size_t index,
+                            const vt_op_fn* table, size_t storage_size) {
+  if (table[index])
+    table[index](VT_COPY_CTOR, dst, const_cast<void*>(src));
+  else
+    __builtin_memcpy(dst, src, storage_size); // trivially copyable alternative
+}
+
+void variant_move_construct(void* dst, void* src, size_t index,
+                            const vt_op_fn* table, size_t storage_size) {
+  if (table[index])
+    table[index](VT_MOVE_CTOR, dst, src);
+  else
+    __builtin_memcpy(dst, src, storage_size); // trivially copyable alternative
+}
+
+void variant_copy_assign(void* dst, size_t dst_index,
+                         const void* src, size_t src_index,
+                         const vt_op_fn* table, size_t storage_size) {
+  if (dst_index == src_index) {               // same alternative: assign the value
+    if (table[src_index])
+      table[src_index](VT_COPY_ASSIGN, dst, const_cast<void*>(src));
+    else
+      __builtin_memcpy(dst, src, storage_size);
+    return;
+  }
+  // different alternative: destroy the old, construct the new (see the header
+  // note: no strong-guarantee temporary under -fno-exceptions).
+  if (dst_index != variant_npos_k && table[dst_index])
+    table[dst_index](VT_DESTROY, dst, nullptr);
+  if (table[src_index])
+    table[src_index](VT_COPY_CTOR, dst, const_cast<void*>(src));
+  else
+    __builtin_memcpy(dst, src, storage_size);
+}
+
+void variant_move_assign(void* dst, size_t dst_index,
+                         void* src, size_t src_index,
+                         const vt_op_fn* table, size_t storage_size) {
+  if (dst_index == src_index) {               // same alternative: assign the value
+    if (table[src_index])
+      table[src_index](VT_MOVE_ASSIGN, dst, src);
+    else
+      __builtin_memcpy(dst, src, storage_size);
+    return;
+  }
+  if (dst_index != variant_npos_k && table[dst_index])
+    table[dst_index](VT_DESTROY, dst, nullptr);
+  if (table[src_index])
+    table[src_index](VT_MOVE_CTOR, dst, src);
+  else
+    __builtin_memcpy(dst, src, storage_size);
 }
 
 // ===========================================================================

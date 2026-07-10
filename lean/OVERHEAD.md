@@ -1,6 +1,6 @@
 # Overhead decomposition + deterministic perf delta (base vs lean)
 
-Compiler: `g++` at -Os, gc-sections, standard -nodefaultlibs recipe. Sizes are text+data+bss minus the empty-main baseline of the same include order. Model S = FIXED + PER_TYPE*T + PER_CALLSITE*T*C fitted by finite differences on grid [(1, 1), (9, 1), (9, 9)]; held-out point (5, 5) reports fit error. liblean.so (once per SYSTEM, lean-so rows only): 23536 bytes.
+Compiler: `g++` at -Os, gc-sections, standard -nodefaultlibs recipe. Sizes are text+data+bss minus the empty-main baseline of the same include order. Model S = FIXED + PER_TYPE*T + PER_CALLSITE*T*C fitted by finite differences on grid [(1, 1), (9, 1), (9, 9)]; held-out point (5, 5) reports fit error. liblean.so (once per SYSTEM, lean-so rows only): 24571 bytes.
 
 ## Containers + sort: size decomposition (bytes)
 
@@ -19,7 +19,7 @@ System-wide model, P processes each with (T,C):
 ```
 base:        sum_p [ 1,217 + 2,114*T_p + 1,484*T_p*C_p ]
 lean-static: sum_p [ 4,925 + 706*T_p + 721*T_p*C_p ]
-lean-so:     23536  +  sum_p [ 1,267 + 723*T_p + 721*T_p*C_p ]
+lean-so:     24571  +  sum_p [ 1,267 + 723*T_p + 721*T_p*C_p ]
 ```
 
 Raw grid (bytes over baseline):
@@ -47,7 +47,7 @@ System-wide model, P processes each with (T,C):
 ```
 base:        sum_p [ 851 + 101*T_p + 914*T_p*C_p ]
 lean-static: sum_p [ 183 + 124*T_p + 359*T_p*C_p ]
-lean-so:     23536  +  sum_p [ 175 + 131*T_p + 359*T_p*C_p ]
+lean-so:     24571  +  sum_p [ 175 + 131*T_p + 359*T_p*C_p ]
 ```
 
 Raw grid (bytes over baseline):
@@ -58,33 +58,33 @@ Raw grid (bytes over baseline):
 | (9, 9) | 75763 | 30356 | 30414 |
 | (5, 5) | 24243 | 9912 | 9970 |
 
-## Containers + sort: deterministic performance (callgrind, cache+branch sim)
+## std::variant: size decomposition (bytes)
 
-Container workload, T=4 C=2 n=1500; each order's empty-main startup counts (crt + ld.so, which the lean-so order pays extra for shared-object resolution) are measured separately and subtracted — what remains is the workload itself. CEst = Ir + 10*Bm + 10*L1m + 100*LLm (kcachegrind's cycle estimate). Counts are synthetic and repeatable — immune to host clock jitter.
+Workload: T variant types (variant<long, Alt_k, double> with a distinct string-member Alt_k per type — non-trivial, so the table-driven engine is exercised) x C noinline callsites, each doing cross- and same-index assign, copy, move and a visit. The per-type slice is the special-member machinery lean erases; the per-callsite slice is the user visitor lambda (not a lean target — the visitor cannot be erased without losing its typed result).
 
-| event | base | lean-static | lean-so | lean-static vs base |
+| profile | fixed / process | per type | per callsite | fit err on held-out |
 |---|---|---|---|---|
-| Ir | 9,964,678 | 17,616,875 | 17,946,622 | +76.8% |
-| Dr | 2,509,951 | 4,130,193 | 4,293,945 | +64.6% |
-| Dw | 1,480,633 | 2,643,247 | 2,644,035 | +78.5% |
-| L1m | 78,095 | 65,813 | 66,202 | -15.7% |
-| LLm | 3,087 | 2,676 | 2,612 | -13.3% |
-| Bc | 1,688,770 | 3,294,629 | 3,295,489 | +95.1% |
-| Bm | 141,610 | 147,523 | 188,315 | +4.2% |
-| CEst | 12,470,428 | 20,017,835 | 20,752,992 | +60.5% |
+| base | 639 | 853 | 735 | -4.3% |
+| lean-static | 488 | 554 | 732 | -5.3% |
+| lean-so | 747 | 553 | 732 | -5.3% |
 
-## std::function: deterministic performance (callgrind, cache+branch sim)
+- delta lean-static vs base: fixed -150, per type -300, per callsite -3.3
+- delta lean-so vs base:     fixed 108, per type -300, per callsite -3.2
 
-function workload, F=4 G=2 n=6000; each order's empty-main startup counts (crt + ld.so, which the lean-so order pays extra for shared-object resolution) are measured separately and subtracted — what remains is the workload itself. CEst = Ir + 10*Bm + 10*L1m + 100*LLm (kcachegrind's cycle estimate). Counts are synthetic and repeatable — immune to host clock jitter.
+System-wide model, P processes each with (T,C):
+```
+base:        sum_p [ 639 + 853*T_p + 735*T_p*C_p ]
+lean-static: sum_p [ 488 + 554*T_p + 732*T_p*C_p ]
+lean-so:     24571  +  sum_p [ 747 + 553*T_p + 732*T_p*C_p ]
+```
 
-| event | base | lean-static | lean-so | lean-static vs base |
-|---|---|---|---|---|
-| Ir | 1,104,876 | 1,059,744 | 1,058,256 | -4.1% |
-| Dr | 336,633 | 192,474 | 192,646 | -42.8% |
-| Dw | 144,371 | 96,276 | 96,354 | -33.3% |
-| L1m | 113 | 61 | 51 | -46.0% |
-| LLm | 91 | 52 | 49 | -42.9% |
-| Bc | 96,198 | 96,397 | 96,278 | +0.2% |
-| Bm | 50 | 678 | -418 | +1256.0% |
-| CEst | 1,115,606 | 1,072,334 | 1,059,486 | -3.9% |
+Raw grid (bytes over baseline):
+| (T,C) | base | lean-static | lean-so |
+|---|---|---|---|
+| (1, 1) | 2227 | 1774 | 2032 |
+| (9, 1) | 14935 | 12058 | 12316 |
+| (9, 9) | 67877 | 64760 | 65024 |
+| (5, 5) | 24341 | 22764 | 23028 |
 
+
+(callgrind skipped: --quick)
