@@ -18,7 +18,15 @@ passes. Failures are the work queue — fix the lean bug, or move the test into
 lean/tools/exclusions.json with a justification tying it to a documented
 deviation. No ratios, no silent skips.
 
-Usage: lean/tools/run_std.py <subtree-prefix> [limit] [-jN]
+Usage: lean/tools/run_std.py <subtree-prefix> [limit] [-jN] [--base]
+
+--base runs the same tests against the BASE library instead (base include
+order, base exclusions only): the diff between a --base run and a lean run of
+the same subtree is the set of LEAN-ONLY failures — the lean work queue. A
+test failing on both is a base-level concern, not a lean regression.
+
+lean/tools/exclusions.d/*.json fragments are merged into the lean exclusion
+layer (same schema), so parallel subtree work never contends on one file.
 """
 import fnmatch
 import json
@@ -35,9 +43,12 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import config as cfg  # noqa: E402
 
 CXX = cfg.require_cxx(cfg.CXX_LIBCIS, "libcis")
+BASE_MODE = "--base" in sys.argv
+INC = " -Iinclude" if BASE_MODE else " -Ilean/include -Iinclude"
 FLAGS = (" -std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -nostdinc++"
-         " -Ilean/include -Iinclude -Itest/std -Itest/std/support -O0 -w").split()
-SUPLIB = "build/lean/libleansupport.a"
+         + INC + " -Itest/std -Itest/std/support -O0 -w").split()
+SUPLIB = ("build/lean/libbasesupport.a" if BASE_MODE
+          else "build/lean/libleansupport.a")
 LINK = [SUPLIB] + "-nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc".split()
 
 # Re-apply tools/test_overrides exactly as tools/run_files.py does (the
@@ -68,8 +79,10 @@ def build_support():
     (mirrors how gen_groups builds libsupport.a for the base backend)."""
     os.makedirs("build/lean", exist_ok=True)
     objs = []
-    for src in ("src/support.cpp", "lean/src/kernels.cpp"):
-        obj = os.path.join("build/lean", os.path.basename(src) + ".o")
+    srcs = ("src/support.cpp",) if BASE_MODE else ("src/support.cpp", "lean/src/kernels.cpp")
+    for src in srcs:
+        obj = os.path.join("build/lean",
+                           ("base_" if BASE_MODE else "") + os.path.basename(src) + ".o")
         if (not os.path.exists(obj)
                 or os.path.getmtime(obj) < os.path.getmtime(src)):
             p = subprocess.run([CXX] + FLAGS + ["-c", src, "-o", obj],
@@ -82,10 +95,15 @@ def build_support():
 
 class Exclusions:
     def __init__(self):
-        base = json.load(open("tools/exclusions.json"))
-        lean = json.load(open("lean/tools/exclusions.json"))
+        import glob as globmod
+        layers = [json.load(open("tools/exclusions.json"))]
+        if not BASE_MODE:
+            layers.append(json.load(open("lean/tools/exclusions.json")))
+            for frag in sorted(globmod.glob("lean/tools/exclusions.d/*.json")):
+                layers.append(json.load(open(frag)))
+        keys = [k for layer in layers for k in layer]
         self.exact, self.prefixes, self.globs = set(), [], []
-        for k in list(base) + list(lean):
+        for k in keys:
             if k.startswith("_"):
                 continue
             if k.startswith("glob:"):
@@ -160,7 +178,8 @@ def run_one(r):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("-j")]
+    args = [a for a in sys.argv[1:]
+            if not a.startswith("-j") and a != "--base"]
     jobs = next((int(a[2:]) for a in sys.argv[1:] if a.startswith("-j")),
                 max(1, (os.cpu_count() or 2) - 1))
     if not args:
@@ -178,7 +197,7 @@ def main():
     excluded = sum(1 for r in man["transferred"]
                    if r["file"].startswith(pre) and r["kind"] == "run"
                    and r.get("entry") and r["file"] in excl)
-    print(f"lean gate: {len(tests)} tests under '{pre}' "
+    print(f"{'base' if BASE_MODE else 'lean'} gate: {len(tests)} tests under '{pre}' "
           f"(excluded(justified)={excluded}, -j{jobs})", flush=True)
 
     with multiprocessing.Pool(jobs) as pool:
