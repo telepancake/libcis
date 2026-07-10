@@ -39,7 +39,9 @@ template<> inline constexpr int bit_digits_v<short>        = (int)(sizeof(short)
 template<> inline constexpr int bit_digits_v<int>          = (int)(sizeof(int) * CHAR_BIT) - 1;
 template<> inline constexpr int bit_digits_v<long>         = (int)(sizeof(long) * CHAR_BIT) - 1;
 template<> inline constexpr int bit_digits_v<long long>    = (int)(sizeof(long long) * CHAR_BIT) - 1;
+#ifdef __SIZEOF_INT128__   // __int128 exists only on 64-bit targets (not i386 -m32)
 template<> inline constexpr int bit_digits_v<__int128>     = 127;
+#endif
 // bool: 1 value bit
 template<> inline constexpr int bit_digits_v<bool>         = 1;
 
@@ -314,11 +316,15 @@ template<detail::integer_type T>
     } else {
         // __uint128_t / __int128: split into two 64-bit halves.
         static_assert(sizeof(T) == 16, "byteswap: unexpected type size");
+#ifdef __SIZEOF_INT128__   // __int128 exists only on 64-bit targets (not i386 -m32)
         uint64_t hi = static_cast<uint64_t>(static_cast<__uint128_t>(val) >> 64);
         uint64_t lo = static_cast<uint64_t>(val);
         return static_cast<T>(
             (static_cast<__uint128_t>(__builtin_bswap64(lo)) << 64) |
             static_cast<__uint128_t>(__builtin_bswap64(hi)));
+#else
+        return val;  // unreachable on i386: no 16-byte integer type exists there
+#endif
     }
 }
 

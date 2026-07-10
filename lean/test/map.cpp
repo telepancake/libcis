@@ -474,9 +474,10 @@ void test_map_hint_stress() {
 // sizeof contract.
 // ------------------------------------------------------------------
 void test_map_sizeof() {
-    static_assert(sizeof(map<int, int>) <= 40);
-    static_assert(sizeof(multimap<int, int>) <= 40);
-    CHECK(sizeof(map<int, int>) <= 40);
+    // <= 5 pointers on both LP64 (40) and ILP32 (20).
+    static_assert(sizeof(map<int, int>) <= 5 * sizeof(void*));
+    static_assert(sizeof(multimap<int, int>) <= 5 * sizeof(void*));
+    CHECK(sizeof(map<int, int>) <= 5 * sizeof(void*));
 }
 
 int main() {

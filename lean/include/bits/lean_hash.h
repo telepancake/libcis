@@ -93,10 +93,14 @@ inline hnode_base** hash_buckets(hash_control* c) noexcept {
 inline constexpr size_t hash_pow2_ceil(size_t n) noexcept {
     if (n < 2)
         return 2;
-    constexpr int width = numeric_limits<size_t>::digits;   // 64 on LP64
-    int shift = width - __builtin_clzll(static_cast<unsigned long long>(n - 1));
+    constexpr int width = numeric_limits<size_t>::digits;             // 64 LP64 / 32 ILP32
+    constexpr int ull_bits = numeric_limits<unsigned long long>::digits;  // 64
+    // Highest set bit index (0-based) of n-1, computed on the 64-bit ULL value so
+    // the count is width-correct for BOTH a 32- and 64-bit size_t (using `width`
+    // directly with the 64-bit __builtin_clzll would be wrong on ILP32).
+    int shift = (ull_bits - __builtin_clzll(static_cast<unsigned long long>(n - 1)));
     if (shift >= width)                     // n > 2^(width-1): no larger pow2 fits
-        return size_t(1) << (width - 1);    // clamp to 2^63
+        return size_t(1) << (width - 1);    // clamp to the top representable pow2
     return size_t(1) << shift;
 }
 

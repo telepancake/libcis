@@ -10,6 +10,7 @@
 #include <utility>
 #include <cstdint>
 #include <cstddef>
+#include <limits>
 #include "lean_test.h"
 
 using std::unordered_map;
@@ -698,20 +699,26 @@ void test_stress_set() {
 // semantics are pinned directly instead.
 void test_hash_pow2_ceil_boundaries() {
     using std::detail::hash_pow2_ceil;
-    // Compile-time: the huge-constant path is defined and clamps to 2^63.
-    static_assert(hash_pow2_ceil(SIZE_MAX) == (size_t(1) << 63));
-    static_assert(hash_pow2_ceil(size_t(1) << 63) == (size_t(1) << 63));
-    static_assert(hash_pow2_ceil((size_t(1) << 63) + 1) == (size_t(1) << 63));
+    // Width-portable: the highest representable power of two is 2^(digits-1)
+    // (2^63 on LP64, 2^31 on ILP32); the second-highest is 2^(digits-2). Spelling
+    // these with the literal 63/62 would be shift-count-UB on a 32-bit size_t.
+    constexpr int digits = std::numeric_limits<size_t>::digits;
+    constexpr size_t top  = size_t(1) << (digits - 1);   // 2^63 / 2^31
+    constexpr size_t top2 = size_t(1) << (digits - 2);   // 2^62 / 2^30
+    // Compile-time: the huge-constant path is defined and clamps to the top pow2.
+    static_assert(hash_pow2_ceil(SIZE_MAX) == top);
+    static_assert(hash_pow2_ceil(top) == top);
+    static_assert(hash_pow2_ceil(top + 1) == top);
     // Runtime boundary values.
     CHECK(hash_pow2_ceil(0) == 2);
     CHECK(hash_pow2_ceil(1) == 2);
     CHECK(hash_pow2_ceil(2) == 2);
     CHECK(hash_pow2_ceil(3) == 4);
     CHECK(hash_pow2_ceil(5) == 8);
-    CHECK(hash_pow2_ceil(size_t(1) << 62) == (size_t(1) << 62));
-    CHECK(hash_pow2_ceil((size_t(1) << 62) + 1) == (size_t(1) << 63));
-    CHECK(hash_pow2_ceil(size_t(1) << 63) == (size_t(1) << 63));
-    CHECK(hash_pow2_ceil(SIZE_MAX) == (size_t(1) << 63));   // no bad shift
+    CHECK(hash_pow2_ceil(top2) == top2);
+    CHECK(hash_pow2_ceil(top2 + 1) == top);
+    CHECK(hash_pow2_ceil(top) == top);
+    CHECK(hash_pow2_ceil(SIZE_MAX) == top);   // no bad shift
 }
 
 int main() {

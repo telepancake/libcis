@@ -11,10 +11,10 @@
 using namespace std;
 
 // --- sizeof / block-size contract ------------------------------------------
-static_assert(sizeof(deque<int>) <= 24, "deque control object must be <= 24 bytes");
-static_assert(sizeof(deque<char>) <= 24, "");
+static_assert(sizeof(deque<int>) <= 3 * sizeof(void*), "deque control object must be <= 3 pointers");
+static_assert(sizeof(deque<char>) <= 3 * sizeof(void*), "");
 struct Big { char b[600]; };
-static_assert(sizeof(deque<Big>) <= 24, "");
+static_assert(sizeof(deque<Big>) <= 3 * sizeof(void*), "");
 
 // --------------------------------------------------------------------------
 // Element types

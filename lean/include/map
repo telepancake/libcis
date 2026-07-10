@@ -418,7 +418,7 @@ public:
     template<class, class, class, class> friend class multimap;
 };
 
-static_assert(sizeof(map<int, int>) <= 40, "lean map object must be <= 40 bytes");
+static_assert(sizeof(map<int, int>) <= 5 * sizeof(void*), "lean map object must be <= 5 pointers");
 
 // ---- Comparisons ----
 template<class Key, class T, class Compare, class Alloc>

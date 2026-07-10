@@ -260,7 +260,7 @@ public:
     template<class, class, class> friend class multiset;
 };
 
-static_assert(sizeof(set<int>) <= 40, "lean set object must be <= 40 bytes");
+static_assert(sizeof(set<int>) <= 5 * sizeof(void*), "lean set object must be <= 5 pointers");
 
 // ---- Comparisons ----
 template<class Key, class Compare, class Alloc>

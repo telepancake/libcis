@@ -13,11 +13,12 @@
 using std::list;
 
 // ---- sizeof contract: sentinel (2 ptrs) + size_t, independent of T ----
-static_assert(sizeof(list<char>)   == 24, "lean list must be 24 bytes");
-static_assert(sizeof(list<int>)    == 24, "lean list must be 24 bytes");
-static_assert(sizeof(list<double>) == 24, "lean list must be 24 bytes");
-static_assert(sizeof(list<std::string>) == 24, "lean list must be 24 bytes");
-static_assert(sizeof(list<int>) <= 24, "lean list <= 24 bytes");
+// == 3 pointers exactly on both LP64 (24) and ILP32 (12).
+static_assert(sizeof(list<char>)   == 3 * sizeof(void*), "lean list must be 3 pointers");
+static_assert(sizeof(list<int>)    == 3 * sizeof(void*), "lean list must be 3 pointers");
+static_assert(sizeof(list<double>) == 3 * sizeof(void*), "lean list must be 3 pointers");
+static_assert(sizeof(list<std::string>) == 3 * sizeof(void*), "lean list must be 3 pointers");
+static_assert(sizeof(list<int>) <= 3 * sizeof(void*), "lean list <= 3 pointers");
 
 // ---- element types ----
 struct Counted {

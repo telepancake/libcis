@@ -211,6 +211,18 @@ lock, the whole handle — is inline pointer moves over the shared kernels.
 - `lean/tools/run_tests.sh [filter]` — builds and runs every (or matching)
   test at `-O0 -g` and `-Os`, against the overlay, with the standard link
   recipe. Exit 0 iff everything passed. `CXX=clang++` works too.
+
+  **32-bit targets.** `CXXARCH` threads an architecture flag through every
+  compile *and* link (empty by default, so the 64-bit build is unchanged).
+  `CXXARCH=-m32 lean/tools/run_tests.sh` builds and runs the whole suite as
+  32-bit i386 (needs `gcc-multilib`/`g++-multilib`). The flag is validated up
+  front: if the toolchain cannot compile+run for it, the run aborts loudly
+  rather than silently skipping the arch. The lean profile is pointer-width
+  clean — every container is still one pointer (or the documented small
+  multiple: rb-tree 4 pointers, deque/list 3, `shared_ptr`/`weak_ptr` one), the
+  `shared_ptr` block is 16 B on ILP32 (24 on LP64), and the refcounts stay
+  32-bit so no 8-byte atomic / `libatomic` is pulled into the `-nodefaultlibs`
+  link.
 - `lean/tools/size_report.py` — compiles a fixed matrix of feature programs
   against base and lean at `-Os` (every binary linked with
   `-ffunction-sections -fdata-sections -Wl,--gc-sections`, both include orders,

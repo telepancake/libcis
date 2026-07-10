@@ -525,7 +525,7 @@ private:
 };
 
 //--- sizeof contract ---
-static_assert(sizeof(deque<int>) <= 24, "lean deque control object must be <= 24 bytes");
+static_assert(sizeof(deque<int>) <= 3 * sizeof(void*), "lean deque control object must be <= 3 pointers");
 
 //===----------------------------------------------------------------------===//
 // Deduction guides (C++17)

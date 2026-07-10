@@ -15,16 +15,19 @@
 #include <stack>
 #include <utility>
 
-// ---- sizeof matrix (lean/README.md representation table, x86-64) ------------
-static_assert(sizeof(std::string) == 8, "string is one pointer");
-static_assert(sizeof(std::vector<int>) == 8, "vector is one pointer");
-static_assert(sizeof(std::vector<std::string>) == 8, "vector<string> is one pointer");
-static_assert(sizeof(std::unordered_map<std::string, int>) == 8, "unordered_map is one pointer");
-static_assert(sizeof(std::unordered_set<int>) == 8, "unordered_set is one pointer");
-static_assert(sizeof(std::map<std::string, std::vector<int>>) <= 40, "map <= 40");
-static_assert(sizeof(std::set<int>) <= 40, "set <= 40");
-static_assert(sizeof(std::list<std::string>) <= 24, "list <= 24");
-static_assert(sizeof(std::deque<std::string>) <= 24, "deque <= 24");
+// ---- sizeof matrix (lean/README.md representation table) --------------------
+// Expressed in pointer-width units so the contract holds on LP64 and ILP32
+// (i386 -m32) alike. Exact layouts (== 1/4 pointers) are pinned with ==; the
+// map/deque/list contracts keep the original <= slack from the header asserts.
+static_assert(sizeof(std::string) == sizeof(void*), "string is one pointer");
+static_assert(sizeof(std::vector<int>) == sizeof(void*), "vector is one pointer");
+static_assert(sizeof(std::vector<std::string>) == sizeof(void*), "vector<string> is one pointer");
+static_assert(sizeof(std::unordered_map<std::string, int>) == sizeof(void*), "unordered_map is one pointer");
+static_assert(sizeof(std::unordered_set<int>) == sizeof(void*), "unordered_set is one pointer");
+static_assert(sizeof(std::map<std::string, std::vector<int>>) <= 5 * sizeof(void*), "map <= 5 pointers");
+static_assert(sizeof(std::set<int>) == 4 * sizeof(void*), "set == 4 pointers (rb header + size)");
+static_assert(sizeof(std::list<std::string>) == 3 * sizeof(void*), "list == 3 pointers (sentinel + size)");
+static_assert(sizeof(std::deque<std::string>) <= 3 * sizeof(void*), "deque <= 3 pointers");
 
 // ---------------------------------------------------------------------------
 static void test_vector_string() {
