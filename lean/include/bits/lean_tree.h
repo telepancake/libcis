@@ -82,262 +82,44 @@ inline void tree_set_root(tree_node_base* header, tree_node_base* r) noexcept {
     tree_set_parent(header, r);
 }
 
-inline tree_node_base* tree_min(tree_node_base* x) noexcept {
-    while (x->left) x = x->left;
-    return x;
-}
-inline tree_node_base* tree_max(tree_node_base* x) noexcept {
-    while (x->right) x = x->right;
-    return x;
-}
+// ---------------------------------------------------------------------------
+// Fat, type-independent structural routines — defined out of line in
+// lean/src/kernels.cpp (one copy per system). Declarations only here. The two
+// rotations are internal to that TU (only the rebalancers call them). Default
+// visibility so the references stay bindable to liblean.a / liblean.so even
+// under a hidden-visibility include region (see bits/lean_string.h).
+// ---------------------------------------------------------------------------
+#pragma GCC visibility push(default)
+
+tree_node_base* tree_min(tree_node_base* x) noexcept;
+tree_node_base* tree_max(tree_node_base* x) noexcept;
 
 // In-order successor / predecessor (libstdc++ _Rb_tree_increment/decrement).
 // The header is recognised in decrement by: red AND parent->parent == self
 // (the header<->root two-cycle). root is always black, so no ordinary node
 // matches.
-inline tree_node_base* tree_increment(tree_node_base* x) noexcept {
-    if (x->right) {
-        x = x->right;
-        while (x->left) x = x->left;
-    } else {
-        tree_node_base* y = tree_parent(x);
-        while (x == y->right) { x = y; y = tree_parent(y); }
-        if (x->right != y) x = y;
-    }
-    return x;
-}
-inline tree_node_base* tree_decrement(tree_node_base* x) noexcept {
-    if (tree_is_red(x) && tree_parent(tree_parent(x)) == x) {
-        x = x->right;                 // x is the header -> rightmost
-    } else if (x->left) {
-        tree_node_base* y = x->left;
-        while (y->right) y = y->right;
-        x = y;
-    } else {
-        tree_node_base* y = tree_parent(x);
-        while (x == y->left) { x = y; y = tree_parent(y); }
-        x = y;
-    }
-    return x;
-}
-
-inline void tree_rotate_left(tree_node_base* x, tree_node_base* header) noexcept {
-    tree_node_base* y  = x->right;
-    tree_node_base* xp = tree_parent(x);
-    x->right = y->left;
-    if (y->left) tree_set_parent(y->left, x);
-    tree_set_parent(y, xp);
-    if (x == tree_root(header)) tree_set_root(header, y);
-    else if (x == xp->left)     xp->left = y;
-    else                        xp->right = y;
-    y->left = x;
-    tree_set_parent(x, y);
-}
-inline void tree_rotate_right(tree_node_base* x, tree_node_base* header) noexcept {
-    tree_node_base* y  = x->left;
-    tree_node_base* xp = tree_parent(x);
-    x->left = y->right;
-    if (y->right) tree_set_parent(y->right, x);
-    tree_set_parent(y, xp);
-    if (x == tree_root(header)) tree_set_root(header, y);
-    else if (x == xp->right)    xp->right = y;
-    else                        xp->left = y;
-    y->right = x;
-    tree_set_parent(x, y);
-}
+tree_node_base* tree_increment(tree_node_base* x) noexcept;
+tree_node_base* tree_decrement(tree_node_base* x) noexcept;
 
 // Link a fresh node x under parent p (as left/right per insert_left), then
 // restore the red-black invariants. Maintains header.left/right (leftmost /
 // rightmost). Port of libstdc++ _Rb_tree_insert_and_rebalance.
-inline void tree_insert_and_rebalance(bool insert_left, tree_node_base* x,
-                                      tree_node_base* p,
-                                      tree_node_base* header) noexcept {
-    x->parent_and_color = reinterpret_cast<uintptr_t>(p) | uintptr_t(1); // parent=p, red
-    x->left = nullptr;
-    x->right = nullptr;
-
-    if (insert_left) {
-        p->left = x;
-        if (p == header) { tree_set_root(header, x); header->right = x; }
-        else if (p == header->left) header->left = x;
-    } else {
-        p->right = x;
-        if (p == header->right) header->right = x;
-    }
-
-    while (x != tree_root(header) && tree_is_red(tree_parent(x))) {
-        tree_node_base* xp  = tree_parent(x);
-        tree_node_base* xpp = tree_parent(xp);
-        if (xp == xpp->left) {
-            tree_node_base* y = xpp->right;
-            if (y && tree_is_red(y)) {
-                tree_set_black(xp);
-                tree_set_black(y);
-                tree_set_red(xpp);
-                x = xpp;
-            } else {
-                if (x == xp->right) {
-                    x = xp;
-                    tree_rotate_left(x, header);
-                    xp = tree_parent(x);
-                }
-                tree_set_black(xp);
-                tree_set_red(xpp);
-                tree_rotate_right(xpp, header);
-            }
-        } else {
-            tree_node_base* y = xpp->left;
-            if (y && tree_is_red(y)) {
-                tree_set_black(xp);
-                tree_set_black(y);
-                tree_set_red(xpp);
-                x = xpp;
-            } else {
-                if (x == xp->left) {
-                    x = xp;
-                    tree_rotate_right(x, header);
-                    xp = tree_parent(x);
-                }
-                tree_set_black(xp);
-                tree_set_red(xpp);
-                tree_rotate_left(xpp, header);
-            }
-        }
-    }
-    tree_set_black(tree_root(header));
-}
+void tree_insert_and_rebalance(bool insert_left, tree_node_base* x,
+                               tree_node_base* p, tree_node_base* header) noexcept;
 
 // Unlink z and repair the tree. Returns the node that must be physically freed
 // (always z: when z has two children the successor is relinked into z's slot so
 // value addresses of surviving elements never move -> reference stability).
 // Port of libstdc++ _Rb_tree_rebalance_for_erase.
-inline tree_node_base* tree_rebalance_for_erase(tree_node_base* z,
-                                                tree_node_base* header) noexcept {
-    tree_node_base* y = z;
-    tree_node_base* x = nullptr;
-    tree_node_base* x_parent = nullptr;
-
-    if (y->left == nullptr)        x = y->right;
-    else if (y->right == nullptr)  x = y->left;
-    else {
-        y = y->right;
-        while (y->left) y = y->left;
-        x = y->right;
-    }
-
-    if (y != z) {
-        // relink y (z's successor) into z's structural position.
-        tree_set_parent(z->left, y);
-        y->left = z->left;
-        if (y != z->right) {
-            tree_node_base* yp = tree_parent(y);   // y is a left child
-            x_parent = yp;
-            if (x) tree_set_parent(x, yp);
-            yp->left = x;
-            y->right = z->right;
-            tree_set_parent(z->right, y);
-        } else {
-            x_parent = y;
-        }
-        tree_node_base* zp = tree_parent(z);
-        if (tree_root(header) == z)   tree_set_root(header, y);
-        else if (zp->left == z)       zp->left = y;
-        else                          zp->right = y;
-        tree_set_parent(y, zp);
-        bool cy = tree_is_red(y), cz = tree_is_red(z);
-        tree_set_color(y, cz);
-        tree_set_color(z, cy);
-        y = z;   // node to physically delete
-    } else {
-        // y == z: at most one child.
-        tree_node_base* zp = tree_parent(z);
-        x_parent = zp;
-        if (x) tree_set_parent(x, zp);
-        if (tree_root(header) == z)   tree_set_root(header, x);
-        else if (zp->left == z)       zp->left = x;
-        else                          zp->right = x;
-        if (header->left == z) {
-            if (z->right == nullptr) header->left = zp;      // z had no children
-            else                     header->left = tree_min(x);
-        }
-        if (header->right == z) {
-            if (z->left == nullptr)  header->right = zp;
-            else                     header->right = tree_max(x);
-        }
-    }
-
-    if (!tree_is_red(y)) {  // a black node was removed -> fix black-height
-        while (x != tree_root(header) && (x == nullptr || !tree_is_red(x))) {
-            if (x == x_parent->left) {
-                tree_node_base* w = x_parent->right;
-                if (tree_is_red(w)) {
-                    tree_set_black(w);
-                    tree_set_red(x_parent);
-                    tree_rotate_left(x_parent, header);
-                    w = x_parent->right;
-                }
-                if ((w->left  == nullptr || !tree_is_red(w->left)) &&
-                    (w->right == nullptr || !tree_is_red(w->right))) {
-                    tree_set_red(w);
-                    x = x_parent;
-                    x_parent = tree_parent(x_parent);
-                } else {
-                    if (w->right == nullptr || !tree_is_red(w->right)) {
-                        tree_set_black(w->left);
-                        tree_set_red(w);
-                        tree_rotate_right(w, header);
-                        w = x_parent->right;
-                    }
-                    tree_set_color(w, tree_is_red(x_parent));
-                    tree_set_black(x_parent);
-                    if (w->right) tree_set_black(w->right);
-                    tree_rotate_left(x_parent, header);
-                    break;
-                }
-            } else {
-                tree_node_base* w = x_parent->left;
-                if (tree_is_red(w)) {
-                    tree_set_black(w);
-                    tree_set_red(x_parent);
-                    tree_rotate_right(x_parent, header);
-                    w = x_parent->left;
-                }
-                if ((w->right == nullptr || !tree_is_red(w->right)) &&
-                    (w->left  == nullptr || !tree_is_red(w->left))) {
-                    tree_set_red(w);
-                    x = x_parent;
-                    x_parent = tree_parent(x_parent);
-                } else {
-                    if (w->left == nullptr || !tree_is_red(w->left)) {
-                        tree_set_black(w->right);
-                        tree_set_red(w);
-                        tree_rotate_left(w, header);
-                        w = x_parent->left;
-                    }
-                    tree_set_color(w, tree_is_red(x_parent));
-                    tree_set_black(x_parent);
-                    if (w->left) tree_set_black(w->left);
-                    tree_rotate_right(x_parent, header);
-                    break;
-                }
-            }
-        }
-        if (x) tree_set_black(x);
-    }
-    return y;
-}
+tree_node_base* tree_rebalance_for_erase(tree_node_base* z,
+                                         tree_node_base* header) noexcept;
 
 // Type-independent post-order destroy walk. The per-type callback ends the
 // value's lifetime and frees the node.
-inline void tree_destroy(tree_node_base* n,
-                         void (*destroy_node)(tree_node_base*)) noexcept {
-    while (n) {
-        tree_destroy(n->left, destroy_node);
-        tree_node_base* r = n->right;
-        destroy_node(n);
-        n = r;
-    }
-}
+void tree_destroy(tree_node_base* n,
+                  void (*destroy_node)(tree_node_base*)) noexcept;
+
+#pragma GCC visibility pop
 
 // Value payload offset inside a node allocation.
 inline constexpr size_t tree_align_up(size_t n, size_t a) noexcept {

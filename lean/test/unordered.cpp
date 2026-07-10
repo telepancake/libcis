@@ -690,7 +690,32 @@ void test_stress_set() {
         CHECK(s.contains(k) == present[k]);
 }
 
+// Regression: hash_pow2_ceil must be defined for EVERY input. For n > 2^63 it
+// used to evaluate size_t(1) << 64 (shift-count >= width -> UB); it now clamps
+// to the highest representable power of two (2^63). Reachable through
+// rehash()/reserve(); we do NOT actually call rehash(SIZE_MAX) (it would request
+// 2^63 * sizeof(node*) bytes and trap on the allocation) — the helper's boundary
+// semantics are pinned directly instead.
+void test_hash_pow2_ceil_boundaries() {
+    using std::detail::hash_pow2_ceil;
+    // Compile-time: the huge-constant path is defined and clamps to 2^63.
+    static_assert(hash_pow2_ceil(SIZE_MAX) == (size_t(1) << 63));
+    static_assert(hash_pow2_ceil(size_t(1) << 63) == (size_t(1) << 63));
+    static_assert(hash_pow2_ceil((size_t(1) << 63) + 1) == (size_t(1) << 63));
+    // Runtime boundary values.
+    CHECK(hash_pow2_ceil(0) == 2);
+    CHECK(hash_pow2_ceil(1) == 2);
+    CHECK(hash_pow2_ceil(2) == 2);
+    CHECK(hash_pow2_ceil(3) == 4);
+    CHECK(hash_pow2_ceil(5) == 8);
+    CHECK(hash_pow2_ceil(size_t(1) << 62) == (size_t(1) << 62));
+    CHECK(hash_pow2_ceil((size_t(1) << 62) + 1) == (size_t(1) << 63));
+    CHECK(hash_pow2_ceil(size_t(1) << 63) == (size_t(1) << 63));
+    CHECK(hash_pow2_ceil(SIZE_MAX) == (size_t(1) << 63));   // no bad shift
+}
+
 int main() {
+    test_hash_pow2_ceil_boundaries();
     test_map_basic();
     test_set_basic();
     test_iterator_walk();

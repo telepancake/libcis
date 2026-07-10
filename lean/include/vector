@@ -432,7 +432,27 @@ public:
         size_type sz  = size();
         size_type n   = static_cast<size_type>(std::distance(first, last));
         if (n) {
-            if (capacity() - sz >= n) {
+            // In-place open_gap shifts [idx, sz) up by n BEFORE we read the
+            // source. If the source range overlaps the shifted region
+            // [idx, sz) of *this (a precondition violation per [sequence.reqmts],
+            // but we must not silently corrupt), those source elements would be
+            // read after being moved. Detect that and take the spill path
+            // instead: it fills the new block from the still-live old block, so
+            // any self-overlap reads pre-insert values correctly.
+            bool src_overlaps = false;
+            using Ref = typename iterator_traits<InputIter>::reference;
+            if constexpr (is_lvalue_reference_v<Ref> &&
+                          is_same_v<remove_cv_t<remove_reference_t<Ref>>, value_type>) {
+                if (sz != 0) {
+                    using uptr = __UINTPTR_TYPE__;
+                    uptr s0 = reinterpret_cast<uptr>(std::addressof(*first));
+                    uptr se = s0 + static_cast<uptr>(n) * sizeof(value_type);
+                    uptr rs = reinterpret_cast<uptr>(data() + idx);
+                    uptr re = reinterpret_cast<uptr>(data() + sz);
+                    src_overlaps = s0 < re && rs < se;   // overlaps shifted region
+                }
+            }
+            if (capacity() - sz >= n && !src_overlaps) {
                 detail::lean_arr_open_gap(p_, ops(), idx, n);
                 T* g = data() + idx;
                 for (; first != last; ++first, (void)++g)

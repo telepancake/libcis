@@ -17,8 +17,23 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 os.chdir(ROOT)
 
 CXX = os.environ.get("CXX", "g++")
-FLAGS = "-std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -Os -w".split()
-LINK = "src/support.cpp -nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc".split()
+# -ffunction-sections/-fdata-sections + -Wl,--gc-sections (the same trick
+# tools/gen_groups.py uses): each program's binary then carries ONLY the kernels
+# it actually reaches. Without it the whole liblean kernels TU would land in
+# every lean binary — including the empty-main baseline — poisoning the marginal
+# subtraction. The flags are applied to BOTH include orders so base vs lean stays
+# apples-to-apples.
+FLAGS = ("-std=gnu++20 -fcoroutines -fno-exceptions -fno-rtti -Os -w "
+         "-ffunction-sections -fdata-sections").split()
+GC = ["-Wl,--gc-sections"]
+LINK_TAIL = "-nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc".split()
+# The lean profile links the out-of-line kernels TU (bits/lean_*.h declare, one
+# copy per system); the base profile has no such file. gc-sections drops the
+# unused kernels from every binary that does not reach them.
+LINKS = {
+    "base": ["src/support.cpp"] + GC + LINK_TAIL,
+    "lean": ["src/support.cpp", "lean/src/kernels.cpp"] + GC + LINK_TAIL,
+}
 ORDERS = {
     "base": ["-nostdinc++", "-Iinclude"],
     "lean": ["-nostdinc++", "-Ilean/include", "-Iinclude"],
@@ -175,14 +190,26 @@ int main() {
 """
 
 
-def build(src_text, inc, exe):
+def build(src_text, inc, link, exe):
     src = exe + ".cpp"
     open(src, "w").write(src_text)
-    p = subprocess.run([CXX] + FLAGS + inc + [src] + LINK + ["-o", exe],
+    p = subprocess.run([CXX] + FLAGS + inc + [src] + link + ["-o", exe],
                        capture_output=True, text=True)
     if p.returncode != 0:
         return p.stderr
     return None
+
+
+def kernels_object_text(tmp):
+    """size(1) text of the full lean kernels .o — the one-copy-per-SYSTEM cost
+    shipped in liblean.a / liblean.so, independent of any single program."""
+    obj = os.path.join(tmp, "kernels.o")
+    p = subprocess.run([CXX] + FLAGS + ORDERS["lean"] +
+                       ["-c", "lean/src/kernels.cpp", "-o", obj],
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        return None
+    return tdb(obj)[0]
 
 
 def tdb(exe):
@@ -199,7 +226,7 @@ def main():
     failures = []
     for order, inc in ORDERS.items():
         exe = os.path.join(tmp, f"baseline_{order}")
-        err = build(PROGRAMS["baseline"], inc, exe)
+        err = build(PROGRAMS["baseline"], inc, LINKS[order], exe)
         if err:
             sys.exit(f"baseline failed for {order}:\n{err}")
         baselines[order] = tdb(exe)
@@ -209,7 +236,7 @@ def main():
         row = {}
         for order, inc in ORDERS.items():
             exe = os.path.join(tmp, f"{prog}_{order}")
-            err = build(text, inc, exe)
+            err = build(text, inc, LINKS[order], exe)
             if err:
                 row[order] = None
                 failures.append((prog, order, err.strip().splitlines()[:8]))
@@ -227,14 +254,20 @@ def main():
     sizeofs = {}
     for order, inc in ORDERS.items():
         exe = os.path.join(tmp, f"sizeof_{order}")
-        err = build(SIZEOF_PROBE, inc, exe)
+        err = build(SIZEOF_PROBE, inc, LINKS[order], exe)
         sizeofs[order] = ("BUILD FAILED" if err else
                           subprocess.run([exe], capture_output=True, text=True).stdout.strip())
 
+    kern_text = kernels_object_text(tmp)
+
     L = ["# lean vs base: measured size (-Os, marginal over empty main)\n",
          f"Compiler: `{CXX}`. text+data+bss from `size(1)`, minus the same "
-         "include-order's empty-`main` baseline. A FAIL row means that program "
-         "did not build/run — a missing number is a defect, not a zero.\n",
+         "include-order's empty-`main` baseline. Every binary is linked with "
+         "`-ffunction-sections -fdata-sections -Wl,--gc-sections`, so a program "
+         "carries only the kernels it reaches (the lean profile links the "
+         "out-of-line kernels TU `lean/src/kernels.cpp`; the base profile has no "
+         "such file). A FAIL row means that program did not build/run — a "
+         "missing number is a defect, not a zero.\n",
          "| program | base text+data+bss | lean text+data+bss | delta |",
          "|---|---|---|---|"]
     for prog, row in rows:
@@ -248,6 +281,14 @@ def main():
         else:
             delta = "-"
         L.append(f"| {prog} | {cells['base']} | {cells['lean']} | {delta} |")
+    L += ["\n## liblean kernels object (one copy per SYSTEM)\n",
+          "The out-of-line structural/algorithm kernels compile to a single "
+          "translation unit, shipped once as `liblean.a` / `liblean.so`. With "
+          "`--gc-sections` each program above pulls in only the slice it uses; "
+          "this is the whole-TU `size(1)` **text** cost when the library is "
+          "linked in full:",
+          f"- `lean/src/kernels.cpp` .o text: "
+          f"`{'BUILD FAILED' if kern_text is None else kern_text} bytes`"]
     L += ["\n## sizeof (bytes)\n"]
     for order in ORDERS:
         L.append(f"- {order}: `{sizeofs[order]}`")

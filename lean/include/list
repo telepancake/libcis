@@ -96,17 +96,15 @@ inline void list_unlink(list_node_base* f, list_node_base* l) noexcept {
     l->next->prev = f->prev;
 }
 
+// Default visibility so the out-of-line kernel references (list_reverse,
+// list_sort) stay bindable to liblean.a / liblean.so even under a
+// hidden-visibility include region (see bits/lean_string.h).
+#pragma GCC visibility push(default)
+
 // Reverse the whole ring anchored at sentinel s (swaps prev/next of every
 // node, including s). Correct for any size, including 0 and 1.
-inline void list_reverse(list_node_base* s) noexcept {
-    list_node_base* cur = s;
-    do {
-        list_node_base* nxt = cur->next;
-        cur->next = cur->prev;
-        cur->prev = nxt;
-        cur = nxt;
-    } while (cur != s);
-}
+// (fat: defined out of line in lean/src/kernels.cpp.)
+void list_reverse(list_node_base* s) noexcept;
 
 // Comparator thunk: "does node a's value order before node b's value?" The
 // merge-sort frame is non-template and calls through this pointer, so the only
@@ -120,67 +118,15 @@ bool list_comp_thunk(const list_node_base* a, const list_node_base* b, void* ctx
         static_cast<const list_node<T>*>(b)->value);
 }
 
-inline list_node_base* list_advance(list_node_base* p, size_t n) noexcept {
-    for (; n != 0; --n) p = p->next;
-    return p;
-}
-
 // Merge-sort the run of n nodes that starts at f1 and ends just before e2
 // (e2 is one-past-the-last, i.e. the sentinel at the top level). Relinks nodes
 // only; never touches a value. Returns the new first node of the run. This is
 // the base list's do_sort rewritten on raw links with the comparator erased.
-inline list_node_base* list_sort(list_node_base* f1, list_node_base* e2, size_t n,
-                                 list_less_fn comp, void* ctx) {
-    switch (n) {
-    case 0:
-    case 1:
-        return f1;
-    case 2: {
-        list_node_base* lm1 = e2->prev;
-        if (comp(lm1, f1, ctx)) {
-            list_unlink(lm1, lm1);
-            list_link(f1, lm1, lm1);
-            return lm1;
-        }
-        return f1;
-    }
-    }
-    size_t n2 = n / 2;
-    list_node_base* e1 = list_advance(f1, n2);
-    list_node_base* r  = f1 = list_sort(f1, e1, n2, comp, ctx);
-    list_node_base* f2 = e1 = list_sort(e1, e2, n - n2, comp, ctx);
-    if (comp(f2, f1, ctx)) {
-        list_node_base* m2 = f2->next;
-        for (; m2 != e2 && comp(m2, f1, ctx); m2 = m2->next) ;
-        list_node_base* ff = f2;
-        list_node_base* ll = m2->prev;
-        r  = f2;
-        e1 = f2 = m2;
-        list_unlink(ff, ll);
-        m2 = f1->next;
-        list_link(f1, ff, ll);
-        f1 = m2;
-    } else {
-        f1 = f1->next;
-    }
-    while (f1 != e1 && f2 != e2) {
-        if (comp(f2, f1, ctx)) {
-            list_node_base* m2 = f2->next;
-            for (; m2 != e2 && comp(m2, f1, ctx); m2 = m2->next) ;
-            list_node_base* ff = f2;
-            list_node_base* ll = m2->prev;
-            if (e1 == f2) e1 = m2;
-            f2 = m2;
-            list_unlink(ff, ll);
-            m2 = f1->next;
-            list_link(f1, ff, ll);
-            f1 = m2;
-        } else {
-            f1 = f1->next;
-        }
-    }
-    return r;
-}
+// (fat: defined out of line in lean/src/kernels.cpp.)
+list_node_base* list_sort(list_node_base* f1, list_node_base* e2, size_t n,
+                          list_less_fn comp, void* ctx);
+
+#pragma GCC visibility pop
 
 // ============================================================
 // Iterators

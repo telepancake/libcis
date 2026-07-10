@@ -232,7 +232,9 @@ void test_splice_all_forms() {
     // rvalue-list splice overloads compile and work
     {
         list<int> a{1};
-        a.splice(a.end(), list<int>{2, 3});    // list&& overload... via named? use temporary
+        a.splice(a.end(), list<int>{2, 3});    // list&& whole-list splice overload
+        CHECK(a.size() == 3);
+        std::vector<int> ref{1, 2, 3}; check_seq(a, ref);
     }
 }
 
@@ -494,15 +496,19 @@ void test_stress_vs_reference() {
 
 void test_stress_splice_two_lists() {
     // Mirror two lists a,b against two vectors; randomly splice between them.
-    list<int> a, b;
+    // Elements are Counted so the trailing live-count check is real: splice only
+    // relinks nodes (never constructs/destroys a value), so after clearing both
+    // lists every Counted made here must be gone.
+    const long live_before = Counted::live;
+    list<Counted> a, b;
     std::vector<int> ra, rb;
     const int OPS = 4000;
     for (int step = 0; step < OPS; ++step) {
         unsigned op = rng() % 6;
         int val = static_cast<int>(rng() % 1000);
         switch (op) {
-        case 0: a.push_back(val); ra.push_back(val); break;
-        case 1: b.push_back(val); rb.push_back(val); break;
+        case 0: a.push_back(Counted(val)); ra.push_back(val); break;
+        case 1: b.push_back(Counted(val)); rb.push_back(val); break;
         case 2: { // move whole b into a at front
             a.splice(a.begin(), b);
             ra.insert(ra.begin(), rb.begin(), rb.end());
@@ -547,10 +553,14 @@ void test_stress_splice_two_lists() {
         }
         CHECK(a.size() == ra.size());
         CHECK(b.size() == rb.size());
-        { auto it = a.begin(); for (size_t i = 0; i < ra.size(); ++i, ++it) CHECK(*it == ra[i]); CHECK(it == a.end()); }
-        { auto it = b.begin(); for (size_t i = 0; i < rb.size(); ++i, ++it) CHECK(*it == rb[i]); CHECK(it == b.end()); }
+        { auto it = a.begin(); for (size_t i = 0; i < ra.size(); ++i, ++it) CHECK(it->v == ra[i]); CHECK(it == a.end()); }
+        { auto it = b.begin(); for (size_t i = 0; i < rb.size(); ++i, ++it) CHECK(it->v == rb[i]); CHECK(it == b.end()); }
     }
-    CHECK(Counted::live == 0);   // (Counted not used here; cheap invariant)
+    // Real leak/double-free invariant: clear both lists; every Counted created
+    // in this test must now be destroyed (net live back to the entry value).
+    a.clear();
+    b.clear();
+    CHECK(Counted::live == live_before);
 }
 
 int main() {

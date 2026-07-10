@@ -388,9 +388,12 @@ void test_multiset_stress() {
 }
 
 void test_set_sizeof() {
-    static_assert(sizeof(set<int>) <= 40);
-    static_assert(sizeof(multiset<int>) <= 40);
-    CHECK(sizeof(set<int>) <= 40);
+    // Exact committed size: embedded header node (3 pointers) + size_t, empty
+    // comparator folded away by [[no_unique_address]]. Pinned to == 32 so a
+    // layout regression cannot slip past a loose bound.
+    static_assert(sizeof(set<int>) == 32);
+    static_assert(sizeof(multiset<int>) == 32);
+    CHECK(sizeof(set<int>) == 32);
 }
 
 int main() {

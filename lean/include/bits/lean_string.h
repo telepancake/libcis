@@ -30,14 +30,36 @@
 namespace std {
 namespace detail {
 
-// The shared empty representation.  Zero-initialised: the first size_t (the
-// `used` header) is 0 and the following bytes (the terminator, up to 8 bytes)
-// are 0.  The payload pointer is `storage + sizeof(size_t)`, so reading
-// lean_used(payload) yields 0 exactly like a real block.  Never written.
-alignas(size_t) inline unsigned char lean_str_empty_storage[2 * sizeof(size_t)] = {};
+// The shared empty representation.  A REAL size_t object (`used`, value 0) sits
+// at the block-header position, immediately followed by >= 8 zero terminator
+// bytes at the payload — so reading lean_used(payload) (i.e.
+// reinterpret_cast<const size_t*>(payload)[-1]) accesses an actual size_t
+// object, not a size_t-typed read of a char array (which would be a no-object
+// strict-aliasing read).  Immutable (const, .rodata, never written), shared
+// across char widths: lean_offset(elem) == sizeof(size_t) for every standard
+// character type (all have alignof <= sizeof(size_t)), so the header always
+// lands exactly sizeof(size_t) bytes below the 8-aligned payload.
+//
+// It is ONE exported symbol DEFINED in lean/src/kernels.cpp (not an inline
+// variable): every empty string of a given width, and every kernel, must agree
+// on its single address, because lean_str_is_static() is a pointer-identity
+// test. An inline/COMDAT definition would get a DIFFERENT address in the main
+// program vs. inside liblean.so, so a kernel there would mistake the shared rep
+// for a heap block and free() read-only memory. Default visibility + a single
+// out-of-line definition make the address identical across the library
+// boundary (this is exactly how libc++ ships its empty-string rep).
+struct lean_str_empty_rep {
+  size_t used;         // the block header: a genuine size_t object, value 0
+  char   terminator[8]; // >= 8 zero bytes, 8-aligned, readable as any width's NUL
+};
+#pragma GCC visibility push(default)
+extern const lean_str_empty_rep lean_str_empty;
+#pragma GCC visibility pop
 
 inline void* lean_str_empty_payload() noexcept {
-  return lean_str_empty_storage + sizeof(size_t);
+  // terminator sits sizeof(size_t) bytes above `used`; payload[-1] therefore
+  // reads the real `used` size_t object.
+  return const_cast<char*>(lean_str_empty.terminator);
 }
 
 inline bool lean_str_is_static(const void* p) noexcept {
@@ -72,46 +94,34 @@ inline void lean_str_fill(void* dst, size_t elem, size_t n, const void* one) noe
   }
 }
 
-// Ensure the block can hold at least `need` elements (plus the terminator),
-// preserving the content, length and terminator.  Returns the (possibly new)
-// payload.  Grows from the static rep by allocating; grows a heap block by
-// realloc (chars are trivially relocatable).  Allocates exactly `need` — the
-// amortised geometric growth lives in the splice kernels' append path.
-inline void* lean_str_reserve(void* p, size_t elem, size_t need) noexcept {
-  bool st = lean_str_is_static(p);
-  if (!st && need <= lean_str_cap(p, elem))
-    return p;
-  size_t used = lean_used(p);
-  if (st) {
-    void* np = lean_alloc(elem, (need + 1) * elem);
-    __builtin_memcpy(np, p, (used + 1) * elem);  // used == 0: copies terminator
-    lean_used(np) = used;
-    return np;
-  }
-  return lean_realloc(p, elem, (need + 1) * elem);
-}
-
-// Shrink a heap block to fit its current length; an emptied heap block is freed
-// and the string reverts to the static rep.  realloc-down may keep the same
-// allocation when glibc's bin already fits — capacity() then stays as measured.
-inline void* lean_str_shrink(void* p, size_t elem) noexcept {
-  if (lean_str_is_static(p))
-    return p;
-  size_t used = lean_used(p);
-  if (used == 0) {
-    lean_free(p, elem);
-    return lean_str_empty_payload();
-  }
-  if (used >= lean_str_cap(p, elem))
-    return p;
-  return lean_realloc(p, elem, (used + 1) * elem);
-}
-
 // Geometric target: double, but never below what is needed.
 inline size_t lean_str_geo(size_t cap, size_t need) noexcept {
   size_t twice = cap * 2;
   return twice > need ? twice : need;
 }
+
+// ---------------------------------------------------------------------------
+// Fat byte engines — defined out of line in lean/src/kernels.cpp (one copy per
+// system). Declarations only here. Forced to DEFAULT visibility for the same
+// reason as the <bits/lean.h> include above: <string> is routinely included
+// inside a `#pragma GCC visibility push(hidden)` region (e.g. <locale> via
+// <codecvt>), which would stamp these references hidden — a hidden reference
+// cannot bind to a definition in liblean.a / liblean.so ("hidden symbol isn't
+// defined"). Default visibility keeps the library link working.
+// ---------------------------------------------------------------------------
+#pragma GCC visibility push(default)
+
+// Ensure the block can hold at least `need` elements (plus the terminator),
+// preserving the content, length and terminator.  Returns the (possibly new)
+// payload.  Grows from the static rep by allocating; grows a heap block by
+// realloc (chars are trivially relocatable).  Allocates exactly `need` — the
+// amortised geometric growth lives in the splice kernels' append path.
+void* lean_str_reserve(void* p, size_t elem, size_t need) noexcept;
+
+// Shrink a heap block to fit its current length; an emptied heap block is freed
+// and the string reverts to the static rep.  realloc-down may keep the same
+// allocation when glibc's bin already fits — capacity() then stays as measured.
+void* lean_str_shrink(void* p, size_t elem) noexcept;
 
 // Core splice: at element index `pos`, delete `n_del` elements and insert
 // `n_add` elements copied from `src` (n_add*elem bytes).  Returns the new
@@ -119,93 +129,15 @@ inline size_t lean_str_geo(size_t cap, size_t need) noexcept {
 // reallocates and copies from the old buffer before freeing it, so s += s and
 // self-referential insert/replace are correct.  The caller guarantees
 // pos + n_del <= used.
-inline void* lean_str_splice(void* p, size_t elem, size_t pos, size_t n_del,
-                             const void* src, size_t n_add) noexcept {
-  size_t used = lean_used(p);
-  size_t new_used = used - n_del + n_add;
-  bool st = lean_str_is_static(p);
-  if (st && new_used == 0)
-    return p;  // still empty: stay on the static rep
-
-  size_t cap = st ? 0 : lean_str_cap(p, elem);
-  bool alias = !st && src &&
-               lean_str_in_range(src, p, (cap + 1) * elem);
-
-  if (st || new_used > cap || alias) {
-    size_t geo = new_used > cap ? lean_str_geo(cap, new_used) : new_used;
-    void* np = lean_alloc(elem, (geo + 1) * elem);
-    char* d = static_cast<char*>(np);
-    const char* o = static_cast<const char*>(p);
-    if (pos)
-      __builtin_memcpy(d, o, pos * elem);
-    if (n_add)
-      __builtin_memcpy(d + pos * elem, src, n_add * elem);  // src in old: live
-    size_t suffix = used - pos - n_del;
-    if (suffix)
-      __builtin_memcpy(d + (pos + n_add) * elem,
-                       o + (pos + n_del) * elem, suffix * elem);
-    lean_str_write_term(np, new_used, elem);
-    lean_used(np) = new_used;
-    if (!st)
-      lean_free(p, elem);
-    return np;
-  }
-
-  // In place, src does not alias the buffer.
-  char* d = static_cast<char*>(p);
-  size_t suffix = used - pos - n_del;
-  if (suffix)
-    __builtin_memmove(d + (pos + n_add) * elem,
-                      d + (pos + n_del) * elem, suffix * elem);
-  if (n_add)
-    __builtin_memcpy(d + pos * elem, src, n_add * elem);
-  lean_str_write_term(p, new_used, elem);
-  lean_used(p) = new_used;
-  return p;
-}
+void* lean_str_splice(void* p, size_t elem, size_t pos, size_t n_del,
+                      const void* src, size_t n_add) noexcept;
 
 // Fill variant of the splice: insert `n_add` copies of the element at `one`.
 // No aliasing is possible — the fill value is an external single element.
-inline void* lean_str_splice_fill(void* p, size_t elem, size_t pos, size_t n_del,
-                                  size_t n_add, const void* one) noexcept {
-  size_t used = lean_used(p);
-  size_t new_used = used - n_del + n_add;
-  bool st = lean_str_is_static(p);
-  if (st && new_used == 0)
-    return p;
+void* lean_str_splice_fill(void* p, size_t elem, size_t pos, size_t n_del,
+                           size_t n_add, const void* one) noexcept;
 
-  size_t cap = st ? 0 : lean_str_cap(p, elem);
-  if (st || new_used > cap) {
-    size_t geo = new_used > cap ? lean_str_geo(cap, new_used) : new_used;
-    void* np = lean_alloc(elem, (geo + 1) * elem);
-    char* d = static_cast<char*>(np);
-    const char* o = static_cast<const char*>(p);
-    if (pos)
-      __builtin_memcpy(d, o, pos * elem);
-    if (n_add)
-      lean_str_fill(d + pos * elem, elem, n_add, one);
-    size_t suffix = used - pos - n_del;
-    if (suffix)
-      __builtin_memcpy(d + (pos + n_add) * elem,
-                       o + (pos + n_del) * elem, suffix * elem);
-    lean_str_write_term(np, new_used, elem);
-    lean_used(np) = new_used;
-    if (!st)
-      lean_free(p, elem);
-    return np;
-  }
-
-  char* d = static_cast<char*>(p);
-  size_t suffix = used - pos - n_del;
-  if (suffix)
-    __builtin_memmove(d + (pos + n_add) * elem,
-                      d + (pos + n_del) * elem, suffix * elem);
-  if (n_add)
-    lean_str_fill(d + pos * elem, elem, n_add, one);
-  lean_str_write_term(p, new_used, elem);
-  lean_used(p) = new_used;
-  return p;
-}
+#pragma GCC visibility pop
 
 } // namespace detail
 } // namespace std

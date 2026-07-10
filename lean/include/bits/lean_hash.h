@@ -84,139 +84,57 @@ inline hnode_base** hash_buckets(hash_control* c) noexcept {
     return reinterpret_cast<hnode_base**>(c + 1);
 }
 
-// Smallest power of two >= n, but at least 2.
-inline size_t hash_pow2_ceil(size_t n) noexcept {
+// Smallest power of two >= n, but at least 2. Defined so EVERY input is UB-free:
+// for n > 2^63 there is no representable power-of-two >= n, so we clamp to the
+// highest representable power of two (2^63) rather than evaluating 1 << 64
+// (shift-count >= width is UB). The clamped value feeds allocation, which then
+// traps on the (astronomically large) request — never a bad shift. constexpr so
+// the boundary behaviour is statically checkable (see lean/test/unordered.cpp).
+inline constexpr size_t hash_pow2_ceil(size_t n) noexcept {
     if (n < 2)
         return 2;
-    return size_t(1) << (numeric_limits<size_t>::digits - __builtin_clzll(n - 1));
+    constexpr int width = numeric_limits<size_t>::digits;   // 64 on LP64
+    int shift = width - __builtin_clzll(static_cast<unsigned long long>(n - 1));
+    if (shift >= width)                     // n > 2^(width-1): no larger pow2 fits
+        return size_t(1) << (width - 1);    // clamp to 2^63
+    return size_t(1) << shift;
 }
+
+// ---------------------------------------------------------------------------
+// Fat kernels — defined out of line in lean/src/kernels.cpp (one copy per
+// system). Declarations only here. hash_rehash_into is internal (only
+// hash_set_bucket_count calls it) but kept declared for symmetry. Default
+// visibility so the references stay bindable to liblean.a / liblean.so even
+// under a hidden-visibility include region (see bits/lean_string.h).
+// ---------------------------------------------------------------------------
+#pragma GCC visibility push(default)
 
 // Redistribute every live node into the (already-zeroed) bucket array of `ctl`
 // using only cached hashes. Unique-key semantics: elements are grouped by
 // bucket index; equal keys need no special adjacency here. Ported from libc++
 // __hash_table::__do_rehash (UniqueKeys == true branch).
-inline void hash_rehash_into(hash_control* ctl) noexcept {
-    size_t nbc = ctl->bucket_count;
-    size_t mask = nbc - 1;
-    hnode_base** buckets = hash_buckets(ctl);
-    hnode_base* pp = &ctl->first;
-    hnode_base* cp = pp->next;
-    if (cp == nullptr)
-        return;
-    size_t chash = cp->hash & mask;
-    buckets[chash] = pp;
-    size_t phash = chash;
-    for (pp = cp, cp = cp->next; cp != nullptr; cp = pp->next) {
-        chash = cp->hash & mask;
-        if (chash == phash) {
-            pp = cp;
-        } else if (buckets[chash] == nullptr) {
-            buckets[chash] = pp;
-            pp = cp;
-            phash = chash;
-        } else {
-            // A run for this bucket already exists earlier in the list: splice
-            // cp in right behind that run's head so the bucket stays contiguous.
-            hnode_base* np = cp;
-            pp->next = np->next;
-            np->next = buckets[chash]->next;
-            buckets[chash]->next = cp;
-        }
-    }
-}
+void hash_rehash_into(hash_control* ctl) noexcept;
 
 // Grow/shrink the block to `nbc` buckets (nbc a power of two). `ctl` may be null
 // (fresh allocation with default max_load_factor). The element list and the
 // header (size / max_load_factor / first.next) are preserved across realloc;
 // the bucket array is rebuilt from the cached hashes. Returns the new pointer.
-inline hash_control* hash_set_bucket_count(hash_control* ctl, size_t nbc) noexcept {
-    size_t bytes = sizeof(hash_control) + nbc * sizeof(hnode_base*);
-    if (ctl == nullptr) {
-        ctl = static_cast<hash_control*>(::malloc(bytes));
-        if (ctl == nullptr)
-            __builtin_trap();
-        ctl->size = 0;
-        ctl->max_load_factor = 1.0f;
-        ctl->first.next = nullptr;
-        ctl->first.hash = 0;
-    } else {
-        ctl = static_cast<hash_control*>(::realloc(ctl, bytes));
-        if (ctl == nullptr)
-            __builtin_trap();
-    }
-    ctl->bucket_count = nbc;
-    hnode_base** buckets = hash_buckets(ctl);
-    for (size_t i = 0; i < nbc; ++i)
-        buckets[i] = nullptr;
-    hash_rehash_into(ctl);
-    return ctl;
-}
+hash_control* hash_set_bucket_count(hash_control* ctl, size_t nbc) noexcept;
 
 // Splice an already-hashed node at the front of its bucket run (unique-key
 // perform; ported from libc++ __node_insert_unique_perform).
-inline void hash_link_unique(hash_control* ctl, hnode_base* nd) noexcept {
-    size_t mask = ctl->bucket_count - 1;
-    size_t chash = nd->hash & mask;
-    hnode_base** buckets = hash_buckets(ctl);
-    hnode_base* pn = buckets[chash];
-    if (pn == nullptr) {
-        // New bucket: splice at the head of the whole list.
-        pn = &ctl->first;
-        nd->next = pn->next;
-        pn->next = nd;
-        buckets[chash] = pn;
-        if (nd->next != nullptr)
-            // The old head node's bucket now has `nd` as its predecessor.
-            buckets[nd->next->hash & mask] = nd;
-    } else {
-        nd->next = pn->next;
-        pn->next = nd;
-    }
-    ++ctl->size;
-}
+void hash_link_unique(hash_control* ctl, hnode_base* nd) noexcept;
 
 // Unlink `cn` from the list and fix the bucket predecessors (no backward scan
 // beyond the single bucket run). Ported from libc++ __hash_table::remove.
-inline void hash_unlink(hash_control* ctl, hnode_base* cn) noexcept {
-    size_t mask = ctl->bucket_count - 1;
-    size_t chash = cn->hash & mask;
-    hnode_base** buckets = hash_buckets(ctl);
-    hnode_base* pn = buckets[chash];
-    while (pn->next != cn)
-        pn = pn->next;
-    // If cn was the first in its bucket run, and it is also the last, the bucket
-    // becomes empty.
-    if (pn == &ctl->first || (pn->hash & mask) != chash) {
-        if (cn->next == nullptr || (cn->next->hash & mask) != chash)
-            buckets[chash] = nullptr;
-    }
-    // If a different bucket run follows cn, its predecessor becomes pn.
-    if (cn->next != nullptr) {
-        size_t nhash = cn->next->hash & mask;
-        if (nhash != chash)
-            buckets[nhash] = pn;
-    }
-    pn->next = cn->next;
-    cn->next = nullptr;
-    --ctl->size;
-}
+void hash_unlink(hash_control* ctl, hnode_base* cn) noexcept;
 
 // Walk the whole element list destroying each node through `destroy` (a thin
 // per-type thunk that runs the value's destructor and frees the node), then
 // reset the block to empty. The block itself is NOT freed (clear() keeps it).
-inline void hash_destroy_all(hash_control* ctl, void (*destroy)(hnode_base*)) noexcept {
-    hnode_base* np = ctl->first.next;
-    while (np != nullptr) {
-        hnode_base* nx = np->next;
-        destroy(np);
-        np = nx;
-    }
-    ctl->first.next = nullptr;
-    hnode_base** buckets = hash_buckets(ctl);
-    for (size_t i = 0; i < ctl->bucket_count; ++i)
-        buckets[i] = nullptr;
-    ctl->size = 0;
-}
+void hash_destroy_all(hash_control* ctl, void (*destroy)(hnode_base*)) noexcept;
+
+#pragma GCC visibility pop
 
 // ===========================================================================
 // Node (templated thin part: holds the value; created/destroyed per type).

@@ -434,6 +434,35 @@ void test_insert_own_range() {
         CHECK(v.size() == 6);
         CHECK(v[3] == "a" && v[4] == "b" && v[5] == "c");
     }
+    // regression: in-place self-range insert at a MIDDLE position with spare
+    // capacity. open_gap shifts [idx, sz) up before the source is read, so a
+    // source range that starts after idx must NOT read the shifted-over values.
+    {
+        vector<int> v{0, 1, 2, 3, 4, 5, 6, 7};
+        v.reserve(32);                                   // force the in-place path
+        v.insert(v.begin() + 1, v.begin() + 3, v.begin() + 6);   // insert {3,4,5} at 1
+        CHECK(v.size() == 11);
+        const int exp[] = {0, 3, 4, 5, 1, 2, 3, 4, 5, 6, 7};
+        for (size_t i = 0; i < v.size(); ++i) CHECK(v[i] == exp[i]);
+    }
+    // regression: same but source starting exactly at idx (overlap head only).
+    {
+        vector<int> v{0, 1, 2, 3, 4};
+        v.reserve(32);
+        v.insert(v.begin() + 1, v.begin() + 1, v.begin() + 4);   // insert {1,2,3} at 1
+        CHECK(v.size() == 8);
+        const int exp[] = {0, 1, 2, 3, 1, 2, 3, 4};
+        for (size_t i = 0; i < v.size(); ++i) CHECK(v[i] == exp[i]);
+    }
+    // regression: non-trivial (string) middle self-range insert with spare cap.
+    {
+        vector<string> v{"a", "b", "c", "d", "e"};
+        v.reserve(32);
+        v.insert(v.begin() + 1, v.begin() + 2, v.begin() + 4);   // insert {c,d} at 1
+        CHECK(v.size() == 7);
+        const char* exp[] = {"a", "c", "d", "b", "c", "d", "e"};
+        for (size_t i = 0; i < v.size(); ++i) CHECK(v[i] == exp[i]);
+    }
 }
 
 //===----------------------------------------------------------------------===//

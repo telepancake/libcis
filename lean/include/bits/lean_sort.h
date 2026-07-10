@@ -79,312 +79,46 @@ inline void lean_swap_bytes(void* a, void* b, size_t elem, char* tmp) {
 
 inline char* lean_elt(char* base, size_t i, size_t elem) { return base + i * elem; }
 
-// --- heap primitives (max-heap over [0, n)) -------------------------------
+// ---------------------------------------------------------------------------
+// Fat sorting kernels — defined out of line in lean/src/kernels.cpp (one copy
+// per system). Declarations only here; the internal leaves (sift/insertion/
+// partition/heap-range/merge-runs/introsort) are file-local to that TU. The
+// scratch buffers those kernels allocate on the stack are sized by
+// lean_sort_max_elem and aligned to max_align_t (see the gate above). Default
+// visibility so the references stay bindable to liblean.a / liblean.so even
+// under a hidden-visibility include region (see bits/lean_string.h).
+// ---------------------------------------------------------------------------
+#pragma GCC visibility push(default)
 
-// Sift the element at `start` down into a max-heap of size n. Hole-based: the
-// sifted element is held in tmp and only written once at its final slot.
-inline void lean_sift_down(char* base, size_t elem, size_t n, size_t start,
-                           lean_less_fn less, void* ctx, char* tmp) {
-    lean_move_bytes(tmp, lean_elt(base, start, elem), elem);
-    size_t root = start;
-    for (;;) {
-        size_t child = 2 * root + 1;
-        if (child >= n) break;
-        if (child + 1 < n &&
-            less(lean_elt(base, child, elem), lean_elt(base, child + 1, elem), ctx))
-            ++child;
-        if (!less(tmp, lean_elt(base, child, elem), ctx))  // held >= child: settled
-            break;
-        lean_move_bytes(lean_elt(base, root, elem), lean_elt(base, child, elem), elem);
-        root = child;
-    }
-    lean_move_bytes(lean_elt(base, root, elem), tmp, elem);
-}
+// heap family (max-heap over [0, n)).
+void lean_make_heap(char* base, size_t n, size_t elem, lean_less_fn less, void* ctx);
+void lean_push_heap(char* base, size_t n, size_t elem, lean_less_fn less, void* ctx);
+void lean_pop_heap(char* base, size_t n, size_t elem, lean_less_fn less, void* ctx);
+void lean_sort_heap(char* base, size_t n, size_t elem, lean_less_fn less, void* ctx);
 
-// Sift the last element (index n-1) up into the max-heap [0, n-1).
-inline void lean_sift_up(char* base, size_t elem, size_t n,
-                         lean_less_fn less, void* ctx, char* tmp) {
-    if (n < 2) return;
-    size_t child = n - 1;
-    lean_move_bytes(tmp, lean_elt(base, child, elem), elem);
-    while (child > 0) {
-        size_t parent = (child - 1) / 2;
-        if (!less(lean_elt(base, parent, elem), tmp, ctx))  // parent >= held: settled
-            break;
-        lean_move_bytes(lean_elt(base, child, elem), lean_elt(base, parent, elem), elem);
-        child = parent;
-    }
-    lean_move_bytes(lean_elt(base, child, elem), tmp, elem);
-}
+// introsort (median-of-three quicksort + heap-sort depth fallback + insertion
+// sort cutoff).
+void lean_sort(char* base, size_t n, size_t elem, lean_less_fn less, void* ctx);
 
-inline void lean_make_heap(char* base, size_t n, size_t elem,
-                           lean_less_fn less, void* ctx) {
-    if (n < 2) return;
-    alignas(max_align_t) char tmp[lean_sort_max_elem];
-    for (size_t i = n / 2; i-- > 0;)
-        lean_sift_down(base, elem, n, i, less, ctx, tmp);
-}
+// Sort the smallest m elements into [0, m); leave (m, n) unspecified.
+void lean_partial_sort(char* base, size_t m, size_t n, size_t elem,
+                       lean_less_fn less, void* ctx);
 
-inline void lean_push_heap(char* base, size_t n, size_t elem,
-                           lean_less_fn less, void* ctx) {
-    alignas(max_align_t) char tmp[lean_sort_max_elem];
-    lean_sift_up(base, elem, n, less, ctx, tmp);
-}
+// quickselect: after the call base[nth] is the element that belongs there.
+void lean_nth_element(char* base, size_t nth, size_t n, size_t elem,
+                      lean_less_fn less, void* ctx);
 
-inline void lean_pop_heap(char* base, size_t n, size_t elem,
-                          lean_less_fn less, void* ctx) {
-    if (n < 2) return;
-    alignas(max_align_t) char tmp[lean_sort_max_elem];
-    lean_swap_bytes(base, lean_elt(base, n - 1, elem), elem, tmp);
-    lean_sift_down(base, elem, n - 1, 0, less, ctx, tmp);
-}
-
-// Pop the whole heap into sorted order. Shared tmp is fine: the swap completes
-// before the sift reuses the buffer.
-inline void lean_sort_heap_range(char* base, size_t n, size_t elem,
-                                 lean_less_fn less, void* ctx, char* tmp) {
-    for (size_t i = n; i > 1; --i) {
-        lean_swap_bytes(base, lean_elt(base, i - 1, elem), elem, tmp);
-        lean_sift_down(base, elem, i - 1, 0, less, ctx, tmp);
-    }
-}
-
-inline void lean_sort_heap(char* base, size_t n, size_t elem,
-                           lean_less_fn less, void* ctx) {
-    alignas(max_align_t) char tmp[lean_sort_max_elem];
-    lean_sort_heap_range(base, n, elem, less, ctx, tmp);
-}
-
-// Build a heap then pop it — the introsort depth-limit fallback.
-inline void lean_heap_sort_range(char* base, size_t n, size_t elem,
-                                 lean_less_fn less, void* ctx, char* tmp) {
-    for (size_t i = n / 2; i-- > 0;)
-        lean_sift_down(base, elem, n, i, less, ctx, tmp);
-    lean_sort_heap_range(base, n, elem, less, ctx, tmp);
-}
-
-// --- insertion sort (stable) ----------------------------------------------
-
-inline void lean_insertion_sort(char* base, size_t n, size_t elem,
-                                lean_less_fn less, void* ctx, char* tmp) {
-    for (size_t i = 1; i < n; ++i) {
-        if (less(lean_elt(base, i, elem), lean_elt(base, i - 1, elem), ctx)) {
-            lean_move_bytes(tmp, lean_elt(base, i, elem), elem);
-            size_t j = i;
-            do {
-                lean_move_bytes(lean_elt(base, j, elem), lean_elt(base, j - 1, elem), elem);
-                --j;
-            } while (j > 0 && less(tmp, lean_elt(base, j - 1, elem), ctx));
-            lean_move_bytes(lean_elt(base, j, elem), tmp, elem);
-        }
-    }
-}
-
-// --- introsort ------------------------------------------------------------
-
-// Median-of-three pivot into index 0, Hoare partition, final pivot placement.
-// Returns the pivot's final index j: [0, j) <= base[j] <= (j, n). Both partitions
-// exclude j, so recursion strictly shrinks. base[n-1] >= pivot and base[0] == pivot
-// act as the scan sentinels.
-inline size_t lean_partition(char* base, size_t n, size_t elem,
-                             lean_less_fn less, void* ctx, char* tmp, char* pivot) {
-    char* a   = base;
-    char* mid = lean_elt(base, n / 2, elem);
-    char* last = lean_elt(base, n - 1, elem);
-    if (less(mid, a, ctx)) lean_swap_bytes(a, mid, elem, tmp);
-    if (less(last, mid, ctx)) {
-        lean_swap_bytes(mid, last, elem, tmp);
-        if (less(mid, a, ctx)) lean_swap_bytes(a, mid, elem, tmp);
-    }
-    // a <= mid <= last by value; median is at mid. Move it to index 0.
-    lean_swap_bytes(a, mid, elem, tmp);
-    lean_move_bytes(pivot, a, elem);
-
-    size_t i = 0, j = n;
-    for (;;) {
-        do { ++i; } while (i < n && less(lean_elt(base, i, elem), pivot, ctx));
-        do { --j; } while (less(pivot, lean_elt(base, j, elem), ctx));
-        if (i >= j) break;
-        lean_swap_bytes(lean_elt(base, i, elem), lean_elt(base, j, elem), elem, tmp);
-    }
-    lean_swap_bytes(base, lean_elt(base, j, elem), elem, tmp);
-    return j;
-}
-
-inline void lean_introsort(char* base, size_t n, size_t elem,
-                           lean_less_fn less, void* ctx, size_t depth,
-                           char* tmp, char* pivot) {
-    const size_t cutoff = 16;
-    while (n > cutoff) {
-        if (depth == 0) {
-            lean_heap_sort_range(base, n, elem, less, ctx, tmp);
-            return;
-        }
-        --depth;
-        size_t j = lean_partition(base, n, elem, less, ctx, tmp, pivot);
-        size_t leftn  = j;
-        size_t rightn = n - j - 1;
-        // Recurse into the smaller side, loop on the larger (bounded stack depth).
-        if (leftn < rightn) {
-            lean_introsort(base, leftn, elem, less, ctx, depth, tmp, pivot);
-            base = lean_elt(base, j + 1, elem);
-            n = rightn;
-        } else {
-            lean_introsort(lean_elt(base, j + 1, elem), rightn, elem, less, ctx, depth, tmp, pivot);
-            n = leftn;
-        }
-    }
-    lean_insertion_sort(base, n, elem, less, ctx, tmp);
-}
-
-inline void lean_sort(char* base, size_t n, size_t elem,
-                      lean_less_fn less, void* ctx) {
-    if (n < 2) return;
-    alignas(max_align_t) char tmp[lean_sort_max_elem];
-    alignas(max_align_t) char pivot[lean_sort_max_elem];
-    lean_introsort(base, n, elem, less, ctx, 2 * lean_log2(n), tmp, pivot);
-}
-
-// --- partial_sort ---------------------------------------------------------
-
-// Sort the smallest m elements into [0, m); leave (m, n) unspecified. Heap of the
-// first m, then push any smaller tail element through it, then pop the heap.
-inline void lean_partial_sort(char* base, size_t m, size_t n, size_t elem,
-                              lean_less_fn less, void* ctx) {
-    if (m == 0) return;
-    alignas(max_align_t) char tmp[lean_sort_max_elem];
-    for (size_t i = m / 2; i-- > 0;)
-        lean_sift_down(base, elem, m, i, less, ctx, tmp);
-    for (size_t i = m; i < n; ++i) {
-        if (less(lean_elt(base, i, elem), base, ctx)) {  // tail element < heap max
-            lean_swap_bytes(base, lean_elt(base, i, elem), elem, tmp);
-            lean_sift_down(base, elem, m, 0, less, ctx, tmp);
-        }
-    }
-    lean_sort_heap_range(base, m, elem, less, ctx, tmp);
-}
-
-// --- nth_element (quickselect) --------------------------------------------
-
-inline void lean_nth_element(char* base, size_t nth, size_t n, size_t elem,
-                             lean_less_fn less, void* ctx) {
-    if (n < 2 || nth >= n) return;
-    alignas(max_align_t) char tmp[lean_sort_max_elem];
-    alignas(max_align_t) char pivot[lean_sort_max_elem];
-    size_t depth = 2 * lean_log2(n);
-    const size_t cutoff = 16;
-    while (n > cutoff) {
-        if (depth == 0) {
-            lean_heap_sort_range(base, n, elem, less, ctx, tmp);
-            return;
-        }
-        --depth;
-        size_t j = lean_partition(base, n, elem, less, ctx, tmp, pivot);
-        if (nth == j) return;
-        if (nth < j) {
-            n = j;
-        } else {
-            base = lean_elt(base, j + 1, elem);
-            nth -= j + 1;
-            n -= j + 1;
-        }
-    }
-    lean_insertion_sort(base, n, elem, less, ctx, tmp);
-}
-
-// --- stable_sort (bottom-up merge sort) -----------------------------------
-
-// Stable merge of src[left,mid) and src[mid,right) into dst[left,right).
-inline void lean_merge_runs(const char* src, char* dst,
-                            size_t left, size_t mid, size_t right, size_t elem,
-                            lean_less_fn less, void* ctx) {
-    size_t i = left, j = mid, k = left;
-    while (i < mid && j < right) {
-        if (less(src + j * elem, src + i * elem, ctx)) {  // right < left: take right
-            lean_move_bytes(dst + k * elem, src + j * elem, elem);
-            ++j;
-        } else {                                           // equal: take left (stable)
-            lean_move_bytes(dst + k * elem, src + i * elem, elem);
-            ++i;
-        }
-        ++k;
-    }
-    while (i < mid)   { lean_move_bytes(dst + k * elem, src + i * elem, elem); ++i; ++k; }
-    while (j < right) { lean_move_bytes(dst + k * elem, src + j * elem, elem); ++j; ++k; }
-}
-
-inline void lean_stable_sort(char* base, size_t n, size_t elem,
-                             lean_less_fn less, void* ctx) {
-    if (n < 2) return;
-    alignas(max_align_t) char tmp[lean_sort_max_elem];
-    const size_t run = 16;
-    for (size_t i = 0; i < n; i += run) {
-        size_t len = n - i < run ? n - i : run;
-        lean_insertion_sort(base + i * elem, len, elem, less, ctx, tmp);
-    }
-    if (n <= run) return;
-    char* buf = static_cast<char*>(::malloc(n * elem));
-    if (!buf) __builtin_trap();
-    char* src = base;
-    char* dst = buf;
-    for (size_t width = run; width < n; width *= 2) {
-        for (size_t i = 0; i < n; i += 2 * width) {
-            size_t mid   = i + width   < n ? i + width   : n;
-            size_t right = i + 2 * width < n ? i + 2 * width : n;
-            lean_merge_runs(src, dst, i, mid, right, elem, less, ctx);
-        }
-        char* t = src; src = dst; dst = t;
-    }
-    if (src != base)
-        lean_move_bytes(base, src, n * elem);
-    ::free(buf);
-}
-
-// --- inplace_merge --------------------------------------------------------
+// stable bottom-up merge sort (allocates an n-element scratch buffer; traps on
+// allocation failure).
+void lean_stable_sort(char* base, size_t n, size_t elem,
+                      lean_less_fn less, void* ctx);
 
 // Merge two adjacent sorted runs [0,len1) and [len1,len1+len2) in place, using a
 // temporary buffer holding the smaller run. Traps on allocation failure.
-inline void lean_inplace_merge(char* base, size_t len1, size_t len2, size_t elem,
-                               lean_less_fn less, void* ctx) {
-    if (len1 == 0 || len2 == 0) return;
-    size_t total = len1 + len2;
-    if (len1 <= len2) {
-        char* buf = static_cast<char*>(::malloc(len1 * elem));
-        if (!buf) __builtin_trap();
-        lean_move_bytes(buf, base, len1 * elem);  // stash the left run
-        size_t i = 0, j = len1, k = 0;
-        while (i < len1 && j < total) {
-            if (less(base + j * elem, buf + i * elem, ctx)) {  // right < left
-                lean_move_bytes(base + k * elem, base + j * elem, elem); ++j;
-            } else {                                            // equal: take left (stable)
-                lean_move_bytes(base + k * elem, buf + i * elem, elem); ++i;
-            }
-            ++k;
-        }
-        while (i < len1) { lean_move_bytes(base + k * elem, buf + i * elem, elem); ++i; ++k; }
-        // remaining right elements are already in place
-        ::free(buf);
-    } else {
-        char* buf = static_cast<char*>(::malloc(len2 * elem));
-        if (!buf) __builtin_trap();
-        lean_move_bytes(buf, base + len1 * elem, len2 * elem);  // stash the right run
-        // Merge from the top down so the in-place left run is never clobbered
-        // before it is read. i/j/k are counts remaining; k == i + j is invariant.
-        size_t i = len2, j = len1, k = total;
-        while (i > 0 && j > 0) {
-            if (less(buf + (i - 1) * elem, base + (j - 1) * elem, ctx)) {
-                // left tail is the larger: it goes last
-                --k; lean_move_bytes(base + k * elem, base + (j - 1) * elem, elem); --j;
-            } else {
-                // equal or right larger: take right (stable — right after left)
-                --k; lean_move_bytes(base + k * elem, buf + (i - 1) * elem, elem); --i;
-            }
-        }
-        while (i > 0) { --k; lean_move_bytes(base + k * elem, buf + (i - 1) * elem, elem); --i; }
-        // remaining left elements are already in place
-        ::free(buf);
-    }
-}
+void lean_inplace_merge(char* base, size_t len1, size_t len2, size_t elem,
+                        lean_less_fn less, void* ctx);
+
+#pragma GCC visibility pop
 
 } // namespace detail
 } // namespace std

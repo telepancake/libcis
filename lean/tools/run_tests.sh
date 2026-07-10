@@ -8,7 +8,7 @@ set -u
 cd "$(dirname "$0")/../.."
 CXX=${CXX:-g++}
 FILTER=${1:-}
-LINK="src/support.cpp -nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc"
+LINK="src/support.cpp lean/src/kernels.cpp -nodefaultlibs -lpthread -lm -lc -lgcc_s -lgcc"
 INC="-nostdinc++ -Ilean/include -Iinclude"
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
