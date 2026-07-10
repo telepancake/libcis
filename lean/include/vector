@@ -43,7 +43,9 @@ namespace std {
 // vector<T, Allocator>
 //===----------------------------------------------------------------------===//
 
-template<class T, class Allocator = allocator<T>>
+// vector's default allocator argument is spelled once in <bits/fwd_vector.h>
+// (pulled in via <memory> above); do NOT repeat the default here.
+template<class T, class Allocator>
 class vector {
     static_assert(detail::lean_allocator_ok<T, Allocator>,
         "lean vector supports only std::allocator<T> (custom allocators are a "

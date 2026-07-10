@@ -18,15 +18,15 @@
 #include <limits>
 #include <climits>
 #include <cstddef>
+#include <bits/fwd_vector.h>  // the single vector fwd decl (with default allocator)
 
 namespace std {
 
 //===----------------------------------------------------------------------===//
 // Forward declarations
 //===----------------------------------------------------------------------===//
-
-template<class T, class Allocator = allocator<T>>
-class vector;
+// vector itself is forward-declared (with its default allocator) in
+// <bits/fwd_vector.h>, included above; do NOT repeat the default here.
 
 namespace detail {
 // SFINAE gate for vector's alloc_traits: when CTAD substitutes a non-allocator

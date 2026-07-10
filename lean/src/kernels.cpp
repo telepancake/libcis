@@ -732,6 +732,70 @@ hash_control* hash_set_bucket_count(hash_control* ctl, size_t nbc) noexcept {
   return ctl;
 }
 
+// Equivalent-key (multi) rehash: the multi branch of libc++'s __do_rehash. Like
+// hash_rehash_into it groups live nodes by bucket using cached hashes, but keeps
+// equal-hash runs ADJACENT (unordered_multimap/_multiset need count()/
+// equal_range() to walk a contiguous run). Groups are skipped by cached-hash
+// equality; a rare distinct-key full-hash collision grouped together is harmless
+// (equal_range still bounds the run with the real predicate).
+void ht_multi_rehash_into(hash_control* ctl) noexcept {
+  size_t nbc = ctl->bucket_count;
+  size_t mask = nbc - 1;
+  hnode_base** buckets = hash_buckets(ctl);
+  hnode_base* pp = &ctl->first;
+  hnode_base* cp = pp->next;
+  if (cp == nullptr)
+    return;
+  size_t chash = cp->hash & mask;
+  buckets[chash] = pp;
+  size_t phash = chash;
+  for (pp = cp, cp = cp->next; cp != nullptr; cp = pp->next) {
+    chash = cp->hash & mask;
+    if (chash == phash) {
+      pp = cp;
+    } else if (buckets[chash] == nullptr) {
+      buckets[chash] = pp;
+      pp = cp;
+      phash = chash;
+    } else {
+      // Splice the WHOLE equal-hash group [cp .. np] to the front of the
+      // bucket's existing run in one move, preserving intra-group order.
+      hnode_base* np = cp;
+      while (np->next != nullptr && np->next->hash == cp->hash)
+        np = np->next;
+      pp->next = np->next;
+      np->next = buckets[chash]->next;
+      buckets[chash]->next = cp;
+    }
+  }
+}
+
+// Grow/shrink a multi container's block to `nbc` buckets (power of two), then
+// rebuild the bucket array with ht_multi_rehash_into. Mirror of
+// hash_set_bucket_count with the multi-safe rehash.
+hash_control* ht_multi_set_bucket_count(hash_control* ctl, size_t nbc) noexcept {
+  size_t bytes = sizeof(hash_control) + nbc * sizeof(hnode_base*);
+  if (ctl == nullptr) {
+    ctl = static_cast<hash_control*>(::malloc(bytes));
+    if (ctl == nullptr)
+      __builtin_trap();
+    ctl->size = 0;
+    ctl->max_load_factor = 1.0f;
+    ctl->first.next = nullptr;
+    ctl->first.hash = 0;
+  } else {
+    ctl = static_cast<hash_control*>(::realloc(ctl, bytes));
+    if (ctl == nullptr)
+      __builtin_trap();
+  }
+  ctl->bucket_count = nbc;
+  hnode_base** buckets = hash_buckets(ctl);
+  for (size_t i = 0; i < nbc; ++i)
+    buckets[i] = nullptr;
+  ht_multi_rehash_into(ctl);
+  return ctl;
+}
+
 void hash_link_unique(hash_control* ctl, hnode_base* nd) noexcept {
   size_t mask = ctl->bucket_count - 1;
   size_t chash = nd->hash & mask;

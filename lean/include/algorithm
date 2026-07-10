@@ -2352,7 +2352,7 @@ inplace_merge_fallback(BidiIter first, BidiIter middle, BidiIter last, Compare c
         got = buf ? buf_sz : 0;
     }
     detail::inplace_merge_impl(first, middle, last, comp, len1, len2, buf, got);
-    ::operator delete(buf);
+    if (buf) ::operator delete(buf);  // never deallocate a null buffer (libc++ unique_ptr deleter skips null)
 }
 } // namespace detail
 
@@ -2468,7 +2468,7 @@ stable_sort_fallback(RandomIter first, RandomIter last, Compare comp) {
         got = buf ? len : 0;
     }
     detail::stable_sort_impl(first, last, comp, len, buf, got);
-    ::operator delete(buf);
+    if (buf) ::operator delete(buf);  // never deallocate a null buffer (libc++ unique_ptr deleter skips null)
 }
 } // namespace detail
 
@@ -2915,7 +2915,7 @@ stable_partition(ForwardIter first, ForwardIter last, Predicate pred) {
         got = buf ? len : 0;
     }
     ForwardIter result = detail::stable_partition_impl(first, last, pred, len, buf, got);
-    ::operator delete(buf);
+    if (buf) ::operator delete(buf);  // never deallocate a null buffer (libc++ unique_ptr deleter skips null)
     return result;
 }
 

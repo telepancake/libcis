@@ -16,7 +16,10 @@ namespace std {
 template<class T, class... Args>
     requires requires { ::new(declval<void*>()) T(declval<Args>()...); }
 constexpr T* construct_at(T* loc, Args&&... args) {
-    return ::new(static_cast<void*>(loc)) T(std::forward<Args>(args)...);
+    // Cast away cv-qualifiers (libc++'s std::__voidify) so construct_at also
+    // works for a `const T*` location — e.g. constructing const elements.
+    return ::new(const_cast<void*>(static_cast<const volatile void*>(loc)))
+        T(std::forward<Args>(args)...);
 }
 
 } // namespace std

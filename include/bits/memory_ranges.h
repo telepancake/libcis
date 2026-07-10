@@ -71,6 +71,17 @@ namespace detail {
 
 namespace detail {
 
+    // __memory/voidify.h: std::__voidify. Cast away cv-qualifiers so an object
+    // can be placement-constructed at an address reached through a const (or
+    // volatile) iterator — e.g. ranges::uninitialized_*(_n) over a range of
+    // `const T`. A plain static_cast<void*> of a `const T*` is ill-formed;
+    // libc++ funnels every uninitialized construction through __voidify for
+    // exactly this reason.
+    template<class T>
+    constexpr void* voidify(T& from) noexcept {
+        return const_cast<void*>(static_cast<const volatile void*>(std::addressof(from)));
+    }
+
     // __memory/destroy.h: std::__destroy (returns the end iterator, unlike
     // C++17 std::destroy which returns void)
     template<class I, class S>
@@ -85,7 +96,7 @@ namespace detail {
     in_out_result<I, O> uninitialized_copy_impl(I ifirst, S1 ilast, O ofirst, EndPredicate stop_copying) {
         O idx = ofirst;
         for (; ifirst != ilast && !stop_copying(idx); ++ifirst, (void)++idx)
-            ::new (static_cast<void*>(std::addressof(*idx))) V(*ifirst);
+            ::new (voidify(*idx)) V(*ifirst);
         return {std::move(ifirst), std::move(idx)};
     }
 
@@ -94,7 +105,7 @@ namespace detail {
     in_out_result<I, O> uninitialized_copy_n_impl(I ifirst, Size n, O ofirst, EndPredicate stop_copying) {
         O idx = ofirst;
         for (; n > 0 && !stop_copying(idx); ++ifirst, (void)++idx, (void)--n)
-            ::new (static_cast<void*>(std::addressof(*idx))) V(*ifirst);
+            ::new (voidify(*idx)) V(*ifirst);
         return {std::move(ifirst), std::move(idx)};
     }
 
@@ -103,7 +114,7 @@ namespace detail {
     I uninitialized_fill_impl(I first, S last, const T& x) {
         I idx = first;
         for (; idx != last; ++idx)
-            ::new (static_cast<void*>(std::addressof(*idx))) V(x);
+            ::new (voidify(*idx)) V(x);
         return idx;
     }
 
@@ -112,7 +123,7 @@ namespace detail {
     I uninitialized_fill_n_impl(I first, Size n, const T& x) {
         I idx = first;
         for (; n > 0; ++idx, (void)--n)
-            ::new (static_cast<void*>(std::addressof(*idx))) V(x);
+            ::new (voidify(*idx)) V(x);
         return idx;
     }
 
@@ -121,7 +132,7 @@ namespace detail {
     I uninitialized_default_construct_impl(I first, S last) {
         auto idx = first;
         for (; idx != last; ++idx)
-            ::new (static_cast<void*>(std::addressof(*idx))) V;
+            ::new (voidify(*idx)) V;
         return idx;
     }
 
@@ -130,7 +141,7 @@ namespace detail {
     I uninitialized_default_construct_n_impl(I first, Size n) {
         auto idx = first;
         for (; n > 0; ++idx, (void)--n)
-            ::new (static_cast<void*>(std::addressof(*idx))) V;
+            ::new (voidify(*idx)) V;
         return idx;
     }
 
@@ -139,7 +150,7 @@ namespace detail {
     I uninitialized_value_construct_impl(I first, S last) {
         auto idx = first;
         for (; idx != last; ++idx)
-            ::new (static_cast<void*>(std::addressof(*idx))) V();
+            ::new (voidify(*idx)) V();
         return idx;
     }
 
@@ -148,7 +159,7 @@ namespace detail {
     I uninitialized_value_construct_n_impl(I first, Size n) {
         auto idx = first;
         for (; n > 0; ++idx, (void)--n)
-            ::new (static_cast<void*>(std::addressof(*idx))) V();
+            ::new (voidify(*idx)) V();
         return idx;
     }
 
@@ -193,7 +204,7 @@ namespace detail {
                                                 IterMove iter_move) {
         auto idx = ofirst;
         for (; ifirst != ilast && !stop_moving(idx); ++idx, (void)++ifirst)
-            ::new (static_cast<void*>(std::addressof(*idx))) V(iter_move(ifirst));
+            ::new (voidify(*idx)) V(iter_move(ifirst));
         return {std::move(ifirst), std::move(idx)};
     }
 
@@ -203,7 +214,7 @@ namespace detail {
                                                   IterMove iter_move) {
         auto idx = ofirst;
         for (; n > 0 && !stop_moving(idx); ++idx, (void)++ifirst, --n)
-            ::new (static_cast<void*>(std::addressof(*idx))) V(iter_move(ifirst));
+            ::new (voidify(*idx)) V(iter_move(ifirst));
         return {std::move(ifirst), std::move(idx)};
     }
 

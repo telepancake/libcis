@@ -23,6 +23,13 @@
 #  define _LIBCPP_HAS_UNICODE 1
 #  define _LIBCPP_HAS_LOCALIZATION 1
 #  define _LIBCPP_HAS_INT128 0
+// This port has no __int128 formatter (charconv lacks 128-bit to_chars), so the
+// primary `formatter` template stays deleted for __int128. The transferred test
+// support (test_macros.h) still gates its __int128 cases on the older spelling
+// _LIBCPP_HAS_NO_INT128 rather than !_LIBCPP_HAS_INT128, so define that too;
+// otherwise the format tests instantiate the deleted __int128 formatter. This
+// is the same carve-out libc++ applies on targets without __int128.
+#  define _LIBCPP_HAS_NO_INT128
 #  define _LIBCPP_HAS_THREADS 1
 #  define _LIBCPP_HAS_MONOTONIC_CLOCK 1
 #  define _LIBCPP_HAS_ALIGNED_ALLOCATION 1
@@ -61,7 +68,8 @@ namespace std {
 
 namespace fmt {
 // __concepts/arithmetic.h subset (no __int128: charconv lacks 128-bit support
-// and the tests carve it out via _LIBCPP_HAS_INT128 0).
+// and the tests carve it out via _LIBCPP_HAS_NO_INT128, defined in the vendor
+// block above).
 template <class Tp>
 concept libcpp_signed_integer =
     same_as<remove_cv_t<Tp>, signed char> || same_as<remove_cv_t<Tp>, short> ||
@@ -1504,6 +1512,9 @@ namespace std {
 template <class Context>
 class basic_format_args {
 public:
+  // [format.args]: basic_format_args() noexcept;
+  basic_format_args() noexcept = default;
+
   template <class... Args>
   basic_format_args(const format_arg_store<Context, Args...>& store) noexcept
       : size_(sizeof...(Args)) {
@@ -1625,9 +1636,10 @@ private:
       OutIt out_it, basic_format_args<basic_format_context> args, optional<std::locale>&& loc)
       : out_it_(std::move(out_it)), args_(args), loc_(std::move(loc)) {}
 
-public:
-  basic_format_context(const basic_format_context&)            = delete;
-  basic_format_context& operator=(const basic_format_context&) = delete;
+  // The Standard does not specify basic_format_context's special members; as in
+  // libc++ they are left implicit so copy/move-ability tracks the output
+  // iterator (copyable for e.g. back_insert_iterator, move-only for a move-only
+  // OutIt). Do NOT delete them — [format.context] tests assert exactly this.
 };
 
 // A specialization for retarget_buffer
@@ -8270,11 +8282,23 @@ formatted_size(locale loc, wformat_string<Args...> fmt, Args&&... args) {
 }
 
 
-// Compatibility alias: libc++'s conformance tests reference the internal name
-// std::__format::__number_max. This port keeps that machinery in std::fmt; expose
-// the single name the test suite depends on under the libc++ spelling.
+// Compatibility aliases: libc++'s conformance tests reference internal names in
+// namespace std::__format. This port keeps that machinery in std::fmt; expose
+// the specific names the test suite depends on under the libc++ spelling.
 namespace __format {
 inline constexpr uint32_t __number_max = ::std::fmt::number_max;
+
+// format_tests.h (format_test_buffer_optimizations) sizes its test data as
+// 3 * __internal_storage<CharT>::__buffer_size so that the output exceeds the
+// formatter's internal small buffer and exercises the chunked copy/fill/
+// transform paths. In this port that small buffer is fmt::allocating_buffer /
+// fmt::container_inserter_buffer, whose fixed internal capacity is 256 CharT
+// elements (see buffer_size_ / buffer_size there). Report that element count so
+// the test genuinely overflows the internal buffer for every CharT.
+template <class CharT>
+struct __internal_storage {
+  static constexpr size_t __buffer_size = 256;
+};
 } // namespace __format
 
 } // namespace std

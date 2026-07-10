@@ -1643,6 +1643,18 @@ constexpr auto bind_back(Fn&& fn, Args&&... args)
 
 } // namespace ranges
 
+// views::counted (below, in ranges::views) returns a std::span for contiguous
+// iterators and so needs span's deduction guides visible. The core ranges
+// facilities span depends on (contiguous_range, sized_range, borrowed_range,
+// ranges::data/size, enable_borrowed_range/enable_view) are all defined above,
+// so pull in the span definition now — before its first use — breaking the
+// <span>/<ranges> cycle. <bits/span.h> opens its own namespace std and performs
+// its own #includes, so we drop to global scope for it. See the header comment
+// in <bits/span.h>.
+} // namespace std
+#include <bits/span.h>
+namespace std {
+
 //===----------------------------------------------------------------------===//
 // views::all, ref_view, owning_view
 //===----------------------------------------------------------------------===//

@@ -136,77 +136,21 @@ void hash_unlink(hash_control* ctl, hnode_base* cn) noexcept;
 // reset the block to empty. The block itself is NOT freed (clear() keeps it).
 void hash_destroy_all(hash_control* ctl, void (*destroy)(hnode_base*)) noexcept;
 
+// Equivalent-key (multi) rehash / grow-shrink. The shared hash_rehash_into
+// kernel is the UniqueKeys branch of libc++'s __do_rehash: it groups by bucket
+// but may REORDER — and thus un-adjacent — equal-key runs that become
+// interleaved when a bucket splits on growth. unordered_multimap/_multiset need
+// equal keys to stay ADJACENT (count()/equal_range() walk a contiguous run), so
+// they use these multi-safe variants instead of the unique kernel. They mirror
+// libc++'s multi branch, but skip equal groups by CACHED-HASH equality rather
+// than key_eq (equal keys always share a full hash; grouping the rare
+// distinct-key full-hash collision together too is harmless — equal_range still
+// bounds the run with the real predicate). Defined out of line in kernels.cpp
+// (non-template, operate only on hnode_base/hash_control).
+void ht_multi_rehash_into(hash_control* ctl) noexcept;
+hash_control* ht_multi_set_bucket_count(hash_control* ctl, size_t nbc) noexcept;
+
 #pragma GCC visibility pop
-
-// ---------------------------------------------------------------------------
-// Equivalent-key (multi) rehash. The shared hash_rehash_into kernel is the
-// UniqueKeys branch of libc++'s __do_rehash: it groups by bucket but may
-// REORDER — and thus un-adjacent — equal-key runs that become interleaved when
-// a bucket splits on growth. unordered_multimap/_multiset need equal keys to
-// stay ADJACENT (count()/equal_range() walk a contiguous run), so they use this
-// header-local variant instead of the kernel (kept out of kernels.cpp, which is
-// a shared file; the extra code materializes only in binaries that actually use
-// a multi container). It mirrors libc++'s multi branch, but skips equal groups
-// by CACHED-HASH equality rather than key_eq (equal keys always share a full
-// hash; grouping the rare distinct-key full-hash collision together too is
-// harmless — equal_range still bounds the run with the real predicate).
-inline void ht_multi_rehash_into(hash_control* ctl) noexcept {
-    size_t nbc = ctl->bucket_count;
-    size_t mask = nbc - 1;
-    hnode_base** buckets = hash_buckets(ctl);
-    hnode_base* pp = &ctl->first;
-    hnode_base* cp = pp->next;
-    if (cp == nullptr)
-        return;
-    size_t chash = cp->hash & mask;
-    buckets[chash] = pp;
-    size_t phash = chash;
-    for (pp = cp, cp = cp->next; cp != nullptr; cp = pp->next) {
-        chash = cp->hash & mask;
-        if (chash == phash) {
-            pp = cp;
-        } else if (buckets[chash] == nullptr) {
-            buckets[chash] = pp;
-            pp = cp;
-            phash = chash;
-        } else {
-            // Splice the WHOLE equal-hash group [cp .. np] to the front of the
-            // bucket's existing run in one move, preserving intra-group order.
-            hnode_base* np = cp;
-            while (np->next != nullptr && np->next->hash == cp->hash)
-                np = np->next;
-            pp->next = np->next;
-            np->next = buckets[chash]->next;
-            buckets[chash]->next = cp;
-        }
-    }
-}
-
-// Grow/shrink a multi container's block to `nbc` buckets (power of two), then
-// rebuild the bucket array with ht_multi_rehash_into. Mirror of the kernel
-// hash_set_bucket_count with the multi-safe rehash.
-inline hash_control* ht_multi_set_bucket_count(hash_control* ctl, size_t nbc) noexcept {
-    size_t bytes = sizeof(hash_control) + nbc * sizeof(hnode_base*);
-    if (ctl == nullptr) {
-        ctl = static_cast<hash_control*>(::malloc(bytes));
-        if (ctl == nullptr)
-            __builtin_trap();
-        ctl->size = 0;
-        ctl->max_load_factor = 1.0f;
-        ctl->first.next = nullptr;
-        ctl->first.hash = 0;
-    } else {
-        ctl = static_cast<hash_control*>(::realloc(ctl, bytes));
-        if (ctl == nullptr)
-            __builtin_trap();
-    }
-    ctl->bucket_count = nbc;
-    hnode_base** buckets = hash_buckets(ctl);
-    for (size_t i = 0; i < nbc; ++i)
-        buckets[i] = nullptr;
-    ht_multi_rehash_into(ctl);
-    return ctl;
-}
 
 // ===========================================================================
 // Node (templated thin part: holds the value; created/destroyed per type).
