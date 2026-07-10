@@ -71,7 +71,37 @@ binary carries only the kernels it actually reaches.
 6. **`end()` stability on node containers**: see the per-container notes;
    where a container object embeds its own end sentinel the standard rules
    hold exactly.
-7. **Shared empty-string byte is racy under concurrent legal writes.** Because
+7. **Frugal `shared_ptr`/`weak_ptr` (one-pointer handles).** `sizeof(shared_ptr<T>)
+   == sizeof(weak_ptr<T>) == sizeof(void*)`: the handle is a single pointer to a
+   `{ void* elem; uint32_t strong; uint32_t weak; void(*dispose)(cb) }` control
+   block (24 B on LP64, 16 B on ILP32), and the element pointer is stored once in
+   the block rather than per handle. The refcounts are 32-bit and the increment
+   kernels **trap on overflow** (2^32 live handles is impossible on the target).
+   `make_shared<T>` uses **one** allocation (`T` inline after the block; over-aligned
+   `T` is rejected by `static_assert`, like the containers). This buys several
+   deliberate departures from `[util.smartptr]`:
+   - **No aliasing constructor** — the second word a standard `shared_ptr` spends
+     on a per-handle element pointer is exactly what an aliasing handle needs;
+     with one pointer there is nowhere to store it, so the overloads are deleted.
+   - **Pointer-adjusting conversions trap.** Because every handle sharing a block
+     reinterprets the block's single stored `elem`, a converting
+     construction/assignment/`static_pointer_cast` to a base at a **nonzero**
+     offset (multiple inheritance) would hand back a mis-adjusted pointer; instead
+     the library `__builtin_trap()`s. Zero-offset conversions (all single
+     inheritance — the overwhelming case) are free. `weak_ptr` conversions run the
+     same check on the pointer *value* only, never dereferencing the (possibly
+     dead) object.
+   - **No array support** (`shared_ptr<T[]>`, `make_shared<T[]>`, `operator[]`): the
+     element count needed to destroy an array does not fit the fixed four-field
+     block without a negative-offset trick judged not clean enough to ship.
+   - **Omitted:** `get_deleter` (dead under `-fno-rtti`), `dynamic_pointer_cast`
+     (needs RTTI), `allocate_shared`/`allocate_shared_for_overwrite`/`pmr`, and the
+     whole `atomic<shared_ptr>` / `atomic_load`/`store`/`exchange`/`compare_exchange`
+     family. **Kept:** `static_`/`const_`/`reinterpret_pointer_cast`,
+     `owner_before`/`owner_less`, `enable_shared_from_this` with standard semantics
+     (`shared_from_this` on an unowned object traps), and `unique_ptr` -> `shared_ptr`
+     interop (it routes through the pointer/deleter constructor).
+8. **Shared empty-string byte is racy under concurrent legal writes.** Because
    all empty strings of a given `charT` point at one shared immutable static
    rep, `s[s.size()]` on an *empty* string returns a reference to a byte shared
    by every empty string of that width. The standard permits writing `charT()`
@@ -117,6 +147,8 @@ Every array-like lean container stores **one pointer** to the payload of a
 | `unordered_map`/`_set` | 1 pointer | control block holding `{size, max_load_factor, head-of-all-elements list}` followed by the bucket array (libc++-style single intrusive list through all elements so `begin()` is O(1); bucket count derived from the block, not stored) |
 | `list<T>` | ~24 bytes | embedded sentinel `{prev,next}` + `size_t` size (C++11 requires O(1) `size()`) |
 | `deque<T>` | small control | fixed-byte blocks + block table; reference stability at both ends per the standard |
+| `shared_ptr<T>` | 1 pointer | a single pointer to a control block (`bits/lean_sp.h`); null = empty. The block is `{ void* elem; uint32_t strong; uint32_t weak; void(*dispose)(cb) }` = **24 B on LP64** (16 B on ILP32). `elem` is first so `get()`/`*`/`->` load it at zero displacement. `make_shared<T>` places `T` inline in the SAME allocation right after the block |
+| `weak_ptr<T>` | 1 pointer | the same one-pointer handle onto the same control block; holds a weak reference. `enable_shared_from_this<T>` embeds one `weak_ptr<T>`, so it too is one pointer |
 
 ### Type erasure (`bits/lean.h` type ops + the algorithm kernels)
 
@@ -146,6 +178,29 @@ stay inline).
   *descent* (comparator in a loop) stays a thin template; only the
   type-independent rebalancing is erased — that is exactly the split libstdc++
   ships in its .so.
+
+### Smart pointers (`bits/lean_sp.h` control block + the `sp_*` kernels)
+
+The `shared_ptr`/`weak_ptr` refcount engine follows the same rule: the
+type-independent count manipulation is a handful of non-template kernels
+declared in `bits/lean_sp.h` and defined out of line in `lean/src/kernels.cpp`,
+operating on the type-erased `detail::sp_cb` block (`{ void* elem; uint32_t
+strong; uint32_t weak; void(*dispose)(sp_cb*) }`):
+
+- `sp_retain` / `sp_weak_retain` — relaxed atomic increment, trap on 32-bit
+  overflow.
+- `sp_release` — release-decrement the strong count with an acquire fence on the
+  zero transition (the standard reference-counting idiom); on zero it calls
+  `cb->dispose(cb)` then drops the collectively-held weak ref.
+- `sp_weak_release` — same for the weak count; on zero it `free()`s the whole
+  block (including make_shared's inline object storage).
+- `sp_lock` — CAS-increment-if-nonzero for `weak_ptr::lock`.
+- `sp_use_count` — relaxed load of the strong count.
+
+The **only** per-type code is the `dispose` thunk (a ~2-instruction template in
+`<memory>`: destroy-in-place for `make_shared`, `delete` for the pointer ctor,
+invoke-then-destroy for a custom deleter). Everything else — copy, move, reset,
+lock, the whole handle — is inline pointer moves over the shared kernels.
 
 ## Testing and measurement
 

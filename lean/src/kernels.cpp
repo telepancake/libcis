@@ -23,6 +23,7 @@
 #include <bits/lean_hash.h>
 #include <bits/lean_deque.h>
 #include <bits/lean_sort.h>
+#include <bits/lean_sp.h>
 #include <list>
 #pragma GCC visibility pop
 
@@ -129,6 +130,61 @@ void* lean_str_splice(void* p, size_t elem, size_t pos, size_t n_del,
 void* lean_str_splice_fill(void* p, size_t elem, size_t pos, size_t n_del,
                            size_t n_add, const void* one) noexcept {
   return lean_str_splice_impl(p, elem, pos, n_del, one, n_add, /*is_fill=*/true);
+}
+
+// ===========================================================================
+// shared_ptr — reference-count engine (bits/lean_sp.h)
+//
+// The classic two-count scheme.  Increments are RELAXED (already holding a live
+// reference; nothing is published by taking another).  Decrements are RELEASE
+// with an ACQUIRE fence only on the zero transition — the standard Boost idiom:
+// the thread that drops the last reference must observe every prior mutation
+// before it destroys / frees.  This gives the [util.smartptr] guarantee that
+// distinct shared_ptr instances are safe to use concurrently.  The retain
+// kernels trap on 32-bit overflow (impossible on the target class — trap,
+// never wrap).  NO templates, NO per-type code (the dispose thunk is in
+// <memory>): elem is a void*, dispose a function pointer.
+// ===========================================================================
+
+void sp_retain(sp_cb* cb) noexcept {
+  if (__atomic_fetch_add(&cb->strong, 1u, __ATOMIC_RELAXED) == 0xFFFFFFFFu)
+    __builtin_trap();
+}
+
+void sp_weak_retain(sp_cb* cb) noexcept {
+  if (__atomic_fetch_add(&cb->weak, 1u, __ATOMIC_RELAXED) == 0xFFFFFFFFu)
+    __builtin_trap();
+}
+
+void sp_weak_release(sp_cb* cb) noexcept {
+  if (__atomic_sub_fetch(&cb->weak, 1u, __ATOMIC_RELEASE) == 0u) {
+    __atomic_thread_fence(__ATOMIC_ACQUIRE);
+    ::free(cb);                 // frees the whole block (inline object storage too)
+  }
+}
+
+void sp_release(sp_cb* cb) noexcept {
+  if (__atomic_sub_fetch(&cb->strong, 1u, __ATOMIC_RELEASE) == 0u) {
+    __atomic_thread_fence(__ATOMIC_ACQUIRE);
+    cb->dispose(cb);            // destroy the managed object
+    sp_weak_release(cb);        // drop the weak ref the strong holders shared
+  }
+}
+
+sp_cb* sp_lock(sp_cb* cb) noexcept {
+  uint32_t old = __atomic_load_n(&cb->strong, __ATOMIC_RELAXED);
+  while (old != 0u) {
+    if (old == 0xFFFFFFFFu)
+      __builtin_trap();         // overflow (impossible) — trap, never wrap
+    if (__atomic_compare_exchange_n(&cb->strong, &old, old + 1u, /*weak=*/true,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+      return cb;
+  }
+  return nullptr;               // object already dead
+}
+
+uint32_t sp_use_count(sp_cb* cb) noexcept {
+  return __atomic_load_n(&cb->strong, __ATOMIC_RELAXED);
 }
 
 // ===========================================================================

@@ -7,8 +7,8 @@ Compiler: `g++`. text+data+bss from `size(1)`, minus the same include-order's em
 | string | 2008 (1992+16+0) | 1060 (1044+16+0) | -47% | 977 (993+8+-24) | -51% |
 | vector_int | 1198 (1198+0+0) | 1846 (1846+0+0) | +54% | 1450 (1442+32+-24) | +21% |
 | vector_string | 1668 (1668+0+0) | 2033 (1993+40+0) | +22% | 1777 (1713+88+-24) | +7% |
-| sort_int | 1486 (1486+0+0) | 3204 (3204+0+0) | +116% | 872 (880+16+-24) | -41% |
-| sort_string | 5520 (5512+8+0) | 4932 (4884+48+0) | -11% | 1767 (1703+88+-24) | -68% |
+| sort_int | 1486 (1486+0+0) | 3286 (3286+0+0) | +121% | 872 (880+16+-24) | -41% |
+| sort_string | 5520 (5512+8+0) | 5014 (4966+48+0) | -9% | 1767 (1703+88+-24) | -68% |
 | map_int | 1810 (1810+0+0) | 2299 (2299+0+0) | +27% | 1226 (1218+32+-24) | -32% |
 | map_string | 2541 (2533+8+0) | 2812 (2804+8+0) | +11% | 1608 (1600+32+-24) | -37% |
 | unordered_int | 4372 (4348+24+0) | 1758 (1734+24+0) | -60% | 1706 (1674+56+-24) | -61% |
@@ -18,7 +18,7 @@ Compiler: `g++`. text+data+bss from `size(1)`, minus the same include-order's em
 ## liblean kernels object (one copy per SYSTEM)
 
 The out-of-line structural/algorithm kernels compile to a single translation unit, shipped once as `liblean.a` / `liblean.so`. With `--gc-sections` each program above pulls in only the slice it uses; this is the whole-TU `size(1)` **text** cost when the library is linked in full:
-- `lean/src/kernels.cpp` .o text: `13020 bytes`
+- `lean/src/kernels.cpp` .o text: `13348 bytes`
 
 ## sizeof (bytes)
 
