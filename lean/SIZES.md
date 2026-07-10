@@ -18,7 +18,7 @@ Compiler: `g++`. text+data+bss from `size(1)`, minus the same include-order's em
 ## liblean kernels object (one copy per SYSTEM)
 
 The out-of-line structural/algorithm kernels compile to a single translation unit, shipped once as `liblean.a` / `liblean.so`. With `--gc-sections` each program above pulls in only the slice it uses; this is the whole-TU `size(1)` **text** cost when the library is linked in full:
-- `lean/src/kernels.cpp` .o text: `13509 bytes`
+- `lean/src/kernels.cpp` .o text: `14075 bytes`
 
 ## sizeof (bytes)
 

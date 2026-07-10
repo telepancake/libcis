@@ -20,12 +20,14 @@ two include orders across TUs of one binary.
 **`lean/src/kernels.cpp` is mandatory**, exactly like `src/support.cpp`. The
 fat, non-template structural/algorithm kernels (string byte-splice, vector
 grow/gap/erase, rb-tree rebalance/iterate, hash rehash/relink, list
-reverse/merge-sort, deque table growth, the introsort/heap/merge algorithm
+reverse/merge-sort, deque table growth, the variant special-member walkers,
+the introsort/heap/merge algorithm
 kernels) are **out-of-line** functions declared in `bits/lean_*.h` and defined
 once in this single translation unit — the lean headers are NOT header-only.
 Link it into every lean binary (one copy of each kernel per binary), or build it
 into a library once (one copy per system, below). Omitting it is a link error
-(undefined `std::detail::lean_*` / `tree_*` / `hash_*` / `list_*` symbols).
+(undefined `std::detail::lean_*` / `tree_*` / `hash_*` / `list_*` /
+`variant_*` symbols).
 
 ### Building the kernels as a library (one copy per system)
 
@@ -152,6 +154,36 @@ binary carries only the kernels it actually reaches.
      defeat the compare; the lean headers are compiled default-visibility so this
      never happens in-tree. Documented, not worked around.
 
+10. **`std::variant` with table-driven special members.** Copy/move-construct,
+    copy/move-assign, destroy and swap of a variant with any non-trivial
+    alternative route through one static rodata table (a dispatch function
+    pointer per alternative, null = trivially copyable) plus shared
+    non-template walker kernels in `kernels.cpp`, instead of base's
+    per-instantiation N-way visit switches. Observable deviations, all
+    dead-code under this profile:
+    - Non-trivial special members are **not `constexpr`** (they call the
+      out-of-line kernels), consistent with deviation 2. All-trivial variants
+      keep constexpr and fully trivial (defaulted) special members —
+      byte-identical to base (`variant<int, long, double>` stays trivially
+      copyable).
+    - Cross-index assignment is destroy + construct-from-source; the
+      strong-exception-guarantee temporary (`T(std::forward<Arg>(arg))` for a
+      non-nothrow-copyable, nothrow-movable alternative) is dropped as
+      unobservable under `-fno-exceptions` (it exists only to unwind a throw
+      that cannot happen; `valueless_by_exception()` is always `false` after
+      construction).
+      **Same-index assignment uses the alternative's assignment operator**,
+      exactly as the standard requires (verified by op-counting tests).
+    - `swap` uses one uniform three-move dance for same- and different-index
+      (base special-cases same-index to an element `swap`; the result is
+      identical since variant's `swap` already requires move-constructible
+      alternatives, and the `move_nothrow` ordering dance is likewise
+      unobservable without exceptions).
+    - The discriminant is the **smallest unsigned type** that fits the
+      alternative count (`unsigned char` up to 255 alternatives), so
+      `sizeof(variant<char, short>) == 4` where base spent an `unsigned int`
+      index (8 bytes total).
+
 Everything else — iterator categories, complexity guarantees, reference
 stability of node containers, the public API surface — follows the standard.
 
@@ -190,6 +222,7 @@ Every array-like lean container stores **one pointer** to the payload of a
 | `shared_ptr<T>` | 1 pointer | a single pointer to a control block (`bits/lean_sp.h`); null = empty. The block is `{ void* elem; uint32_t strong; uint32_t weak; void(*dispose)(cb) }` = **24 B on LP64** (16 B on ILP32). `elem` is first so `get()`/`*`/`->` load it at zero displacement. `make_shared<T>` places `T` inline in the SAME allocation right after the block |
 | `weak_ptr<T>` | 1 pointer | the same one-pointer handle onto the same control block; holds a weak reference. `enable_shared_from_this<T>` embeds one `weak_ptr<T>`, so it too is one pointer |
 | `function<R(Args...)>` | 2 pointers | `{ void* ctx; R (*invoke)(void*, Args...) }` = **16 B on LP64** (8 B on ILP32); empty = `invoke == nullptr`. `operator()` is `invoke(ctx, args...)` after a null check — **no vtable in the hot path**. Four storage modes, discriminated only by `invoke`'s identity (never by pointer tag bits — unsafe on Thumb): (1) a one-word trivially-copyable callable (`[this]`/`[ptr]`/`[int]`) lives in `ctx`, `invoke` a per-type invoker; (2) a plain fn pointer / capture-less lambda: `ctx` is the fn pointer, `invoke` one shared per-signature trampoline; (3) the lean extension ctor `function(R(*)(T*,Args...), T*)`: `ctx` is the object, the user fn IS the invoker (zero per-type code, zero hops); (4) anything larger/over-aligned/non-trivially-copyable (incl. `>=2`-word captures) is a `malloc` block reached through `ctx`. Trivially relocatable |
+| `variant<Ts...>` | storage + narrow index | base's recursive-union storage, but the discriminant is the smallest unsigned type that fits the alternative count (`unsigned char` for ≤255 alternatives): `sizeof(variant<char, short>) == 4` (base: 8). Special members are table-driven (`bits/lean_variant.h`, deviation 10); all-trivial variants keep fully trivial (defaulted) members and are `is_trivially_copyable` |
 
 ### Type erasure (`bits/lean.h` type ops + the algorithm kernels)
 
@@ -228,6 +261,38 @@ stay inline).
   destruct, invoke); the two shared kernels are one copy per binary. Inline
   callables (the one-word, fn-pointer and extension-ctor modes) reach `malloc`
   never and `kernels.cpp` not at all.
+- `std::variant` erases its **special members** the same way: base emitted a
+  per-instantiation N-way visit switch for each of copy/move-construct,
+  copy/move-assign and destroy (measured ~853 B per variant type at -Os with
+  one string-member alternative). Lean replaces them with one static rodata
+  table per variant type — a single dispatch function pointer per alternative
+  (`detail::vt_op_fn`, null = trivially copyable ⇒ the walker memcpys the
+  storage bytes / skips destroy, the `lean_ops` convention) — consumed by five
+  shared non-template walkers in `kernels.cpp` (`variant_destroy`,
+  `variant_{copy,move}_construct`, `variant_{copy,move}_assign`). The only
+  per-type code left is one small `vt_op<T>` action-switch thunk per
+  *alternative type*, deduped program-wide across every variant that lists it.
+  Measured (overhead_matrix, variant axis): per-type **853 B → 554 B (-35%)**.
+  One dispatch pointer per alternative, not five per-op pointers, is
+  load-bearing: a 5-pointer row costs 40 B of rodata per alternative and
+  measured as a net LOSS (871 B/type) before the collapse. **When every
+  alternative is trivially copyable the table is never instantiated** and the
+  special members stay defaulted/trivial — an all-trivial variant compiles to
+  zero engine code and references no kernel (verified via `nm -u`). `std::visit`
+  is deliberately unchanged from base: it is already table-based, and the
+  per-callsite cost (~735 B) is the user's visitor lambda — typed code that
+  cannot be erased without losing its result; the measured per-callsite delta
+  is ~0, as expected.
+
+  **`optional` and `tuple` stay base — measured rationale.** The same
+  finite-difference probe (string-member payload) put their per-type cost at
+  ~103 B (base include order) and ~2 B (lean order — the payload's `string`
+  members were the real cost, and lean `string` already absorbed them into its
+  own kernels), far below the ≳200 B erasure threshold above. And no conforming
+  *size* lever exists: an `optional<T>` sentinel compression would break
+  engaged-null semantics (`optional<T*>` must distinguish `nullopt` from a null
+  pointer value), and `tuple`'s layout IS its members. Nothing to erase, nothing
+  to shrink — an overlay would be copy-paste with risk.
 
 ### Smart pointers (`bits/lean_sp.h` control block + the `sp_*` kernels)
 

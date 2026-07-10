@@ -86,5 +86,48 @@ Raw grid (bytes over baseline):
 | (9, 9) | 67877 | 64760 | 65024 |
 | (5, 5) | 24341 | 22764 | 23028 |
 
+## Containers + sort: deterministic performance (callgrind, cache+branch sim)
 
-(callgrind skipped: --quick)
+Container workload, T=4 C=2 n=1500; each order's empty-main startup counts (crt + ld.so, which the lean-so order pays extra for shared-object resolution) are measured separately and subtracted — what remains is the workload itself. CEst = Ir + 10*Bm + 10*L1m + 100*LLm (kcachegrind's cycle estimate). Counts are synthetic and repeatable — immune to host clock jitter.
+
+| event | base | lean-static | lean-so | lean-static vs base |
+|---|---|---|---|---|
+| Ir | 9,964,678 | 17,616,875 | 17,946,671 | +76.8% |
+| Dr | 2,509,951 | 4,130,193 | 4,293,946 | +64.6% |
+| Dw | 1,480,633 | 2,643,247 | 2,644,035 | +78.5% |
+| L1m | 78,096 | 65,814 | 66,201 | -15.7% |
+| LLm | 3,088 | 2,676 | 2,610 | -13.3% |
+| Bc | 1,688,770 | 3,294,629 | 3,295,495 | +95.1% |
+| Bm | 141,610 | 147,524 | 188,673 | +4.2% |
+| CEst | 12,470,538 | 20,017,855 | 20,756,411 | +60.5% |
+
+## std::function: deterministic performance (callgrind, cache+branch sim)
+
+function workload, F=4 G=2 n=6000; each order's empty-main startup counts (crt + ld.so, which the lean-so order pays extra for shared-object resolution) are measured separately and subtracted — what remains is the workload itself. CEst = Ir + 10*Bm + 10*L1m + 100*LLm (kcachegrind's cycle estimate). Counts are synthetic and repeatable — immune to host clock jitter.
+
+| event | base | lean-static | lean-so | lean-static vs base |
+|---|---|---|---|---|
+| Ir | 1,104,890 | 1,059,758 | 1,058,265 | -4.1% |
+| Dr | 336,641 | 192,482 | 192,654 | -42.8% |
+| Dw | 144,371 | 96,276 | 96,354 | -33.3% |
+| L1m | 114 | 62 | 52 | -45.6% |
+| LLm | 92 | 52 | 49 | -43.5% |
+| Bc | 96,199 | 96,398 | 96,279 | +0.2% |
+| Bm | 50 | 676 | -434 | +1252.0% |
+| CEst | 1,115,730 | 1,072,338 | 1,059,345 | -3.9% |
+
+## std::variant: deterministic performance (callgrind, cache+branch sim)
+
+variant workload, T=4 C=2 n=1500; each order's empty-main startup counts (crt + ld.so, which the lean-so order pays extra for shared-object resolution) are measured separately and subtracted — what remains is the workload itself. CEst = Ir + 10*Bm + 10*L1m + 100*LLm (kcachegrind's cycle estimate). Counts are synthetic and repeatable — immune to host clock jitter.
+
+| event | base | lean-static | lean-so | lean-static vs base |
+|---|---|---|---|---|
+| Ir | 12,494,967 | 15,678,872 | 15,946,233 | +25.5% |
+| Dr | 3,879,494 | 4,431,656 | 4,577,302 | +14.2% |
+| Dw | 3,794,132 | 3,542,048 | 3,410,506 | -6.6% |
+| L1m | 289 | 312 | 231 | +8.0% |
+| LLm | 276 | 280 | 181 | +1.4% |
+| Bc | 2,448,391 | 2,556,752 | 2,449,151 | +4.4% |
+| Bm | 111,354 | 62,414 | 86,848 | -43.9% |
+| CEst | 13,638,997 | 16,334,132 | 16,835,123 | +19.8% |
+

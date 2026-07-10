@@ -1,8 +1,8 @@
 // lean/src/kernels.cpp — the one-copy-per-SYSTEM home for every fat, non-template
 // structural/algorithm kernel of the lean profile.
 //
-// The lean bits headers (bits/lean_{string,array,tree,hash,deque,sort}.h and
-// <list>) declare these kernels; their bodies live here so that a lean binary
+// The lean bits headers (bits/lean_{string,array,tree,hash,deque,sort,sp,fn,
+// variant}.h and <list>) declare these kernels; their bodies live here so that a lean binary
 // links ONE copy of each — buildable as liblean.a / liblean.so — instead of the
 // per-binary COMDAT copy the old `inline` definitions produced.
 //
