@@ -92,6 +92,44 @@ __attribute__((noinline)) void work_t{k}_c{j}(int n) {{
     return "\n".join(L)
 
 
+def gen_fn_program(types, callsites):
+    """std::function workload: F distinct receiver/callable types x G noinline
+    callsites, each exercising the dominant shapes (one-word-capture lambda,
+    plain fn pointer, copy) and calling through the erased boundary."""
+    L = ["#include <functional>", "#include <cstdlib>",
+         "template<class V> void sink(V v) { volatile V s = v; (void)s; }"]
+    for k in range(types):
+        L.append(f"""
+struct Recv{k} {{ long acc = 0; }};
+__attribute__((noinline)) long recv_method{k}(Recv{k}* r, long x) {{
+  r->acc += x + {k + 1}; return r->acc;
+}}
+__attribute__((noinline)) long free_fn{k}(long x) {{ return x * {2 * k + 3}; }}""")
+    for k in range(types):
+        for j in range(callsites):
+            salt = k * 1000 + j + 1
+            L.append(f"""
+__attribute__((noinline)) long site_t{k}_c{j}(Recv{k}* r, int n) {{
+  std::function<long(long)> fn = [r](long x) {{ return recv_method{k}(r, x + {salt}); }};
+  long s = 0;
+  for (int i = 0; i < n; ++i) s += fn(i);
+  std::function<long(long)> fp = &free_fn{k};
+  s += fp(n + {salt});
+  std::function<long(long)> cp = fn;
+  s += cp({salt});
+  return s;
+}}""")
+    L.append("int main(int argc, char** argv) {")
+    L.append("  int n = argc > 1 ? std::atoi(argv[1]) : 100;")
+    L.append("  long total = 0;")
+    for k in range(types):
+        L.append(f"  Recv{k} r{k};")
+        for j in range(callsites):
+            L.append(f"  total += site_t{k}_c{j}(&r{k}, n);")
+    L.append("  sink(total);\n  return 0;\n}")
+    return "\n".join(L)
+
+
 def run(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
@@ -125,7 +163,7 @@ def make_links(tmp):
     }, so
 
 
-def measure_sizes(tmp, links):
+def measure_sizes(tmp, links, gen, tag):
     """S(T,C) minus the same order's empty-main baseline, per order."""
     S = {o: {} for o in ORDERS}
     for order in ORDERS:
@@ -133,8 +171,8 @@ def measure_sizes(tmp, links):
         build("int main(int argc, char**){return argc > 99;}", order, links, exe)
         base = text_size(exe)
         for (t, c) in GRID + [HOLDOUT]:
-            exe = os.path.join(tmp, f"m_{order}_{t}_{c}")
-            build(gen_program(t, c), order, links, exe)
+            exe = os.path.join(tmp, f"{tag}_{order}_{t}_{c}")
+            build(gen(t, c), order, links, exe)
             S[order][(t, c)] = text_size(exe) - base
     return S
 
@@ -167,7 +205,7 @@ def cg_events(exe, out, arg):
     return dict(zip(events, summary))
 
 
-def callgrind(tmp, links):
+def callgrind(tmp, links, gen, tag, n):
     """Deterministic event counts for the same workload, per order.
 
     Each order's empty-main binary is measured too and SUBTRACTED, so process
@@ -176,12 +214,12 @@ def callgrind(tmp, links):
     remains is the workload itself."""
     res = {}
     for order in ORDERS:
-        exe = os.path.join(tmp, f"cg_{order}")
-        build(gen_program(CG_T, CG_C), order, links, exe)
+        exe = os.path.join(tmp, f"cg_{tag}_{order}")
+        build(gen(CG_T, CG_C), order, links, exe)
         empty = os.path.join(tmp, f"cg0_{order}")
         build("int main(int argc, char**){return argc > 99;}", order, links, empty)
-        full = cg_events(exe, os.path.join(tmp, f"callgrind.{order}"), str(CG_N))
-        startup = cg_events(empty, os.path.join(tmp, f"callgrind0.{order}"), str(CG_N))
+        full = cg_events(exe, os.path.join(tmp, f"callgrind.{tag}.{order}"), str(n))
+        startup = cg_events(empty, os.path.join(tmp, f"callgrind0.{tag}.{order}"), str(n))
         ev = {k: full[k] - startup.get(k, 0) for k in full}
         l1m = ev.get("I1mr", 0) + ev.get("D1mr", 0) + ev.get("D1mw", 0)
         llm = ev.get("ILmr", 0) + ev.get("DLmr", 0) + ev.get("DLmw", 0)
@@ -196,24 +234,8 @@ def fmt(n):
     return f"{n:,.0f}" if abs(n) >= 10 else f"{n:.1f}"
 
 
-def main():
-    quick = "--quick" in sys.argv
-    tmp = tempfile.mkdtemp(prefix="lean_ovh_")
-    links, so = make_links(tmp)
-    so_text = text_size(so)
-
-    S = measure_sizes(tmp, links)
-    dec = {o: decompose(S[o]) for o in ORDERS}
-
-    L = ["# Overhead decomposition + deterministic perf delta (base vs lean)\n",
-         f"Compiler: `{CXX}` at -Os, gc-sections, standard -nodefaultlibs recipe. "
-         "Generated program: T structurally-identical types x C noinline "
-         "callsites each doing vector fill/insert/erase + sort (distinct lambda "
-         "per callsite) + map insert/iterate/erase. Sizes are text+data+bss "
-         "minus the empty-main baseline of the same include order. Model "
-         "S = FIXED + PER_TYPE*T + PER_CALLSITE*T*C fitted on grid "
-         f"{GRID}, held-out point {HOLDOUT} reports fit error.\n",
-         "## Size decomposition (bytes)\n",
+def size_section(title, blurb, S, dec, so_text):
+    L = [f"## {title}\n", blurb + "\n",
          "| profile | fixed / process | per type | per callsite | fit err on held-out |",
          "|---|---|---|---|---|"]
     for o in ORDERS:
@@ -225,7 +247,6 @@ def main():
     L += ["",
           f"- delta lean-static vs base: fixed {fmt(fl - fb)}, per type {fmt(tl - tb)}, per callsite {fmt(cl - cb)}",
           f"- delta lean-so vs base:     fixed {fmt(fs - fb)}, per type {fmt(ts - tb)}, per callsite {fmt(cs - cb)}",
-          f"- liblean.so (once per SYSTEM, lean-so only): {so_text} bytes",
           "",
           "System-wide model, P processes each with (T,C):",
           "```",
@@ -239,25 +260,70 @@ def main():
           "|---|" + "---|" * len(ORDERS)]
     for pt in GRID + [HOLDOUT]:
         L.append(f"| {pt} | " + " | ".join(str(S[o][pt]) for o in ORDERS) + " |")
+    L.append("")
+    return L
+
+
+def cg_section(title, cg, shape):
+    L = [f"## {title} (callgrind, cache+branch sim)\n",
+         f"{shape}; each order's empty-main startup counts (crt + ld.so, which "
+         "the lean-so order pays extra for shared-object resolution) are "
+         "measured separately and subtracted — what remains is the workload "
+         "itself. CEst = Ir + 10*Bm + 10*L1m + 100*LLm (kcachegrind's cycle "
+         "estimate). Counts are synthetic and repeatable — immune to host "
+         "clock jitter.\n",
+         "| event | " + " | ".join(ORDERS) + " | lean-static vs base |",
+         "|---|" + "---|" * (len(ORDERS) + 1)]
+    for k in ("Ir", "Dr", "Dw", "L1m", "LLm", "Bc", "Bm", "CEst"):
+        row = [f"{cg[o].get(k, 0):,}" for o in ORDERS]
+        b, l = cg["base"].get(k, 0), cg["lean-static"].get(k, 0)
+        d = f"{100.0 * (l - b) / b:+.1f}%" if b else "-"
+        L.append(f"| {k} | " + " | ".join(row) + f" | {d} |")
+    L.append("")
+    return L
+
+
+def main():
+    quick = "--quick" in sys.argv
+    tmp = tempfile.mkdtemp(prefix="lean_ovh_")
+    links, so = make_links(tmp)
+    so_text = text_size(so)
+
+    L = ["# Overhead decomposition + deterministic perf delta (base vs lean)\n",
+         f"Compiler: `{CXX}` at -Os, gc-sections, standard -nodefaultlibs "
+         "recipe. Sizes are text+data+bss minus the empty-main baseline of the "
+         "same include order. Model S = FIXED + PER_TYPE*T + PER_CALLSITE*T*C "
+         f"fitted by finite differences on grid {GRID}; held-out point "
+         f"{HOLDOUT} reports fit error. "
+         f"liblean.so (once per SYSTEM, lean-so rows only): {so_text} bytes.\n"]
+
+    S = measure_sizes(tmp, links, gen_program, "cont")
+    dec = {o: decompose(S[o]) for o in ORDERS}
+    L += size_section(
+        "Containers + sort: size decomposition (bytes)",
+        "Workload: T structurally-identical types x C noinline callsites, each "
+        "doing vector fill/insert/erase + sort (distinct lambda per callsite) "
+        "+ map insert/iterate/erase.",
+        S, dec, so_text)
+
+    Sf = measure_sizes(tmp, links, gen_fn_program, "fn")
+    decf = {o: decompose(Sf[o]) for o in ORDERS}
+    L += size_section(
+        "std::function: size decomposition (bytes)",
+        "Workload: F receiver types x G noinline callsites, each constructing "
+        "a one-word-capture lambda function, calling it in a loop, plus a "
+        "plain-fn-pointer function and a copy — the dominant callable shapes.",
+        Sf, decf, so_text)
 
     if quick:
         L.append("\n(callgrind skipped: --quick)")
     else:
-        cg = callgrind(tmp, links)
-        L += ["\n## Deterministic performance (callgrind, cache+branch sim)\n",
-              f"Same generated workload, T={CG_T} C={CG_C} n={CG_N}; each order's "
-              "empty-main startup counts (crt + ld.so, which the lean-so order "
-              "pays extra for shared-object resolution) are measured separately "
-              "and subtracted — what remains is the workload itself. "
-              "CEst = Ir + 10*Bm + 10*L1m + 100*LLm (kcachegrind's cycle estimate). "
-              "Counts are synthetic and repeatable — immune to host clock jitter.\n",
-              "| event | " + " | ".join(ORDERS) + " | lean-static vs base |",
-              "|---|" + "---|" * (len(ORDERS) + 1)]
-        for k in ("Ir", "Dr", "Dw", "L1m", "LLm", "Bc", "Bm", "CEst"):
-            row = [f"{cg[o].get(k, 0):,}" for o in ORDERS]
-            b, l = cg["base"].get(k, 0), cg["lean-static"].get(k, 0)
-            d = f"{100.0 * (l - b) / b:+.1f}%" if b else "-"
-            L.append(f"| {k} | " + " | ".join(row) + f" | {d} |")
+        cg = callgrind(tmp, links, gen_program, "cont", CG_N)
+        L += cg_section("Containers + sort: deterministic performance", cg,
+                        f"Container workload, T={CG_T} C={CG_C} n={CG_N}")
+        cgf = callgrind(tmp, links, gen_fn_program, "fn", CG_N * 4)
+        L += cg_section("std::function: deterministic performance", cgf,
+                        f"function workload, F={CG_T} G={CG_C} n={CG_N * 4}")
     L.append("")
     open("lean/OVERHEAD.md", "w").write("\n".join(L))
     print("\n".join(L))
