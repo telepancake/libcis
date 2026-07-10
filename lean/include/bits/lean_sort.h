@@ -59,7 +59,12 @@ inline size_t lean_log2(size_t n) {
 }
 
 // Byte moves. The fixed-size cases let the compiler lower the common element
-// sizes to plain register moves instead of a memcpy call.
+// sizes to plain register moves instead of a memcpy call. The variable-size
+// default must NOT be a bare __builtin_memcpy: -Os lowers that to a BYTE loop
+// (callgrind: one branch per byte — 57% of all workload branches when sorting
+// a 24-byte struct). Copy word-wise instead — each constant-size per-word
+// memcpy is one (possibly unaligned) load+store — with a <=7-byte tail; the
+// kernel gate caps elem at 256.
 inline void lean_move_bytes(void* d, const void* s, size_t elem) {
     switch (elem) {
         case 1:  __builtin_memcpy(d, s, 1);  return;
@@ -67,8 +72,23 @@ inline void lean_move_bytes(void* d, const void* s, size_t elem) {
         case 4:  __builtin_memcpy(d, s, 4);  return;
         case 8:  __builtin_memcpy(d, s, 8);  return;
         case 16: __builtin_memcpy(d, s, 16); return;
-        default: __builtin_memcpy(d, s, elem); return;
     }
+    char* dc = static_cast<char*>(d);
+    const char* sc = static_cast<const char*>(s);
+    while (elem >= 16) {
+        __builtin_memcpy(dc, sc, 16);
+        dc += 16;
+        sc += 16;
+        elem -= 16;
+    }
+    if (elem >= 8) {
+        __builtin_memcpy(dc, sc, 8);
+        dc += 8;
+        sc += 8;
+        elem -= 8;
+    }
+    while (elem--)
+        *dc++ = *sc++;
 }
 
 inline void lean_swap_bytes(void* a, void* b, size_t elem, char* tmp) {
