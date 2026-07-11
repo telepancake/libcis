@@ -193,6 +193,44 @@ binary carries only the kernels it actually reaches.
       `sizeof(variant<char, short>) == 4` where base spent an `unsigned int`
       index (8 bytes total).
 
+11. **Locale severance — lean iostreams are CLASSIC-LOCALE ONLY.** The lean
+    `<ios>`/`<ostream>`/`<istream>` overlays are byte-for-byte the base headers
+    **except** the stream code path consults **no** locale facet: nothing in it
+    calls `use_facet` / `has_facet`, references `ctype<CharT>` / `numpunct<CharT>`,
+    or forces `locale::classic()`'s facet set to be constructed. Concretely:
+    - **`imbue(loc)` is a documented NO-OP** that returns the classic locale and
+      does **not** store `loc`. `getloc()` always returns a default
+      `std::locale{}` (classic). A program that defensively `imbue()`s keeps
+      working — it just gets classic formatting. `ios_base` stores **no**
+      `std::locale` member.
+    - **Whitespace / character classification is done DIRECTLY** against the
+      fixed C/classic set (`detail::classic_isspace<CharT>`: a byte is space iff
+      it is one of `' ' \t \n \v \f \r`), for both `char` and `wchar_t` — never
+      through `ctype<CharT>` and never through the (C-locale-dependent)
+      `iswspace`. `narrow`/`widen`/`fill` are the direct classic mappings
+      (identity for `char`; `(wchar_t)(unsigned char)c` / `wctob`-classic for
+      `wchar_t`).
+    - **`boolalpha` uses hardcoded `"true"`/`"false"`** (and their widened
+      `wchar_t` forms), never `numpunct::truename()`/`falsename()`.
+
+    **This is a SIZE deviation, not a correctness cut.** All formatted I/O stays
+    correct **in the classic locale**: integer/float/bool/char/string/pointer
+    insertion and extraction; width/fill/adjustfield; showbase/showpos/uppercase/
+    hex/oct/dec; precision/fixed/scientific/hexfloat; skipws; get/getline/peek/
+    unget/putback/ignore/read; tellg/seekg/tellp/seekp; sentry semantics;
+    failbit/eofbit/badbit; `operator>>` of `std::string` + `std::getline`;
+    `endl`/`ends`/`flush`; the manipulators; and stringstreams — all verified
+    byte-for-byte in `lean/test/iostream.cpp`. **Only LOCALE-DEPENDENT behavior
+    changes**, and it changes to *classic*: thousands separators, locale digit
+    grouping, locale bool names and locale-specific ctype **silently do not
+    occur**. `imbue` was chosen as a NO-OP rather than a trap deliberately —
+    a no-op keeps a defensively-imbuing program running (with classic output),
+    whereas a trap would break it; the cost is that locale-specific formatting is
+    silently classic. See the "Locale severance" section below for the size
+    story (and the honest ceiling: the stream *code* is severed, but the classic
+    facet *vtables* remain pinned into every binary by two eager initializers
+    that live outside the stream headers).
+
 Everything else — iterator categories, complexity guarantees, reference
 stability of node containers, the public API surface — follows the standard.
 
@@ -369,6 +407,74 @@ would also push the float formatter *back* into per-callsite code, defeating the
 per-system win. It is left pinned, and honestly reported. For the lean-**so**
 deployment the point is moot: `fp_to_chars` lives in `liblean.so` regardless, so
 an int-only lean-so binary carries **none** of it (also confirmed with `nm`).
+
+### Locale severance (`<ios>`/`<ostream>`/`<istream>` overlays)
+
+Deviation 11: lean streams are **classic-locale only**. The overlays are
+byte-for-byte the base headers except the stream code path calls **no** locale
+facet — no `use_facet`/`has_facet`, no `ctype<CharT>`/`numpunct<CharT>`, no
+stored `std::locale`. `<ios>` still `#include`s base `<locale>` for the
+`std::locale` *type* named in the `getloc()`/`imbue()` signatures, but nothing
+in the stream path consults a facet; `<ostream>`/`<istream>` drop the `<locale>`
+include entirely. Whitespace is `detail::classic_isspace`, `narrow`/`widen` are
+direct classic mappings, `boolalpha` is hardcoded `"true"`/`"false"`, `imbue` is
+a no-op returning classic.
+
+**What this removes from the stream code (proven with `nm`).** The base stream
+path calls `use_facet<ctype<char>>` for `widen`/`narrow`, whitespace skipping and
+token boundaries, and `ios_base` stores + copies a `std::locale`. The lean
+overlay removes all of it: a lean `cout` object file (`nm`) references **no**
+`use_facet<ctype<char>>` instantiation and **no** `std::locale` copy/assign from
+the stream code. A TU that includes only `<locale>` (no streams) already carries
+the `ctype`/`numpunct` vtables, proving the residual vtables in a linked binary
+come from `<locale>` itself, **not** the stream code.
+
+**Measured (marginal text+data+bss over empty `main`, `-Os`, `--gc-sections`,
+standard `src/support.cpp` + `lean/src/kernels.cpp` link):**
+
+| | base | lean | delta |
+|---|---|---|---|
+| empty-main baseline (absolute) | 113 101 | 107 494 | **−5 607** |
+| `cout << int/float/bool/string` (absolute) | 135 137 | 127 862 | **−7 275** |
+| `cout` **marginal** over empty | 22 036 | 20 368 | **−1 668 (−7.6 %)** |
+
+The baseline itself shrinks because `src/support.cpp`, compiled in the lean
+include order, now instantiates the *lean* (locale-severed) streams for its own
+`<sstream>` use. The `cout` marginal drop (−1.7 KB) is exactly the locale
+ctor/copy/assign + `use_facet<ctype<char>>` widen/narrow that left the stream
+path.
+
+**Honest ceiling — the ~65 KB facet suite is NOT in the marginal, and severance
+alone cannot drop it.** The `cout` marginal (~21 KB base) is the **direct
+number-formatting engine** (`format_integer_impl`, `put_float`, `pad_and_output`,
+the base-10/base-16 LUTs) + the `cout`/`cin` static init — it is **not** locale
+machinery (base already formats numbers directly, no `num_put`/`num_get`), so
+severing locale cannot shrink it toward printf. The classic facet suite
+(`ctype`/`numpunct`/`num_get`/`num_put`/`money`/`time`/`collate`/`codecvt`
+vtables + `do_get`/`do_put` bodies) measures **~65 KB and is pinned into EVERY
+binary** — including the empty-main baseline (measured: 64.8 KB of facet/locale
+symbols in the base empty binary, 61.1 KB in the lean empty binary) — so it
+**cancels in the marginal**. It is pinned by **two eager initializers that live
+OUTSIDE the stream headers**:
+
+- `std::detail::stream_facet_init_instance` (in `src/support.cpp`) — eagerly
+  constructs + registers `num_get`/`num_put`/`money*`/`time*`/`messages` (and
+  `num_get::do_get` transitively references `use_facet<ctype>`/`<numpunct>`,
+  pinning those too);
+- `std::detail::locale_classic_init_instance` (in `include/locale`) — eagerly
+  constructs + registers the classic `ctype`/`numpunct`/`collate`/`codecvt`.
+
+Because the lean streams no longer call any facet, those inits are the *only*
+thing keeping the ~65 KB alive in a plain `cout`/`cin` program. **Ceiling
+experiment** (neutralize both eager inits — a throwaway build, since both files
+are outside the owned stream overlay): a lean `cout` binary drops
+**127 862 → 45 036 bytes (~83 KB recovered)** and **still runs correctly**,
+precisely because the severed streams never call `use_facet` at runtime. That
+~83 KB is the real prize; reaching it needs those two eager initializers made
+lazy (register-on-first-`use_facet`) so `--gc-sections` can drop the unused
+facets. That is a **handoff** to the localization/base-support owner — the
+severance here is the prerequisite (streams must stop pulling the facets before
+lazy registration can drop them), and it is complete.
 
 ### Smart pointers (`bits/lean_sp.h` control block + the `sp_*` kernels)
 

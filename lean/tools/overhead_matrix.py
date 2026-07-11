@@ -229,6 +229,80 @@ __attribute__((noinline)) long site_f{k}_c{j}(const char* a, int n) {{
     return "\n".join(L)
 
 
+def gen_stream_program(types, callsites):
+    """iostreams (cout/cin) workload: T user types (each with its own operator<<
+    / operator>>) x C noinline callsites, each FORMATTING and EXTRACTING a mix
+    (int, hex int, float, bool, std::string, the user type) through std::cout /
+    std::cin and a round-trip stringstream.
+
+    The FIXED slice is the stream machinery + the DIRECT number-formatting engine
+    (format_integer_impl, put_float, pad_and_output, the base_10/base_16 LUTs) +
+    the cout/cin global-object static init — which base emits once per binary and
+    is NOT locale-dependent (base already formats numbers directly, no
+    num_put/num_get).  The lean overlay's LOCALE SEVERANCE (classic-only streams)
+    removes the residual <locale> coupling from the stream code path — no
+    use_facet<ctype>, no numpunct, no stored std::locale — so the lean FIXED slice
+    drops the locale ctor/copy/assign and the use_facet<ctype<char>> widen/narrow
+    instantiations.
+
+    NOTE (measured, honest): the ~65 KB classic facet suite (ctype/numpunct/
+    num_get/num_put/money/time/collate/codecvt vtables + do_get/do_put bodies) is
+    NOT part of this marginal — it is pinned into EVERY binary (including the
+    empty-main baseline this axis subtracts) by two eager initializers OUTSIDE the
+    stream headers: stream_facet_init_instance (src/support.cpp) and
+    locale_classic_init_instance (include/locale).  Severing the streams removes
+    the stream code's dependency on that machinery, but cannot drop it from a
+    binary that links those eager inits, so it cancels in the marginal.  See
+    lean/README.md 'Locale severance' for the quantified ceiling.
+
+    The per-type slice is the user operator<< / operator>>; the per-callsite
+    slice is the mix of insertions/extractions.  cout is redirected to an
+    in-memory stringbuf so the workload does not spam stdout.  Distinct salts keep
+    the user inserters from merging."""
+    L = ["#include <iostream>", "#include <sstream>", "#include <iomanip>",
+         "#include <string>", "#include <cstdlib>",
+         "template<class V> void sink(V v) { volatile V s = v; (void)s; }"]
+    for k in range(types):
+        L.append(f"struct Ty{k} {{ long a; double b; }};")
+    for k in range(types):
+        salt = k + 1
+        L.append(f"""
+std::ostream& operator<<(std::ostream& os, const Ty{k}& v) {{
+  return os << "Ty{k}(" << (v.a + {salt}) << ',' << v.b << ')';
+}}
+std::istream& operator>>(std::istream& is, Ty{k}& v) {{ return is >> v.a >> v.b; }}""")
+    for k in range(types):
+        for j in range(callsites):
+            salt = k * 1000 + j + 1
+            L.append(f"""
+__attribute__((noinline)) long site_s{k}_c{j}(const char* a, int n) {{
+  long acc = 0;
+  for (int i = 0; i < n; ++i) {{
+    std::cout << (i + {salt}) << ' ' << std::hex << (unsigned)(i * {salt}u) << std::dec
+              << ' ' << (i * 0.5 + {salt}) << ' ' << (i % 2 == 0) << ' '
+              << std::string(a) << ' ' << Ty{k}{{i + {salt}, i * 0.25}} << '\\n';
+    std::ostringstream os;
+    os << std::setw(6) << std::setfill('0') << (i + {salt}) << ':'
+       << std::boolalpha << (i > 0) << std::fixed << (i * 0.125 + {salt});
+    acc += (long)os.str().size();
+    std::istringstream is(os.str());
+    int x = 0; is >> x; acc += x;
+    Ty{k} tv{{0, 0}};
+    std::istringstream is2("12 3.5"); is2 >> tv; acc += tv.a;
+  }}
+  return acc;
+}}""")
+    L.append("int main(int argc, char** argv) {")
+    L.append("  int n = argc > 1 ? std::atoi(argv[1]) : 60;")
+    L.append("  std::ostringstream capture; std::cout.rdbuf(capture.rdbuf());")
+    L.append("  long t = 0;")
+    for k in range(types):
+        for j in range(callsites):
+            L.append(f"  t += site_s{k}_c{j}(argv[0], n);")
+    L.append("  sink(t);\n  return 0;\n}")
+    return "\n".join(L)
+
+
 def run(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
@@ -445,6 +519,30 @@ def main():
         "make_format_args + the thin out-of-line engine call.",
         Sfmt, decfmt, so_text)
 
+    Ss = measure_sizes(tmp, links, gen_stream_program, "stream")
+    decs = {o: decompose(Ss[o]) for o in ORDERS}
+    L += size_section(
+        "iostreams (cout/cin): size decomposition (bytes)",
+        "Workload: T user types (each with its own operator<< / operator>>) x G "
+        "noinline callsites, each formatting AND extracting a mix (int, hex int, "
+        "float, bool, string, the user type) through std::cout / std::cin + a "
+        "round-trip stringstream (cout redirected to an in-memory stringbuf). The "
+        "FIXED slice is the stream machinery + the DIRECT number-formatting engine "
+        "(format_integer_impl, put_float, pad_and_output, base_10/base_16 LUTs) + "
+        "the cout/cin static init — NOT locale-dependent (base already formats "
+        "numbers directly, no num_put/num_get facet). The lean overlay's LOCALE "
+        "SEVERANCE (classic-only streams) removes the residual <locale> coupling "
+        "from the stream code path — no use_facet<ctype>, no numpunct, no stored "
+        "std::locale — shaving the locale ctor/copy/assign and the "
+        "use_facet<ctype<char>> widen/narrow instantiations from FIXED. The ~65 KB "
+        "classic facet suite is NOT in this marginal: it is pinned into EVERY "
+        "binary (incl. the empty-main baseline subtracted here) by two eager "
+        "initializers outside the stream headers — stream_facet_init_instance "
+        "(src/support.cpp) and locale_classic_init_instance (include/locale) — so "
+        "it cancels. See lean/README.md 'Locale severance' for the quantified "
+        "ceiling (~83 KB recoverable once those eager inits go lazy).",
+        Ss, decs, so_text)
+
     if quick:
         L.append("\n(callgrind skipped: --quick)")
     else:
@@ -460,6 +558,9 @@ def main():
         cgfmt = callgrind(tmp, links, gen_format_program, "fmt", CG_N)
         L += cg_section("std::format: deterministic performance", cgfmt,
                         f"format workload, F={CG_T} G={CG_C} n={CG_N}")
+        cgs = callgrind(tmp, links, gen_stream_program, "stream", CG_N)
+        L += cg_section("iostreams (cout/cin): deterministic performance", cgs,
+                        f"stream workload, T={CG_T} C={CG_C} n={CG_N}")
     L.append("")
     open("lean/OVERHEAD.md", "w").write("\n".join(L))
     print("\n".join(L))
