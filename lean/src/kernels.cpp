@@ -27,6 +27,7 @@
 #include <bits/lean_fn.h>
 #include <bits/lean_variant.h>
 #include <list>
+#include <format>   // the runtime formatting engine — explicitly instantiated below
 #pragma GCC visibility pop
 
 namespace std {
@@ -1286,4 +1287,38 @@ void lean_inplace_merge(char* base, size_t len1, size_t len2, size_t elem,
 }
 
 } // namespace detail
+
+// ===========================================================================
+// <format> — the runtime formatting engine (lean/include/format)
+//
+// fmt::vformat_engine<CharT> is the type-erased runtime choke point declared
+// `extern template` in <format>.  Defining + explicitly instantiating it HERE
+// pulls the ENTIRE runtime engine into this single TU: the fmt::vformat_to
+// dispatch loop, every builtin formatter<T,CharT>::format() body, fp_to_chars'
+// snprintf float path, and the integer/grouping/padding/fill write helpers those
+// call.  The dispatch is type-erased over the runtime arg_t tag and every
+// runtime formatting path funnels through the ONE context type per CharT
+// (basic_format_context<back_insert_iterator<fmt::output_buffer<CharT>>,CharT>),
+// so the engine is instantiated exactly twice — char + wchar_t are the only
+// CharT std::format supports at runtime (fmt_char_type).  A lean binary then
+// REFERENCES this copy (statically from kernels.o, or once per system from
+// liblean.so) instead of emitting ~41 KB of engine per binary.  NO per-user-type
+// code lives here: user formatter<T> specializations and make_format_args stay
+// in the user TU; only the shared engine body is here.
+// ===========================================================================
+namespace fmt {
+
+template <class CharT>
+back_insert_iterator<output_buffer<CharT>>
+vformat_engine(basic_format_parse_context<CharT> parse_ctx,
+               basic_format_context<back_insert_iterator<output_buffer<CharT>>, CharT> ctx) {
+  return fmt::vformat_to(std::move(parse_ctx), std::move(ctx));
+}
+
+template back_insert_iterator<output_buffer<char>>
+vformat_engine<char>(basic_format_parse_context<char>, format_context);
+template back_insert_iterator<output_buffer<wchar_t>>
+vformat_engine<wchar_t>(basic_format_parse_context<wchar_t>, wformat_context);
+
+} // namespace fmt
 } // namespace std

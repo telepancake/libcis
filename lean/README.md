@@ -21,13 +21,16 @@ two include orders across TUs of one binary.
 fat, non-template structural/algorithm kernels (string byte-splice, vector
 grow/gap/erase, rb-tree rebalance/iterate, hash rehash/relink, list
 reverse/merge-sort, deque table growth, the variant special-member walkers,
-the introsort/heap/merge algorithm
-kernels) are **out-of-line** functions declared in `bits/lean_*.h` and defined
-once in this single translation unit — the lean headers are NOT header-only.
+the introsort/heap/merge algorithm kernels, and the **runtime `std::format`
+engine**) are **out-of-line** in this single translation unit — the lean headers
+are NOT header-only. The structural/algorithm kernels are non-template functions
+declared in `bits/lean_*.h`; the format engine is the per-CharT
+`fmt::vformat_engine<char>` / `<wchar_t>`, declared `extern template` in
+`<format>` and explicitly instantiated here (the libc++ `.so` strategy).
 Link it into every lean binary (one copy of each kernel per binary), or build it
 into a library once (one copy per system, below). Omitting it is a link error
 (undefined `std::detail::lean_*` / `tree_*` / `hash_*` / `list_*` /
-`variant_*` symbols).
+`variant_*` / `std::fmt::vformat_engine<...>` symbols).
 
 ### Building the kernels as a library (one copy per system)
 
@@ -299,6 +302,73 @@ stay inline).
   engaged-null semantics (`optional<T*>` must distinguish `nullopt` from a null
   pointer value), and `tuple`'s layout IS its members. Nothing to erase, nothing
   to shrink — an overlay would be copy-paste with risk.
+
+### `std::format` (`<format>` overlay + the `vformat_engine` kernel)
+
+`std::format`'s cost is almost entirely a **fixed runtime engine**, not
+per-callsite code: measured, the FIRST format callsite in a program is ~**41.5
+KB** of text and the second is only **+0.3 KB**. That 41.5 KB is the runtime
+formatting engine — the `fmt::vformat_to` dispatch loop, every builtin
+`formatter<T,CharT>::format()` body, `fp_to_chars`' snprintf float path, and the
+integer/grouping/padding/fill write helpers those call. Base emits that engine,
+via header templates, **once per binary**. The lean `<format>` overlay is
+byte-identical to base except it relocates that engine out-of-line so it ships
+**once per SYSTEM** (in `liblean.a` / `liblean.so`) instead.
+
+The lever is a single per-CharT choke point, `fmt::vformat_engine<CharT>`,
+declared `extern template` in `<format>` (body in `kernels.cpp`, explicitly
+instantiated for `char` + `wchar_t` — the only types `fmt_char_type` admits).
+Every runtime path (`vformat`/`vformat_to`/`format_to`/`format_to_n`/
+`formatted_size`, locale and non-locale) funnels the **type-erased** `arg_t`
+dispatch through the ONE runtime context per CharT
+(`basic_format_context<back_insert_iterator<fmt::output_buffer<CharT>>, CharT>`;
+`output_buffer<CharT>` is a function-pointer-erased sink, so a custom output
+iterator is *wrapped* rather than re-instantiating the engine). Because the
+dispatch switches on the runtime tag, the whole engine is instantiated per-CharT
+— exactly twice — inside that one TU. This is precisely how libc++ ships
+`__format` in its `.so`.
+
+Measured (marginal text+data+bss over an empty `main`, `-Os`, `--gc-sections`;
+also `overhead_matrix.py`'s `std::format` axis):
+
+| deployment | FIXED per binary (first callsite) | per extra callsite |
+|---|---|---|
+| base (engine header-only) | ~41.5 KB | ~0.3 KB |
+| lean-static (engine in `kernels.o`) | ~41.2 KB | ~0.3 KB |
+| lean-so (engine in `liblean.so`) | **~2.8 KB** | ~0.3 KB |
+
+So the ~**38.5 KB** fixed engine moves from *per binary* to *per system*: a
+single lean binary that uses `std::format` drops from ~41 KB to ~3 KB of
+format text, at the cost of one shared `liblean.so`. The engine's contribution
+to that shared object is the whole-TU delta of `kernels.o` text: **+66 KB**
+(≈14 KB → ≈80 KB) — larger than the per-binary 41.5 KB because `kernels.o`
+carries **both** the `char` and `wchar_t` engines *and* the Unicode
+width/grapheme rodata tables in full, whereas a single char-only binary
+gc-sections the `wchar_t` half away. That +66 KB is paid **once**, no matter how
+many binaries link it.
+
+**Compile-time format-string checking is fully preserved.** Only the *runtime*
+engine leaves the header: the consteval `basic_format_string` validator, every
+`formatter<T>` specialization (thin per-type parse/format wrappers whose
+`format()` may *call* the externalized engine but whose type stays header-only),
+and the constexpr parse context all stay inline. A malformed format string is
+still a hard **compile error** — verified in `test/format.cpp`, where the
+consteval validator caught a genuinely ill-typed dynamic-width argument during
+development.
+
+**Float-path drop: investigated, verdict inherently pinned (not faked).** The
+type-erased dispatch's `arg_t` switch statically references the `double`/`float`/
+`long double` arms (→ `formatter<double>::format` → `fp_to_chars`), so
+`fp_to_chars` is ODR-reachable from the engine whether or not a program formats
+a float. In an int-only lean-**static** binary `fp_to_chars` is therefore
+**present** (confirmed with `nm`; an int-only binary is within ~0.1 KB of an
+int+float one), and `--gc-sections` cannot drop it. Un-pinning it would require
+routing the builtin float arm through a per-callsite indirection populated only
+when a float is actually in `make_format_args` — a non-conforming redesign that
+would also push the float formatter *back* into per-callsite code, defeating the
+per-system win. It is left pinned, and honestly reported. For the lean-**so**
+deployment the point is moot: `fp_to_chars` lives in `liblean.so` regardless, so
+an int-only lean-so binary carries **none** of it (also confirmed with `nm`).
 
 ### Smart pointers (`bits/lean_sp.h` control block + the `sp_*` kernels)
 

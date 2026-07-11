@@ -173,6 +173,62 @@ __attribute__((noinline)) long site_v{k}_c{j}(const char* a, int n) {{
     return "\n".join(L)
 
 
+def gen_format_program(types, callsites):
+    """std::format workload: F distinct user types each with its own
+    std::formatter specialization x G noinline callsites, each formatting a MIX
+    that includes an int, a hex int, a float and the user type through
+    std::format / format_to_n / formatted_size.
+
+    The FIXED slice is the runtime formatting engine — the vformat_to dispatch
+    loop, fp_to_chars' snprintf float path and the integer/grouping/padding/fill
+    write helpers — which base emits once per binary. The lean overlay relocates
+    that engine out-of-line (fmt::vformat_engine<CharT>, extern-template'd in
+    <format>, defined + explicitly instantiated in kernels.cpp): still per-binary
+    for lean-static, but ONCE PER SYSTEM for lean-so. lean-so's tiny FIXED vs
+    base's ~41 KB FIXED is exactly the move this axis exists to show. The
+    per-type slice is the user formatter parse/format; the per-callsite slice is
+    make_format_args + the thin out-of-line engine call. Distinct salts keep the
+    user formatters from merging, so neither library is flattered."""
+    L = ["#include <format>", "#include <string>", "#include <iterator>",
+         "#include <cstdlib>",
+         "template<class V> void sink(V v) { volatile V s = v; (void)s; }"]
+    for k in range(types):
+        L.append(f"struct Ty{k} {{ long a; double b; }};")
+    for k in range(types):
+        salt = k + 1
+        L.append(f"""
+template<> struct std::formatter<Ty{k}, char> {{
+  constexpr auto parse(std::basic_format_parse_context<char>& ctx) {{ return ctx.begin(); }}
+  template<class Ctx> auto format(const Ty{k}& v, Ctx& ctx) const {{
+    return std::format_to(ctx.out(), "Ty{k}({{}},{{:.2f}},{{}})", v.a + {salt}, v.b, {salt});
+  }}
+}};""")
+    for k in range(types):
+        for j in range(callsites):
+            salt = k * 1000 + j + 1
+            L.append(f"""
+__attribute__((noinline)) long site_f{k}_c{j}(const char* a, int n) {{
+  long acc = 0;
+  for (int i = 0; i < n; ++i) {{
+    std::string s = std::format("{{}}|{{:#x}}|{{:.3f}}|{{:>6}}|{{}}",
+                                i + {salt}, (unsigned)(i * {salt}u), (i + {salt}) * 0.5,
+                                a, Ty{k}{{i + {salt}, i * 0.25}});
+    acc += (long)s.size();
+    char buf[80];
+    auto r = std::format_to_n(buf, sizeof(buf), "{{:e}}-{{:b}}", (i + {salt}) * 1.5, i + {salt});
+    acc += (long)r.size;
+    acc += (long)std::formatted_size("{{}}/{{}}", i, {salt});
+  }}
+  return acc;
+}}""")
+    L.append("int main(int argc, char** argv) {\n  int n = argc > 1 ? std::atoi(argv[1]) : 60;\n  long t = 0;")
+    for k in range(types):
+        for j in range(callsites):
+            L.append(f"  t += site_f{k}_c{j}(argv[0], n);")
+    L.append("  sink(t);\n  return 0;\n}")
+    return "\n".join(L)
+
+
 def run(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
@@ -371,6 +427,24 @@ def main():
         "typed result).",
         Sv, decv, so_text)
 
+    Sfmt = measure_sizes(tmp, links, gen_format_program, "fmt")
+    decfmt = {o: decompose(Sfmt[o]) for o in ORDERS}
+    L += size_section(
+        "std::format: size decomposition (bytes)",
+        "Workload: F user types each with its own std::formatter x G noinline "
+        "callsites, each formatting a mix (int, hex int, float, string, the user "
+        "type) via std::format + format_to_n + formatted_size. The FIXED slice "
+        "is the runtime engine (the vformat_to dispatch loop + fp_to_chars' "
+        "snprintf float path + the integer/grouping/padding/fill write helpers) "
+        "that base emits once per binary. The lean overlay relocates it "
+        "out-of-line (fmt::vformat_engine<CharT>, extern-template'd in <format>, "
+        "defined + explicitly instantiated in kernels.cpp): STILL per-binary for "
+        "lean-static, but ONCE PER SYSTEM (liblean.so) for lean-so. lean-so's "
+        "tiny FIXED vs base's ~41 KB FIXED is the move this axis exists to show. "
+        "The per-type slice is the user formatter; the per-callsite slice is "
+        "make_format_args + the thin out-of-line engine call.",
+        Sfmt, decfmt, so_text)
+
     if quick:
         L.append("\n(callgrind skipped: --quick)")
     else:
@@ -383,6 +457,9 @@ def main():
         cgv = callgrind(tmp, links, gen_variant_program, "var", CG_N)
         L += cg_section("std::variant: deterministic performance", cgv,
                         f"variant workload, T={CG_T} C={CG_C} n={CG_N}")
+        cgfmt = callgrind(tmp, links, gen_format_program, "fmt", CG_N)
+        L += cg_section("std::format: deterministic performance", cgfmt,
+                        f"format workload, F={CG_T} G={CG_C} n={CG_N}")
     L.append("")
     open("lean/OVERHEAD.md", "w").write("\n".join(L))
     print("\n".join(L))
