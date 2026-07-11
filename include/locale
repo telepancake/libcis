@@ -311,6 +311,11 @@ public:
     static string __compose_name(const string* cat_names);
     static void __category_names(const locale& loc, string out[6]);
     static void __copy_category_facets(imp* ni, const locale& src, category cat);
+    // Copy one facet (by type) from `src` into `ni`, resolving through the SAME
+    // classic fallback as use_facet: a source locale that does not override the
+    // facet conceptually has the classic one, which under lazy registration may
+    // not yet sit in any table.
+    template<class Facet> static void __copy_facet(imp* ni, const locale& src);
     static void __install_monetary(imp* ni, const char* name, bool isC);
     static void __install_time(imp* ni, const char* name, bool isC);
     static void __install_messages(imp* ni, const char* name, bool isC);
@@ -6444,24 +6449,39 @@ inline void locale::__category_names(const locale& loc, string out[6]) {
     }
 }
 
+// Copy one facet (by type) from `src` into `ni`.  On a table miss, resolve the
+// classic facet through the same fallback use_facet uses -- otherwise, under
+// lazy registration, resetting a category to a locale that only *implicitly*
+// holds the classic facet (never touched via use_facet) would silently keep the
+// destination's old facet instead of the classic one.
+template<class Facet>
+inline void locale::__copy_facet(imp* ni, const locale& src) {
+    size_t id = Facet::id.__get();
+    const facet* f = src.__lookup_facet(id);
+    if (!f) f = detail::classic_facet_of<Facet>();
+    if (!f) return;
+    ni->table[id] = f; ni->owns[id] = false;
+    const_cast<facet*>(f)->refs_++;
+}
+
 // Copy the facets belonging to `cat` from `src` into `ni` (shared, not owned).
 inline void locale::__copy_category_facets(imp* ni, const locale& src, category cat) {
-    // Enumerate the facet ids per category.
-    auto cp = [&](size_t id) {
-        const facet* f = src.__lookup_facet(id);
-        if (!f) return;
-        ni->table[id] = f; ni->owns[id] = false;
-        const_cast<facet*>(f)->refs_++;
-    };
-    if (cat & collate) { cp(std::collate<char>::id.__get()); cp(std::collate<wchar_t>::id.__get()); }
-    if (cat & ctype) {
-        cp(std::ctype<char>::id.__get()); cp(std::ctype<wchar_t>::id.__get());
-        cp(std::codecvt<char, char, mbstate_t>::id.__get());
-        cp(std::codecvt<wchar_t, char, mbstate_t>::id.__get());
-        cp(std::codecvt<char16_t, char, mbstate_t>::id.__get());
-        cp(std::codecvt<char32_t, char, mbstate_t>::id.__get());
+    if (cat & collate) {
+        __copy_facet<std::collate<char>>(ni, src);
+        __copy_facet<std::collate<wchar_t>>(ni, src);
     }
-    if (cat & numeric) { cp(std::numpunct<char>::id.__get()); cp(std::numpunct<wchar_t>::id.__get()); }
+    if (cat & ctype) {
+        __copy_facet<std::ctype<char>>(ni, src);
+        __copy_facet<std::ctype<wchar_t>>(ni, src);
+        __copy_facet<std::codecvt<char, char, mbstate_t>>(ni, src);
+        __copy_facet<std::codecvt<wchar_t, char, mbstate_t>>(ni, src);
+        __copy_facet<std::codecvt<char16_t, char, mbstate_t>>(ni, src);
+        __copy_facet<std::codecvt<char32_t, char, mbstate_t>>(ni, src);
+    }
+    if (cat & numeric) {
+        __copy_facet<std::numpunct<char>>(ni, src);
+        __copy_facet<std::numpunct<wchar_t>>(ni, src);
+    }
     // monetary/time/messages facets copied once those facets exist (TODO).
 }
 
