@@ -227,9 +227,11 @@ binary carries only the kernels it actually reaches.
     a no-op keeps a defensively-imbuing program running (with classic output),
     whereas a trap would break it; the cost is that locale-specific formatting is
     silently classic. See the "Locale severance" section below for the size
-    story (and the honest ceiling: the stream *code* is severed, but the classic
-    facet *vtables* remain pinned into every binary by two eager initializers
-    that live outside the stream headers).
+    story. The severance is the prerequisite for the follow-on that captures the
+    prize: base classic-facet registration is now **LAZY** (register-on-first-
+    `use_facet`), so `--gc-sections` drops the whole classic facet suite from any
+    binary that never asks for a facet — a severed lean `cout`/`cin` binary drops
+    **all** of it.
 
 Everything else — iterator categories, complexity guarantees, reference
 stability of node containers, the public API surface — follows the standard.
@@ -444,37 +446,61 @@ include order, now instantiates the *lean* (locale-severed) streams for its own
 ctor/copy/assign + `use_facet<ctype<char>>` widen/narrow that left the stream
 path.
 
-**Honest ceiling — the ~65 KB facet suite is NOT in the marginal, and severance
-alone cannot drop it.** The `cout` marginal (~21 KB base) is the **direct
-number-formatting engine** (`format_integer_impl`, `put_float`, `pad_and_output`,
-the base-10/base-16 LUTs) + the `cout`/`cin` static init — it is **not** locale
+**The facet suite is now LAZY — severance + lazy registration together deliver
+the prize.** The `cout` marginal (~21 KB base) is the **direct number-formatting
+engine** (`format_integer_impl`, `put_float`, `pad_and_output`, the
+base-10/base-16 LUTs) + the `cout`/`cin` static init — it is **not** locale
 machinery (base already formats numbers directly, no `num_put`/`num_get`), so
-severing locale cannot shrink it toward printf. The classic facet suite
+severing locale never shrank *that*. The real prize was the classic facet suite
 (`ctype`/`numpunct`/`num_get`/`num_put`/`money`/`time`/`collate`/`codecvt`
-vtables + `do_get`/`do_put` bodies) measures **~65 KB and is pinned into EVERY
-binary** — including the empty-main baseline (measured: 64.8 KB of facet/locale
-symbols in the base empty binary, 61.1 KB in the lean empty binary) — so it
-**cancels in the marginal**. It is pinned by **two eager initializers that live
-OUTSIDE the stream headers**:
+vtables + `do_get`/`do_put` bodies + their transitive locale machinery), which
+**used to be pinned into EVERY binary** — including the empty-main baseline — by
+**two eager static initializers that lived OUTSIDE the stream headers**:
 
 - `std::detail::stream_facet_init_instance` (in `src/support.cpp`) — eagerly
-  constructs + registers `num_get`/`num_put`/`money*`/`time*`/`messages` (and
+  constructed + registered `num_get`/`num_put`/`money*`/`time*`/`messages` (and
   `num_get::do_get` transitively references `use_facet<ctype>`/`<numpunct>`,
   pinning those too);
 - `std::detail::locale_classic_init_instance` (in `include/locale`) — eagerly
-  constructs + registers the classic `ctype`/`numpunct`/`collate`/`codecvt`.
+  constructed + registered the classic `ctype`/`numpunct`/`collate`/`codecvt`.
 
-Because the lean streams no longer call any facet, those inits are the *only*
-thing keeping the ~65 KB alive in a plain `cout`/`cin` program. **Ceiling
-experiment** (neutralize both eager inits — a throwaway build, since both files
-are outside the owned stream overlay): a lean `cout` binary drops
-**127 862 → 45 036 bytes (~83 KB recovered)** and **still runs correctly**,
-precisely because the severed streams never call `use_facet` at runtime. That
-~83 KB is the real prize; reaching it needs those two eager initializers made
-lazy (register-on-first-`use_facet`) so `--gc-sections` can drop the unused
-facets. That is a **handoff** to the localization/base-support owner — the
-severance here is the prerequisite (streams must stop pulling the facets before
-lazy registration can drop them), and it is complete.
+Both took the *address of every classic facet* at static-init time, so
+`--gc-sections` could never drop any of them: an `.init_array` entry always
+reaches the whole suite.
+
+**Both are now gone.** Classic-facet registration is **LAZY**: `use_facet<F>` /
+`has_facet<F>` register `F`'s classic instance on the first *table miss*, via a
+per-facet `detail::classic_facet_of<F>()` whose function-local `static`
+instances are the only thing that takes `&classic_<F>`. Because that address is
+now referenced *only* from the `use_facet<F>` instantiation a program actually
+emits, `--gc-sections` drops the classic instance (vtable + `do_*` bodies) of
+every facet the program never asks for. Thread-safe under `-fno-exceptions`
+(gcc's static-init guard + a release/acquire-atomic facet table + a spinlock-
+guarded `locale::id` assignment; verified race-free under TSAN). Mechanism and
+correctness are unchanged — behavior is *identical*; only WHEN each classic
+facet is registered moved from static-init to first-use, and the localization +
+input.output corpora fail byte-identically with and without the change (0 new
+failures, base and lean).
+
+**Measured (g++, `size(1)` text+data+bss, `-Os -ffunction-sections
+-fdata-sections -Wl,--gc-sections`):**
+
+| binary | eager (before) | lazy (after) | recovered |
+|---|---|---|---|
+| empty `main` (base *and* lean) | ~107–113 KB | **1 757 B** | ~105–111 KB |
+| lean `cout<<int<<float<<bool` | 127 750 B | **23 794 B** | ~104 KB |
+| base `cout<<int<<float<<bool` | 135 031 B | **29 260 B** | ~106 KB |
+
+A severed lean `cout` binary calls `use_facet` zero times, so it drops the
+**entire** suite (`nm`: no `classic_facet_of` symbols). A base `cout` keeps only
+`ctype<char>` (its `widen()`/fill path) and drops the rest; a program that uses
+`num_put` keeps `num_put`+`ctype`+`numpunct` and drops `money`/`time`/`messages`/
+`collate`/`codecvt`. The lean `cout` binary file size is **197 416 → 45 528 B**,
+i.e. the ~83 KB ceiling the severance predicted, now realized (the larger
+`size(1)` delta above additionally counts the transitively-pinned locale
+machinery the eager inits dragged in). The severance was the prerequisite —
+streams had to stop pulling the facets before lazy registration could drop
+them — and this follow-on completes it.
 
 ### Smart pointers (`bits/lean_sp.h` control block + the `sp_*` kernels)
 

@@ -95,13 +95,25 @@ public:
         id(const id&) = delete;
         id& operator=(const id&) = delete;
 
-        // Returns a unique non-zero integer for this id object.
-        // Assigned lazily on first call (thread-unsafe; acceptable here).
+        // Returns a unique non-zero integer for this id object, assigned lazily
+        // on first call.  THREAD-SAFE: with lazy facet registration a facet's id
+        // is first touched at first use_facet, which may race across threads.
+        // A double-checked load guards the fast path; the shared `counter` is
+        // bumped under a global spinlock so each id gets exactly one value with
+        // no gaps or collisions even when several threads first-use distinct
+        // facets at once.  (-fno-exceptions safe: no throwing operations.)
         size_t __get() const {
-            if (val == 0) {
-                val = ++counter;
+            size_t v = __atomic_load_n(&val, __ATOMIC_ACQUIRE);
+            if (v != 0) return v;
+            static int lock = 0;  // 0=free, 1=held (constant-init, no static guard)
+            while (__atomic_exchange_n(&lock, 1, __ATOMIC_ACQUIRE)) { /* spin */ }
+            v = val;              // re-check under the lock
+            if (v == 0) {
+                v = ++counter;
+                __atomic_store_n(&val, v, __ATOMIC_RELEASE);
             }
-            return val;
+            __atomic_store_n(&lock, 0, __ATOMIC_RELEASE);
+            return v;
         }
     private:
         mutable size_t val = 0;
@@ -411,7 +423,11 @@ private:
 // locale::id counter definition — lives here (header-only, #pragma once / include guard)
 inline size_t locale::id::counter = 0;
 
-// Static facet registry (array indexed by id)
+// Static facet registry (array indexed by id).  Slots are read in the hot
+// __lookup_facet path and written by lazy first-use registration, possibly
+// concurrently, so every access goes through __atomic_* (acquire load / release
+// store) — the writes are a single pointer store each, but the concurrent
+// read+write would otherwise be a data race on the shared table.
 namespace detail {
     constexpr size_t max_facets = 128;
     inline const locale::facet* facet_registry[max_facets] = {};
@@ -419,30 +435,59 @@ namespace detail {
 
 inline const locale::facet* locale::__get_facet(size_t id) noexcept {
     if (id == 0 || id >= detail::max_facets) return nullptr;
-    return detail::facet_registry[id];
+    return __atomic_load_n(&detail::facet_registry[id], __ATOMIC_ACQUIRE);
 }
 inline void locale::__register_facet(size_t id, const locale::facet* f) noexcept {
     if (id == 0 || id >= detail::max_facets) return;
-    detail::facet_registry[id] = f;
+    __atomic_store_n(&detail::facet_registry[id], f, __ATOMIC_RELEASE);
+}
+
+//===----------------------------------------------------------------------===//
+// Lazy classic-facet registration hook.
+//
+// classic_facet_of<Facet>() returns Facet's classic ("C"-locale) instance,
+// REGISTERING it into the global facet_registry on first call (idempotently,
+// via function-local statics so the write happens exactly once under gcc's
+// thread-safe init guard).  The PRIMARY returns nullptr — a facet type with no
+// classic instance.  Specializations exist for every classic facet:
+//   - the non-stream facets (collate/ctype/numpunct/codecvt) are defined inline
+//     at the end of this header;
+//   - the stream facets (num_get/num_put/money*/time*/messages) are declared
+//     there but DEFINED in src/support.cpp, where std::ios_base is complete
+//     (their do_get/do_put virtual bodies need it).
+//
+// Because &classic_<Facet> is referenced ONLY from classic_facet_of<Facet>(),
+// which is referenced ONLY from the use_facet<Facet>/has_facet<Facet>
+// instantiations that name it, a program that never uses a facet never pulls in
+// its classic instance and --gc-sections drops it.  This replaces the two eager
+// static initializers that used to take the address of every facet at startup.
+namespace detail {
+    template<class Facet> const locale::facet* classic_facet_of();
 }
 
 //===----------------------------------------------------------------------===//
 // has_facet / use_facet
 // Ported from: libc++ include/__locale lines 176-183.
-// Extended to check per-locale injected table (locale::__lookup_facet) before
-// falling back to the global static registry.
+// Extended to check per-locale injected table (locale::__lookup_facet) first,
+// then lazily register+serve the classic instance (detail::classic_facet_of)
+// on a miss — preserving the classic-locale fallback the eager registry used to
+// provide, but only pinning the facets a program actually asks for.
 //===----------------------------------------------------------------------===//
 
 template<class Facet>
 bool has_facet(const locale& loc) noexcept {
     size_t id = Facet::id.__get();
-    return loc.__lookup_facet(id) != nullptr;
+    if (loc.__lookup_facet(id)) return true;
+    // No injected/registered instance yet: a classic facet is still "present"
+    // (and gets registered as a side effect); a non-classic one is not.
+    return detail::classic_facet_of<Facet>() != nullptr;
 }
 
 template<class Facet>
 const Facet& use_facet(const locale& loc) {
     size_t id = Facet::id.__get();
     const locale::facet* f = loc.__lookup_facet(id);
+    if (!f) f = detail::classic_facet_of<Facet>(); // lazy classic registration
     if (!f) __builtin_trap(); // facet not installed — unreachable in well-formed code
     return static_cast<const Facet&>(*f);
 }
@@ -6201,48 +6246,99 @@ locale::id messages<CharT>::id;
 
 
 //===----------------------------------------------------------------------===//
-// Classic-locale singleton facet instances — registered at startup.
-// We use a simple init helper struct with static storage.
+// Classic-locale singleton facets — LAZILY registered on first use_facet.
+//
+// There is no static initializer here anymore.  Each classic facet lives as a
+// function-local `static` inside its classic_facet_of<Facet>() specialization:
+//   - construction is guarded once by gcc's thread-safe static-init guard
+//     (works under -fno-exceptions), and the instance is never destroyed early
+//     because it holds refs_=1 and no imp ever owns it;
+//   - a second function-local `static` performs the one-time __register_facet
+//     (which itself does a single release atomic store into the shared table);
+//   - the whole thing is referenced only from the use_facet<Facet>/has_facet
+//     instantiation that names it, so --gc-sections drops the classic instance
+//     of any facet the program never asks for.
+//
+// The non-stream facets are defined inline here.  The stream facets
+// (num_get/num_put/money*/time*/messages) are only DECLARED here and defined in
+// src/support.cpp, where std::ios_base is complete.
 //===----------------------------------------------------------------------===//
 namespace detail {
 
-// Static instances of the classic facets (refs=1 means never deleted)
-inline collate<char>     classic_collate_char{1};
-inline collate<wchar_t>  classic_collate_wchar{1};
-inline ctype<char>    classic_ctype_char{nullptr, false, 1};
-inline ctype<wchar_t> classic_ctype_wchar{1};
-inline numpunct<char>    classic_numpunct_char{1};
-inline numpunct<wchar_t> classic_numpunct_wchar{1};
-inline codecvt<wchar_t, char, mbstate_t>    classic_codecvt_wc{1};
-inline codecvt<char, char, mbstate_t>       classic_codecvt_cc{1};
-inline codecvt<char16_t, char, mbstate_t>   classic_codecvt_c16c{1};
-inline codecvt<char32_t, char, mbstate_t>   classic_codecvt_c32c{1};
-inline codecvt<char16_t, char8_t, mbstate_t> classic_codecvt_c16c8{1};
-inline codecvt<char32_t, char8_t, mbstate_t> classic_codecvt_c32c8{1};
+// Primary: this facet type has no classic instance.
+template<class Facet>
+const locale::facet* classic_facet_of() { return nullptr; }
 
-struct locale_classic_init {
-    locale_classic_init() {
-        locale::__register_facet(collate<char>::id.__get(),     &classic_collate_char);
-        locale::__register_facet(collate<wchar_t>::id.__get(),  &classic_collate_wchar);
-        locale::__register_facet(ctype<char>::id.__get(),       &classic_ctype_char);
-        locale::__register_facet(ctype<wchar_t>::id.__get(),    &classic_ctype_wchar);
-        locale::__register_facet(numpunct<char>::id.__get(),    &classic_numpunct_char);
-        locale::__register_facet(numpunct<wchar_t>::id.__get(), &classic_numpunct_wchar);
-        locale::__register_facet(codecvt<wchar_t, char, mbstate_t>::id.__get(),
-                                 &classic_codecvt_wc);
-        locale::__register_facet(codecvt<char, char, mbstate_t>::id.__get(),
-                                 &classic_codecvt_cc);
-        locale::__register_facet(codecvt<char16_t, char, mbstate_t>::id.__get(),
-                                 &classic_codecvt_c16c);
-        locale::__register_facet(codecvt<char32_t, char, mbstate_t>::id.__get(),
-                                 &classic_codecvt_c32c);
-        locale::__register_facet(codecvt<char16_t, char8_t, mbstate_t>::id.__get(),
-                                 &classic_codecvt_c16c8);
-        locale::__register_facet(codecvt<char32_t, char8_t, mbstate_t>::id.__get(),
-                                 &classic_codecvt_c32c8);
-    }
-};
-inline locale_classic_init locale_classic_init_instance;
+// Register `inst` under Facet's id exactly once (guarded), return its address.
+template<class Facet>
+inline const locale::facet* register_classic(Facet& inst) {
+    static bool once = (locale::__register_facet(Facet::id.__get(), &inst), true);
+    (void)once;
+    return &inst;
+}
+
+// --- non-stream classic facets (defined inline; no ios_base dependency) ---
+template<> inline const locale::facet* classic_facet_of<collate<char>>() {
+    static collate<char> inst{1};                 return register_classic(inst);
+}
+template<> inline const locale::facet* classic_facet_of<collate<wchar_t>>() {
+    static collate<wchar_t> inst{1};              return register_classic(inst);
+}
+template<> inline const locale::facet* classic_facet_of<ctype<char>>() {
+    static ctype<char> inst{nullptr, false, 1};   return register_classic(inst);
+}
+template<> inline const locale::facet* classic_facet_of<ctype<wchar_t>>() {
+    static ctype<wchar_t> inst{1};                return register_classic(inst);
+}
+template<> inline const locale::facet* classic_facet_of<numpunct<char>>() {
+    static numpunct<char> inst{1};                return register_classic(inst);
+}
+template<> inline const locale::facet* classic_facet_of<numpunct<wchar_t>>() {
+    static numpunct<wchar_t> inst{1};             return register_classic(inst);
+}
+template<> inline const locale::facet* classic_facet_of<codecvt<wchar_t, char, mbstate_t>>() {
+    static codecvt<wchar_t, char, mbstate_t> inst{1};   return register_classic(inst);
+}
+template<> inline const locale::facet* classic_facet_of<codecvt<char, char, mbstate_t>>() {
+    static codecvt<char, char, mbstate_t> inst{1};      return register_classic(inst);
+}
+template<> inline const locale::facet* classic_facet_of<codecvt<char16_t, char, mbstate_t>>() {
+    static codecvt<char16_t, char, mbstate_t> inst{1};  return register_classic(inst);
+}
+template<> inline const locale::facet* classic_facet_of<codecvt<char32_t, char, mbstate_t>>() {
+    static codecvt<char32_t, char, mbstate_t> inst{1};  return register_classic(inst);
+}
+template<> inline const locale::facet* classic_facet_of<codecvt<char16_t, char8_t, mbstate_t>>() {
+    static codecvt<char16_t, char8_t, mbstate_t> inst{1}; return register_classic(inst);
+}
+template<> inline const locale::facet* classic_facet_of<codecvt<char32_t, char8_t, mbstate_t>>() {
+    static codecvt<char32_t, char8_t, mbstate_t> inst{1}; return register_classic(inst);
+}
+
+// --- stream classic facets: DECLARED here, DEFINED in src/support.cpp ---
+// (their do_get/do_put bodies need a complete std::ios_base, which <locale>
+//  cannot see; the definitions live where <sstream> has completed ios_base.)
+// NOTE: fully-qualified std:: — inside namespace std::detail the unqualified
+// num_get/num_put would resolve to the INTERNAL helpers detail::num_get/num_put,
+// not the public facets.
+template<> const locale::facet* classic_facet_of<std::num_get<char>>();
+template<> const locale::facet* classic_facet_of<std::num_get<wchar_t>>();
+template<> const locale::facet* classic_facet_of<std::num_put<char>>();
+template<> const locale::facet* classic_facet_of<std::num_put<wchar_t>>();
+template<> const locale::facet* classic_facet_of<std::time_get<char>>();
+template<> const locale::facet* classic_facet_of<std::time_get<wchar_t>>();
+template<> const locale::facet* classic_facet_of<std::time_put<char>>();
+template<> const locale::facet* classic_facet_of<std::time_put<wchar_t>>();
+template<> const locale::facet* classic_facet_of<std::money_get<char>>();
+template<> const locale::facet* classic_facet_of<std::money_get<wchar_t>>();
+template<> const locale::facet* classic_facet_of<std::money_put<char>>();
+template<> const locale::facet* classic_facet_of<std::money_put<wchar_t>>();
+template<> const locale::facet* classic_facet_of<std::moneypunct<char, false>>();
+template<> const locale::facet* classic_facet_of<std::moneypunct<char, true>>();
+template<> const locale::facet* classic_facet_of<std::moneypunct<wchar_t, false>>();
+template<> const locale::facet* classic_facet_of<std::moneypunct<wchar_t, true>>();
+template<> const locale::facet* classic_facet_of<std::messages<char>>();
+template<> const locale::facet* classic_facet_of<std::messages<wchar_t>>();
 
 } // namespace detail
 

@@ -390,10 +390,22 @@ extern "C" int __cxa_thread_atexit(void (*func)(void*), void* obj, void* dso_han
 // These facets are defined in <locale> but reference a COMPLETE std::ios_base,
 // which <locale> itself cannot see (the <ios> -> <locale> include cycle leaves
 // ios_base incomplete while <locale> is parsed).  So their CLASSIC instances are
-// instantiated and registered HERE, in a TU that includes <sstream> first and
-// therefore has a complete ios_base.  Registration goes into the same global
-// facet registry the header uses (locale::__register_facet); the facet `id`
-// objects are shared inline statics, so lookups in any TU resolve correctly.
+// instantiated HERE, in a TU that includes <sstream> first and therefore has a
+// complete ios_base.
+//
+// LAZY registration: <locale> declares (but does not define) the explicit
+// specializations detail::classic_facet_of<Facet>() for each of these facets;
+// this TU DEFINES them.  A specialization is emitted into its own section
+// (-ffunction-sections), constructs the classic instance in static storage on
+// first call, registers it once into the global facet registry, and returns it.
+// use_facet<Facet>/has_facet<Facet> call it on a table miss.  Because the
+// address of a classic instance is now taken ONLY from its specialization —
+// which is reached ONLY when the program actually instantiates use_facet<Facet>
+// — --gc-sections drops the classic instance (and its vtable/do_* bodies) of
+// every stream facet the program never uses.  This replaces the former eager
+// stream_facet_init static initializer, which took the address of ALL of them
+// unconditionally and thus pinned the whole ~65 KB facet suite into every
+// binary that merely linked this TU (e.g. for operator new).
 //
 // Reported per the porting contract: this is the only src/support.cpp edit for
 // the localization pass.
@@ -404,40 +416,43 @@ extern "C" int __cxa_thread_atexit(void (*func)(void*), void* obj, void* dso_han
 namespace std {
 namespace detail {
 
-// Construct the classic stream facets in STATIC STORAGE (placement-new into
-// aligned buffers) rather than with ::operator new.  The libc++ test harness
-// replaces the global operator new/delete to count outstanding allocations and
-// asserts the count is 0 across locale construction, so these long-lived classic
-// facets must not go through operator new.  refs=1 => never destroyed.
+// Construct the classic stream facet in STATIC STORAGE (placement-new into an
+// aligned buffer) rather than with ::operator new, and register it exactly once.
+// The libc++ test harness replaces the global operator new/delete to count
+// outstanding allocations and asserts the count is 0 across locale construction,
+// so these long-lived classic facets must not go through operator new; the
+// buffer is trivially destructible so the facet is never destroyed (refs_=1).
+// Both statics are guarded by gcc's thread-safe init guard, so concurrent
+// first-use callers construct + register exactly once.
 template <class Facet, class... Args>
-static Facet* make_static_facet(Args&&... args) {
+static const locale::facet* classic_stream_facet(Args... args) {
     alignas(Facet) static unsigned char buf[sizeof(Facet)];
-    return ::new (static_cast<void*>(buf)) Facet(static_cast<Args&&>(args)...);
+    static Facet* inst = ::new (static_cast<void*>(buf)) Facet(args...);
+    static bool once = (locale::__register_facet(Facet::id.__get(), inst), true);
+    (void)once;
+    return inst;
 }
 
-struct stream_facet_init {
-    stream_facet_init() {
-        locale::__register_facet(std::num_get<char>::id.__get(),    make_static_facet<std::num_get<char>>(1));
-        locale::__register_facet(std::num_get<wchar_t>::id.__get(), make_static_facet<std::num_get<wchar_t>>(1));
-        locale::__register_facet(std::num_put<char>::id.__get(),    make_static_facet<std::num_put<char>>(1));
-        locale::__register_facet(std::num_put<wchar_t>::id.__get(), make_static_facet<std::num_put<wchar_t>>(1));
-        locale::__register_facet(std::time_get<char>::id.__get(),    make_static_facet<std::time_get<char>>(1));
-        locale::__register_facet(std::time_get<wchar_t>::id.__get(), make_static_facet<std::time_get<wchar_t>>(1));
-        locale::__register_facet(std::time_put<char>::id.__get(),    make_static_facet<std::time_put<char>>(1));
-        locale::__register_facet(std::time_put<wchar_t>::id.__get(), make_static_facet<std::time_put<wchar_t>>(1));
-        locale::__register_facet(std::money_get<char>::id.__get(),    make_static_facet<std::money_get<char>>(1));
-        locale::__register_facet(std::money_get<wchar_t>::id.__get(), make_static_facet<std::money_get<wchar_t>>(1));
-        locale::__register_facet(std::money_put<char>::id.__get(),    make_static_facet<std::money_put<char>>(1));
-        locale::__register_facet(std::money_put<wchar_t>::id.__get(), make_static_facet<std::money_put<wchar_t>>(1));
-        locale::__register_facet(std::moneypunct<char, false>::id.__get(),    make_static_facet<std::moneypunct<char, false>>(1));
-        locale::__register_facet(std::moneypunct<char, true>::id.__get(),     make_static_facet<std::moneypunct<char, true>>(1));
-        locale::__register_facet(std::moneypunct<wchar_t, false>::id.__get(), make_static_facet<std::moneypunct<wchar_t, false>>(1));
-        locale::__register_facet(std::moneypunct<wchar_t, true>::id.__get(),  make_static_facet<std::moneypunct<wchar_t, true>>(1));
-        locale::__register_facet(std::messages<char>::id.__get(),    make_static_facet<std::messages<char>>(1));
-        locale::__register_facet(std::messages<wchar_t>::id.__get(), make_static_facet<std::messages<wchar_t>>(1));
-    }
-};
-stream_facet_init stream_facet_init_instance;
+// Fully-qualified std:: — inside namespace std::detail the unqualified
+// num_get/num_put name the INTERNAL helpers, not the public facets.
+template<> const locale::facet* classic_facet_of<std::num_get<char>>()    { return classic_stream_facet<std::num_get<char>>(1); }
+template<> const locale::facet* classic_facet_of<std::num_get<wchar_t>>() { return classic_stream_facet<std::num_get<wchar_t>>(1); }
+template<> const locale::facet* classic_facet_of<std::num_put<char>>()    { return classic_stream_facet<std::num_put<char>>(1); }
+template<> const locale::facet* classic_facet_of<std::num_put<wchar_t>>() { return classic_stream_facet<std::num_put<wchar_t>>(1); }
+template<> const locale::facet* classic_facet_of<std::time_get<char>>()    { return classic_stream_facet<std::time_get<char>>(1); }
+template<> const locale::facet* classic_facet_of<std::time_get<wchar_t>>() { return classic_stream_facet<std::time_get<wchar_t>>(1); }
+template<> const locale::facet* classic_facet_of<std::time_put<char>>()    { return classic_stream_facet<std::time_put<char>>(1); }
+template<> const locale::facet* classic_facet_of<std::time_put<wchar_t>>() { return classic_stream_facet<std::time_put<wchar_t>>(1); }
+template<> const locale::facet* classic_facet_of<std::money_get<char>>()    { return classic_stream_facet<std::money_get<char>>(1); }
+template<> const locale::facet* classic_facet_of<std::money_get<wchar_t>>() { return classic_stream_facet<std::money_get<wchar_t>>(1); }
+template<> const locale::facet* classic_facet_of<std::money_put<char>>()    { return classic_stream_facet<std::money_put<char>>(1); }
+template<> const locale::facet* classic_facet_of<std::money_put<wchar_t>>() { return classic_stream_facet<std::money_put<wchar_t>>(1); }
+template<> const locale::facet* classic_facet_of<std::moneypunct<char, false>>()    { return classic_stream_facet<std::moneypunct<char, false>>(1); }
+template<> const locale::facet* classic_facet_of<std::moneypunct<char, true>>()     { return classic_stream_facet<std::moneypunct<char, true>>(1); }
+template<> const locale::facet* classic_facet_of<std::moneypunct<wchar_t, false>>() { return classic_stream_facet<std::moneypunct<wchar_t, false>>(1); }
+template<> const locale::facet* classic_facet_of<std::moneypunct<wchar_t, true>>()  { return classic_stream_facet<std::moneypunct<wchar_t, true>>(1); }
+template<> const locale::facet* classic_facet_of<std::messages<char>>()    { return classic_stream_facet<std::messages<char>>(1); }
+template<> const locale::facet* classic_facet_of<std::messages<wchar_t>>() { return classic_stream_facet<std::messages<wchar_t>>(1); }
 
 } // namespace detail
 } // namespace std
